@@ -1021,6 +1021,34 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackBatchUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, 'Restore batch metadata', ?, 'previewed', ?,
+          'track-tags-batch-undo', ?, ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1033,7 +1061,8 @@ export class CatalogDatabase {
           | "album-title-undo"
           | "track-tags-edit"
           | "track-tags-undo"
-          | "track-tags-batch-edit";
+          | "track-tags-batch-edit"
+          | "track-tags-batch-undo";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1058,7 +1087,8 @@ export class CatalogDatabase {
             | "album-title-undo"
             | "track-tags-edit"
             | "track-tags-undo"
-            | "track-tags-batch-edit";
+            | "track-tags-batch-edit"
+            | "track-tags-batch-undo";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -1094,7 +1124,8 @@ export class CatalogDatabase {
         | "album-title-undo"
         | "track-tags-edit"
         | "track-tags-undo"
-        | "track-tags-batch-edit";
+        | "track-tags-batch-edit"
+        | "track-tags-batch-undo";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";

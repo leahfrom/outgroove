@@ -70,6 +70,9 @@ export function App(): React.JSX.Element {
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
+  const [batchUndoPreview, setBatchUndoPreview] =
+    useState<TrackBatchEditPreviewDto>();
+  const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -502,6 +505,44 @@ export function App(): React.JSX.Element {
             : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
         );
         setBatchPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewBatchUndo = async (operationId: string): Promise<void> => {
+    const result = await window.outgroove.previewTrackBatchUndo({
+      operationId,
+    });
+    if (result.ok) {
+      setUndoPreview(undefined);
+      setTrackUndoPreview(undefined);
+      setBatchResult(undefined);
+      setBatchUndoPreview(result.value);
+      setBatchUndoResult(undefined);
+    } else setNotice(result.error.message);
+  };
+
+  const applyBatchUndo = async (): Promise<void> => {
+    if (!batchUndoPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackBatchUndo({
+        operationId: batchUndoPreview.operationId,
+        confirmationToken: batchUndoPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setBatchUndoResult(result.value);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Re-read and verified ${result.value.results.length} batch undo writes.`
+            : `${result.value.results.length - failures.length} undo writes verified; ${failures.length} refused or failed without stopping the others.`,
+        );
+        setBatchUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else setNotice(result.error.message);
@@ -1278,6 +1319,17 @@ export function App(): React.JSX.Element {
                                   Preview track undo
                                 </button>
                               )}
+                            {item.kind === "track-tags-batch-edit" &&
+                              item.verifiedFiles > 0 && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void previewBatchUndo(item.operationId)
+                                  }
+                                >
+                                  Preview batch undo
+                                </button>
+                              )}
                           </li>
                         ))}
                       </ol>
@@ -1380,6 +1432,85 @@ export function App(): React.JSX.Element {
                           Cancel track undo
                         </button>
                       </div>
+                    </div>
+                  )}
+                  {batchUndoPreview && (
+                    <div
+                      className="preview"
+                      aria-label="Batch metadata undo confirmation"
+                    >
+                      <h4>Review batch undo before writing</h4>
+                      <p>
+                        Only fields written by the original batch are restored,
+                        and only for files whose original writes were verified.
+                        Conflicted files will be refused without stopping safe
+                        restores on other files.
+                      </p>
+                      {batchUndoPreview.files.map((file) => (
+                        <div key={file.fileId}>
+                          <h5>{file.path}</h5>
+                          {!file.willWrite && (
+                            <p>Status: already restored — skipped</p>
+                          )}
+                          {file.changes.length > 0 && (
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Field</th>
+                                  <th>Current</th>
+                                  <th>Restore</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {file.changes.map((change) => (
+                                  <tr key={change.field}>
+                                    <td>{change.field}</td>
+                                    <td>{change.before ?? "Not set"}</td>
+                                    <td>{change.after ?? "Not set"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {file.warnings.map((warning) => (
+                            <p key={warning} role="alert">
+                              {warning}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                      <div className="actions">
+                        <button
+                          className="primary"
+                          disabled={
+                            busy ||
+                            !batchUndoPreview.files.some(
+                              (file) =>
+                                file.willWrite && file.warnings.length === 0,
+                            )
+                          }
+                          onClick={() => void applyBatchUndo()}
+                        >
+                          Confirm safe batch undo writes
+                        </button>
+                        <button onClick={() => setBatchUndoPreview(undefined)}>
+                          Cancel batch undo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {batchUndoResult && (
+                    <div className="preview" aria-live="polite">
+                      <h4>Batch undo results</h4>
+                      <ul>
+                        {batchUndoResult.results.map((result) => (
+                          <li key={result.fileId}>
+                            {result.path}:{" "}
+                            {result.verified ? "verified" : "refused or failed"}
+                            {result.error ? ` — ${result.error}` : ""}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </section>
