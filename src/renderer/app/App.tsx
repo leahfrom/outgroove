@@ -396,7 +396,12 @@ export function App(): React.JSX.Element {
           ) : (
             <ul>
               {scanErrors.map((error) => (
-                <li key={error.path}>
+                <li key={`${error.kind}:${error.path}`}>
+                  <span>
+                    {error.kind === "directory"
+                      ? "Folder could not be scanned"
+                      : "Audio file could not be read"}
+                  </span>
                   <strong>{error.path}</strong>
                   <span>{error.message}</span>
                 </li>

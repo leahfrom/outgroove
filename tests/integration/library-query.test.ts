@@ -142,6 +142,15 @@ describe("paginated library query", () => {
         message ?? "Unknown error",
       );
     }
+    database.beginScan(root.id);
+    const blocked = join(directory, "blocked");
+    database.recordScanDirectoryError(
+      root.id,
+      blocked,
+      pathComparisonKey(blocked),
+      "Folder permission denied",
+    );
+    database.finishScan(root.id);
     const problems = database.queryLibrary({
       query: "100%",
       view: "scan-errors",
@@ -151,6 +160,16 @@ describe("paginated library query", () => {
     expect(problems.totalItems).toBe(1);
     expect(problems.scanErrors[0]?.path).toContain("broken_100%");
     expect(problems.albums).toEqual([]);
+    const folderProblem = database.queryLibrary({
+      query: "folder permission",
+      view: "scan-errors",
+      offset: 0,
+      limit: 10,
+    });
+    expect(folderProblem).toMatchObject({
+      totalItems: 1,
+      scanErrors: [{ kind: "directory", path: blocked }],
+    });
     database.close();
   });
 });

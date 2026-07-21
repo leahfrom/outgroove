@@ -22,7 +22,7 @@ describe("database migration and backup", () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(3);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(4);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -81,7 +81,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      3,
+      4,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -123,12 +123,85 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      3,
+      4,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
       state: "completed",
     });
     migrated.close();
+  });
+
+  it("upgrades the released v3 catalog and preserves its library root", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v3-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 3))
+      legacy.exec(migration.sql);
+    legacy.pragma("user_version = 3");
+    legacy
+      .prepare(
+        "INSERT INTO library_roots (id, path, path_key, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "/fixture/library",
+        "/fixture/library",
+        "2026-01-01T00:00:00.000Z",
+      );
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      4,
+    );
+    expect(migrated.listLibraryRoots()).toHaveLength(1);
+    expect(
+      migrated.connection
+        .prepare("SELECT COUNT(*) FROM scan_directory_errors")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    migrated.close();
+  });
+
+  it("publishes directory errors atomically and preserves them across an abandoned scan", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-errors-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      "/fixture/library",
+      "/fixture/library",
+    );
+    database.beginScan(root.id);
+    database.recordScanDirectoryError(
+      root.id,
+      "/fixture/library/old",
+      "/fixture/library/old",
+      "Old completed error",
+    );
+    database.finishScan(root.id);
+
+    database.beginScan(root.id);
+    database.recordScanDirectoryError(
+      root.id,
+      "/fixture/library/new",
+      "/fixture/library/new",
+      "Cancelled scan error",
+    );
+    database.abandonScan(root.id);
+    expect(database.listScanErrors()).toEqual([
+      {
+        kind: "directory",
+        path: "/fixture/library/old",
+        message: "Old completed error",
+      },
+    ]);
+
+    database.beginScan(root.id);
+    database.finishScan(root.id);
+    expect(database.listScanErrors()).toEqual([]);
+    database.close();
   });
 });
