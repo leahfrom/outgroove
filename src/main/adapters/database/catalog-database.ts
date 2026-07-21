@@ -71,9 +71,30 @@ interface ScanStatements {
   readonly finishLibraryRoot: Database.Statement;
 }
 
-export interface ScanDiscoveryEntry {
-  readonly pathKey: string;
-  readonly changed: { readonly sequence: number; readonly path: string } | null;
+export type ScanDiscoveryEntry =
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly size: number;
+      readonly modifiedMs: number;
+    }
+  | {
+      readonly kind: "file-error";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly message: string;
+    }
+  | {
+      readonly kind: "directory-error";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly message: string;
+    };
+
+export interface ScanDiscoveryBatchResult {
+  readonly changed: number;
+  readonly unchanged: number;
 }
 
 export interface PendingScanPath {
@@ -106,8 +127,12 @@ export interface StoredFile extends AudioFileRow {
 export class CatalogDatabase {
   readonly connection: Database.Database;
   private readonly scanStatements: ScanStatements;
+  private readonly nextChangedSequence = new Map<string, number>();
 
-  constructor(path: string) {
+  constructor(
+    path: string,
+    options: { readonly interruptOrphanedJobs?: boolean } = {},
+  ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.connection = new Database(path);
     this.connection.pragma("foreign_keys = ON");
@@ -207,7 +232,7 @@ export class CatalogDatabase {
         "UPDATE library_roots SET last_scan_at = ? WHERE id = ?",
       ),
     };
-    this.interruptOrphanedJobs();
+    if (options.interruptOrphanedJobs !== false) this.interruptOrphanedJobs();
   }
 
   close(): void {
@@ -436,6 +461,24 @@ export class CatalogDatabase {
     modifiedMs: number,
     message: string,
   ): void {
+    this.upsertScanErrorInTransaction(
+      rootId,
+      path,
+      pathKey,
+      size,
+      modifiedMs,
+      message,
+    );
+  }
+
+  private upsertScanErrorInTransaction(
+    rootId: string,
+    path: string,
+    pathKey: string,
+    size: number,
+    modifiedMs: number,
+    message: string,
+  ): void {
     const existing = this.getFileByPathKey(pathKey);
     this.scanStatements.upsertScanError.run(
       existing?.id ?? randomUUID(),
@@ -456,23 +499,61 @@ export class CatalogDatabase {
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.nextChangedSequence.set(rootId, 0);
   }
 
   recordScanDiscoveryBatch(
     rootId: string,
     entries: readonly ScanDiscoveryEntry[],
-  ): void {
-    this.connection.transaction(() => {
+  ): ScanDiscoveryBatchResult {
+    const firstSequence = this.nextChangedSequence.get(rootId);
+    if (firstSequence === undefined)
+      throw new Error("Scan discovery was not initialized.");
+    let nextSequence = firstSequence;
+    const result = this.connection.transaction(() => {
+      let changed = 0;
+      let unchanged = 0;
       for (const entry of entries) {
-        this.scanStatements.insertSeenPath.run(rootId, entry.pathKey);
-        if (entry.changed)
-          this.scanStatements.insertChangedPath.run(
+        if (entry.kind === "directory-error") {
+          this.scanStatements.insertDirectoryError.run(
             rootId,
-            entry.changed.sequence,
-            entry.changed.path,
+            entry.path,
+            entry.pathKey,
+            entry.message,
           );
+          continue;
+        }
+        this.scanStatements.insertSeenPath.run(rootId, entry.pathKey);
+        if (entry.kind === "file-error") {
+          this.upsertScanErrorInTransaction(
+            rootId,
+            entry.path,
+            entry.pathKey,
+            0,
+            0,
+            entry.message,
+          );
+          continue;
+        }
+        const existing = this.getFileByPathKey(entry.pathKey);
+        if (
+          existing?.size === entry.size &&
+          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs)
+        ) {
+          unchanged++;
+          continue;
+        }
+        this.scanStatements.insertChangedPath.run(
+          rootId,
+          nextSequence++,
+          entry.path,
+        );
+        changed++;
       }
+      return { changed, unchanged };
     })();
+    this.nextChangedSequence.set(rootId, nextSequence);
+    return result;
   }
 
   listChangedScanPaths(
@@ -521,6 +602,7 @@ export class CatalogDatabase {
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.nextChangedSequence.delete(rootId);
   }
 
   abandonScan(rootId: string): void {
@@ -529,6 +611,7 @@ export class CatalogDatabase {
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.nextChangedSequence.delete(rootId);
   }
 
   listScanErrors(): readonly ScanErrorDto[] {

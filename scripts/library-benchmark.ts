@@ -12,6 +12,7 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CatalogDatabase } from "../src/main/adapters/database/catalog-database";
+import { WorkerScanCatalog } from "../src/main/adapters/database/worker-scan-catalog";
 import {
   NodeLibraryFileSystem,
   WorkerLibraryFileSystem,
@@ -38,7 +39,9 @@ export interface LibraryBenchmarkReport {
   readonly timingsMs: {
     readonly fixtureGeneration: number;
     readonly initialScan: number;
+    readonly initialScanMaxEventLoopDelay: number;
     readonly unchangedRescan: number;
+    readonly unchangedRescanMaxEventLoopDelay: number;
     readonly firstPageQuery: number;
     readonly searchQuery: number;
     readonly cancellation: number;
@@ -77,6 +80,31 @@ export interface RealMetadataBenchmarkReport {
 
 function elapsed(start: number): number {
   return Math.round((performance.now() - start) * 100) / 100;
+}
+
+async function measureEventLoopDelay<T>(
+  action: () => Promise<T>,
+): Promise<{ result: T; elapsedMs: number; maxDelayMs: number }> {
+  const intervalMs = 10;
+  let expected = performance.now() + intervalMs;
+  let maxDelayMs = 0;
+  const timer = setInterval(() => {
+    const now = performance.now();
+    maxDelayMs = Math.max(maxDelayMs, now - expected);
+    expected = now + intervalMs;
+  }, intervalMs);
+  const started = performance.now();
+  try {
+    const result = await action();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    return {
+      result,
+      elapsedMs: elapsed(started),
+      maxDelayMs: Math.round(maxDelayMs * 100) / 100,
+    };
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 async function boundedForEach<T>(
@@ -223,6 +251,7 @@ function terminalJob(coordinator: ScanJobCoordinator): Promise<ScanJobDto> {
 export async function runLibraryBenchmark(
   fileCount: number,
   fileSystem: LibraryFileSystem = new NodeLibraryFileSystem(),
+  scanDatabaseWorkerPath?: string,
 ): Promise<LibraryBenchmarkReport> {
   if (!Number.isInteger(fileCount) || fileCount < 1 || fileCount > 100_000)
     throw new Error(
@@ -243,6 +272,7 @@ export async function runLibraryBenchmark(
     sampleMemory();
   }, 20);
   let database: CatalogDatabase | undefined;
+  let workerScanCatalog: WorkerScanCatalog | undefined;
   try {
     const library = join(directory, "library");
     await mkdir(library);
@@ -253,21 +283,30 @@ export async function runLibraryBenchmark(
 
     const databasePath = join(directory, "catalog.sqlite3");
     database = new CatalogDatabase(databasePath);
+    workerScanCatalog = scanDatabaseWorkerPath
+      ? new WorkerScanCatalog(databasePath, resolve(scanDatabaseWorkerPath))
+      : undefined;
+    const scanCatalog = workerScanCatalog ?? database;
     const root = database.addLibraryRoot(library, pathComparisonKey(library));
     const scanner = new ScanLibrary(
       database,
       new SyntheticMetadataRunner(fileCount),
       fileSystem,
+      scanCatalog,
     );
-    started = performance.now();
-    const initialResult = await scanner.execute(root.id);
+    const initialMeasurement = await measureEventLoopDelay(() =>
+      scanner.execute(root.id),
+    );
+    const initialResult = initialMeasurement.result;
     sampleMemory();
-    const initialScan = elapsed(started);
+    const initialScan = initialMeasurement.elapsedMs;
 
-    started = performance.now();
-    const unchangedResult = await scanner.execute(root.id);
+    const unchangedMeasurement = await measureEventLoopDelay(() =>
+      scanner.execute(root.id),
+    );
+    const unchangedResult = unchangedMeasurement.result;
     sampleMemory();
-    const unchangedRescan = elapsed(started);
+    const unchangedRescan = unchangedMeasurement.elapsedMs;
 
     started = performance.now();
     const firstPage = database.queryLibrary({
@@ -291,7 +330,7 @@ export async function runLibraryBenchmark(
     const blocking = new BlockingMetadataRunner();
     const coordinator = new ScanJobCoordinator(
       database,
-      new ScanLibrary(database, blocking, fileSystem),
+      new ScanLibrary(database, blocking, fileSystem, scanCatalog),
     );
     const terminal = terminalJob(coordinator);
     const job = coordinator.start(root.id);
@@ -314,7 +353,9 @@ export async function runLibraryBenchmark(
       timingsMs: {
         fixtureGeneration,
         initialScan,
+        initialScanMaxEventLoopDelay: initialMeasurement.maxDelayMs,
         unchangedRescan,
+        unchangedRescanMaxEventLoopDelay: unchangedMeasurement.maxDelayMs,
         firstPageQuery,
         searchQuery,
         cancellation,
@@ -333,6 +374,7 @@ export async function runLibraryBenchmark(
     };
   } finally {
     clearInterval(memorySampler);
+    await workerScanCatalog?.close();
     database?.close();
     await rm(directory, { recursive: true, force: true });
   }
@@ -414,13 +456,28 @@ function requestedFileSystem(args: readonly string[]): LibraryFileSystem {
   return new WorkerLibraryFileSystem(resolve(workerPath));
 }
 
+function requestedScanDatabaseWorker(
+  args: readonly string[],
+): string | undefined {
+  const index = args.indexOf("--database-worker-path");
+  if (index === -1) return undefined;
+  const workerPath = args[index + 1];
+  if (!workerPath)
+    throw new Error("--database-worker-path requires a file path.");
+  return workerPath;
+}
+
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   const args = process.argv.slice(2);
   const realIndex = args.indexOf("--real-files");
   const benchmark =
     realIndex === -1
-      ? runLibraryBenchmark(requestedFileCount(args), requestedFileSystem(args))
+      ? runLibraryBenchmark(
+          requestedFileCount(args),
+          requestedFileSystem(args),
+          requestedScanDatabaseWorker(args),
+        )
       : runRealMetadataBenchmark(Number(args[realIndex + 1]));
   void benchmark
     .then((report) => console.log(JSON.stringify(report, null, 2)))
