@@ -130,7 +130,12 @@ describe("persistent scan jobs", () => {
     const discoveredPath = join(directory, "found.mp3");
     const fileSystem: LibraryFileSystem = {
       async *discover(_root, signal) {
-        yield { kind: "file", path: discoveredPath } as const;
+        yield {
+          kind: "file",
+          path: discoveredPath,
+          size: 1,
+          modifiedMs: 1,
+        } as const;
         await new Promise<void>((_resolve, reject) => {
           if (signal?.aborted) {
             reject(new DOMException("cancelled", "AbortError"));

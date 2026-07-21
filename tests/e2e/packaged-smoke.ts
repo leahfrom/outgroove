@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   if (exitCode !== 0 || !output.includes("OUTGROOVE_SMOKE_OK"))
     throw new Error(`Packaged smoke failed (${exitCode}).\n${output}`);
   console.log(
-    "Packaged app used an isolated profile, loaded the sandboxed renderer, parsed a fixture, verified a SQLite backup, and exited cleanly.",
+    "Packaged app used an isolated profile, loaded the sandboxed renderer, scanned fixtures through discovery and metadata workers, verified a SQLite backup, and exited cleanly.",
   );
 }
 

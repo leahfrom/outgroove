@@ -27,6 +27,10 @@ const config: ForgeConfig = {
           entry: "src/workers/metadata-worker.ts",
           config: "vite.worker.config.ts",
         },
+        {
+          entry: "src/workers/library-discovery-worker.ts",
+          config: "vite.worker.config.ts",
+        },
       ],
       renderer: [
         {

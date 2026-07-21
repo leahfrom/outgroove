@@ -166,7 +166,12 @@ describe("incremental library scan", () => {
     const partialFileSystem: LibraryFileSystem = {
       discover: () =>
         discovered(
-          { kind: "file", path: readablePath },
+          {
+            kind: "file",
+            path: readablePath,
+            size: 1,
+            modifiedMs: 1,
+          },
           {
             kind: "directory-error",
             path: join(library, "blocked"),
@@ -229,7 +234,12 @@ describe("incremental library scan", () => {
     );
     const inaccessiblePath = join(directory, "inaccessible.mp3");
     const fileSystem: LibraryFileSystem = {
-      discover: () => discovered({ kind: "file", path: inaccessiblePath }),
+      discover: () =>
+        discovered({
+          kind: "file-error",
+          path: inaccessiblePath,
+          message: "EACCES: fixture file",
+        }),
       statFile: () => Promise.reject(new Error("EACCES: fixture file")),
     };
     const processAll = vi.fn(() => Promise.resolve());
