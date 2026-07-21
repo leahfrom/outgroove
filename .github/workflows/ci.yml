@@ -6,10 +6,19 @@ on:
 
 jobs:
   verify-and-package:
+    name: Verify and package (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            platform: macOS
+          # better-sqlite3's current node-gyp does not yet recognize the
+          # Visual Studio 2026 toolchain on the moving windows-latest image.
+          - os: windows-2022
+            platform: Windows
+          - os: ubuntu-latest
+            platform: Linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

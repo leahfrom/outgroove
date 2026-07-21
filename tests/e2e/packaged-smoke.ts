@@ -8,8 +8,8 @@ async function main(): Promise<void> {
       ? join(
           process.cwd(),
           "out",
-          `Outgroove-darwin-${process.arch}`,
-          "Outgroove.app",
+          `outgroove-darwin-${process.arch}`,
+          "outgroove.app",
           "Contents",
           "MacOS",
           "Outgroove",
@@ -18,14 +18,14 @@ async function main(): Promise<void> {
         ? join(
             process.cwd(),
             "out",
-            `Outgroove-win32-${process.arch}`,
+            `outgroove-win32-${process.arch}`,
             "Outgroove.exe",
           )
         : join(
             process.cwd(),
             "out",
-            `Outgroove-linux-${process.arch}`,
-            "outgroove",
+            `outgroove-linux-${process.arch}`,
+            "Outgroove",
           );
 
   await access(executable);
