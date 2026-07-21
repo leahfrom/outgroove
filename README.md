@@ -46,6 +46,23 @@ npm run make           # ZIP artifact for the current platform
 npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
 ```
 
+Windows CI also opens fixture files from a separate PowerShell process with an
+exclusive `FileShare.None` lock. It verifies that a locked metadata source and
+a locked manifest-owned sync destination fail without changing the existing
+file or advancing the manifest.
+
+The real-volume exFAT conformance probe is intentionally manual. It requires an
+exact absolute path to an explicitly authorized disposable exFAT target:
+
+```sh
+npm run test:exfat -- --target "/absolute/path/to/disposable-target" --confirm-disposable-exfat-probe
+```
+
+The command verifies the detected filesystem before writing, creates one
+unique `.outgroove-exfat-probe-*` child directory, uses only generated fixtures,
+and removes only that directory. Do not point it at a real music library or an
+unbacked-up card. See [the filesystem conformance procedure](docs/filesystem-conformance.md).
+
 Development uses Gitflow and stable semantic versions. Start feature, release,
 and hotfix branches with the guarded npm commands documented in
 [CONTRIBUTING.md](CONTRIBUTING.md); CI rejects pull requests that bypass the
@@ -103,4 +120,5 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is manual Windows locking and exFAT verification—not online metadata or mirror deletion.
+The next smallest valuable slice after running the manual exFAT matrix is a
+larger-library responsiveness benchmark—not online metadata or mirror deletion.
