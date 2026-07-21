@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  albumEditHistoryRequestSchema,
+  albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
@@ -93,6 +95,37 @@ describe("validated IPC handlers", () => {
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects arbitrary fields and malformed ids on edit history and undo requests", async () => {
+    const useCase = vi.fn();
+    const history = createValidatedHandler(
+      albumEditHistoryRequestSchema,
+      useCase,
+    );
+    const undo = createValidatedHandler(
+      albumEditUndoPreviewRequestSchema,
+      useCase,
+    );
+    await expect(
+      history(
+        {},
+        {
+          albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          filePath: "/arbitrary/file.mp3",
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    await expect(
+      undo({}, { operationId: "not-a-uuid" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
     expect(useCase).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import type {
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
+  TagEditHistoryItemDto,
   TagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
@@ -34,6 +35,10 @@ export function App(): React.JSX.Element {
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
+  const [editHistory, setEditHistory] = useState<
+    readonly TagEditHistoryItemDto[]
+  >([]);
+  const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -82,6 +87,15 @@ export function App(): React.JSX.Element {
     } else setNotice(result.error.message);
   }, [libraryView, pageOffset, query]);
 
+  const refreshEditHistory = useCallback(
+    async (albumId: string): Promise<void> => {
+      const result = await window.outgroove.listAlbumEditHistory({ albumId });
+      if (result.ok) setEditHistory(result.value);
+      else setNotice(result.error.message);
+    },
+    [],
+  );
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -117,6 +131,25 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
+  useEffect(() => {
+    if (!selectedAlbumId) {
+      setEditHistory([]);
+      return;
+    }
+    let current = true;
+    setEditPreview(undefined);
+    setUndoPreview(undefined);
+    void window.outgroove
+      .listAlbumEditHistory({ albumId: selectedAlbumId })
+      .then((result) => {
+        if (!current) return;
+        if (result.ok) setEditHistory(result.value);
+        else setNotice(result.error.message);
+      });
+    return () => {
+      current = false;
+    };
+  }, [selectedAlbumId]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
     const started = await window.outgroove.scanLibrary({
@@ -212,8 +245,10 @@ export function App(): React.JSX.Element {
       albumId: selectedAlbum.id,
       proposedTitle: editTitle,
     });
-    if (result.ok) setEditPreview(result.value);
-    else setNotice(result.error.message);
+    if (result.ok) {
+      setUndoPreview(undefined);
+      setEditPreview(result.value);
+    } else setNotice(result.error.message);
   };
 
   const applyEdit = async (): Promise<void> => {
@@ -234,6 +269,41 @@ export function App(): React.JSX.Element {
         setEditPreview(undefined);
         setEditTitle("");
         await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewUndo = async (operationId: string): Promise<void> => {
+    const result = await window.outgroove.previewAlbumTitleUndo({
+      operationId,
+    });
+    if (result.ok) {
+      setEditPreview(undefined);
+      setUndoPreview(result.value);
+    } else setNotice(result.error.message);
+  };
+
+  const applyUndo = async (): Promise<void> => {
+    if (!undoPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyAlbumTitleUndo({
+        operationId: undoPreview.operationId,
+        confirmationToken: undoPreview.confirmationToken,
+      });
+      if (result.ok) {
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Verified undo for ${result.value.results.length} files.`
+            : `${failures.length} files were not undone. Conflicts or verification failures remain visible in history.`,
+        );
+        setUndoPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -552,6 +622,102 @@ export function App(): React.JSX.Element {
                         </button>
                         <button onClick={() => setEditPreview(undefined)}>
                           Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div
+                    className="history"
+                    aria-label="Album-title edit history"
+                  >
+                    <h4>Edit history</h4>
+                    {editHistory.length === 0 ? (
+                      <p>No confirmed edits for this album yet.</p>
+                    ) : (
+                      <ol>
+                        {editHistory.map((item) => (
+                          <li key={item.operationId}>
+                            <div>
+                              <strong>
+                                {item.kind === "album-title-edit"
+                                  ? `Changed title to “${item.proposedTitle}”`
+                                  : `Restored “${item.proposedTitle}”`}
+                              </strong>
+                              <span>
+                                {item.state}; {item.verifiedFiles} verified
+                                {item.failedFiles > 0
+                                  ? `, ${item.failedFiles} failed`
+                                  : ""}{" "}
+                                ·{" "}
+                                <time
+                                  dateTime={item.completedAt ?? item.createdAt}
+                                >
+                                  {new Date(
+                                    item.completedAt ?? item.createdAt,
+                                  ).toLocaleString()}
+                                </time>
+                              </span>
+                            </div>
+                            {item.kind === "album-title-edit" &&
+                              item.verifiedFiles > 0 && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void previewUndo(item.operationId)
+                                  }
+                                >
+                                  Preview undo
+                                </button>
+                              )}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                  {undoPreview && (
+                    <div className="preview" aria-label="Tag undo confirmation">
+                      <h4>Review undo before writing</h4>
+                      <p>
+                        No file has changed yet. Undo only proceeds when the
+                        current album title still matches the verified edit.
+                        Each file is snapshotted, safely written, re-read, and
+                        verified again.
+                      </p>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>File</th>
+                            <th>Current</th>
+                            <th>Restore</th>
+                            <th>Conflicts</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {undoPreview.files.map((file) => (
+                            <tr key={file.fileId}>
+                              <td>{file.path}</td>
+                              <td>{file.before}</td>
+                              <td>{file.after}</td>
+                              <td>{file.warnings.join("; ") || "None"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="actions">
+                        <button
+                          className="primary"
+                          disabled={
+                            busy ||
+                            undoPreview.files.some(
+                              (file) => file.warnings.length > 0,
+                            )
+                          }
+                          onClick={() => void applyUndo()}
+                        >
+                          Confirm and undo {undoPreview.files.length} files
+                        </button>
+                        <button onClick={() => setUndoPreview(undefined)}>
+                          Cancel undo
                         </button>
                       </div>
                     </div>

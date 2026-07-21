@@ -31,11 +31,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the shipped edit-undo migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "006_edit_undo.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 6);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(5);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(6);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -94,7 +106,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      5,
+      6,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -136,7 +148,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      5,
+      6,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -167,7 +179,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      5,
+      6,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -220,7 +232,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      5,
+      6,
     );
     expect(
       migrated.queryLibrary({
@@ -236,6 +248,78 @@ describe("database migration and backup", () => {
         .pluck()
         .get(),
     ).toBe(1);
+    migrated.close();
+  });
+
+  it("upgrades the released v5 edit history without losing snapshots", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v5-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 5))
+      legacy.exec(migration.sql);
+    legacy.pragma("user_version = 5");
+    legacy
+      .prepare(
+        "INSERT INTO library_roots (id, path, path_key, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run("root", "/fixture/library", "/fixture/library", "2026-01-01");
+    legacy
+      .prepare(
+        "INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)",
+      )
+      .run("album", "fixture-album", "Edited Album", "Fixture Artist");
+    const tags = {
+      title: "Track",
+      album: "Edited Album",
+      artist: "Fixture Artist",
+      albumArtist: "Fixture Artist",
+    };
+    legacy
+      .prepare(
+        `INSERT INTO audio_files
+         (id, root_id, path, path_key, size, modified_ms, signature, format, normalized_tags_json, scan_state, scanned_at)
+         VALUES ('file', 'root', '/fixture/library/track.mp3', '/fixture/library/track.mp3', 1, 1, '1:1', 'MP3', ?, 'ok', '2026-01-01')`,
+      )
+      .run(JSON.stringify(tags));
+    legacy
+      .prepare(
+        "INSERT INTO tracks (id, file_id, album_id, title) VALUES ('track', 'file', 'album', 'Track')",
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at, completed_at)
+         VALUES ('operation', 'album', 'Edited Album', 'hash', 'completed', '2026-01-01', '2026-01-01')`,
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO tag_snapshots
+         (id, operation_id, file_id, before_tags_json, after_tags_json, verified)
+         VALUES ('snapshot', 'operation', 'file', ?, ?, 1)`,
+      )
+      .run(
+        JSON.stringify({ ...tags, album: "Original Album" }),
+        JSON.stringify(tags),
+      );
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      6,
+    );
+    expect(migrated.getEditOperation("operation")).toMatchObject({
+      kind: "album-title-edit",
+      source_operation_id: null,
+    });
+    expect(migrated.listEditHistory("album")).toMatchObject([
+      { operationId: "operation", verifiedFiles: 1, failedFiles: 0 },
+    ]);
+    expect(migrated.listSnapshots("operation")[0]?.before.album).toBe(
+      "Original Album",
+    );
     migrated.close();
   });
 
