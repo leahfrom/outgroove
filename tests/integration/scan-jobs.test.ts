@@ -41,7 +41,9 @@ describe("persistent scan jobs", () => {
       directory,
       pathComparisonKey(directory),
     );
-    const runner: MetadataJobRunner = { readAll: () => Promise.resolve([]) };
+    const runner: MetadataJobRunner = {
+      processAll: () => Promise.resolve(),
+    };
     const coordinator = new ScanJobCoordinator(
       database,
       new ScanLibrary(database, runner),
@@ -68,7 +70,7 @@ describe("persistent scan jobs", () => {
       pathComparisonKey(directory),
     );
     const runner: MetadataJobRunner = {
-      readAll: (_paths, _onItem, signal) =>
+      processAll: (_paths, _onResult, _onItem, signal) =>
         new Promise((_resolve, reject) =>
           signal?.addEventListener(
             "abort",

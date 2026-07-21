@@ -1,10 +1,18 @@
 import { performance } from "node:perf_hooks";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdtemp,
+  mkdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CatalogDatabase } from "../src/main/adapters/database/catalog-database";
+import { MusicMetadataReader } from "../src/main/adapters/metadata/metadata-reader";
 import {
   pathComparisonKey,
   ScanLibrary,
@@ -13,6 +21,7 @@ import type {
   MetadataJobResult,
   MetadataJobRunner,
 } from "../src/main/jobs/metadata-runner";
+import { LocalMetadataJobRunner } from "../src/main/jobs/metadata-runner";
 import { ScanJobCoordinator } from "../src/main/jobs/scan-job-coordinator";
 import type { ScanJobDto } from "../src/shared/contracts/api";
 
@@ -45,6 +54,20 @@ export interface LibraryBenchmarkReport {
   readonly searchItems: number;
   readonly baselineRssBytes: number;
   readonly peakRssBytes: number;
+  readonly baselineHeapUsedBytes: number;
+  readonly peakHeapUsedBytes: number;
+  readonly databaseBytes: number;
+}
+
+export interface RealMetadataBenchmarkReport {
+  readonly files: number;
+  readonly initialScanMs: number;
+  readonly unchangedRescanMs: number;
+  readonly parsed: number;
+  readonly unchanged: number;
+  readonly errors: number;
+  readonly peakRssBytes: number;
+  readonly peakHeapUsedBytes: number;
 }
 
 function elapsed(start: number): number {
@@ -94,16 +117,12 @@ function indexFromPath(path: string): number {
 }
 
 class SyntheticMetadataRunner implements MetadataJobRunner {
-  async readAll(
+  async processAll(
     paths: readonly string[],
+    onResult: (result: MetadataJobResult) => void | Promise<void>,
     onItem: (completed: number, total: number, path: string) => void,
     signal?: AbortSignal,
-  ): Promise<readonly MetadataJobResult[]> {
-    const results: MetadataJobResult[] = paths.map((path) => ({
-      ok: false,
-      path,
-      error: "Pending",
-    }));
+  ): Promise<void> {
     let next = 0;
     let completed = 0;
     const work = async (): Promise<void> => {
@@ -115,7 +134,7 @@ class SyntheticMetadataRunner implements MetadataJobRunner {
         if (!path) continue;
         const itemIndex = indexFromPath(path);
         const info = await stat(path);
-        results[index] = {
+        const result: MetadataJobResult = {
           ok: true,
           file: {
             path,
@@ -138,11 +157,12 @@ class SyntheticMetadataRunner implements MetadataJobRunner {
             nativeTags: [],
           },
         };
+        const pending = onResult(result);
+        if (pending !== undefined) await pending;
         onItem(++completed, paths.length, path);
       }
     };
     await Promise.all(Array.from({ length: Math.min(16, paths.length) }, work));
-    return results;
   }
 }
 
@@ -152,11 +172,12 @@ class BlockingMetadataRunner implements MetadataJobRunner {
     this.startedResolve = resolve;
   });
 
-  readAll(
+  processAll(
     _paths: readonly string[],
+    _onResult: (result: MetadataJobResult) => void | Promise<void>,
     _onItem: (completed: number, total: number, path: string) => void,
     signal?: AbortSignal,
-  ): Promise<readonly MetadataJobResult[]> {
+  ): Promise<void> {
     this.startedResolve?.();
     return new Promise((_resolve, reject) => {
       if (signal?.aborted) {
@@ -191,10 +212,15 @@ export async function runLibraryBenchmark(
       "Benchmark file count must be an integer from 1 to 100000.",
     );
   const directory = await mkdtemp(join(tmpdir(), "outgroove-benchmark-"));
-  const baselineRssBytes = process.memoryUsage().rss;
+  const baselineMemory = process.memoryUsage();
+  const baselineRssBytes = baselineMemory.rss;
+  const baselineHeapUsedBytes = baselineMemory.heapUsed;
   let peakRssBytes = baselineRssBytes;
+  let peakHeapUsedBytes = baselineHeapUsedBytes;
   const sampleMemory = (): void => {
-    peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
+    const memory = process.memoryUsage();
+    peakRssBytes = Math.max(peakRssBytes, memory.rss);
+    peakHeapUsedBytes = Math.max(peakHeapUsedBytes, memory.heapUsed);
   };
   const memorySampler = setInterval(() => {
     sampleMemory();
@@ -208,7 +234,8 @@ export async function runLibraryBenchmark(
     sampleMemory();
     const fixtureGeneration = elapsed(started);
 
-    database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const databasePath = join(directory, "catalog.sqlite3");
+    database = new CatalogDatabase(databasePath);
     const root = database.addLibraryRoot(library, pathComparisonKey(library));
     const scanner = new ScanLibrary(database, new SyntheticMetadataRunner());
     started = performance.now();
@@ -281,9 +308,75 @@ export async function runLibraryBenchmark(
       searchItems: search.albums.length,
       baselineRssBytes,
       peakRssBytes,
+      baselineHeapUsedBytes,
+      peakHeapUsedBytes,
+      databaseBytes: (await stat(databasePath)).size,
     };
   } finally {
     clearInterval(memorySampler);
+    database?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+export async function runRealMetadataBenchmark(
+  fileCount: number,
+): Promise<RealMetadataBenchmarkReport> {
+  if (!Number.isInteger(fileCount) || fileCount < 1 || fileCount > 5_000)
+    throw new Error(
+      "Real metadata file count must be an integer from 1 to 5000.",
+    );
+  const directory = await mkdtemp(
+    join(tmpdir(), "outgroove-metadata-benchmark-"),
+  );
+  let peakRssBytes = process.memoryUsage().rss;
+  let peakHeapUsedBytes = process.memoryUsage().heapUsed;
+  const sampleMemory = (): void => {
+    const memory = process.memoryUsage();
+    peakRssBytes = Math.max(peakRssBytes, memory.rss);
+    peakHeapUsedBytes = Math.max(peakHeapUsedBytes, memory.heapUsed);
+  };
+  const sampler = setInterval(sampleMemory, 20);
+  let database: CatalogDatabase | undefined;
+  try {
+    const library = join(directory, "library");
+    await mkdir(library);
+    const paths = Array.from({ length: fileCount }, (_, index) =>
+      join(library, `fixture-${String(index).padStart(5, "0")}.mp3`),
+    );
+    const fixture = join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.mp3",
+    );
+    await boundedForEach(paths, 32, (path) => copyFile(fixture, path));
+    database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(library, pathComparisonKey(library));
+    const scanner = new ScanLibrary(
+      database,
+      new LocalMetadataJobRunner(new MusicMetadataReader(), 2),
+    );
+    let started = performance.now();
+    const initial = await scanner.execute(root.id);
+    sampleMemory();
+    const initialScanMs = elapsed(started);
+    started = performance.now();
+    const repeated = await scanner.execute(root.id);
+    sampleMemory();
+    return {
+      files: fileCount,
+      initialScanMs,
+      unchangedRescanMs: elapsed(started),
+      parsed: initial.parsed,
+      unchanged: repeated.unchanged,
+      errors: initial.errors + repeated.errors,
+      peakRssBytes,
+      peakHeapUsedBytes,
+    };
+  } finally {
+    clearInterval(sampler);
     database?.close();
     await rm(directory, { recursive: true, force: true });
   }
@@ -296,7 +389,13 @@ function requestedFileCount(args: readonly string[]): number {
 
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
-  void runLibraryBenchmark(requestedFileCount(process.argv.slice(2)))
+  const args = process.argv.slice(2);
+  const realIndex = args.indexOf("--real-files");
+  const benchmark =
+    realIndex === -1
+      ? runLibraryBenchmark(requestedFileCount(args))
+      : runRealMetadataBenchmark(Number(args[realIndex + 1]));
+  void benchmark
     .then((report) => console.log(JSON.stringify(report, null, 2)))
     .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));

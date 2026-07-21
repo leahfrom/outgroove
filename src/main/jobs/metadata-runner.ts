@@ -8,12 +8,21 @@ export type MetadataJobResult =
   | { ok: true; file: ScannedAudioFile }
   | { ok: false; path: string; error: string };
 
+export type MetadataResultConsumer = (
+  result: MetadataJobResult,
+) => void | Promise<void>;
+
 export interface MetadataJobRunner {
-  readAll(
+  processAll(
     paths: readonly string[],
+    onResult: MetadataResultConsumer,
     onItem: (completed: number, total: number, path: string) => void,
     signal?: AbortSignal,
-  ): Promise<readonly MetadataJobResult[]>;
+  ): Promise<void>;
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 export class LocalMetadataJobRunner implements MetadataJobRunner {
@@ -22,101 +31,138 @@ export class LocalMetadataJobRunner implements MetadataJobRunner {
     private readonly concurrency = 2,
   ) {}
 
-  async readAll(
+  async processAll(
     paths: readonly string[],
+    onResult: MetadataResultConsumer,
     onItem: (completed: number, total: number, path: string) => void,
     signal?: AbortSignal,
-  ): Promise<readonly MetadataJobResult[]> {
-    const results: MetadataJobResult[] = paths.map((path) => ({
-      ok: false,
-      path,
-      error: "Pending",
-    }));
+  ): Promise<void> {
     let next = 0;
     let completed = 0;
+    const state: { failure: Error | null } = { failure: null };
+    const hasFailed = (): boolean => state.failure !== null;
     const work = async (): Promise<void> => {
-      while (next < paths.length) {
-        if (signal?.aborted)
-          throw new DOMException("Scan cancelled", "AbortError");
+      while (next < paths.length && state.failure === null) {
+        if (signal?.aborted) {
+          state.failure = new DOMException("Scan cancelled", "AbortError");
+          return;
+        }
         const index = next++;
         const path = paths[index];
         if (!path) continue;
+        let result: MetadataJobResult;
         try {
-          results[index] = { ok: true, file: await this.reader.read(path) };
+          result = { ok: true, file: await this.reader.read(path) };
         } catch (error) {
-          results[index] = {
+          result = {
             ok: false,
             path,
             error: error instanceof Error ? error.message : String(error),
           };
         }
-        onItem(++completed, paths.length, path);
+        if (signal?.aborted) {
+          state.failure = new DOMException("Scan cancelled", "AbortError");
+          return;
+        }
+        if (hasFailed()) return;
+        try {
+          const pending = onResult(result);
+          if (pending !== undefined) await pending;
+          onItem(++completed, paths.length, path);
+        } catch (error) {
+          state.failure = asError(error);
+        }
       }
     };
     await Promise.all(
       Array.from({ length: Math.min(this.concurrency, paths.length) }, work),
     );
-    return results;
+    if (state.failure !== null) throw state.failure;
   }
 }
 
 export class WorkerMetadataJobRunner implements MetadataJobRunner {
-  async readAll(
+  async processAll(
     paths: readonly string[],
+    onResult: MetadataResultConsumer,
     onItem: (completed: number, total: number, path: string) => void,
     signal?: AbortSignal,
-  ): Promise<readonly MetadataJobResult[]> {
-    if (paths.length === 0) return [];
+  ): Promise<void> {
+    if (paths.length === 0) return;
     const workers = Array.from(
       { length: Math.min(2, paths.length) },
       () => new Worker(join(__dirname, "metadata-worker.js")),
     );
-    const results: MetadataJobResult[] = paths.map((path) => ({
-      ok: false,
-      path,
-      error: "Pending",
-    }));
     let next = 0;
     let completed = 0;
-    await new Promise<void>((resolve, reject) => {
-      const abort = (): void => {
-        reject(new DOMException("Scan cancelled", "AbortError"));
-      };
-      signal?.addEventListener("abort", abort, { once: true });
-      const dispatch = (worker: Worker): void => {
-        if (signal?.aborted) {
+    const state: { failure: Error | null } = { failure: null };
+    const hasFailed = (): boolean => state.failure !== null;
+    const request = (
+      worker: Worker,
+      id: string,
+      path: string,
+    ): Promise<{ ok: boolean; file?: ScannedAudioFile; error?: string }> =>
+      new Promise((resolve, reject) => {
+        const cleanup = (): void => {
+          worker.off("message", message);
+          worker.off("error", failed);
+          signal?.removeEventListener("abort", abort);
+        };
+        const message = (result: {
+          ok: boolean;
+          file?: ScannedAudioFile;
+          error?: string;
+        }): void => {
+          cleanup();
+          resolve(result);
+        };
+        const failed = (error: Error): void => {
+          cleanup();
+          reject(error);
+        };
+        const abort = (): void => {
+          cleanup();
           reject(new DOMException("Scan cancelled", "AbortError"));
+        };
+        worker.once("message", message);
+        worker.once("error", failed);
+        signal?.addEventListener("abort", abort, { once: true });
+        try {
+          worker.postMessage({ id, path });
+        } catch (error) {
+          cleanup();
+          reject(asError(error));
+        }
+      });
+    const work = async (worker: Worker): Promise<void> => {
+      while (next < paths.length && state.failure === null) {
+        if (signal?.aborted) {
+          state.failure = new DOMException("Scan cancelled", "AbortError");
           return;
         }
         const index = next++;
         const path = paths[index];
-        if (!path) {
-          if (completed === paths.length) resolve();
-          return;
+        if (!path) continue;
+        try {
+          const message = await request(worker, String(index), path);
+          if (hasFailed()) return;
+          const result: MetadataJobResult =
+            message.ok && message.file
+              ? { ok: true, file: message.file }
+              : { ok: false, path, error: message.error ?? "Worker failed" };
+          const pending = onResult(result);
+          if (pending !== undefined) await pending;
+          onItem(++completed, paths.length, path);
+        } catch (error) {
+          state.failure = asError(error);
         }
-        worker.once(
-          "message",
-          (message: {
-            ok: boolean;
-            file?: ScannedAudioFile;
-            error?: string;
-          }) => {
-            results[index] =
-              message.ok && message.file
-                ? { ok: true, file: message.file }
-                : { ok: false, path, error: message.error ?? "Worker failed" };
-            onItem(++completed, paths.length, path);
-            if (completed === paths.length) resolve();
-            else dispatch(worker);
-          },
-        );
-        worker.once("error", reject);
-        worker.postMessage({ id: String(index), path });
-      };
-      workers.forEach(dispatch);
-    }).finally(async () => {
+      }
+    };
+    try {
+      await Promise.all(workers.map(work));
+      if (state.failure !== null) throw state.failure;
+    } finally {
       await Promise.all(workers.map((worker) => worker.terminate()));
-    });
-    return results;
+    }
   }
 }

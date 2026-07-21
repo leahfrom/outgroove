@@ -15,9 +15,10 @@ commands whose JSON output should be retained when investigating a regression.
 ```sh
 npm run benchmark:library
 npm run benchmark:library:100k
+npm run benchmark:metadata
 ```
 
-Both commands create and remove their own OS-temporary directory. The 100,000
+All commands create and remove their own OS-temporary directory. The 100,000
 profile is opt-in because creating that many directory entries is inappropriate
 for routine CI.
 
@@ -68,7 +69,31 @@ enumeration-cancellation latency.
 ## Remaining limit
 
 The run completes and the unchanged path is materially faster, but the observed
-peak is too high for a final large-library claim. `MetadataJobRunner.readAll` and
-`ScanLibrary` still retain complete path and result arrays. The next focused
-performance change should stream bounded metadata-result batches into the
-catalog, then add a smaller profile that parses real redistributable fixtures.
+peak is too high for a final large-library claim. Complete path, changed-path,
+and seen-path arrays are still retained for a scan.
+
+## Streaming-result experiment
+
+`MetadataJobRunner` now delivers each result to an async consumer with
+backpressure. Both local and worker-thread implementations retain only their
+active concurrency window, and `ScanLibrary` commits each bounded catalog batch
+as results arrive. A regression test blocks both consumers and proves a
+concurrency-two runner performs no additional reads until they resume.
+
+This removed the complete metadata-result array, but subsequent 100,000-file
+runs measured approximately 538–613 MiB peak RSS—overlapping the earlier
+572–608 MiB range. Result retention was therefore not the dominant RSS cost.
+The latest instrumented run measured 389 MiB peak JavaScript heap and a 150 MiB
+SQLite file. Replacing the remaining complete path arrays without weakening
+deterministic discovery or missing-file safety is the next evidence-backed
+performance task.
+
+## Real metadata parsing profile
+
+`npm run benchmark:metadata` copies the redistributable preservation MP3 1,000
+times into a temporary library and parses it through `music-metadata` with the
+streaming local runner. The first observed macOS arm64 run parsed all 1,000
+files without errors in 3.36 s; the unchanged rescan took 29 ms. Peak process
+RSS was approximately 133 MiB and peak JavaScript heap was 27 MiB. This is a
+repeatable adapter-through-catalog profile, not a claim about the variety or
+storage latency of a real 1,000-file collection.

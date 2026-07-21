@@ -46,6 +46,7 @@ npm run make           # ZIP artifact for the current platform
 npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
 npm run benchmark:library # temporary 5,000-file synthetic catalog benchmark
 npm run benchmark:library:100k # opt-in 100,000-file synthetic benchmark
+npm run benchmark:metadata # parse 1,000 copied redistributable MP3 fixtures
 ```
 
 Windows CI also opens fixture files from a separate PowerShell process with an
@@ -116,7 +117,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
 - Scan jobs persist progress and terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
-- macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs are configured in CI; Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
+- macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs run in CI; manual packaged Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
 
 ## Repository boundaries
@@ -129,7 +130,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next performance slice is streaming metadata results into bounded catalog
-batches to lower 100,000-file peak memory, plus a smaller real-fixture parsing
-profile. The manual exFAT matrix also remains pending; neither requires online
-metadata or mirror deletion.
+The next performance slice is streaming discovery/path state instead of
+retaining complete path, changed-path, and seen-path arrays. Metadata results
+are now backpressured, but the 100,000-file measurement shows they were not the
+dominant RSS cost. The manual exFAT matrix also remains pending.
