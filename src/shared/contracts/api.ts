@@ -156,7 +156,11 @@ export interface TrackTagEditPreviewDto {
 }
 export interface TagEditHistoryItemDto {
   readonly operationId: string;
-  readonly kind: "album-title-edit" | "album-title-undo" | "track-tags-edit";
+  readonly kind:
+    | "album-title-edit"
+    | "album-title-undo"
+    | "track-tags-edit"
+    | "track-tags-undo";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -229,6 +233,12 @@ export interface OutgrooveApi {
     request: z.infer<typeof trackTagEditPreviewRequestSchema>,
   ): Promise<Result<TrackTagEditPreviewDto>>;
   applyTrackTagEdit(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewTrackTagUndo(
+    request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
+  ): Promise<Result<TrackTagEditPreviewDto>>;
+  applyTrackTagUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

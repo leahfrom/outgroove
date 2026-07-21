@@ -51,6 +51,8 @@ export function App(): React.JSX.Element {
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [trackUndoPreview, setTrackUndoPreview] =
+    useState<TrackTagEditPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -157,6 +159,7 @@ export function App(): React.JSX.Element {
     setUndoPreview(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
+    setTrackUndoPreview(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
@@ -331,6 +334,7 @@ export function App(): React.JSX.Element {
   const editTrack = (track: CatalogAlbum["tracks"][number]): void => {
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
+    setTrackUndoPreview(undefined);
     setTrackDraft({
       title: track.tags.title,
       artist: track.tags.artist,
@@ -380,6 +384,42 @@ export function App(): React.JSX.Element {
         if (written?.verified) {
           setTrackEditPreview(undefined);
           setSelectedTrackId(undefined);
+          await refreshCatalog();
+          if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+        }
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewTrackUndo = async (operationId: string): Promise<void> => {
+    const result = await window.outgroove.previewTrackTagUndo({ operationId });
+    if (result.ok) {
+      setEditPreview(undefined);
+      setUndoPreview(undefined);
+      setTrackEditPreview(undefined);
+      setTrackUndoPreview(result.value);
+    } else setNotice(result.error.message);
+  };
+
+  const applyTrackUndo = async (): Promise<void> => {
+    if (!trackUndoPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackTagUndo({
+        operationId: trackUndoPreview.operationId,
+        confirmationToken: trackUndoPreview.confirmationToken,
+      });
+      if (result.ok) {
+        const written = result.value.results[0];
+        setNotice(
+          written?.verified
+            ? "Track metadata undo was re-read and verified."
+            : `Track metadata was not undone: ${written?.error ?? "verification failed"}`,
+        );
+        if (written?.verified) {
+          setTrackUndoPreview(undefined);
           await refreshCatalog();
           if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
         }
@@ -908,6 +948,17 @@ export function App(): React.JSX.Element {
                                   Preview undo
                                 </button>
                               )}
+                            {item.kind === "track-tags-edit" &&
+                              item.verifiedFiles > 0 && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void previewTrackUndo(item.operationId)
+                                  }
+                                >
+                                  Preview track undo
+                                </button>
+                              )}
                           </li>
                         ))}
                       </ol>
@@ -957,6 +1008,57 @@ export function App(): React.JSX.Element {
                         </button>
                         <button onClick={() => setUndoPreview(undefined)}>
                           Cancel undo
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {trackUndoPreview && (
+                    <div
+                      className="preview"
+                      aria-label="Track metadata undo confirmation"
+                    >
+                      <h4>Review track undo before writing</h4>
+                      <p>
+                        No file has changed yet. Only fields recorded by the
+                        original edit will be restored. Undo refuses to
+                        overwrite a field changed after that edit.
+                      </p>
+                      <p>{trackUndoPreview.path}</p>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Field</th>
+                            <th>Current</th>
+                            <th>Restore</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trackUndoPreview.changes.map((change) => (
+                            <tr key={change.field}>
+                              <td>{change.field}</td>
+                              <td>{change.before ?? "Not set"}</td>
+                              <td>{change.after ?? "Not set"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {trackUndoPreview.warnings.map((warning) => (
+                        <p key={warning} role="alert">
+                          {warning}
+                        </p>
+                      ))}
+                      <div className="actions">
+                        <button
+                          className="primary"
+                          disabled={
+                            busy || trackUndoPreview.warnings.length > 0
+                          }
+                          onClick={() => void applyTrackUndo()}
+                        >
+                          Confirm and undo track fields
+                        </button>
+                        <button onClick={() => setTrackUndoPreview(undefined)}>
+                          Cancel track undo
                         </button>
                       </div>
                     </div>

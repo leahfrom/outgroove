@@ -218,6 +218,25 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.previewTrackTagUndo,
+    createValidatedHandler(
+      albumEditUndoPreviewRequestSchema,
+      ({ operationId }) => dependencies.trackEditor.previewUndo(operationId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyTrackTagUndo,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.trackEditor.applyUndo(
+          operationId,
+          confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
     channels.createSyncProfile,
     createValidatedHandler(
       syncProfileRequestSchema,
