@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import type {
   LibraryPageDto,
   LibraryRootDto,
+  ScanErrorDto,
   ScanJobDto,
   ScanJobState,
   ScanResultDto,
@@ -61,6 +62,11 @@ interface ScanStatements {
   readonly clearChangedPaths: Database.Statement;
   readonly insertChangedPath: Database.Statement;
   readonly listChangedPaths: Database.Statement;
+  readonly clearDirectoryErrors: Database.Statement;
+  readonly insertDirectoryError: Database.Statement;
+  readonly countDirectoryErrors: Database.Statement;
+  readonly deletePublishedDirectoryErrors: Database.Statement;
+  readonly publishDirectoryErrors: Database.Statement;
   readonly markMissingFiles: Database.Statement;
   readonly finishLibraryRoot: Database.Statement;
 }
@@ -119,6 +125,13 @@ export class CatalogDatabase {
         path TEXT NOT NULL,
         PRIMARY KEY (root_id, sequence)
       ) WITHOUT ROWID;
+      CREATE TEMP TABLE scan_directory_errors_staging (
+        root_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        path_key TEXT NOT NULL,
+        message TEXT NOT NULL,
+        PRIMARY KEY (root_id, path_key)
+      ) WITHOUT ROWID;
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
@@ -165,6 +178,23 @@ export class CatalogDatabase {
       listChangedPaths: this.connection.prepare(
         `SELECT sequence, path FROM scan_changed_paths
          WHERE root_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`,
+      ),
+      clearDirectoryErrors: this.connection.prepare(
+        "DELETE FROM scan_directory_errors_staging WHERE root_id = ?",
+      ),
+      insertDirectoryError: this.connection.prepare(
+        `INSERT INTO scan_directory_errors_staging (root_id, path, path_key, message)
+         VALUES (?, ?, ?, ?) ON CONFLICT(root_id, path_key) DO UPDATE SET path=excluded.path, message=excluded.message`,
+      ),
+      countDirectoryErrors: this.connection.prepare(
+        "SELECT COUNT(*) FROM scan_directory_errors_staging WHERE root_id = ?",
+      ),
+      deletePublishedDirectoryErrors: this.connection.prepare(
+        "DELETE FROM scan_directory_errors WHERE root_id = ?",
+      ),
+      publishDirectoryErrors: this.connection.prepare(
+        `INSERT INTO scan_directory_errors (root_id, path, path_key, message, scanned_at)
+         SELECT root_id, path, path_key, message, ? FROM scan_directory_errors_staging WHERE root_id = ?`,
       ),
       markMissingFiles: this.connection.prepare(
         `UPDATE audio_files SET scan_state='missing'
@@ -424,6 +454,7 @@ export class CatalogDatabase {
     this.connection.transaction(() => {
       this.scanStatements.clearSeenPaths.run(rootId);
       this.scanStatements.clearChangedPaths.run(rootId);
+      this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
   }
 
@@ -456,15 +487,39 @@ export class CatalogDatabase {
     ) as PendingScanPath[];
   }
 
+  recordScanDirectoryError(
+    rootId: string,
+    path: string,
+    pathKey: string,
+    message: string,
+  ): void {
+    this.scanStatements.insertDirectoryError.run(
+      rootId,
+      path,
+      pathKey,
+      message,
+    );
+  }
+
   finishScan(rootId: string): void {
     this.connection.transaction(() => {
-      this.scanStatements.markMissingFiles.run(rootId, rootId);
+      const directoryErrors = this.scanStatements.countDirectoryErrors
+        .pluck()
+        .get(rootId) as number;
+      this.scanStatements.deletePublishedDirectoryErrors.run(rootId);
+      this.scanStatements.publishDirectoryErrors.run(
+        new Date().toISOString(),
+        rootId,
+      );
+      if (directoryErrors === 0)
+        this.scanStatements.markMissingFiles.run(rootId, rootId);
       this.scanStatements.finishLibraryRoot.run(
         new Date().toISOString(),
         rootId,
       );
       this.scanStatements.clearSeenPaths.run(rootId);
       this.scanStatements.clearChangedPaths.run(rootId);
+      this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
   }
 
@@ -472,15 +527,20 @@ export class CatalogDatabase {
     this.connection.transaction(() => {
       this.scanStatements.clearSeenPaths.run(rootId);
       this.scanStatements.clearChangedPaths.run(rootId);
+      this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
   }
 
-  listScanErrors(): readonly { path: string; message: string }[] {
+  listScanErrors(): readonly ScanErrorDto[] {
     return this.connection
       .prepare(
-        "SELECT path, scan_error AS message FROM audio_files WHERE scan_state = 'error' ORDER BY path",
+        `SELECT path, message, kind FROM (
+           SELECT path, scan_error AS message, 'file' AS kind FROM audio_files WHERE scan_state = 'error'
+           UNION ALL
+           SELECT path, message, 'directory' AS kind FROM scan_directory_errors
+         ) ORDER BY path, kind`,
       )
-      .all() as { path: string; message: string }[];
+      .all() as ScanErrorDto[];
   }
 
   queryLibrary(request: {
@@ -493,24 +553,25 @@ export class CatalogDatabase {
     const pattern = `%${escaped}%`;
     if (request.view === "scan-errors") {
       const search = request.query
-        ? ` AND (path LIKE ? ESCAPE '\\' COLLATE NOCASE OR scan_error LIKE ? ESCAPE '\\' COLLATE NOCASE)`
+        ? ` WHERE (path LIKE ? ESCAPE '\\' COLLATE NOCASE OR message LIKE ? ESCAPE '\\' COLLATE NOCASE)`
         : "";
       const searchParameters = request.query ? [pattern, pattern] : [];
+      const problems = `SELECT path, scan_error AS message, 'file' AS kind FROM audio_files WHERE scan_state='error'
+        UNION ALL SELECT path, message, 'directory' AS kind FROM scan_directory_errors`;
       const totalItems = this.connection
-        .prepare(
-          `SELECT COUNT(*) FROM audio_files WHERE scan_state='error'${search}`,
-        )
+        .prepare(`SELECT COUNT(*) FROM (${problems}) problems${search}`)
         .pluck()
         .get(...searchParameters) as number;
       const scanErrors = this.connection
         .prepare(
-          `SELECT path, scan_error AS message FROM audio_files WHERE scan_state='error'${search}
-           ORDER BY path LIMIT ? OFFSET ?`,
+          `SELECT path, message, kind FROM (${problems}) problems${search}
+           ORDER BY path, kind LIMIT ? OFFSET ?`,
         )
-        .all(...searchParameters, request.limit, request.offset) as {
-        path: string;
-        message: string;
-      }[];
+        .all(
+          ...searchParameters,
+          request.limit,
+          request.offset,
+        ) as ScanErrorDto[];
       return {
         albums: [],
         scanErrors,

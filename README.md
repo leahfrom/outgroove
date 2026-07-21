@@ -111,6 +111,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
 - Library queries are capped at 50 items per request, escape SQL wildcard input, and return complete track details only for the selected album page.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
+- Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.

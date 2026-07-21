@@ -66,6 +66,7 @@ export interface ScanJobDto {
   readonly finishedAt: string | null;
 }
 export interface ScanErrorDto {
+  readonly kind: "file" | "directory";
   readonly path: string;
   readonly message: string;
 }

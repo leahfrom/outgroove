@@ -238,9 +238,18 @@ describe("tag edit UI safety states", () => {
             ? {
                 albums: [],
                 scanErrors: [
-                  { path: "/fixture/corrupt.mp3", message: "Invalid MPEG" },
+                  {
+                    kind: "file" as const,
+                    path: "/fixture/corrupt.mp3",
+                    message: "Invalid MPEG",
+                  },
+                  {
+                    kind: "directory" as const,
+                    path: "/fixture/blocked",
+                    message: "Permission denied",
+                  },
                 ],
-                totalItems: 1,
+                totalItems: 2,
                 offset: 0,
                 limit: 20,
               }
@@ -275,7 +284,10 @@ describe("tag edit UI safety states", () => {
     );
     await user.selectOptions(screen.getByLabelText("View"), "scan-errors");
     expect(await screen.findByText("/fixture/corrupt.mp3")).toBeVisible();
+    expect(screen.getByText("Audio file could not be read")).toBeVisible();
     expect(screen.getByText("Invalid MPEG")).toBeVisible();
+    expect(screen.getByText("Folder could not be scanned")).toBeVisible();
+    expect(screen.getByText("/fixture/blocked")).toBeVisible();
   });
 
   it("requests the next bounded album page from main", async () => {
@@ -319,7 +331,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 3,
+          schemaVersion: 4,
           summary: {
             libraryRoots: 2,
             albums: 30,
