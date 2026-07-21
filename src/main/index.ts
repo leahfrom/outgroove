@@ -6,6 +6,7 @@ import { CatalogDatabase } from "./adapters/database/catalog-database";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
+import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
@@ -15,6 +16,12 @@ import { contentSecurityPolicy } from "./windows/security-policy";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
+
+const smokeTest =
+  process.argv.includes("--smoke-test") ||
+  process.env.OUTGROOVE_SMOKE_TEST === "1";
+if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
+  app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
 
 let database: CatalogDatabase | undefined;
 
@@ -36,23 +43,25 @@ async function createWindow(): Promise<void> {
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.once("ready-to-show", () => window.show());
 
-  database = new CatalogDatabase(
-    join(app.getPath("userData"), "outgroove.sqlite3"),
-  );
+  const databasePath = join(app.getPath("userData"), "outgroove.sqlite3");
+  database = new CatalogDatabase(databasePath);
   const reader = new MusicMetadataReader();
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(database, metadataRunner);
+  const backup = new DatabaseBackupService(database, databasePath);
   registerIpc(ipcMain, {
     database,
+    backup,
     scanJobs: new ScanJobCoordinator(database, scanner),
     editor: new EditAlbumTitle(database, new SafeMetadataWriter(reader)),
     sync: new DeviceSync(database),
     window,
+    restartApp: () => {
+      app.relaunch();
+      app.exit(0);
+    },
   });
 
-  const smokeTest =
-    process.argv.includes("--smoke-test") ||
-    process.env.OUTGROOVE_SMOKE_TEST === "1";
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL)
     await window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   else
@@ -70,6 +79,15 @@ async function createWindow(): Promise<void> {
     const results = await metadataRunner.readAll([fixture], () => undefined);
     if (results[0]?.ok !== true)
       throw new Error("Packaged metadata worker could not parse its fixture.");
+    const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
+    await backup.exportTo(backupPath);
+    const verifiedBackup = new CatalogDatabase(backupPath);
+    if (
+      verifiedBackup.connection.pragma("integrity_check", { simple: true }) !==
+      "ok"
+    )
+      throw new Error("Packaged database backup failed verification.");
+    verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
     app.exit(0);
   }

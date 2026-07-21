@@ -10,6 +10,12 @@ export const api: OutgrooveApi = {
   scanLibrary: (request) => ipcRenderer.invoke(channels.scanLibrary, request),
   cancelScan: (request) => ipcRenderer.invoke(channels.cancelScan, request),
   getLatestScanJob: () => ipcRenderer.invoke(channels.getLatestScanJob, {}),
+  createDatabaseBackup: () =>
+    ipcRenderer.invoke(channels.createDatabaseBackup, {}),
+  chooseDatabaseRestore: () =>
+    ipcRenderer.invoke(channels.chooseDatabaseRestore, {}),
+  applyDatabaseRestore: (request) =>
+    ipcRenderer.invoke(channels.applyDatabaseRestore, request),
   queryLibrary: (request) => ipcRenderer.invoke(channels.queryLibrary, request),
   previewAlbumTitleEdit: (request) =>
     ipcRenderer.invoke(channels.previewAlbumTitleEdit, request),

@@ -11,6 +11,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
 - Repeat scans skip unchanged files; repeat syncs plan no unnecessary copies.
+- Export a verified SQLite database backup, preview and explicitly confirm a restore, preserve an automatic rollback backup, verify the replacement, and restart into it without touching audio or DAP files.
 
 No provider calls, telemetry, source moves, transcoding, target deletions, mirror mode, or automatic updates exist in this slice.
 
@@ -40,7 +41,7 @@ npm run typecheck      # strict TypeScript
 npm test               # unit, UI, and temporary-directory integration tests
 npm run verify         # all source checks above
 npm run package        # unpacked platform application
-npm run test:smoke     # launch package; verify SQLite, renderer, and metadata worker
+npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
 npm run make           # ZIP artifact for the current platform
 ```
 
@@ -87,6 +88,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
 - Scan jobs persist progress and terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
+- Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
 - macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs are configured in CI; Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
 
@@ -100,4 +102,4 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus plus database backup/restore UI, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.
+The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.

@@ -201,6 +201,12 @@ pre {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
 }
+.settings {
+  background: white;
+  border: 1px solid #d8ddd8;
+  border-radius: 14px;
+  padding: 1rem;
+}
 label {
   display: block;
   font-weight: 700;

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  databaseRestoreApplyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   scanRequestSchema,
@@ -70,6 +71,25 @@ describe("validated IPC handlers", () => {
           offset: 0,
           limit: 20,
           arbitrarySql: "DROP TABLE albums",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed database restore confirmations", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      databaseRestoreApplyRequestSchema,
+      useCase,
+    );
+    await expect(
+      handler(
+        {},
+        {
+          operationId: "not-a-uuid",
+          confirmationToken: "short",
+          databasePath: "/arbitrary/path",
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });

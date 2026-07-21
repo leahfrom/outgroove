@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  DatabaseRestorePreviewDto,
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
@@ -28,6 +29,8 @@ export function App(): React.JSX.Element {
   );
   const [pageOffset, setPageOffset] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
+  const [restorePreview, setRestorePreview] =
+    useState<DatabaseRestorePreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
@@ -156,6 +159,51 @@ export function App(): React.JSX.Element {
     const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
     if (cancelled.ok) setScanJob(cancelled.value);
     else setNotice(cancelled.error.message);
+  };
+
+  const createBackup = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.createDatabaseBackup();
+      if (!result.ok) setNotice(result.error.message);
+      else if (!result.value) setNotice("Database backup cancelled.");
+      else
+        setNotice(`Database backup verified and saved to ${result.value.path}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseRestore = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.chooseDatabaseRestore();
+      if (!result.ok) setNotice(result.error.message);
+      else if (!result.value) setNotice("Database restore cancelled.");
+      else {
+        setRestorePreview(result.value);
+        setNotice("Backup verified. Review its contents before restoring.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyRestore = async (): Promise<void> => {
+    if (!restorePreview) return;
+    setBusy(true);
+    const result = await window.outgroove.applyDatabaseRestore({
+      operationId: restorePreview.operationId,
+      confirmationToken: restorePreview.confirmationToken,
+    });
+    if (result.ok)
+      setNotice(
+        `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+      );
+    else {
+      setBusy(false);
+      setNotice(result.error.message);
+    }
   };
 
   const previewEdit = async (): Promise<void> => {
@@ -576,6 +624,68 @@ export function App(): React.JSX.Element {
           </button>
         </nav>
       )}
+      <section className="card settings" aria-labelledby="database-safety">
+        <h2 id="database-safety">Database safety</h2>
+        <p>
+          Backups contain the local catalog, edit history, and DAP profiles, but
+          never copy or change audio files.
+        </p>
+        <div className="actions">
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void createBackup()}
+          >
+            Create database backup
+          </button>
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void chooseRestore()}
+          >
+            Restore from backup
+          </button>
+        </div>
+        {restorePreview && (
+          <div className="preview" aria-label="Database restore confirmation">
+            <h3>Review database replacement</h3>
+            <p>
+              <strong>{restorePreview.sourceName}</strong> passed integrity and
+              schema checks. Restoring replaces the current Outgroove database
+              and restarts the app. Source audio and DAP files are untouched.
+            </p>
+            <dl>
+              <dt>Library roots</dt>
+              <dd>{restorePreview.summary.libraryRoots}</dd>
+              <dt>Albums</dt>
+              <dd>{restorePreview.summary.albums}</dd>
+              <dt>Tracks</dt>
+              <dd>{restorePreview.summary.tracks}</dd>
+              <dt>DAP profiles</dt>
+              <dd>{restorePreview.summary.syncProfiles}</dd>
+              <dt>Schema</dt>
+              <dd>Version {restorePreview.schemaVersion}</dd>
+            </dl>
+            <p>
+              Outgroove creates and verifies an automatic rollback backup before
+              replacing anything.
+            </p>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={busy || scanActive}
+                onClick={() => void applyRestore()}
+              >
+                Confirm restore and restart
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setRestorePreview(undefined)}
+              >
+                Cancel restore
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

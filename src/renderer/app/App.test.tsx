@@ -43,6 +43,9 @@ function api(applyVerified: boolean): OutgrooveApi {
     scanLibrary: vi.fn(),
     cancelScan: vi.fn(),
     getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
+    createDatabaseBackup: vi.fn(),
+    chooseDatabaseRestore: vi.fn(),
+    applyDatabaseRestore: vi.fn(),
     queryLibrary: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -305,5 +308,81 @@ describe("tag edit UI safety states", () => {
         limit: 20,
       }),
     );
+  });
+
+  it("shows a database restore preview before explicit confirmation", async () => {
+    const mockApi = api(true);
+    const chooseDatabaseRestore = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+          confirmationToken: "database-confirmation-token-long-enough",
+          sourceName: "outgroove-backup.sqlite3",
+          schemaVersion: 3,
+          summary: {
+            libraryRoots: 2,
+            albums: 30,
+            tracks: 300,
+            syncProfiles: 1,
+          },
+        },
+      }),
+    );
+    const applyDatabaseRestore = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          rollbackBackupPath: "/fixture/automatic-rollback.sqlite3",
+          restarting: true as const,
+        },
+      }),
+    );
+    Object.assign(mockApi, { chooseDatabaseRestore, applyDatabaseRestore });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Restore from backup" }),
+    );
+    const preview = await screen.findByLabelText(
+      "Database restore confirmation",
+    );
+    expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
+    expect(preview).toHaveTextContent("300");
+    await user.click(
+      screen.getByRole("button", { name: "Confirm restore and restart" }),
+    );
+    expect(applyDatabaseRestore).toHaveBeenCalledWith({
+      operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      confirmationToken: "database-confirmation-token-long-enough",
+    });
+  });
+
+  it("shows backup export failure without claiming success", async () => {
+    const mockApi = api(true);
+    const createDatabaseBackup = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        error: { code: "INTERNAL_ERROR", message: "Backup disk is full" },
+      }),
+    );
+    Object.assign(mockApi, { createDatabaseBackup });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Create database backup" }),
+    );
+    expect(await screen.findByText("Backup disk is full")).toBeVisible();
+    expect(
+      screen.queryByText(/backup verified and saved/iu),
+    ).not.toBeInTheDocument();
   });
 });
