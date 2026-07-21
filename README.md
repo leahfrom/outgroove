@@ -43,6 +43,11 @@ npm run test:smoke     # launch package; verify SQLite, renderer, and metadata w
 npm run make           # ZIP artifact for the current platform
 ```
 
+Development uses Gitflow and stable semantic versions. Start feature, release,
+and hotfix branches with the guarded npm commands documented in
+[CONTRIBUTING.md](CONTRIBUTING.md); CI rejects pull requests that bypass the
+`develop`/`main` integration paths.
+
 Automated tests copy the CC0 generated fixtures under `fixtures/audio/` into OS temporary directories before any write. They never scan or modify a real music library or mounted device.
 
 ## Format status

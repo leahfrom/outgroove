@@ -18,6 +18,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - if: github.event_name == 'pull_request'
+        name: Validate Gitflow pull request
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: npm run flow:validate-pr
       - run: npm run verify
       - run: npm run package
       - if: runner.os == 'Linux'
