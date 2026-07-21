@@ -55,6 +55,13 @@ git push origin v0.2.0
 
 `release:tag` refuses a dirty/non-main worktree, checks version synchronization, runs the full verification suite, and creates an annotated local tag. Pushing the tag is intentionally separate. Merge `main` back into `develop` afterward through a pull request.
 
+Pushing a stable `vX.Y.Z` tag starts the release workflow. It independently
+verifies and packages macOS arm64, Windows x64, and Linux x64, then publishes
+their ZIP files and SHA-256 checksums as a GitHub prerelease. The release is
+published only after every platform build succeeds. Artifacts remain marked as
+prereleases until signing, notarization, and the full manual release matrix are
+implemented.
+
 For an urgent production fix, replace the start command with:
 
 ```sh
