@@ -43,7 +43,7 @@ function handle(request: ScanDatabaseWorkerRequest): unknown {
     case "finish":
       return database.finishScan(request.rootId);
     case "abandon":
-      return database.abandonScan(request.rootId);
+      return database.abandonScan(request.rootId, request.recoverSearch);
   }
 }
 

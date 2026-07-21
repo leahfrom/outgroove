@@ -44,6 +44,7 @@ export type ScanDatabaseWorkerRequest =
       readonly id: number;
       readonly operation: "abandon";
       readonly rootId: string;
+      readonly recoverSearch: boolean;
     };
 
 export type ScanDatabaseDiscoveryEntry =

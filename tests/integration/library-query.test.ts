@@ -120,6 +120,118 @@ describe("paginated library query", () => {
     database.close();
   });
 
+  it("keeps exact Unicode, wildcard, short, and edited search values synchronized", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-search-index-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    const path = join(directory, "literal.flac");
+    database.upsertScannedFile(root.id, pathComparisonKey(path), {
+      path,
+      size: 123,
+      modifiedMs: 456,
+      format: "FLAC",
+      durationSeconds: 10,
+      tags: {
+        title: 'Quoted Needle "Hi" 100%_Mix',
+        album: "Beyoncé Mix",
+        artist: "Original Track Artist",
+        albumArtist: "Beyoncé",
+        trackNumber: 1,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    });
+
+    for (const query of ["oncé", 'le "Hi', "100%_", "Hi", "%_"])
+      expect(
+        database.queryLibrary({ query, view: "albums", offset: 0, limit: 10 })
+          .totalItems,
+        query,
+      ).toBe(1);
+
+    const original = database.queryLibrary({
+      query: "Quoted Needle",
+      view: "albums",
+      offset: 0,
+      limit: 10,
+    }).albums[0]?.tracks[0];
+    expect(original).toBeDefined();
+    if (!original) throw new Error("Indexed fixture track missing.");
+    database.updateFileAfterEdit(original.id, {
+      ...original,
+      tags: {
+        ...original.tags,
+        title: "Updated Search Token",
+        album: "Renamed Search Album",
+        artist: "Changed Track Artist",
+      },
+    });
+
+    for (const query of ["Updated Search", "Renamed Search", "Changed Track"])
+      expect(
+        database.queryLibrary({ query, view: "albums", offset: 0, limit: 10 })
+          .totalItems,
+      ).toBe(1);
+    expect(
+      database.queryLibrary({
+        query: "Quoted Needle",
+        view: "albums",
+        offset: 0,
+        limit: 10,
+      }).totalItems,
+    ).toBe(0);
+    database.close();
+  });
+
+  it("publishes album visibility after missing and restored file transitions", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-visibility-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    const path = join(directory, "visible.flac");
+    const file = {
+      path,
+      size: 10,
+      modifiedMs: 20,
+      format: "FLAC",
+      durationSeconds: 30,
+      tags: {
+        title: "Visible track",
+        album: "Visibility album",
+        artist: "Fixture artist",
+        albumArtist: "Fixture artist",
+        trackNumber: 1,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    } as const;
+    database.upsertScannedFile(root.id, pathComparisonKey(path), file);
+    const browse = (): number =>
+      database.queryLibrary({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 10,
+      }).totalItems;
+
+    expect(browse()).toBe(1);
+    database.beginScan(root.id);
+    database.finishScan(root.id);
+    expect(browse()).toBe(0);
+    database.upsertScannedFile(root.id, pathComparisonKey(path), file);
+    expect(browse()).toBe(1);
+    database.close();
+  });
+
   it("pages scan problems separately and treats wildcard characters literally", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-problems-"));
     temporary.push(directory);

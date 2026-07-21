@@ -228,4 +228,42 @@ describe("worker scan catalog", () => {
     await expect(catalog.beginScan("root-id")).rejects.toThrow("fixture crash");
     await catalog.close();
   });
+
+  it("forces one search recovery when an active writer crashes", async () => {
+    let created = 0;
+    let recovered = false;
+    class RecoveringWorker extends EventEmitter implements ScanDatabaseWorker {
+      constructor(private readonly crash: boolean) {
+        super();
+      }
+
+      postMessage(message: ScanDatabaseWorkerRequest): void {
+        queueMicrotask(() => {
+          if (this.crash && message.operation === "record-discovery") {
+            this.emit("error", new Error("fixture mid-scan crash"));
+            return;
+          }
+          if (message.operation === "abandon")
+            recovered = message.recoverSearch;
+          this.emit("message", { id: message.id, ok: true });
+        });
+      }
+
+      terminate(): Promise<number> {
+        return Promise.resolve(0);
+      }
+    }
+    const catalog = new WorkerScanCatalog(
+      "/fixture/catalog.sqlite3",
+      "/fixture/worker.js",
+      () => new RecoveringWorker(created++ === 0),
+    );
+
+    await catalog.beginScan("root-id");
+    await expect(
+      catalog.recordScanDiscoveryBatch("root-id", []),
+    ).rejects.toThrow("fixture mid-scan crash");
+    await catalog.abandonScan("root-id");
+    expect({ created, recovered }).toEqual({ created: 2, recovered: true });
+  });
 });
