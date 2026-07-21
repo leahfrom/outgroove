@@ -196,7 +196,8 @@ export interface TagEditHistoryItemDto {
     | "album-title-undo"
     | "track-tags-edit"
     | "track-tags-undo"
-    | "track-tags-batch-edit";
+    | "track-tags-batch-edit"
+    | "track-tags-batch-undo";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -281,6 +282,12 @@ export interface OutgrooveApi {
     request: z.infer<typeof trackBatchEditPreviewRequestSchema>,
   ): Promise<Result<TrackBatchEditPreviewDto>>;
   applyTrackBatchEdit(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewTrackBatchUndo(
+    request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
+  ): Promise<Result<TrackBatchEditPreviewDto>>;
+  applyTrackBatchUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

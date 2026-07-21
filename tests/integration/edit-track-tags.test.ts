@@ -162,9 +162,13 @@ describe.each(["01-first.mp3", "02-second.flac"])(
 );
 
 it("previews and independently verifies a persisted multi-track batch edit", async () => {
-  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const { database, reader, writer, editor, files } =
+    await createBatchTrackEditor();
   const payloads = await Promise.all(
     files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const originalTags = await Promise.all(
+    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
   );
   const preview = editor.previewBatch(
     files.map(({ fileId }) => fileId),
@@ -198,6 +202,44 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   expect(database.listSnapshots(preview.operationId)).toHaveLength(2);
   expect(database.getEditOperation(preview.operationId)).toMatchObject({
     kind: "track-tags-batch-edit",
+    state: "completed",
+  });
+
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Batch fixture missing.");
+  const unrelated = await writer.writeTags(first.path, {
+    title: "Externally Retitled",
+  });
+  database.updateFileAfterEdit(first.fileId, unrelated.file);
+  const undoPreview = editor.previewBatchUndo(preview.operationId);
+  expect(undoPreview.files).toHaveLength(2);
+  expect(undoPreview.files.every((file) => file.warnings.length === 0)).toBe(
+    true,
+  );
+  expect(
+    undoPreview.files.flatMap((file) =>
+      file.changes.map((change) => change.field),
+    ),
+  ).not.toContain("title");
+  const undo = await editor.applyBatchUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undo.results).toMatchObject([
+    { fileId: files[0]?.fileId, verified: true, error: null },
+    { fileId: files[1]?.fileId, verified: true, error: null },
+  ]);
+  expect((await reader.read(first.path)).tags).toEqual({
+    ...originalTags[0],
+    title: "Externally Retitled",
+  });
+  expect((await reader.read(second.path)).tags).toEqual(originalTags[1]);
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  expect(database.getEditOperation(undoPreview.operationId)).toMatchObject({
+    kind: "track-tags-batch-undo",
+    source_operation_id: preview.operationId,
     state: "completed",
   });
   database.close();
@@ -250,6 +292,47 @@ it("skips matching tracks and keeps applying after another track becomes stale",
     "changed after it was created",
   );
   expect(database.getEditOperation(stalePreview.operationId)?.state).toBe(
+    "failed",
+  );
+  const partialUndo = editor.previewBatchUndo(stalePreview.operationId);
+  expect(partialUndo.files.map((file) => file.fileId)).toEqual([second.fileId]);
+  database.close();
+});
+
+it("refuses one stale batch undo target and restores the remaining file", async () => {
+  const { database, writer, editor, files } = await createBatchTrackEditor();
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Batch fixtures missing.");
+  const editPreview = editor.previewBatch(
+    files.map(({ fileId }) => fileId),
+    { artist: "Undo Target", year: "2034" },
+  );
+  const edit = await editor.applyBatch(
+    editPreview.operationId,
+    editPreview.confirmationToken,
+  );
+  expect(edit.results.every((result) => result.verified)).toBe(true);
+  const undoPreview = editor.previewBatchUndo(editPreview.operationId);
+  const external = await writer.writeTags(first.path, {
+    artist: "Changed After Undo Preview",
+  });
+  database.updateFileAfterEdit(first.fileId, external.file);
+
+  const undo = await editor.applyBatchUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undo.results).toMatchObject([
+    {
+      fileId: first.fileId,
+      verified: false,
+      error:
+        "A field changed after the original batch edit; undo did not overwrite it.",
+    },
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect(database.getEditOperation(undoPreview.operationId)?.state).toBe(
     "failed",
   );
   database.close();

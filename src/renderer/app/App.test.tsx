@@ -135,6 +135,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     applyTrackTagUndo: vi.fn(),
     previewTrackBatchEdit: vi.fn(),
     applyTrackBatchEdit: vi.fn(),
+    previewTrackBatchUndo: vi.fn(),
+    applyTrackBatchUndo: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -310,6 +312,68 @@ describe("tag edit UI safety states", () => {
         ],
       },
     });
+    vi.spyOn(mockApi, "listAlbumEditHistory").mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+          kind: "track-tags-batch-edit",
+          sourceOperationId: null,
+          proposedTitle: "Batch metadata: artist",
+          state: "completed",
+          createdAt: "2026-07-21T00:00:00.000Z",
+          completedAt: "2026-07-21T00:01:00.000Z",
+          verifiedFiles: 2,
+          failedFiles: 0,
+        },
+      ],
+    });
+    const previewUndo = vi.spyOn(mockApi, "previewTrackBatchUndo");
+    previewUndo.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "94f1e501-f5c4-456e-91ae-8d03b65fd795",
+        confirmationToken: "batch-undo-confirmation-token-long-enough",
+        files: batchAlbum.tracks.map((track, index) => ({
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Batch Artist",
+              after: "Fixture Artist",
+            },
+          ],
+          warnings:
+            index === 0
+              ? [
+                  "A field changed after this batch edit; undo will not overwrite it.",
+                ]
+              : [],
+          willWrite: true,
+        })),
+      },
+    });
+    vi.spyOn(mockApi, "applyTrackBatchUndo").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "94f1e501-f5c4-456e-91ae-8d03b65fd795",
+        results: [
+          {
+            fileId: firstTrack.id,
+            path: firstTrack.path,
+            verified: false,
+            error: "stale batch field",
+          },
+          {
+            fileId: secondTrack.id,
+            path: secondTrack.path,
+            verified: true,
+            error: null,
+          },
+        ],
+      },
+    });
     Object.defineProperty(window, "outgroove", {
       configurable: true,
       value: mockApi,
@@ -351,6 +415,27 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByText(/1 writes verified; 1 failed/u),
     ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Preview batch undo" }),
+    );
+    const undoConfirmation = await screen.findByLabelText(
+      "Batch metadata undo confirmation",
+    );
+    expect(within(undoConfirmation).getByRole("alert")).toHaveTextContent(
+      "changed after this batch edit",
+    );
+    const confirmUndo = within(undoConfirmation).getByRole("button", {
+      name: "Confirm safe batch undo writes",
+    });
+    expect(confirmUndo).toBeEnabled();
+    await user.click(confirmUndo);
+    expect(await screen.findByText(/stale batch field/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 undo writes verified; 1 refused/u),
+    ).toBeInTheDocument();
+    expect(previewUndo).toHaveBeenCalledWith({
+      operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+    });
   });
 
   it("reports verification failure without claiming success", async () => {
@@ -921,7 +1006,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 9,
+          schemaVersion: 10,
           summary: {
             libraryRoots: 2,
             albums: 30,
