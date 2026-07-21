@@ -214,7 +214,9 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     const history = await screen.findByLabelText("Album-title edit history");
-    expect(history).toHaveTextContent("Changed title to “Renamed Album”");
+    expect(
+      await within(history).findByText("Changed title to “Renamed Album”"),
+    ).toBeVisible();
     await user.click(
       within(history).getByRole("button", { name: "Preview undo" }),
     );
