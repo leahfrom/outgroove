@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
 import type {
+  LibraryPageDto,
   LibraryRootDto,
   ScanJobDto,
   ScanJobState,
@@ -362,14 +363,90 @@ export class CatalogDatabase {
       .all() as { path: string; message: string }[];
   }
 
+  queryLibrary(request: {
+    query: string;
+    view: "albums" | "scan-errors";
+    offset: number;
+    limit: number;
+  }): LibraryPageDto {
+    const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
+    const pattern = `%${escaped}%`;
+    if (request.view === "scan-errors") {
+      const search = request.query
+        ? ` AND (path LIKE ? ESCAPE '\\' COLLATE NOCASE OR scan_error LIKE ? ESCAPE '\\' COLLATE NOCASE)`
+        : "";
+      const searchParameters = request.query ? [pattern, pattern] : [];
+      const totalItems = this.connection
+        .prepare(
+          `SELECT COUNT(*) FROM audio_files WHERE scan_state='error'${search}`,
+        )
+        .pluck()
+        .get(...searchParameters) as number;
+      const scanErrors = this.connection
+        .prepare(
+          `SELECT path, scan_error AS message FROM audio_files WHERE scan_state='error'${search}
+           ORDER BY path LIMIT ? OFFSET ?`,
+        )
+        .all(...searchParameters, request.limit, request.offset) as {
+        path: string;
+        message: string;
+      }[];
+      return {
+        albums: [],
+        scanErrors,
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    const search = request.query
+      ? ` AND (a.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR t.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE)`
+      : "";
+    const searchParameters = request.query
+      ? [pattern, pattern, pattern, pattern, pattern, pattern]
+      : [];
+    const from = ` FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
+      WHERE f.scan_state='ok'${search}`;
+    const totalItems = this.connection
+      .prepare(`SELECT COUNT(DISTINCT a.id)${from}`)
+      .pluck()
+      .get(...searchParameters) as number;
+    const albumIds = this.connection
+      .prepare(
+        `SELECT DISTINCT a.id, a.album_artist, a.title${from}
+         ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+      )
+      .all(...searchParameters, request.limit, request.offset)
+      .map((row) => (row as { id: string }).id);
+    return {
+      albums: this.listAlbumsByIds(albumIds),
+      scanErrors: [],
+      totalItems,
+      offset: request.offset,
+      limit: request.limit,
+    };
+  }
+
   listAlbums(): readonly CatalogAlbum[] {
+    return this.listAlbumsByIds();
+  }
+
+  private listAlbumsByIds(ids?: readonly string[]): readonly CatalogAlbum[] {
+    if (ids?.length === 0) return [];
+    const selection = ids
+      ? ` AND a.id IN (${ids.map(() => "?").join(",")})`
+      : "";
     const rows = this.connection
       .prepare(
         `SELECT a.id AS album_id, a.title AS album_title, a.album_artist,
       f.*, t.id AS track_id FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
-      WHERE f.scan_state='ok' ORDER BY a.album_artist, a.title, t.disc_number, t.track_number, f.path`,
+      WHERE f.scan_state='ok'${selection} ORDER BY a.album_artist, a.title, a.id, t.disc_number, t.track_number, f.path`,
       )
-      .all() as (AudioFileRow & {
+      .all(...(ids ?? [])) as (AudioFileRow & {
       album_id: string;
       album_title: string;
       album_artist: string;

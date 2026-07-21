@@ -7,7 +7,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Choose one library folder with a native dialog and scan supported audio extensions in a bounded worker pool.
 - Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
-- Browse albums and tracks in a sandboxed React renderer.
+- Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
 - Repeat scans skip unchanged files; repeat syncs plan no unnecessary copies.
@@ -80,6 +80,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 ## Safety status and limitations
 
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
+- Library queries are capped at 50 items per request, escape SQL wildcard input, and return complete track details only for the selected album page.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
@@ -99,4 +100,4 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus plus paginated catalog search and problem filters, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.
+The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus plus database backup/restore UI, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.

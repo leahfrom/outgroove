@@ -7,6 +7,7 @@ import {
   albumEditApplyRequestSchema,
   albumEditPreviewRequestSchema,
   emptyRequestSchema,
+  libraryQueryRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
@@ -89,15 +90,9 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
-    channels.listAlbums,
-    createValidatedHandler(emptyRequestSchema, () =>
-      dependencies.database.listAlbums(),
-    ),
-  );
-  ipcMain.handle(
-    channels.listScanErrors,
-    createValidatedHandler(emptyRequestSchema, () =>
-      dependencies.database.listScanErrors(),
+    channels.queryLibrary,
+    createValidatedHandler(libraryQueryRequestSchema, (request) =>
+      dependencies.database.queryLibrary(request),
     ),
   );
   ipcMain.handle(
