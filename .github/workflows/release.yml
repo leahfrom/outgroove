@@ -18,13 +18,16 @@ jobs:
           - os: macos-latest
             platform: macOS
             artifact: macos-arm64
+            package-path: out/make/zip/darwin/arm64/*.zip
           # Current native SQLite tooling supports Visual Studio 2022, not 2026.
           - os: windows-2022
             platform: Windows
             artifact: windows-x64
+            package-path: out/make/zip/win32/x64/*.zip
           - os: ubuntu-latest
             platform: Linux
             artifact: linux-x64
+            package-path: out/make/zip/linux/x64/*.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -47,7 +50,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: outgroove-${{ github.ref_name }}-${{ matrix.artifact }}
-          path: out/make/zip/**/*.zip
+          # Keeping the wildcard in the final segment makes upload-artifact
+          # strip Forge's platform/architecture directories on download.
+          path: ${{ matrix.package-path }}
           if-no-files-found: error
           retention-days: 14
 
