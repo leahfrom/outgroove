@@ -71,9 +71,30 @@ interface ScanStatements {
   readonly finishLibraryRoot: Database.Statement;
 }
 
-export interface ScanDiscoveryEntry {
-  readonly pathKey: string;
-  readonly changed: { readonly sequence: number; readonly path: string } | null;
+export type ScanDiscoveryEntry =
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly size: number;
+      readonly modifiedMs: number;
+    }
+  | {
+      readonly kind: "file-error";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly message: string;
+    }
+  | {
+      readonly kind: "directory-error";
+      readonly path: string;
+      readonly pathKey: string;
+      readonly message: string;
+    };
+
+export interface ScanDiscoveryBatchResult {
+  readonly changed: number;
+  readonly unchanged: number;
 }
 
 export interface PendingScanPath {
@@ -106,8 +127,13 @@ export interface StoredFile extends AudioFileRow {
 export class CatalogDatabase {
   readonly connection: Database.Database;
   private readonly scanStatements: ScanStatements;
+  private readonly nextChangedSequence = new Map<string, number>();
+  private catalogSearchDirty = false;
 
-  constructor(path: string) {
+  constructor(
+    path: string,
+    options: { readonly interruptOrphanedJobs?: boolean } = {},
+  ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.connection = new Database(path);
     this.connection.pragma("foreign_keys = ON");
@@ -142,7 +168,8 @@ export class CatalogDatabase {
       ),
       upsertAlbum: this.connection.prepare(
         `INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)
-         ON CONFLICT(grouping_key) DO UPDATE SET title = excluded.title, album_artist = excluded.album_artist`,
+         ON CONFLICT(grouping_key) DO UPDATE SET title = excluded.title, album_artist = excluded.album_artist
+         WHERE title IS NOT excluded.title OR album_artist IS NOT excluded.album_artist`,
       ),
       upsertAudioFile: this.connection.prepare(
         `INSERT INTO audio_files
@@ -207,7 +234,7 @@ export class CatalogDatabase {
         "UPDATE library_roots SET last_scan_at = ? WHERE id = ?",
       ),
     };
-    this.interruptOrphanedJobs();
+    if (options.interruptOrphanedJobs !== false) this.interruptOrphanedJobs();
   }
 
   close(): void {
@@ -368,9 +395,11 @@ export class CatalogDatabase {
     pathKey: string,
     file: ScannedAudioFile,
   ): string {
-    return this.connection.transaction(() =>
+    const fileId = this.connection.transaction(() =>
       this.upsertScannedFileInTransaction(rootId, pathKey, file),
     )();
+    this.catalogSearchDirty = true;
+    return fileId;
   }
 
   upsertScannedFiles(
@@ -381,6 +410,7 @@ export class CatalogDatabase {
       for (const entry of files)
         this.upsertScannedFileInTransaction(rootId, entry.pathKey, entry.file);
     })();
+    if (files.length > 0) this.catalogSearchDirty = true;
   }
 
   private upsertScannedFileInTransaction(
@@ -436,6 +466,25 @@ export class CatalogDatabase {
     modifiedMs: number,
     message: string,
   ): void {
+    this.upsertScanErrorInTransaction(
+      rootId,
+      path,
+      pathKey,
+      size,
+      modifiedMs,
+      message,
+    );
+  }
+
+  private upsertScanErrorInTransaction(
+    rootId: string,
+    path: string,
+    pathKey: string,
+    size: number,
+    modifiedMs: number,
+    message: string,
+  ): void {
+    this.catalogSearchDirty = true;
     const existing = this.getFileByPathKey(pathKey);
     this.scanStatements.upsertScanError.run(
       existing?.id ?? randomUUID(),
@@ -456,23 +505,61 @@ export class CatalogDatabase {
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.nextChangedSequence.set(rootId, 0);
   }
 
   recordScanDiscoveryBatch(
     rootId: string,
     entries: readonly ScanDiscoveryEntry[],
-  ): void {
-    this.connection.transaction(() => {
+  ): ScanDiscoveryBatchResult {
+    const firstSequence = this.nextChangedSequence.get(rootId);
+    if (firstSequence === undefined)
+      throw new Error("Scan discovery was not initialized.");
+    let nextSequence = firstSequence;
+    const result = this.connection.transaction(() => {
+      let changed = 0;
+      let unchanged = 0;
       for (const entry of entries) {
-        this.scanStatements.insertSeenPath.run(rootId, entry.pathKey);
-        if (entry.changed)
-          this.scanStatements.insertChangedPath.run(
+        if (entry.kind === "directory-error") {
+          this.scanStatements.insertDirectoryError.run(
             rootId,
-            entry.changed.sequence,
-            entry.changed.path,
+            entry.path,
+            entry.pathKey,
+            entry.message,
           );
+          continue;
+        }
+        this.scanStatements.insertSeenPath.run(rootId, entry.pathKey);
+        if (entry.kind === "file-error") {
+          this.upsertScanErrorInTransaction(
+            rootId,
+            entry.path,
+            entry.pathKey,
+            0,
+            0,
+            entry.message,
+          );
+          continue;
+        }
+        const existing = this.getFileByPathKey(entry.pathKey);
+        if (
+          existing?.size === entry.size &&
+          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs)
+        ) {
+          unchanged++;
+          continue;
+        }
+        this.scanStatements.insertChangedPath.run(
+          rootId,
+          nextSequence++,
+          entry.path,
+        );
+        changed++;
       }
+      return { changed, unchanged };
     })();
+    this.nextChangedSequence.set(rootId, nextSequence);
+    return result;
   }
 
   listChangedScanPaths(
@@ -511,24 +598,35 @@ export class CatalogDatabase {
         new Date().toISOString(),
         rootId,
       );
-      if (directoryErrors === 0)
-        this.scanStatements.markMissingFiles.run(rootId, rootId);
+      if (directoryErrors === 0) {
+        const missing = this.scanStatements.markMissingFiles.run(
+          rootId,
+          rootId,
+        );
+        if (missing.changes > 0) this.catalogSearchDirty = true;
+      }
       this.scanStatements.finishLibraryRoot.run(
         new Date().toISOString(),
         rootId,
       );
+      this.refreshCatalogSearchIfNeeded();
       this.scanStatements.clearSeenPaths.run(rootId);
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.nextChangedSequence.delete(rootId);
   }
 
-  abandonScan(rootId: string): void {
+  abandonScan(rootId: string, recoverSearch = false): void {
     this.connection.transaction(() => {
+      if (recoverSearch) this.rebuildCatalogSearch();
+      else this.refreshCatalogSearchIfNeeded();
       this.scanStatements.clearSeenPaths.run(rootId);
       this.scanStatements.clearChangedPaths.run(rootId);
       this.scanStatements.clearDirectoryErrors.run(rootId);
     })();
+    this.catalogSearchDirty = false;
+    this.nextChangedSequence.delete(rootId);
   }
 
   listScanErrors(): readonly ScanErrorDto[] {
@@ -581,12 +679,67 @@ export class CatalogDatabase {
       };
     }
 
-    const search = request.query
-      ? ` AND (a.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
-          OR t.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE
-          OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
-          OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE)`
-      : "";
+    if (!request.query) {
+      this.refreshCatalogSearchIfNeeded();
+      const visibleAlbums = ` FROM catalog_visible_albums visible
+        JOIN albums a ON a.id=visible.album_id`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*)${visibleAlbums}`)
+        .pluck()
+        .get() as number;
+      const albumIds = this.connection
+        .prepare(
+          `SELECT a.id${visibleAlbums}
+           ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+        )
+        .all(request.limit, request.offset)
+        .map((row) => (row as { id: string }).id);
+      return {
+        albums: this.listAlbumsByIds(albumIds),
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    if (Array.from(request.query).length >= 3) {
+      this.refreshCatalogSearchIfNeeded();
+      const match = `"${request.query.replaceAll('"', '""')}"`;
+      const matchingAlbums = `SELECT a.id AS album_id FROM albums a
+        JOIN catalog_visible_albums visible ON visible.album_id=a.id
+        WHERE (a.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE)
+        UNION
+        SELECT d.album_id FROM catalog_search
+        JOIN catalog_search_documents d ON d.id=catalog_search.rowid
+        JOIN audio_files f ON f.id=d.file_id
+        WHERE catalog_search MATCH ? AND f.scan_state='ok'`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM (${matchingAlbums})`)
+        .pluck()
+        .get(pattern, pattern, match) as number;
+      const albumIds = this.connection
+        .prepare(
+          `SELECT a.id FROM albums a
+           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id
+           ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+        )
+        .all(pattern, pattern, match, request.limit, request.offset)
+        .map((row) => (row as { id: string }).id);
+      return {
+        albums: this.listAlbumsByIds(albumIds),
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    const search = ` AND (a.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR t.title LIKE ? ESCAPE '\\' COLLATE NOCASE OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE)`;
     const searchParameters = request.query
       ? [pattern, pattern, pattern, pattern, pattern, pattern]
       : [];
@@ -624,7 +777,9 @@ export class CatalogDatabase {
     const rows = this.connection
       .prepare(
         `SELECT a.id AS album_id, a.title AS album_title, a.album_artist,
-      f.*, t.id AS track_id FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
+      f.*, t.id AS track_id FROM albums a
+      CROSS JOIN tracks t ON t.album_id=a.id
+      CROSS JOIN audio_files f ON f.id=t.file_id
       WHERE f.scan_state='ok'${selection} ORDER BY a.album_artist, a.title, a.id, t.disc_number, t.track_number, f.path`,
       )
       .all(...(ids ?? [])) as (AudioFileRow & {
@@ -757,6 +912,7 @@ export class CatalogDatabase {
     this.connection
       .prepare("UPDATE edit_operations SET state=?, completed_at=? WHERE id=?")
       .run(successful ? "completed" : "failed", new Date().toISOString(), id);
+    this.refreshCatalogSearchIfNeeded();
   }
 
   updateFileAfterEdit(fileId: string, file: ScannedAudioFile): void {
@@ -764,6 +920,31 @@ export class CatalogDatabase {
       .prepare("SELECT root_id, path_key FROM audio_files WHERE id=?")
       .get(fileId) as { root_id: string; path_key: string };
     this.upsertScannedFile(row.root_id, row.path_key, file);
+  }
+
+  private refreshCatalogSearchIfNeeded(): void {
+    if (!this.catalogSearchDirty) return;
+    this.rebuildCatalogSearch();
+    this.catalogSearchDirty = false;
+  }
+
+  private rebuildCatalogSearch(): void {
+    this.connection.exec(`
+      DELETE FROM catalog_search_documents;
+      INSERT INTO catalog_search_documents
+        (file_id, album_id, track_title, track_artist, file_path, format)
+      SELECT f.id, t.album_id, t.title,
+        COALESCE(json_extract(f.normalized_tags_json, '$.artist'), ''),
+        f.path, COALESCE(f.format, '')
+      FROM tracks t
+      JOIN audio_files f ON f.id=t.file_id;
+      INSERT INTO catalog_search(catalog_search) VALUES ('rebuild');
+      DELETE FROM catalog_visible_albums;
+      INSERT INTO catalog_visible_albums(album_id)
+      SELECT DISTINCT t.album_id FROM tracks t
+      JOIN audio_files f ON f.id=t.file_id
+      WHERE f.scan_state='ok';
+    `);
   }
 
   createSyncProfile(

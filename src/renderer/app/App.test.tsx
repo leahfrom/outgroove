@@ -370,7 +370,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 4,
+          schemaVersion: 5,
           summary: {
             libraryRoots: 2,
             albums: 30,

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,11 +19,23 @@ afterEach(async () =>
 );
 
 describe("database migration and backup", () => {
+  it("keeps the shipped catalog-search migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "005_catalog_search.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 5);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(4);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(5);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -81,7 +94,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      4,
+      5,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -123,7 +136,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      4,
+      5,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -154,7 +167,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      4,
+      5,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -163,6 +176,66 @@ describe("database migration and backup", () => {
         .pluck()
         .get(),
     ).toBe(0);
+    migrated.close();
+  });
+
+  it("upgrades the released v4 catalog and builds its search projection", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v4-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 4))
+      legacy.exec(migration.sql);
+    legacy.pragma("user_version = 4");
+    legacy
+      .prepare(
+        "INSERT INTO library_roots (id, path, path_key, created_at) VALUES (?, ?, ?, ?)",
+      )
+      .run("root", "/fixture/library", "/fixture/library", "2026-01-01");
+    legacy
+      .prepare(
+        "INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)",
+      )
+      .run("album", "legacy-album", "Legacy Album", "Legacy Artist");
+    legacy
+      .prepare(
+        `INSERT INTO audio_files
+         (id, root_id, path, path_key, size, modified_ms, signature, format, normalized_tags_json, scan_state, scanned_at)
+         VALUES (?, ?, ?, ?, 1, 1, '1:1', 'FLAC', ?, 'ok', ?)`,
+      )
+      .run(
+        "file",
+        "root",
+        "/fixture/library/needle.flac",
+        "/fixture/library/needle.flac",
+        JSON.stringify({ artist: "Legacy Track Artist" }),
+        "2026-01-01",
+      );
+    legacy
+      .prepare(
+        "INSERT INTO tracks (id, file_id, album_id, title) VALUES (?, ?, ?, ?)",
+      )
+      .run("track", "file", "album", "Legacy Needle Track");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      5,
+    );
+    expect(
+      migrated.queryLibrary({
+        query: "Needle Track",
+        view: "albums",
+        offset: 0,
+        limit: 10,
+      }).albums[0]?.title,
+    ).toBe("Legacy Album");
+    expect(
+      migrated.connection
+        .prepare("SELECT COUNT(*) FROM catalog_search_documents")
+        .pluck()
+        .get(),
+    ).toBe(1);
     migrated.close();
   });
 
