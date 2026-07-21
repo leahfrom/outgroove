@@ -1,9 +1,17 @@
-import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { createHash } from "node:crypto";
 
+import { parseFile } from "music-metadata";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
@@ -72,6 +80,38 @@ it("rejects unsupported writes without changing the source", async () => {
   expect(await readFile(path)).toEqual(before);
 });
 
+it("leaves the source untouched when temporary metadata verification fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-tags-verify-"));
+  temporary.push(directory);
+  const path = join(directory, "verification-failure.mp3");
+  await copyFile(
+    join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.mp3",
+    ),
+    path,
+  );
+  const before = await readFile(path);
+  const realReader = new MusicMetadataReader();
+  const mismatchingReader = {
+    async read(candidatePath: string) {
+      const file = await realReader.read(candidatePath);
+      return { ...file, tags: { ...file.tags, album: "Wrong Album" } };
+    },
+  };
+  await expect(
+    new SafeMetadataWriter(mismatchingReader).writeAlbumTitle(
+      path,
+      "Expected Album",
+    ),
+  ).rejects.toThrow("Temporary write verification failed");
+  expect(await readFile(path)).toEqual(before);
+  expect(await readdir(directory)).toEqual(["verification-failure.mp3"]);
+});
+
 it("streams a large MP3 payload while excluding leading and trailing tags", async () => {
   const directory = await mkdtemp(join(tmpdir(), "outgroove-hash-"));
   temporary.push(directory);
@@ -84,3 +124,62 @@ it("streams a large MP3 payload while excluding leading and trailing tags", asyn
     createHash("sha256").update(payload).digest("hex"),
   );
 });
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "format-specific preservation corpus: %s",
+  (fixture) => {
+    it("preserves artwork, Unicode, numbering, comments, identifiers, private fields, and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-preserve-"));
+      temporary.push(directory);
+      const source = join(
+        process.cwd(),
+        "fixtures",
+        "audio",
+        "preservation",
+        fixture,
+      );
+      const path = join(directory, fixture);
+      await copyFile(source, path);
+      const before = await preservationFingerprint(path);
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(
+        new MusicMetadataReader(),
+      ).writeAlbumTitle(path, "Changed Album Only");
+      const after = await preservationFingerprint(path);
+      expect(after.album).toBe("Changed Album Only");
+      expect({ ...after, album: before.album }).toEqual(before);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+async function preservationFingerprint(path: string) {
+  const metadata = await parseFile(path, { duration: true });
+  const nativeText = Object.values(metadata.native)
+    .flat()
+    .filter((tag) =>
+      /OUTGROOVE_PRIVATE|MUSICBRAINZ_TRACKID|COMMENT|DESCRIPTION/iu.test(
+        tag.id,
+      ),
+    )
+    .map((tag) => `${tag.id}:${String(tag.value)}`)
+    .sort();
+  const pictures = (metadata.common.picture ?? []).map((picture) => ({
+    format: picture.format,
+    type: picture.type,
+    description: picture.description,
+    hash: createHash("sha256").update(picture.data).digest("hex"),
+  }));
+  return {
+    album: metadata.common.album,
+    artist: metadata.common.artist,
+    albumArtist: metadata.common.albumartist,
+    track: metadata.common.track,
+    disk: metadata.common.disk,
+    date: metadata.common.date,
+    year: metadata.common.year,
+    nativeText,
+    pictures,
+  };
+}

@@ -43,6 +43,7 @@ npm run verify         # all source checks above
 npm run package        # unpacked platform application
 npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
 npm run make           # ZIP artifact for the current platform
+npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
 ```
 
 Development uses Gitflow and stable semantic versions. Start feature, release,
@@ -70,13 +71,13 @@ The scanner asks `music-metadata` to read MP3, FLAC, M4A/MP4, Ogg Vorbis, Opus, 
 
 Album-title writing is deliberately narrower:
 
-| Format                | Read        | Album-title write | Evidence                                                                          |
-| --------------------- | ----------- | ----------------- | --------------------------------------------------------------------------------- |
-| MP3                   | Yes         | Yes               | Write/re-read, private `TXXX` preservation, identical audio-payload hash          |
-| FLAC                  | Yes         | Yes               | Write/re-read, private Vorbis field preservation, identical FLAC audio-frame hash |
-| Other scanner formats | Best effort | No                | Preview warns and confirmation is disabled                                        |
+| Format                | Read        | Album-title write | Evidence                                                                                                |
+| --------------------- | ----------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| MP3                   | Yes         | Yes               | ID3v2.4 write/re-read; Unicode, artwork, numbering, comment, ID, private `TXXX`, and audio preservation |
+| FLAC                  | Yes         | Yes               | Write/re-read; Unicode, artwork, numbering, comment, ID, private Vorbis field, and audio preservation   |
+| Other scanner formats | Best effort | No                | Preview warns and confirmation is disabled                                                              |
 
-The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
+The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
 ## Safety status and limitations
 
@@ -102,4 +103,4 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.
+The next smallest valuable slice is manual Windows locking and exFAT verification—not online metadata or mirror deletion.
