@@ -9,6 +9,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
 - Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
+- Review confirmed album-title edit history and preview an honest per-file undo. Undo reuses the same safe writer and refuses to overwrite a title changed after the original edit.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
 - Repeat scans skip unchanged files; repeat syncs plan no unnecessary copies.
 - Export a verified SQLite database backup, preview and explicitly confirm a restore, preserve an automatic rollback backup, verify the replacement, and restart into it without touching audio or DAP files.
@@ -113,6 +114,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
 - Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
+- Album-title undo restores only verified Outgroove edits and only when the current album tag still equals that edit's recorded result. It is not a general-purpose rollback for external edits or other tag fields.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.

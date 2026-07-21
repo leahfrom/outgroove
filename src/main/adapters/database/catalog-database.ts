@@ -11,6 +11,7 @@ import type {
   ScanJobDto,
   ScanJobState,
   ScanResultDto,
+  TagEditHistoryItemDto,
 } from "../../../shared/contracts/api";
 import type {
   CatalogAlbum,
@@ -122,6 +123,18 @@ function mapScanJob(row: ScanJobRow): ScanJobDto {
 
 export interface StoredFile extends AudioFileRow {
   readonly tags: NormalizedTags;
+}
+
+export interface StoredTagSnapshot {
+  readonly id: string;
+  readonly fileId: string;
+  readonly path: string;
+  readonly before: NormalizedTags;
+  readonly after: NormalizedTags;
+  readonly current: NormalizedTags;
+  readonly scanState: "ok" | "error" | "missing";
+  readonly verified: boolean;
+  readonly error: string | null;
 }
 
 export class CatalogDatabase {
@@ -824,7 +837,18 @@ export class CatalogDatabase {
   }
 
   getAlbum(id: string): CatalogAlbum | undefined {
-    return this.listAlbums().find((album) => album.id === id);
+    return this.listAlbumsByIds([id])[0];
+  }
+
+  getTrack(fileId: string): CatalogTrack | undefined {
+    const row = this.connection
+      .prepare("SELECT album_id FROM tracks WHERE file_id=?")
+      .get(fileId) as { album_id: string } | undefined;
+    return row
+      ? this.listAlbumsByIds([row.album_id])[0]?.tracks.find(
+          (track) => track.id === fileId,
+        )
+      : undefined;
   }
 
   createEditOperation(
@@ -835,7 +859,9 @@ export class CatalogDatabase {
     const id = randomUUID();
     this.connection
       .prepare(
-        "INSERT INTO edit_operations (id, album_id, proposed_title, confirmation_hash, state, created_at) VALUES (?, ?, ?, ?, 'previewed', ?)",
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at, kind)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'album-title-edit')`,
       )
       .run(
         id,
@@ -847,6 +873,30 @@ export class CatalogDatabase {
     return id;
   }
 
+  createUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    proposedTitle: string,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at, kind, source_operation_id)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'album-title-undo', ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        proposedTitle,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -854,11 +904,14 @@ export class CatalogDatabase {
         proposed_title: string;
         confirmation_hash: string;
         state: string;
+        kind: "album-title-edit" | "album-title-undo";
+        source_operation_id: string | null;
       }
     | undefined {
     return this.connection
       .prepare(
-        "SELECT id, album_id, proposed_title, confirmation_hash, state FROM edit_operations WHERE id = ?",
+        `SELECT id, album_id, proposed_title, confirmation_hash, state, kind,
+          source_operation_id FROM edit_operations WHERE id = ?`,
       )
       .get(id) as
       | {
@@ -867,8 +920,88 @@ export class CatalogDatabase {
           proposed_title: string;
           confirmation_hash: string;
           state: string;
+          kind: "album-title-edit" | "album-title-undo";
+          source_operation_id: string | null;
         }
       | undefined;
+  }
+
+  listEditHistory(albumId: string): readonly TagEditHistoryItemDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT operation.id, operation.kind, operation.source_operation_id,
+          operation.proposed_title, operation.state, operation.created_at,
+          operation.completed_at,
+          COALESCE(SUM(CASE WHEN snapshot.verified=1 THEN 1 ELSE 0 END), 0) AS verified_files,
+          COALESCE(SUM(CASE WHEN snapshot.id IS NOT NULL AND snapshot.verified=0 THEN 1 ELSE 0 END), 0) AS failed_files
+         FROM edit_operations operation
+         LEFT JOIN tag_snapshots snapshot ON snapshot.operation_id=operation.id
+         WHERE operation.state IN ('completed', 'failed') AND
+           (operation.album_id=? OR EXISTS (
+             SELECT 1 FROM tag_snapshots current_snapshot
+             JOIN tracks current_track ON current_track.file_id=current_snapshot.file_id
+             WHERE current_snapshot.operation_id=operation.id AND current_track.album_id=?
+           ))
+         GROUP BY operation.id
+         ORDER BY operation.created_at DESC, operation.id DESC
+         LIMIT 50`,
+      )
+      .all(albumId, albumId) as {
+      id: string;
+      kind: "album-title-edit" | "album-title-undo";
+      source_operation_id: string | null;
+      proposed_title: string;
+      state: "completed" | "failed";
+      created_at: string;
+      completed_at: string | null;
+      verified_files: number;
+      failed_files: number;
+    }[];
+    return rows.map((row) => ({
+      operationId: row.id,
+      kind: row.kind,
+      sourceOperationId: row.source_operation_id,
+      proposedTitle: row.proposed_title,
+      state: row.state,
+      createdAt: row.created_at,
+      completedAt: row.completed_at,
+      verifiedFiles: row.verified_files,
+      failedFiles: row.failed_files,
+    }));
+  }
+
+  listSnapshots(operationId: string): readonly StoredTagSnapshot[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT snapshot.id, snapshot.file_id, snapshot.before_tags_json,
+          snapshot.after_tags_json, snapshot.verified, snapshot.error,
+          file.path, file.normalized_tags_json, file.scan_state
+         FROM tag_snapshots snapshot
+         JOIN audio_files file ON file.id=snapshot.file_id
+         WHERE snapshot.operation_id=? ORDER BY snapshot.id`,
+      )
+      .all(operationId) as {
+      id: string;
+      file_id: string;
+      before_tags_json: string;
+      after_tags_json: string;
+      path: string;
+      normalized_tags_json: string | null;
+      scan_state: "ok" | "error" | "missing";
+      verified: number;
+      error: string | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      fileId: row.file_id,
+      path: row.path,
+      before: JSON.parse(row.before_tags_json) as NormalizedTags,
+      after: JSON.parse(row.after_tags_json) as NormalizedTags,
+      current: JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      scanState: row.scan_state,
+      verified: row.verified === 1,
+      error: row.error,
+    }));
   }
 
   beginEdit(id: string): boolean {

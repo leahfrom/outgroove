@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -92,6 +92,9 @@ function api(applyVerified: boolean): OutgrooveApi {
         },
       }),
     ),
+    listAlbumEditHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    previewAlbumTitleUndo: vi.fn(),
+    applyAlbumTitleUndo: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -143,6 +146,161 @@ describe("tag edit UI safety states", () => {
       "1 writes failed verification",
     );
     expect(screen.getByRole("status")).not.toHaveTextContent("Verified 1");
+  });
+
+  it("shows history and requires a per-file undo preview before confirmation", async () => {
+    const mockApi = api(true);
+    const listAlbumEditHistory = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: [
+          {
+            operationId: "75d39ca7-fc00-41b7-a132-2024b912573f",
+            kind: "album-title-edit" as const,
+            sourceOperationId: null,
+            proposedTitle: "Renamed Album",
+            state: "completed" as const,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:01:00.000Z",
+            verifiedFiles: 1,
+            failedFiles: 0,
+          },
+        ],
+      }),
+    );
+    const previewAlbumTitleUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "fba25f9c-51ad-41c7-a838-4dcdf20a587a",
+          confirmationToken: "undo-confirmation-token-long-enough",
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.mp3",
+              before: "Renamed Album",
+              after: "Fixture Album",
+              warnings: [],
+            },
+          ],
+        },
+      }),
+    );
+    const applyAlbumTitleUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "fba25f9c-51ad-41c7-a838-4dcdf20a587a",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.mp3",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      }),
+    );
+    Object.assign(mockApi, {
+      listAlbumEditHistory,
+      previewAlbumTitleUndo,
+      applyAlbumTitleUndo,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const history = await screen.findByLabelText("Album-title edit history");
+    expect(history).toHaveTextContent("Changed title to “Renamed Album”");
+    await user.click(
+      within(history).getByRole("button", { name: "Preview undo" }),
+    );
+    const preview = await screen.findByLabelText("Tag undo confirmation");
+    expect(preview).toHaveTextContent("Renamed Album");
+    expect(preview).toHaveTextContent("Fixture Album");
+    expect(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo 1 files",
+      }),
+    ).toBeEnabled();
+    expect(previewAlbumTitleUndo).toHaveBeenCalledWith({
+      operationId: "75d39ca7-fc00-41b7-a132-2024b912573f",
+    });
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo 1 files",
+      }),
+    );
+    expect(applyAlbumTitleUndo).toHaveBeenCalledWith({
+      operationId: "fba25f9c-51ad-41c7-a838-4dcdf20a587a",
+      confirmationToken: "undo-confirmation-token-long-enough",
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Verified undo for 1 files",
+    );
+  });
+
+  it("disables undo confirmation when an intervening edit creates a conflict", async () => {
+    const mockApi = api(true);
+    Object.assign(mockApi, {
+      listAlbumEditHistory: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: [
+            {
+              operationId: "75d39ca7-fc00-41b7-a132-2024b912573f",
+              kind: "album-title-edit" as const,
+              sourceOperationId: null,
+              proposedTitle: "Renamed Album",
+              state: "completed" as const,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              completedAt: "2026-01-01T00:01:00.000Z",
+              verifiedFiles: 1,
+              failedFiles: 0,
+            },
+          ],
+        }),
+      ),
+      previewAlbumTitleUndo: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: {
+            operationId: "fba25f9c-51ad-41c7-a838-4dcdf20a587a",
+            confirmationToken: "undo-confirmation-token-long-enough",
+            files: [
+              {
+                fileId: album.tracks[0]?.id ?? "",
+                path: "/fixture/track.mp3",
+                before: "Manual Title",
+                after: "Fixture Album",
+                warnings: [
+                  "The album title changed after this edit; undo will not overwrite it.",
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Preview undo" }),
+    );
+    const preview = await screen.findByLabelText("Tag undo confirmation");
+    expect(preview).toHaveTextContent("will not overwrite it");
+    expect(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo 1 files",
+      }),
+    ).toBeDisabled();
   });
 
   it("restores an interrupted scan and offers an explicit retry", async () => {
@@ -370,7 +528,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 5,
+          schemaVersion: 6,
           summary: {
             libraryRoots: 2,
             albums: 30,

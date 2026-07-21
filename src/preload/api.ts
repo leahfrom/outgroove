@@ -21,6 +21,12 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.previewAlbumTitleEdit, request),
   applyAlbumTitleEdit: (request) =>
     ipcRenderer.invoke(channels.applyAlbumTitleEdit, request),
+  listAlbumEditHistory: (request) =>
+    ipcRenderer.invoke(channels.listAlbumEditHistory, request),
+  previewAlbumTitleUndo: (request) =>
+    ipcRenderer.invoke(channels.previewAlbumTitleUndo, request),
+  applyAlbumTitleUndo: (request) =>
+    ipcRenderer.invoke(channels.applyAlbumTitleUndo, request),
   chooseSyncTargetAndCreateProfile: (request) =>
     ipcRenderer.invoke(channels.createSyncProfile, request),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),
