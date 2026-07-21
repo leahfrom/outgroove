@@ -79,6 +79,10 @@ export class WorkerMetadataJobRunner implements MetadataJobRunner {
     let next = 0;
     let completed = 0;
     await new Promise<void>((resolve, reject) => {
+      const abort = (): void => {
+        reject(new DOMException("Scan cancelled", "AbortError"));
+      };
+      signal?.addEventListener("abort", abort, { once: true });
       const dispatch = (worker: Worker): void => {
         if (signal?.aborted) {
           reject(new DOMException("Scan cancelled", "AbortError"));
@@ -110,11 +114,9 @@ export class WorkerMetadataJobRunner implements MetadataJobRunner {
         worker.postMessage({ id: String(index), path });
       };
       workers.forEach(dispatch);
-    }).finally(async () =>
-      Promise.all(workers.map((worker) => worker.terminate())).then(
-        () => undefined,
-      ),
-    );
+    }).finally(async () => {
+      await Promise.all(workers.map((worker) => worker.terminate()));
+    });
     return results;
   }
 }

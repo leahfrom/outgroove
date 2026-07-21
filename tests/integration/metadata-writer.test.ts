@@ -1,6 +1,8 @@
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+
+import { createHash } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -68,4 +70,17 @@ it("rejects unsupported writes without changing the source", async () => {
     ),
   ).rejects.toThrow("not supported");
   expect(await readFile(path)).toEqual(before);
+});
+
+it("streams a large MP3 payload while excluding leading and trailing tags", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-hash-"));
+  temporary.push(directory);
+  const path = join(directory, "large.mp3");
+  const payload = Buffer.alloc(5 * 1024 * 1024, 0x5a);
+  const id3 = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 4, 1, 2, 3, 4]);
+  const id3v1 = Buffer.concat([Buffer.from("TAG"), Buffer.alloc(125, 7)]);
+  await writeFile(path, Buffer.concat([id3, payload, id3v1]));
+  expect(await audioPayloadHash(path)).toBe(
+    createHash("sha256").update(payload).digest("hex"),
+  );
 });

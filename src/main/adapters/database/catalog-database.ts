@@ -5,6 +5,12 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
 import type {
+  LibraryRootDto,
+  ScanJobDto,
+  ScanJobState,
+  ScanResultDto,
+} from "../../../shared/contracts/api";
+import type {
   CatalogAlbum,
   CatalogTrack,
   NormalizedTags,
@@ -27,6 +33,38 @@ interface AudioFileRow {
   scan_error: string | null;
 }
 
+interface ScanJobRow {
+  id: string;
+  root_id: string;
+  state: ScanJobState;
+  completed: number;
+  total: number;
+  detail: string;
+  result_json: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+function mapScanJob(row: ScanJobRow): ScanJobDto {
+  return {
+    id: row.id,
+    rootId: row.root_id,
+    state: row.state,
+    completed: row.completed,
+    total: row.total,
+    detail: row.detail,
+    result: row.result_json
+      ? (JSON.parse(row.result_json) as ScanResultDto)
+      : null,
+    error: row.error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    finishedAt: row.finished_at,
+  };
+}
+
 export interface StoredFile extends AudioFileRow {
   readonly tags: NormalizedTags;
 }
@@ -40,6 +78,7 @@ export class CatalogDatabase {
     this.connection.pragma("foreign_keys = ON");
     this.connection.pragma("journal_mode = WAL");
     this.migrate();
+    this.interruptOrphanedJobs();
   }
 
   close(): void {
@@ -57,6 +96,16 @@ export class CatalogDatabase {
         this.connection.pragma(`user_version = ${migration.version}`);
       })();
     }
+  }
+
+  private interruptOrphanedJobs(): void {
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `UPDATE jobs SET state='interrupted', error='Outgroove closed before this scan finished.', updated_at=?, finished_at=?
+         WHERE state IN ('queued', 'running', 'cancelling')`,
+      )
+      .run(now, now);
   }
 
   backup(destinationPath: string): Promise<void> {
@@ -93,6 +142,91 @@ export class CatalogDatabase {
     return this.connection
       .prepare("SELECT id, path FROM library_roots WHERE id = ?")
       .get(id) as { id: string; path: string } | undefined;
+  }
+
+  listLibraryRoots(): readonly LibraryRootDto[] {
+    return this.connection
+      .prepare(
+        "SELECT id, path, last_scan_at AS lastScanAt FROM library_roots ORDER BY created_at",
+      )
+      .all() as LibraryRootDto[];
+  }
+
+  createScanJob(rootId: string): ScanJobDto {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `INSERT INTO jobs (id, type, root_id, state, created_at, updated_at)
+         VALUES (?, 'scan', ?, 'queued', ?, ?)`,
+      )
+      .run(id, rootId, now, now);
+    const created = this.getScanJob(id);
+    if (!created) throw new Error("Created scan job could not be read.");
+    return created;
+  }
+
+  updateScanJob(
+    id: string,
+    update: {
+      state?: ScanJobState;
+      completed?: number;
+      total?: number;
+      detail?: string;
+      result?: ScanResultDto | null;
+      error?: string | null;
+      finished?: boolean;
+    },
+  ): ScanJobDto {
+    const current = this.getScanJob(id);
+    if (!current) throw new Error("Scan job does not exist.");
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `UPDATE jobs SET state=?, completed=?, total=?, detail=?, result_json=?, error=?, updated_at=?, finished_at=? WHERE id=?`,
+      )
+      .run(
+        update.state ?? current.state,
+        update.completed ?? current.completed,
+        update.total ?? current.total,
+        update.detail ?? current.detail,
+        update.result === undefined
+          ? current.result && JSON.stringify(current.result)
+          : update.result && JSON.stringify(update.result),
+        update.error === undefined ? current.error : update.error,
+        now,
+        update.finished ? now : current.finishedAt,
+        id,
+      );
+    const updated = this.getScanJob(id);
+    if (!updated) throw new Error("Updated scan job could not be read.");
+    return updated;
+  }
+
+  getScanJob(id: string): ScanJobDto | undefined {
+    const row = this.connection
+      .prepare("SELECT * FROM jobs WHERE id=? AND type='scan'")
+      .get(id) as ScanJobRow | undefined;
+    return row && mapScanJob(row);
+  }
+
+  getLatestScanJob(): ScanJobDto | null {
+    const row = this.connection
+      .prepare(
+        "SELECT * FROM jobs WHERE type='scan' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get() as ScanJobRow | undefined;
+    return row ? mapScanJob(row) : null;
+  }
+
+  getActiveScanJob(rootId: string): ScanJobDto | null {
+    const row = this.connection
+      .prepare(
+        `SELECT * FROM jobs WHERE type='scan' AND root_id=? AND state IN ('queued', 'running', 'cancelling')
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(rootId) as ScanJobRow | undefined;
+    return row ? mapScanJob(row) : null;
   }
 
   getFileByPathKey(pathKey: string): AudioFileRow | undefined {

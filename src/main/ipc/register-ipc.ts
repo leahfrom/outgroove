@@ -7,6 +7,7 @@ import {
   albumEditApplyRequestSchema,
   albumEditPreviewRequestSchema,
   emptyRequestSchema,
+  scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
   syncPlanRequestSchema,
@@ -16,13 +17,13 @@ import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
-import type { ScanLibrary } from "../application/scan-library";
 import { pathComparisonKey } from "../application/scan-library";
+import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
 
 interface Dependencies {
   database: CatalogDatabase;
-  scanner: ScanLibrary;
+  scanJobs: ScanJobCoordinator;
   editor: EditAlbumTitle;
   sync: DeviceSync;
   window: BrowserWindow;
@@ -43,6 +44,10 @@ export function registerIpc(
           detail,
         });
     };
+  dependencies.scanJobs.onUpdated((job) => {
+    if (!dependencies.window.isDestroyed())
+      dependencies.window.webContents.send(channels.scanJobUpdated, job);
+  });
   ipcMain.handle(
     channels.chooseLibraryFolder,
     createValidatedHandler(emptyRequestSchema, async () => {
@@ -60,9 +65,27 @@ export function registerIpc(
     }),
   );
   ipcMain.handle(
+    channels.listLibraryRoots,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.database.listLibraryRoots(),
+    ),
+  );
+  ipcMain.handle(
     channels.scanLibrary,
     createValidatedHandler(scanRequestSchema, ({ rootId }) =>
-      dependencies.scanner.execute(rootId, progress("scan")),
+      dependencies.scanJobs.start(rootId),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelScan,
+    createValidatedHandler(scanCancelRequestSchema, ({ jobId }) =>
+      dependencies.scanJobs.cancel(jobId),
+    ),
+  );
+  ipcMain.handle(
+    channels.getLatestScanJob,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.scanJobs.latest(),
     ),
   );
   ipcMain.handle(

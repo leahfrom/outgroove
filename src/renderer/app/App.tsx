@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   ScanErrorDto,
+  ScanJobDto,
   SyncPlanDto,
   TagEditPreviewDto,
 } from "../../shared/contracts/api";
@@ -28,16 +29,21 @@ export function App(): React.JSX.Element {
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
   const [progress, setProgress] = useState<Progress>();
+  const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
     "Choose a fixture or test library folder to begin.",
   );
   const [busy, setBusy] = useState(false);
+  const scanActive =
+    scanJob?.state === "queued" ||
+    scanJob?.state === "running" ||
+    scanJob?.state === "cancelling";
   const selectedAlbum = useMemo(
     () => albums.find((album) => album.id === selectedAlbumId),
     [albums, selectedAlbumId],
   );
 
-  const refreshCatalog = async (): Promise<void> => {
+  const refreshCatalog = useCallback(async (): Promise<void> => {
     const [albumResult, errorResult] = await Promise.all([
       window.outgroove.listAlbums(),
       window.outgroove.listScanErrors(),
@@ -51,12 +57,53 @@ export function App(): React.JSX.Element {
       );
     } else setNotice(albumResult.error.message);
     if (errorResult.ok) setScanErrors(errorResult.value);
-  };
+  }, []);
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
-    void refreshCatalog();
-  }, []);
+    const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
+      setScanJob(job);
+      if (job.state === "completed" && job.result) {
+        setNotice(
+          `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+        );
+        void refreshCatalog();
+      } else if (job.state === "cancelled") setNotice(job.detail);
+      else if (job.state === "failed" || job.state === "interrupted")
+        setNotice(job.error ?? job.detail);
+    });
+    void Promise.all([
+      window.outgroove.listLibraryRoots(),
+      window.outgroove.getLatestScanJob(),
+      refreshCatalog(),
+    ]).then(([roots, latest]) => {
+      if (roots.ok)
+        setRootId(
+          latest.ok && latest.value ? latest.value.rootId : roots.value[0]?.id,
+        );
+      if (latest.ok && latest.value) {
+        setScanJob(latest.value);
+        if (
+          latest.value.state === "failed" ||
+          latest.value.state === "interrupted"
+        )
+          setNotice(latest.value.error ?? latest.value.detail);
+      }
+    });
+    return unsubscribe;
+  }, [refreshCatalog]);
+
+  const startScan = async (selectedRootId: string): Promise<void> => {
+    const started = await window.outgroove.scanLibrary({
+      rootId: selectedRootId,
+    });
+    if (started.ok) {
+      setScanJob(started.value);
+      setNotice(
+        "Scan started. You can cancel it without losing the previous catalog.",
+      );
+    } else setNotice(started.error.message);
+  };
 
   const chooseAndScan = async (): Promise<void> => {
     setBusy(true);
@@ -71,17 +118,7 @@ export function App(): React.JSX.Element {
         return;
       }
       setRootId(selected.value.id);
-      const scanned = await window.outgroove.scanLibrary({
-        rootId: selected.value.id,
-      });
-      if (!scanned.ok) {
-        setNotice(scanned.error.message);
-        return;
-      }
-      setNotice(
-        `Scan finished: ${scanned.value.parsed} parsed, ${scanned.value.unchanged} unchanged, ${scanned.value.errors} errors.`,
-      );
-      await refreshCatalog();
+      await startScan(selected.value.id);
     } finally {
       setBusy(false);
     }
@@ -89,18 +126,14 @@ export function App(): React.JSX.Element {
 
   const rescan = async (): Promise<void> => {
     if (!rootId) return;
-    setBusy(true);
-    try {
-      const scanned = await window.outgroove.scanLibrary({ rootId });
-      setNotice(
-        scanned.ok
-          ? `Repeat scan: ${scanned.value.parsed} parsed, ${scanned.value.unchanged} unchanged, ${scanned.value.errors} errors.`
-          : scanned.error.message,
-      );
-      await refreshCatalog();
-    } finally {
-      setBusy(false);
-    }
+    await startScan(rootId);
+  };
+
+  const cancelScan = async (): Promise<void> => {
+    if (!scanJob || !scanActive) return;
+    const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
+    if (cancelled.ok) setScanJob(cancelled.value);
+    else setNotice(cancelled.error.message);
   };
 
   const previewEdit = async (): Promise<void> => {
@@ -186,10 +219,16 @@ export function App(): React.JSX.Element {
           <h1>Outgroove</h1>
         </div>
         <div className="actions">
-          <button disabled={busy} onClick={() => void chooseAndScan()}>
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void chooseAndScan()}
+          >
             Choose library folder
           </button>
-          <button disabled={busy || !rootId} onClick={() => void rescan()}>
+          <button
+            disabled={busy || scanActive || !rootId}
+            onClick={() => void rescan()}
+          >
             Scan again
           </button>
         </div>
@@ -205,6 +244,33 @@ export function App(): React.JSX.Element {
           </span>
         </div>
       )}
+      {scanJob && (
+        <section className="scan-job" aria-label="Scan activity">
+          <div>
+            <strong>Library scan: {scanJob.state}</strong>
+            <span>{scanJob.detail || "Waiting to start…"}</span>
+            {scanJob.error && <span role="alert">{scanJob.error}</span>}
+          </div>
+          {scanJob.total > 0 && (
+            <progress value={scanJob.completed} max={scanJob.total} />
+          )}
+          {scanActive && (
+            <button
+              disabled={scanJob.state === "cancelling"}
+              onClick={() => void cancelScan()}
+            >
+              {scanJob.state === "cancelling" ? "Cancelling…" : "Cancel scan"}
+            </button>
+          )}
+          {(scanJob.state === "cancelled" ||
+            scanJob.state === "failed" ||
+            scanJob.state === "interrupted") && (
+            <button disabled={!rootId} onClick={() => void rescan()}>
+              Retry scan
+            </button>
+          )}
+        </section>
+      )}
       {albums.length === 0 ? (
         <main className="empty">
           <h2>Your Library is empty</h2>
@@ -213,7 +279,10 @@ export function App(): React.JSX.Element {
             explicitly intend Outgroove to scan. Scanning and browsing stay
             offline.
           </p>
-          <button disabled={busy} onClick={() => void chooseAndScan()}>
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void chooseAndScan()}
+          >
             Choose a library folder
           </button>
         </main>

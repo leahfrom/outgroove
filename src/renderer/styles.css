@@ -98,6 +98,26 @@ h1 {
   align-items: center;
   margin-bottom: 1rem;
 }
+.scan-job {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #aab5ad;
+  border-radius: 9px;
+  background: white;
+}
+.scan-job div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.scan-job span {
+  color: #526159;
+  overflow-wrap: anywhere;
+}
 .empty {
   background: white;
   border: 1px solid #d8ddd8;

@@ -1,6 +1,9 @@
 export const channels = {
   chooseLibraryFolder: "library:choose-folder",
+  listLibraryRoots: "library:list-roots",
   scanLibrary: "library:scan",
+  cancelScan: "library:cancel-scan",
+  getLatestScanJob: "library:latest-scan-job",
   listAlbums: "library:list-albums",
   listScanErrors: "library:list-scan-errors",
   previewAlbumTitleEdit: "tagging:preview-album-title",
@@ -9,4 +12,5 @@ export const channels = {
   planSync: "sync:plan",
   applySync: "sync:apply",
   jobProgress: "jobs:progress",
+  scanJobUpdated: "jobs:scan-updated",
 } as const;

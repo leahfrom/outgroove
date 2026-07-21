@@ -23,10 +23,18 @@ export function pathComparisonKey(path: string): string {
   return normalize(resolve(path)).normalize("NFC").toLocaleLowerCase("en-US");
 }
 
-async function enumerateAudioFiles(root: string): Promise<string[]> {
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException("Scan cancelled", "AbortError");
+}
+
+async function enumerateAudioFiles(
+  root: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
   const files: string[] = [];
   const pending = [root];
   while (pending.length > 0) {
+    throwIfCancelled(signal);
     const directory = pending.pop();
     if (!directory) continue;
     let entries;
@@ -36,6 +44,7 @@ async function enumerateAudioFiles(root: string): Promise<string[]> {
       continue;
     }
     for (const entry of entries) {
+      throwIfCancelled(signal);
       const path = join(directory, entry.name);
       if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) pending.push(path);
@@ -63,11 +72,12 @@ export class ScanLibrary {
   ): Promise<ScanResultDto> {
     const root = this.database.getLibraryRoot(rootId);
     if (!root) throw new Error("Library root does not exist.");
-    const paths = await enumerateAudioFiles(root.path);
+    const paths = await enumerateAudioFiles(root.path, signal);
     const seenKeys: string[] = [];
     const changed: string[] = [];
     let unchanged = 0;
     for (const path of paths) {
+      throwIfCancelled(signal);
       const pathKey = pathComparisonKey(path);
       seenKeys.push(pathKey);
       try {
@@ -93,6 +103,7 @@ export class ScanLibrary {
     let errors = 0;
     const results = await this.metadata.readAll(changed, onProgress, signal);
     for (const result of results) {
+      throwIfCancelled(signal);
       if (result.ok)
         this.database.upsertScannedFile(
           rootId,
@@ -117,6 +128,7 @@ export class ScanLibrary {
         );
       }
     }
+    throwIfCancelled(signal);
     this.database.finishScan(rootId, seenKeys);
     return { parsed: results.length - errors, unchanged, errors };
   }

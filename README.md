@@ -5,6 +5,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 ## What works
 
 - Choose one library folder with a native dialog and scan supported audio extensions in a bounded worker pool.
+- Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
 - Browse albums and tracks in a sandboxed React renderer.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
@@ -83,8 +84,8 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
-- Content hashing currently reads a complete file into memory. This is acceptable for the tiny first slice but must become streaming before large-library claims.
-- Scan cancellation is available at the job boundary but is not yet exposed by a UI cancel button or persisted for resume.
+- Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
+- Scan jobs persist progress and terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs are configured in CI; Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
 
@@ -98,4 +99,4 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is persistent/cancellable scan-job UX plus streaming hashes and an expanded writer fixture corpus, followed by packaged Windows verification—not online metadata or mirror deletion.
+The next smallest valuable slice is a larger redistributable writer/corrupt-file fixture corpus plus paginated catalog search and problem filters, followed by manual Windows locking and exFAT verification—not online metadata or mirror deletion.
