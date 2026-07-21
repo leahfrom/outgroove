@@ -52,6 +52,31 @@ export const trackTagEditPreviewRequestSchema = z
       .refine((changes) => Object.keys(changes).length > 0),
   })
   .strict();
+export const trackBatchEditPreviewRequestSchema = z
+  .object({
+    fileIds: z
+      .array(z.uuid())
+      .min(2)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Choose each track only once.",
+      }),
+    changes: z
+      .object({
+        artist: z.string().trim().min(1).max(400).optional(),
+        albumArtist: z.string().trim().min(1).max(400).optional(),
+        discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        year: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+      })
+      .strict()
+      .refine((changes) => Object.keys(changes).length > 0),
+  })
+  .strict();
 export const syncProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
   .strict();
@@ -154,13 +179,24 @@ export interface TrackTagEditPreviewDto {
   }[];
   readonly warnings: readonly string[];
 }
+export interface TrackBatchEditPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly files: readonly (Omit<
+    TrackTagEditPreviewDto,
+    "operationId" | "confirmationToken"
+  > & {
+    readonly willWrite: boolean;
+  })[];
+}
 export interface TagEditHistoryItemDto {
   readonly operationId: string;
   readonly kind:
     | "album-title-edit"
     | "album-title-undo"
     | "track-tags-edit"
-    | "track-tags-undo";
+    | "track-tags-undo"
+    | "track-tags-batch-edit";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -239,6 +275,12 @@ export interface OutgrooveApi {
     request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
   ): Promise<Result<TrackTagEditPreviewDto>>;
   applyTrackTagUndo(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewTrackBatchEdit(
+    request: z.infer<typeof trackBatchEditPreviewRequestSchema>,
+  ): Promise<Result<TrackBatchEditPreviewDto>>;
+  applyTrackBatchEdit(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

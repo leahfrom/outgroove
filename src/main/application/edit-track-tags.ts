@@ -3,6 +3,7 @@ import { extname } from "node:path";
 
 import type {
   TagEditResultDto,
+  TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { NormalizedTags } from "../../shared/domain/catalog";
@@ -35,6 +36,16 @@ function targetedFieldsChanged(
   return editableTrackTagFields.some(
     (field) => field in changes && before[field] !== current[field],
   );
+}
+
+type BatchTagChangeInput = Pick<
+  TrackTagChangeInput,
+  "artist" | "albumArtist" | "discNumber" | "year"
+>;
+
+interface StoredBatchPreview {
+  readonly fileId: string;
+  readonly tags: NormalizedTags;
 }
 
 export class EditTrackTags {
@@ -323,5 +334,137 @@ export class EditTrackTags {
         },
       ],
     };
+  }
+
+  previewBatch(
+    fileIds: readonly string[],
+    input: BatchTagChangeInput,
+  ): TrackBatchEditPreviewDto {
+    const proposed = normalizeTrackTagChanges(input);
+    const tracks = fileIds.map((fileId) => {
+      const track = this.database.getTrack(fileId);
+      const albumId = this.database.getTrackAlbumId(fileId);
+      if (!track || !albumId)
+        throw new Error("A selected track does not exist.");
+      return { fileId, track, albumId };
+    });
+    const albumId = tracks[0]?.albumId;
+    if (!albumId || tracks.some((track) => track.albumId !== albumId))
+      throw new Error("Batch edits must stay within one album.");
+
+    const files = tracks.map(({ fileId, track }) => {
+      const changes = changedTrackTags(track.tags, proposed);
+      const extension = extname(track.path).toLocaleLowerCase("en-US");
+      return {
+        fileId,
+        path: track.path,
+        changes: editableTrackTagFields
+          .filter((field) => field in changes)
+          .map((field) => ({
+            field,
+            before: track.tags[field],
+            after: changes[field] ?? null,
+          })),
+        warnings: this.writer.writableExtensions.has(extension)
+          ? []
+          : [`${extension || "This format"} is read-only in this slice.`],
+        willWrite: Object.keys(changes).length > 0,
+        tags: track.tags,
+      };
+    });
+    const writableFiles = files.filter((file) => file.willWrite);
+    if (writableFiles.length === 0)
+      throw new Error("The proposed metadata already matches every track.");
+
+    const confirmationToken = randomBytes(24).toString("base64url");
+    const operationId = this.database.createTrackBatchEditOperation(
+      albumId,
+      writableFiles.map(({ fileId, tags }) => ({ fileId, tags })),
+      proposed,
+      tokenHash(confirmationToken),
+    );
+    return {
+      operationId,
+      confirmationToken,
+      files: files.map((file) => ({
+        fileId: file.fileId,
+        path: file.path,
+        changes: file.changes,
+        warnings: file.warnings,
+        willWrite: file.willWrite,
+      })),
+    };
+  }
+
+  async applyBatch(
+    operationId: string,
+    confirmationToken: string,
+    onProgress: (completed: number, total: number, path: string) => void = () =>
+      undefined,
+  ): Promise<TagEditResultDto> {
+    const operation = this.database.getEditOperation(operationId);
+    if (
+      operation?.state !== "previewed" ||
+      operation.kind !== "track-tags-batch-edit" ||
+      !operation.preview_tags_json ||
+      !operation.proposed_tags_json ||
+      tokenHash(confirmationToken) !== operation.confirmation_hash
+    )
+      throw new Error(
+        "This batch edit was not confirmed from its current preview.",
+      );
+    const previews = JSON.parse(
+      operation.preview_tags_json,
+    ) as StoredBatchPreview[];
+    const changes = normalizeTrackTagChanges(
+      JSON.parse(operation.proposed_tags_json) as TrackTagChanges,
+    );
+    if (!this.database.beginEdit(operationId))
+      throw new Error(
+        "This batch edit is already being applied or has finished.",
+      );
+
+    const results: TagEditResultDto["results"][number][] = [];
+    for (const [index, preview] of previews.entries()) {
+      const target = this.database.getFileEditState(preview.fileId);
+      const current = target?.tags ?? preview.tags;
+      const after = applyChanges(current, changes);
+      const snapshotId = this.database.saveSnapshot(
+        operationId,
+        preview.fileId,
+        current,
+        after,
+      );
+      let verified = false;
+      let error: string | null = null;
+      if (target?.scanState !== "ok")
+        error = "The file is not currently available for writing.";
+      else if (targetedFieldsChanged(preview.tags, current, changes))
+        error =
+          "A field in this preview changed after it was created; the edit did not overwrite it.";
+      else {
+        try {
+          const write = await this.writer.writeTags(target.path, changes);
+          verified =
+            !targetedFieldsChanged(after, write.file.tags, changes) &&
+            write.payloadHashBefore === write.payloadHashAfter;
+          if (!verified)
+            error =
+              "The post-write metadata or audio-payload verification failed.";
+          else this.database.updateFileAfterEdit(preview.fileId, write.file);
+        } catch (caught) {
+          error = caught instanceof Error ? caught.message : String(caught);
+        }
+      }
+      this.database.finishSnapshot(snapshotId, verified, error);
+      const path = target?.path ?? "Unavailable track";
+      results.push({ fileId: preview.fileId, path, verified, error });
+      onProgress(index + 1, previews.length, path);
+    }
+    this.database.finishEdit(
+      operationId,
+      results.every((result) => result.verified),
+    );
+    return { operationId, results };
   }
 }
