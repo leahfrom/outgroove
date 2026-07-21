@@ -24,6 +24,10 @@ describe("synthetic large-library pipeline", () => {
     for (const timing of Object.values(report.timingsMs))
       expect(timing).toBeGreaterThanOrEqual(0);
     expect(report.peakRssBytes).toBeGreaterThanOrEqual(report.baselineRssBytes);
+    expect(report.peakHeapUsedBytes).toBeGreaterThanOrEqual(
+      report.baselineHeapUsedBytes,
+    );
+    expect(report.databaseBytes).toBeGreaterThan(0);
   }, 30_000);
 });
 

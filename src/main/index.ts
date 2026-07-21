@@ -76,8 +76,15 @@ async function createWindow(): Promise<void> {
       "album",
       "01-first.mp3",
     );
-    const results = await metadataRunner.readAll([fixture], () => undefined);
-    if (results[0]?.ok !== true)
+    let smokeResult: { ok: boolean } | undefined;
+    await metadataRunner.processAll(
+      [fixture],
+      (result) => {
+        smokeResult = result;
+      },
+      () => undefined,
+    );
+    if (smokeResult?.ok !== true)
       throw new Error("Packaged metadata worker could not parse its fixture.");
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);

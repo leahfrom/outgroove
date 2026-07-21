@@ -4,7 +4,10 @@ import { extname, join, normalize, resolve } from "node:path";
 import type { ScanResultDto } from "../../shared/contracts/api";
 import type { ScannedAudioFile } from "../../shared/domain/catalog";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
-import type { MetadataJobRunner } from "../jobs/metadata-runner";
+import type {
+  MetadataJobResult,
+  MetadataJobRunner,
+} from "../jobs/metadata-runner";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".mp3",
@@ -102,43 +105,54 @@ export class ScanLibrary {
       }
     }
     let errors = 0;
-    const results = await this.metadata.readAll(changed, onProgress, signal);
+    let parsed = 0;
     let successfulBatch: { pathKey: string; file: ScannedAudioFile }[] = [];
     const flushSuccessfulBatch = (): void => {
       if (successfulBatch.length === 0) return;
       this.database.upsertScannedFiles(rootId, successfulBatch);
       successfulBatch = [];
     };
-    for (const result of results) {
-      throwIfCancelled(signal);
-      if (result.ok) {
-        successfulBatch.push({
-          pathKey: pathComparisonKey(result.file.path),
-          file: result.file,
-        });
-        if (successfulBatch.length === 250) flushSuccessfulBatch();
-      } else {
-        flushSuccessfulBatch();
-        errors++;
-        let info = { size: 0, mtimeMs: 0 };
-        try {
-          info = await stat(result.path);
-        } catch {
-          /* retained as an item-level error */
-        }
-        this.database.upsertScanError(
-          rootId,
-          result.path,
-          pathComparisonKey(result.path),
-          info.size,
-          info.mtimeMs,
-          result.error,
-        );
+    const persistError = async (
+      result: Extract<MetadataJobResult, { ok: false }>,
+    ): Promise<void> => {
+      let info = { size: 0, mtimeMs: 0 };
+      try {
+        info = await stat(result.path);
+      } catch {
+        /* retained as an item-level error */
       }
-    }
+      this.database.upsertScanError(
+        rootId,
+        result.path,
+        pathComparisonKey(result.path),
+        info.size,
+        info.mtimeMs,
+        result.error,
+      );
+    };
+    await this.metadata.processAll(
+      changed,
+      (result) => {
+        throwIfCancelled(signal);
+        if (result.ok) {
+          parsed++;
+          successfulBatch.push({
+            pathKey: pathComparisonKey(result.file.path),
+            file: result.file,
+          });
+          if (successfulBatch.length === 250) flushSuccessfulBatch();
+        } else {
+          flushSuccessfulBatch();
+          errors++;
+          return persistError(result);
+        }
+      },
+      onProgress,
+      signal,
+    );
     flushSuccessfulBatch();
     throwIfCancelled(signal);
     this.database.finishScan(rootId, seenKeys);
-    return { parsed: results.length - errors, unchanged, errors };
+    return { parsed, unchanged, errors };
   }
 }
