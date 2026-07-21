@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { open, rename, stat, unlink } from "node:fs/promises";
+import { open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
-import { loadTrack, saveTrack } from "@akabeko/music-metadata-editor";
+import {
+  loadTrack,
+  saveTrack,
+  writeMetadata,
+} from "@akabeko/music-metadata-editor";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
 import { streamingFileHash } from "../filesystem/streaming-hash";
@@ -145,10 +149,22 @@ export class SafeMetadataWriter implements MetadataWriter {
     let originalMoved = false;
     try {
       const loaded = await loadTrack(path);
-      await saveTrack(
-        { ...loaded, tag: { ...loaded.tag, album: albumTitle } },
-        { source: path, outputPath: temporary },
-      );
+      if (extension === ".mp3") {
+        // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
+        // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
+        const bytes = await writeMetadata(path, {
+          tag: { ...loaded.tag, album: albumTitle },
+          id3v2MajorVersion: 4,
+        } as Parameters<typeof writeMetadata>[1] & {
+          id3v2MajorVersion: 4;
+        });
+        await writeFile(temporary, bytes, { flag: "wx" });
+      } else {
+        await saveTrack(
+          { ...loaded, tag: { ...loaded.tag, album: albumTitle } },
+          { source: path, outputPath: temporary },
+        );
+      }
       await flushPath(temporary);
       const temporaryRead = await this.reader.read(temporary);
       if (temporaryRead.tags.album !== albumTitle)

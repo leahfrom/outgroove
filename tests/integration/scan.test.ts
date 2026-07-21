@@ -53,4 +53,33 @@ describe("incremental library scan", () => {
     expect(database.listScanErrors()).toHaveLength(1);
     database.close();
   });
+
+  it("records each distinct malformed container without aborting the scan", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-corrupt-"));
+    temporary.push(directory);
+    const library = join(directory, "library");
+    await cp(join(process.cwd(), "fixtures", "audio", "corrupt"), library, {
+      recursive: true,
+    });
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(library, pathComparisonKey(library));
+    const scanner = new ScanLibrary(
+      database,
+      new LocalMetadataJobRunner(new MusicMetadataReader()),
+    );
+    await expect(scanner.execute(root.id)).resolves.toEqual({
+      parsed: 0,
+      unchanged: 0,
+      errors: 3,
+    });
+    expect(database.listScanErrors().map((error) => error.path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("truncated-id3.mp3"),
+        expect.stringContaining("truncated-metadata.flac"),
+        expect.stringContaining("unsupported.ogg"),
+      ]),
+    );
+    expect(database.listAlbums()).toEqual([]);
+    database.close();
+  });
 });
