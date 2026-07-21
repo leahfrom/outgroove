@@ -87,27 +87,35 @@ export class ScanLibrary {
         }
         const path = item.path;
         const pathKey = pathComparisonKey(path);
-        let changed: ScanDiscoveryEntry["changed"] = null;
-        try {
-          const info = await this.fileSystem.statFile(path);
-          const existing = this.database.getFileByPathKey(pathKey);
-          if (
-            existing?.size === info.size &&
-            Math.trunc(existing.modified_ms) === Math.trunc(info.modifiedMs)
-          )
-            unchanged++;
-          else changed = { sequence: changedCount++, path };
-        } catch (error) {
+        if (item.kind === "file-error") {
           this.database.upsertScanError(
             rootId,
             path,
             pathKey,
             0,
             0,
-            error instanceof Error ? error.message : String(error),
+            item.message,
           );
           errors++;
+          discovered++;
+          discoveryBatch.push({ pathKey, changed: null });
+          onProgress({
+            phase: "discovery",
+            discovered,
+            folderErrors,
+          });
+          if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
+            flushDiscoveryBatch();
+          continue;
         }
+        let changed: ScanDiscoveryEntry["changed"] = null;
+        const existing = this.database.getFileByPathKey(pathKey);
+        if (
+          existing?.size === item.size &&
+          Math.trunc(existing.modified_ms) === Math.trunc(item.modifiedMs)
+        )
+          unchanged++;
+        else changed = { sequence: changedCount++, path };
         discoveryBatch.push({ pathKey, changed });
         discovered++;
         onProgress({

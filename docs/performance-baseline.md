@@ -18,6 +18,13 @@ npm run benchmark:library:100k
 npm run benchmark:metadata
 ```
 
+After Forge has built `.vite/build/library-discovery-worker.js`, the synthetic
+profile can exercise the production worker boundary explicitly:
+
+```sh
+npm run benchmark:library -- --files 100000 --worker-path .vite/build/library-discovery-worker.js
+```
+
 All commands create and remove their own OS-temporary directory. The 100,000
 profile is opt-in because creating that many directory entries is inappropriate
 for routine CI.
@@ -110,6 +117,27 @@ The disconnected-root regression test proves an enumeration failure abandons
 that state and preserves the prior catalog instead of treating the library as
 empty. These figures remain local observations, not platform-independent
 thresholds or evidence from real user media.
+
+## Discovery worker boundary
+
+The Electron app runs deterministic traversal and bulk file stat calls in a
+dedicated worker. It sends at most 250 results and then waits for main to consume
+and acknowledge that batch before continuing. SQLite comparison and catalog
+transactions remain main-owned. Cancellation terminates the worker; a crash
+rejects the scan and abandons temporary scan state instead of finalizing an
+apparently empty library. The packaged smoke scans the fixture album through
+both discovery and metadata workers on every release platform.
+
+The default synthetic benchmark deliberately retains its in-process filesystem
+adapter so it can run without a Forge build. Use the explicit `--worker-path`
+form above when measuring cross-thread overhead.
+
+The first macOS arm64 100,000-file worker-backed run measured a 13.18 s initial
+scan, 3.70 s unchanged rescan, approximately 323 MiB peak process RSS, and
+71 MiB peak main-process JavaScript heap. The higher RSS than the in-process
+adapter includes the additional worker isolate; this boundary is intended to
+protect Electron main responsiveness and failure isolation, not reduce total
+process memory. These remain local synthetic observations.
 
 ## Real metadata parsing profile
 

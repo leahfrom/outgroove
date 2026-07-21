@@ -116,7 +116,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
-- Scan jobs show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
+- Scan jobs run high-volume discovery/stat and metadata parsing in bounded workers, show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
 - macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs run in CI; manual packaged Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
@@ -127,13 +127,14 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `src/preload`: fixed typed bridge
 - `src/main`: Electron orchestration, validated IPC, SQLite, filesystem, metadata, edit, and sync services
 - `src/shared`: serializable contracts and pure domain rules
-- `src/workers`: bounded metadata worker entry point
+- `src/workers`: bounded filesystem-discovery and metadata worker entry points
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-Large scans now stream deterministic discovery, keep seen/changed work in
-connection-local temporary SQLite tables, and feed metadata through bounded
-pages. On the current macOS arm64 development machine this reduced the corrected
-100,000-file synthetic peak from approximately 415 MiB to 269 MiB RSS; see
+Large scans now stream deterministic worker-backed discovery in acknowledged
+250-item batches, keep seen/changed work in connection-local temporary SQLite
+tables, and feed metadata through bounded pages. On the current macOS arm64
+development machine the path-state work reduced the corrected 100,000-file
+synthetic peak from approximately 415 MiB to 269 MiB RSS; see
 `docs/performance-baseline.md` for scope and caveats. The manual exFAT matrix
 remains pending.

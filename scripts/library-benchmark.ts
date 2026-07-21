@@ -8,10 +8,15 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { CatalogDatabase } from "../src/main/adapters/database/catalog-database";
+import {
+  NodeLibraryFileSystem,
+  WorkerLibraryFileSystem,
+  type LibraryFileSystem,
+} from "../src/main/adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "../src/main/adapters/metadata/metadata-reader";
 import {
   pathComparisonKey,
@@ -217,6 +222,7 @@ function terminalJob(coordinator: ScanJobCoordinator): Promise<ScanJobDto> {
 
 export async function runLibraryBenchmark(
   fileCount: number,
+  fileSystem: LibraryFileSystem = new NodeLibraryFileSystem(),
 ): Promise<LibraryBenchmarkReport> {
   if (!Number.isInteger(fileCount) || fileCount < 1 || fileCount > 100_000)
     throw new Error(
@@ -251,6 +257,7 @@ export async function runLibraryBenchmark(
     const scanner = new ScanLibrary(
       database,
       new SyntheticMetadataRunner(fileCount),
+      fileSystem,
     );
     started = performance.now();
     const initialResult = await scanner.execute(root.id);
@@ -284,7 +291,7 @@ export async function runLibraryBenchmark(
     const blocking = new BlockingMetadataRunner();
     const coordinator = new ScanJobCoordinator(
       database,
-      new ScanLibrary(database, blocking),
+      new ScanLibrary(database, blocking, fileSystem),
     );
     const terminal = terminalJob(coordinator);
     const job = coordinator.start(root.id);
@@ -399,13 +406,21 @@ function requestedFileCount(args: readonly string[]): number {
   return index === -1 ? 5_000 : Number(args[index + 1]);
 }
 
+function requestedFileSystem(args: readonly string[]): LibraryFileSystem {
+  const index = args.indexOf("--worker-path");
+  if (index === -1) return new NodeLibraryFileSystem();
+  const workerPath = args[index + 1];
+  if (!workerPath) throw new Error("--worker-path requires a file path.");
+  return new WorkerLibraryFileSystem(resolve(workerPath));
+}
+
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   const args = process.argv.slice(2);
   const realIndex = args.indexOf("--real-files");
   const benchmark =
     realIndex === -1
-      ? runLibraryBenchmark(requestedFileCount(args))
+      ? runLibraryBenchmark(requestedFileCount(args), requestedFileSystem(args))
       : runRealMetadataBenchmark(Number(args[realIndex + 1]));
   void benchmark
     .then((report) => console.log(JSON.stringify(report, null, 2)))
