@@ -133,6 +133,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     ),
     previewTrackTagUndo: vi.fn(),
     applyTrackTagUndo: vi.fn(),
+    previewTrackBatchEdit: vi.fn(),
+    applyTrackBatchEdit: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -242,6 +244,112 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       screen.getByLabelText("Track metadata confirmation"),
+    ).toBeInTheDocument();
+  });
+
+  it("requires explicit batch fields, previews each file, and reports partial failure", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      format: "FLAC",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const batchAlbum = { ...album, tracks: [...album.tracks, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [batchAlbum],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const preview = vi.spyOn(mockApi, "previewTrackBatchEdit");
+    preview.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+        confirmationToken: "batch-confirmation-token-long-enough",
+        files: batchAlbum.tracks.map((track) => ({
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Fixture Artist",
+              after: "Batch Artist",
+            },
+          ],
+          warnings: [],
+          willWrite: true,
+        })),
+      },
+    });
+    vi.spyOn(mockApi, "applyTrackBatchEdit").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+        results: [
+          {
+            fileId: firstTrack.id,
+            path: firstTrack.path,
+            verified: true,
+            error: null,
+          },
+          {
+            fileId: secondTrack.id,
+            path: secondTrack.path,
+            verified: false,
+            error: "stale preview",
+          },
+        ],
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(screen.getByRole("button", { name: "Select all tracks" }));
+    const previewButton = screen.getByRole("button", {
+      name: "Preview selected tracks",
+    });
+    expect(previewButton).toBeDisabled();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change track artist" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch track artist value"),
+      "Batch Artist",
+    );
+    expect(previewButton).toBeEnabled();
+    await user.click(previewButton);
+    const confirmation = await screen.findByLabelText("Batch confirmation");
+    expect(
+      within(confirmation).getByText("/fixture/track.mp3"),
+    ).toBeInTheDocument();
+    expect(
+      within(confirmation).getByText("/fixture/second.flac"),
+    ).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledWith({
+      fileIds: batchAlbum.tracks.map((track) => track.id),
+      changes: { artist: "Batch Artist" },
+    });
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "Confirm and write selected tracks",
+      }),
+    );
+    expect(await screen.findByText(/stale preview/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 writes verified; 1 failed/u),
     ).toBeInTheDocument();
   });
 
@@ -813,7 +921,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 8,
+          schemaVersion: 9,
           summary: {
             libraryRoots: 2,
             albums: 30,

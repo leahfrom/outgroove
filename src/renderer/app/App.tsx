@@ -5,8 +5,10 @@ import type {
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
+  TagEditResultDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
+  TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
@@ -53,6 +55,21 @@ export function App(): React.JSX.Element {
     useState<TrackTagEditPreviewDto>();
   const [trackUndoPreview, setTrackUndoPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
+  const [batchEnabled, setBatchEnabled] = useState({
+    artist: false,
+    albumArtist: false,
+    discNumber: false,
+    year: false,
+  });
+  const [batchDraft, setBatchDraft] = useState({
+    artist: "",
+    albumArtist: "",
+    discNumber: "",
+    year: "",
+  });
+  const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
+  const [batchResult, setBatchResult] = useState<TagEditResultDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -77,6 +94,11 @@ export function App(): React.JSX.Element {
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
   );
+
+  useEffect(() => {
+    setBatchTrackIds([]);
+    setBatchPreview(undefined);
+  }, [selectedAlbumId]);
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
     const result = await window.outgroove.queryLibrary({
@@ -429,6 +451,65 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const toggleBatchTrack = (fileId: string): void => {
+    setBatchTrackIds((selected) =>
+      selected.includes(fileId)
+        ? selected.filter((id) => id !== fileId)
+        : [...selected, fileId],
+    );
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+  };
+
+  const previewBatchEdit = async (): Promise<void> => {
+    const changes: {
+      artist?: string;
+      albumArtist?: string;
+      discNumber?: number | null;
+      year?: string | null;
+    } = {};
+    if (batchEnabled.artist) changes.artist = batchDraft.artist;
+    if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
+    if (batchEnabled.discNumber)
+      changes.discNumber = batchDraft.discNumber
+        ? Number(batchDraft.discNumber)
+        : null;
+    if (batchEnabled.year) changes.year = batchDraft.year || null;
+    const result = await window.outgroove.previewTrackBatchEdit({
+      fileIds: batchTrackIds,
+      changes,
+    });
+    if (result.ok) {
+      setBatchPreview(result.value);
+      setBatchResult(undefined);
+    } else setNotice(result.error.message);
+  };
+
+  const applyBatchEdit = async (): Promise<void> => {
+    if (!batchPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackBatchEdit({
+        operationId: batchPreview.operationId,
+        confirmationToken: batchPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setBatchResult(result.value);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Re-read and verified ${result.value.results.length} track writes.`
+            : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
+        );
+        setBatchPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const chooseTarget = async (): Promise<void> => {
     if (!selectedAlbum) return;
     const result = await window.outgroove.chooseSyncTargetAndCreateProfile({
@@ -679,12 +760,250 @@ export function App(): React.JSX.Element {
                           <pre>{JSON.stringify(track.nativeTags, null, 2)}</pre>
                         </dd>
                       </dl>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={batchTrackIds.includes(track.id)}
+                          onChange={() => toggleBatchTrack(track.id)}
+                        />
+                        Select {track.tags.title} for batch edit
+                      </label>
                       <button disabled={busy} onClick={() => editTrack(track)}>
                         Edit track metadata
                       </button>
                     </details>
                   ))}
                 </div>
+                <section className="card" aria-label="Batch metadata editor">
+                  <h3>Workbench · batch metadata</h3>
+                  <p>
+                    {batchTrackIds.length} tracks selected. Enable only the
+                    shared fields you intend to write. Track titles and track
+                    numbers stay in the single-track editor.
+                  </p>
+                  <div className="actions">
+                    <button
+                      disabled={busy}
+                      onClick={() => {
+                        setBatchTrackIds(
+                          selectedAlbum.tracks.map((track) => track.id),
+                        );
+                        setBatchPreview(undefined);
+                      }}
+                    >
+                      Select all tracks
+                    </button>
+                    <button
+                      disabled={busy || batchTrackIds.length === 0}
+                      onClick={() => {
+                        setBatchTrackIds([]);
+                        setBatchPreview(undefined);
+                      }}
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  <div className="field-grid">
+                    <label>
+                      <span>
+                        <input
+                          type="checkbox"
+                          checked={batchEnabled.artist}
+                          onChange={(event) => {
+                            setBatchEnabled((enabled) => ({
+                              ...enabled,
+                              artist: event.target.checked,
+                            }));
+                            setBatchPreview(undefined);
+                          }}
+                        />
+                        Change track artist
+                      </span>
+                      <input
+                        aria-label="Batch track artist value"
+                        disabled={!batchEnabled.artist}
+                        value={batchDraft.artist}
+                        onChange={(event) =>
+                          setBatchDraft((draft) => ({
+                            ...draft,
+                            artist: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        <input
+                          type="checkbox"
+                          checked={batchEnabled.albumArtist}
+                          onChange={(event) => {
+                            setBatchEnabled((enabled) => ({
+                              ...enabled,
+                              albumArtist: event.target.checked,
+                            }));
+                            setBatchPreview(undefined);
+                          }}
+                        />
+                        Change album artist
+                      </span>
+                      <input
+                        aria-label="Batch album artist value"
+                        disabled={!batchEnabled.albumArtist}
+                        value={batchDraft.albumArtist}
+                        onChange={(event) =>
+                          setBatchDraft((draft) => ({
+                            ...draft,
+                            albumArtist: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        <input
+                          type="checkbox"
+                          checked={batchEnabled.discNumber}
+                          onChange={(event) => {
+                            setBatchEnabled((enabled) => ({
+                              ...enabled,
+                              discNumber: event.target.checked,
+                            }));
+                            setBatchPreview(undefined);
+                          }}
+                        />
+                        Change disc number
+                      </span>
+                      <input
+                        aria-label="Batch disc number value"
+                        type="number"
+                        min="1"
+                        max="999"
+                        placeholder="Empty clears the value"
+                        disabled={!batchEnabled.discNumber}
+                        value={batchDraft.discNumber}
+                        onChange={(event) =>
+                          setBatchDraft((draft) => ({
+                            ...draft,
+                            discNumber: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>
+                        <input
+                          type="checkbox"
+                          checked={batchEnabled.year}
+                          onChange={(event) => {
+                            setBatchEnabled((enabled) => ({
+                              ...enabled,
+                              year: event.target.checked,
+                            }));
+                            setBatchPreview(undefined);
+                          }}
+                        />
+                        Change release date
+                      </span>
+                      <input
+                        aria-label="Batch release date value"
+                        placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
+                        disabled={!batchEnabled.year}
+                        value={batchDraft.year}
+                        onChange={(event) =>
+                          setBatchDraft((draft) => ({
+                            ...draft,
+                            year: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <button
+                    disabled={
+                      busy ||
+                      batchTrackIds.length < 2 ||
+                      !Object.values(batchEnabled).some(Boolean)
+                    }
+                    onClick={() => void previewBatchEdit()}
+                  >
+                    Preview selected tracks
+                  </button>
+                  {batchPreview && (
+                    <div className="preview" aria-label="Batch confirmation">
+                      <h4>Per-file review</h4>
+                      <p>
+                        No file has changed yet. Unchanged tracks will be
+                        skipped; every other track is checked again before its
+                        write.
+                      </p>
+                      {batchPreview.files.map((file) => (
+                        <div key={file.fileId}>
+                          <h5>{file.path}</h5>
+                          {!file.willWrite && (
+                            <p>Status: unchanged — skipped</p>
+                          )}
+                          {file.changes.length > 0 && (
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Field</th>
+                                  <th>Before</th>
+                                  <th>After</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {file.changes.map((change) => (
+                                  <tr key={change.field}>
+                                    <td>{change.field}</td>
+                                    <td>{change.before ?? "Not set"}</td>
+                                    <td>{change.after ?? "Not set"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {file.warnings.map((warning) => (
+                            <p key={warning} role="alert">
+                              {warning}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                      <div className="actions">
+                        <button
+                          className="primary"
+                          disabled={
+                            busy ||
+                            batchPreview.files.some(
+                              (file) =>
+                                file.willWrite && file.warnings.length > 0,
+                            )
+                          }
+                          onClick={() => void applyBatchEdit()}
+                        >
+                          Confirm and write selected tracks
+                        </button>
+                        <button onClick={() => setBatchPreview(undefined)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {batchResult && (
+                    <div className="preview" aria-live="polite">
+                      <h4>Batch write results</h4>
+                      <ul>
+                        {batchResult.results.map((result) => (
+                          <li key={result.fileId}>
+                            {result.path}:{" "}
+                            {result.verified ? "verified" : "failed"}
+                            {result.error ? ` — ${result.error}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </section>
                 {selectedTrack && (
                   <section className="card" aria-label="Track metadata editor">
                     <h3>Workbench · track metadata</h3>

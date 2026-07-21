@@ -53,6 +53,37 @@ async function createTrackEditor(fixture: string) {
   };
 }
 
+async function createBatchTrackEditor() {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-batch-edit-"));
+  temporary.push(directory);
+  const reader = new MusicMetadataReader();
+  const writer = new SafeMetadataWriter(reader);
+  const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+  const root = database.addLibraryRoot(directory, pathComparisonKey(directory));
+  const files = await Promise.all(
+    ["01-first.mp3", "02-second.flac"].map(async (fixture) => {
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "album", fixture),
+        path,
+      );
+      const fileId = database.upsertScannedFile(
+        root.id,
+        pathComparisonKey(path),
+        await reader.read(path),
+      );
+      return { fileId, path };
+    }),
+  );
+  return {
+    database,
+    reader,
+    writer,
+    editor: new EditTrackTags(database, writer),
+    files,
+  };
+}
+
 describe.each(["01-first.mp3", "02-second.flac"])(
   "verified track metadata edit: %s",
   (fixture) => {
@@ -129,6 +160,100 @@ describe.each(["01-first.mp3", "02-second.flac"])(
     });
   },
 );
+
+it("previews and independently verifies a persisted multi-track batch edit", async () => {
+  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const preview = editor.previewBatch(
+    files.map(({ fileId }) => fileId),
+    { artist: "Batch Artist", discNumber: 2, year: "2031-07" },
+  );
+  expect(preview.files).toHaveLength(2);
+  expect(preview.files.every((file) => file.willWrite)).toBe(true);
+  expect(
+    preview.files.map((file) => file.changes.map((item) => item.field)),
+  ).toEqual([
+    ["artist", "discNumber", "year"],
+    ["artist", "discNumber", "year"],
+  ]);
+
+  const result = await editor.applyBatch(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    { fileId: files[0]?.fileId, verified: true, error: null },
+    { fileId: files[1]?.fileId, verified: true, error: null },
+  ]);
+  for (const [index, file] of files.entries()) {
+    expect((await reader.read(file.path)).tags).toMatchObject({
+      artist: "Batch Artist",
+      discNumber: 2,
+      year: "2031-07",
+    });
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  }
+  expect(database.listSnapshots(preview.operationId)).toHaveLength(2);
+  expect(database.getEditOperation(preview.operationId)).toMatchObject({
+    kind: "track-tags-batch-edit",
+    state: "completed",
+  });
+  database.close();
+});
+
+it("skips matching tracks and keeps applying after another track becomes stale", async () => {
+  const { database, writer, editor, files } = await createBatchTrackEditor();
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Batch fixtures missing.");
+  const firstWrite = await writer.writeTags(first.path, {
+    artist: "Already Matching",
+  });
+  database.updateFileAfterEdit(first.fileId, firstWrite.file);
+  const skipPreview = editor.previewBatch(
+    files.map(({ fileId }) => fileId),
+    { artist: "Already Matching" },
+  );
+  expect(skipPreview.files.map((file) => file.willWrite)).toEqual([
+    false,
+    true,
+  ]);
+  const skipResult = await editor.applyBatch(
+    skipPreview.operationId,
+    skipPreview.confirmationToken,
+  );
+  expect(skipResult.results).toHaveLength(1);
+  expect(skipResult.results[0]).toMatchObject({
+    fileId: second.fileId,
+    verified: true,
+  });
+
+  const stalePreview = editor.previewBatch(
+    files.map(({ fileId }) => fileId),
+    { artist: "Final Batch Artist" },
+  );
+  const external = await writer.writeTags(first.path, {
+    artist: "External Artist",
+  });
+  database.updateFileAfterEdit(first.fileId, external.file);
+  const staleResult = await editor.applyBatch(
+    stalePreview.operationId,
+    stalePreview.confirmationToken,
+  );
+  expect(staleResult.results).toMatchObject([
+    { fileId: first.fileId, verified: false },
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect(staleResult.results[0]?.error).toContain(
+    "changed after it was created",
+  );
+  expect(database.getEditOperation(stalePreview.operationId)?.state).toBe(
+    "failed",
+  );
+  database.close();
+});
 
 it("refuses a confirmed preview when a targeted field changed externally", async () => {
   const { database, reader, writer, editor, fileId, path } =

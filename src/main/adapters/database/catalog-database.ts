@@ -994,6 +994,33 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackBatchEditOperation(
+    albumId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    changes: TrackTagChanges,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    const fields = Object.keys(changes).join(", ");
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-batch-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Batch metadata: ${fields}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(changes),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1005,7 +1032,8 @@ export class CatalogDatabase {
           | "album-title-edit"
           | "album-title-undo"
           | "track-tags-edit"
-          | "track-tags-undo";
+          | "track-tags-undo"
+          | "track-tags-batch-edit";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1029,7 +1057,8 @@ export class CatalogDatabase {
             | "album-title-edit"
             | "album-title-undo"
             | "track-tags-edit"
-            | "track-tags-undo";
+            | "track-tags-undo"
+            | "track-tags-batch-edit";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -1064,7 +1093,8 @@ export class CatalogDatabase {
         | "album-title-edit"
         | "album-title-undo"
         | "track-tags-edit"
-        | "track-tags-undo";
+        | "track-tags-undo"
+        | "track-tags-batch-edit";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";
