@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -43,8 +43,18 @@ function api(applyVerified: boolean): OutgrooveApi {
     scanLibrary: vi.fn(),
     cancelScan: vi.fn(),
     getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
-    listAlbums: vi.fn(() => Promise.resolve({ ok: true, value: [album] })),
-    listScanErrors: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    queryLibrary: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          albums: [album],
+          scanErrors: [],
+          totalItems: 1,
+          offset: 0,
+          limit: 20,
+        },
+      }),
+    ),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -213,5 +223,87 @@ describe("tag edit UI safety states", () => {
     expect(
       await screen.findByRole("button", { name: "Cancelling…" }),
     ).toBeDisabled();
+  });
+
+  it("submits bounded search intent and switches to item-level scan problems", async () => {
+    const mockApi = api(true);
+    const queryLibrary = vi.fn((request: { view: string }) =>
+      Promise.resolve({
+        ok: true as const,
+        value:
+          request.view === "scan-errors"
+            ? {
+                albums: [],
+                scanErrors: [
+                  { path: "/fixture/corrupt.mp3", message: "Invalid MPEG" },
+                ],
+                totalItems: 1,
+                offset: 0,
+                limit: 20,
+              }
+            : {
+                albums: [album],
+                scanErrors: [],
+                totalItems: 1,
+                offset: 0,
+                limit: 20,
+              },
+      }),
+    );
+    Object.assign(mockApi, { queryLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search Library" }),
+      "Needle",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenCalledWith({
+        query: "Needle",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText("View"), "scan-errors");
+    expect(await screen.findByText("/fixture/corrupt.mp3")).toBeVisible();
+    expect(screen.getByText("Invalid MPEG")).toBeVisible();
+  });
+
+  it("requests the next bounded album page from main", async () => {
+    const mockApi = api(true);
+    const queryLibrary = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          albums: [album],
+          scanErrors: [],
+          totalItems: 21,
+          offset: 0,
+          limit: 20,
+        },
+      }),
+    );
+    Object.assign(mockApi, { queryLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenCalledWith({
+        query: "",
+        view: "albums",
+        offset: 20,
+        limit: 20,
+      }),
+    );
   });
 });

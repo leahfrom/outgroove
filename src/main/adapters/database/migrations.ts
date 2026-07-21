@@ -44,4 +44,11 @@ export const migrations: readonly { version: number; sql: string }[] = [
       CREATE INDEX jobs_root_created ON jobs(root_id, created_at DESC);
     `,
   },
+  {
+    version: 3,
+    sql: `
+      CREATE INDEX albums_browse_order ON albums(album_artist, title, id);
+      CREATE INDEX audio_files_scan_state_path ON audio_files(scan_state, path);
+    `,
+  },
 ];

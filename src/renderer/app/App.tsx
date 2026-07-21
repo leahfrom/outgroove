@@ -15,10 +15,19 @@ interface Progress {
   detail: string;
 }
 
+const PAGE_SIZE = 20;
+
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
+  const [searchText, setSearchText] = useState("");
+  const [query, setQuery] = useState("");
+  const [libraryView, setLibraryView] = useState<"albums" | "scan-errors">(
+    "albums",
+  );
+  const [pageOffset, setPageOffset] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
@@ -44,20 +53,31 @@ export function App(): React.JSX.Element {
   );
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
-    const [albumResult, errorResult] = await Promise.all([
-      window.outgroove.listAlbums(),
-      window.outgroove.listScanErrors(),
-    ]);
-    if (albumResult.ok) {
-      setAlbums(albumResult.value);
+    const result = await window.outgroove.queryLibrary({
+      query,
+      view: libraryView,
+      offset: pageOffset,
+      limit: PAGE_SIZE,
+    });
+    if (result.ok) {
+      if (result.value.totalItems <= pageOffset && pageOffset > 0) {
+        setPageOffset(
+          result.value.totalItems === 0
+            ? 0
+            : Math.floor((result.value.totalItems - 1) / PAGE_SIZE) * PAGE_SIZE,
+        );
+        return;
+      }
+      setAlbums(result.value.albums);
+      setScanErrors(result.value.scanErrors);
+      setTotalItems(result.value.totalItems);
       setSelectedAlbumId((current) =>
-        current && albumResult.value.some((album) => album.id === current)
+        current && result.value.albums.some((album) => album.id === current)
           ? current
-          : albumResult.value[0]?.id,
+          : result.value.albums[0]?.id,
       );
-    } else setNotice(albumResult.error.message);
-    if (errorResult.ok) setScanErrors(errorResult.value);
-  }, []);
+    } else setNotice(result.error.message);
+  }, [libraryView, pageOffset, query]);
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
@@ -75,7 +95,6 @@ export function App(): React.JSX.Element {
     void Promise.all([
       window.outgroove.listLibraryRoots(),
       window.outgroove.getLatestScanJob(),
-      refreshCatalog(),
     ]).then(([roots, latest]) => {
       if (roots.ok)
         setRootId(
@@ -91,6 +110,9 @@ export function App(): React.JSX.Element {
       }
     });
     return unsubscribe;
+  }, [refreshCatalog]);
+  useEffect(() => {
+    void refreshCatalog();
   }, [refreshCatalog]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
@@ -271,20 +293,85 @@ export function App(): React.JSX.Element {
           )}
         </section>
       )}
-      {albums.length === 0 ? (
-        <main className="empty">
-          <h2>Your Library is empty</h2>
-          <p>
-            Select a folder containing disposable fixtures or files you
-            explicitly intend Outgroove to scan. Scanning and browsing stay
-            offline.
-          </p>
+      <form
+        className="library-toolbar"
+        role="search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setPageOffset(0);
+          setQuery(searchText.trim());
+        }}
+      >
+        <label htmlFor="library-search">Search Library</label>
+        <input
+          id="library-search"
+          type="search"
+          value={searchText}
+          placeholder="Album, artist, track, format, or path"
+          onChange={(event) => setSearchText(event.target.value)}
+        />
+        <label htmlFor="library-view">View</label>
+        <select
+          id="library-view"
+          value={libraryView}
+          onChange={(event) => {
+            setLibraryView(event.target.value as "albums" | "scan-errors");
+            setPageOffset(0);
+          }}
+        >
+          <option value="albums">Albums</option>
+          <option value="scan-errors">Scan problems</option>
+        </select>
+        <button type="submit">Search</button>
+        {(query || searchText) && (
           <button
-            disabled={busy || scanActive}
-            onClick={() => void chooseAndScan()}
+            type="button"
+            onClick={() => {
+              setSearchText("");
+              setQuery("");
+              setPageOffset(0);
+            }}
           >
-            Choose a library folder
+            Clear search
           </button>
+        )}
+      </form>
+      <p className="result-count" aria-live="polite">
+        {totalItems} {libraryView === "albums" ? "albums" : "scan problems"}
+        {query ? ` matching “${query}”` : ""}
+      </p>
+      {libraryView === "scan-errors" ? (
+        <main className="errors" aria-labelledby="scan-errors">
+          <h2 id="scan-errors">Scan problems</h2>
+          {scanErrors.length === 0 ? (
+            <p>No scan problems match this view.</p>
+          ) : (
+            <ul>
+              {scanErrors.map((error) => (
+                <li key={error.path}>
+                  <strong>{error.path}</strong>
+                  <span>{error.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+      ) : albums.length === 0 ? (
+        <main className="empty">
+          <h2>{query ? "No matching albums" : "Your Library is empty"}</h2>
+          <p>
+            {query
+              ? "Try a different album, artist, track, format, or path."
+              : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+          </p>
+          {!query && (
+            <button
+              disabled={busy || scanActive}
+              onClick={() => void chooseAndScan()}
+            >
+              Choose a library folder
+            </button>
+          )}
         </main>
       ) : (
         <main className="workspace">
@@ -469,18 +556,25 @@ export function App(): React.JSX.Element {
           </section>
         </main>
       )}
-      {scanErrors.length > 0 && (
-        <section className="errors" aria-labelledby="scan-errors">
-          <h2 id="scan-errors">Scan errors ({scanErrors.length})</h2>
-          <ul>
-            {scanErrors.map((error) => (
-              <li key={error.path}>
-                <strong>{error.path}</strong>
-                <span>{error.message}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {totalItems > PAGE_SIZE && (
+        <nav className="pagination" aria-label="Library pages">
+          <button
+            disabled={pageOffset === 0}
+            onClick={() => setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))}
+          >
+            Previous page
+          </button>
+          <span>
+            {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)} of{" "}
+            {totalItems}
+          </span>
+          <button
+            disabled={pageOffset + PAGE_SIZE >= totalItems}
+            onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+          >
+            Next page
+          </button>
+        </nav>
       )}
     </div>
   );

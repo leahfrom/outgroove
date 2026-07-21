@@ -6,6 +6,14 @@ import type { AppError, Result } from "../domain/errors";
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
 export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
+export const libraryQueryRequestSchema = z
+  .object({
+    query: z.string().trim().max(200),
+    view: z.enum(["albums", "scan-errors"]),
+    offset: z.number().int().min(0),
+    limit: z.number().int().min(1).max(50),
+  })
+  .strict();
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -57,6 +65,13 @@ export interface ScanJobDto {
 export interface ScanErrorDto {
   readonly path: string;
   readonly message: string;
+}
+export interface LibraryPageDto {
+  readonly albums: readonly CatalogAlbum[];
+  readonly scanErrors: readonly ScanErrorDto[];
+  readonly totalItems: number;
+  readonly offset: number;
+  readonly limit: number;
 }
 export interface TagEditFilePreviewDto {
   readonly fileId: string;
@@ -116,8 +131,9 @@ export interface OutgrooveApi {
     request: z.infer<typeof scanCancelRequestSchema>,
   ): Promise<Result<ScanJobDto>>;
   getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
-  listAlbums(): Promise<Result<readonly CatalogAlbum[]>>;
-  listScanErrors(): Promise<Result<readonly ScanErrorDto[]>>;
+  queryLibrary(
+    request: z.infer<typeof libraryQueryRequestSchema>,
+  ): Promise<Result<LibraryPageDto>>;
   previewAlbumTitleEdit(
     request: z.infer<typeof albumEditPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   scanCancelRequestSchema,
+  libraryQueryRequestSchema,
   scanRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
@@ -48,6 +49,27 @@ describe("validated IPC handlers", () => {
         {
           jobId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
           arbitraryChannel: "filesystem:delete",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("caps library query pages and rejects undeclared filters", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(libraryQueryRequestSchema, useCase);
+    await expect(
+      handler({}, { query: "", view: "albums", offset: 0, limit: 500 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          arbitrarySql: "DROP TABLE albums",
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
