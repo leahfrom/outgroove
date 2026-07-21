@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-and-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run package
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:smoke
+      - if: runner.os != 'Linux'
+        run: npm run test:smoke

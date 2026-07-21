@@ -1,0 +1,77 @@
+export interface NativeTagValue {
+  readonly id: string;
+  readonly value: string;
+}
+
+export interface NormalizedTags {
+  readonly title: string;
+  readonly album: string;
+  readonly artist: string;
+  readonly albumArtist: string;
+  readonly trackNumber: number | null;
+  readonly discNumber: number | null;
+  readonly year: string | null;
+}
+
+export interface ScannedAudioFile {
+  readonly path: string;
+  readonly size: number;
+  readonly modifiedMs: number;
+  readonly format: string;
+  readonly durationSeconds: number | null;
+  readonly tags: NormalizedTags;
+  readonly nativeTags: readonly NativeTagValue[];
+}
+
+export interface CatalogTrack extends ScannedAudioFile {
+  readonly id: string;
+  readonly scanError: string | null;
+}
+
+export interface CatalogAlbum {
+  readonly id: string;
+  readonly title: string;
+  readonly albumArtist: string;
+  readonly tracks: readonly CatalogTrack[];
+}
+
+export function normalizeTagText(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.normalize("NFC").replace(/\s+/gu, " ").trim();
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+export function normalizeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0)
+    return value;
+  if (typeof value === "string") {
+    const first = value.split("/")[0]?.trim();
+    const parsed = Number(first);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+}
+
+export function albumGroupingKey(
+  tags: NormalizedTags,
+  parentFolder: string,
+): string {
+  const artist = tags.albumArtist || tags.artist;
+  const textual = `${artist}\u0000${tags.album}`
+    .normalize("NFC")
+    .toLocaleLowerCase("en-US");
+  return tags.album === "Unknown album"
+    ? `${textual}\u0000${parentFolder}`
+    : textual;
+}
+
+export function sortTracks<T extends { tags: NormalizedTags; path: string }>(
+  tracks: readonly T[],
+): T[] {
+  return [...tracks].sort(
+    (left, right) =>
+      (left.tags.discNumber ?? 0) - (right.tags.discNumber ?? 0) ||
+      (left.tags.trackNumber ?? 0) - (right.tags.trackNumber ?? 0) ||
+      left.path.localeCompare(right.path),
+  );
+}

@@ -1,0 +1,9 @@
+node_modules
+.vite
+out
+coverage
+pnpm-lock.yaml
+fixtures/audio
+AGENTS.md
+AGENT_PROMPT.md
+PLAN.md
