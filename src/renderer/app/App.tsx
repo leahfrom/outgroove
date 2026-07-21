@@ -321,9 +321,15 @@ export function App(): React.JSX.Element {
             <span>{scanJob.detail || "Waiting to start…"}</span>
             {scanJob.error && <span role="alert">{scanJob.error}</span>}
           </div>
-          {scanJob.total > 0 && (
-            <progress value={scanJob.completed} max={scanJob.total} />
-          )}
+          {scanJob.state === "running" && scanJob.total === 0 ? (
+            <progress aria-label="Discovering audio files" />
+          ) : scanJob.total > 0 ? (
+            <progress
+              aria-label="Reading audio metadata"
+              value={scanJob.completed}
+              max={scanJob.total}
+            />
+          ) : null}
           {scanActive && (
             <button
               disabled={scanJob.state === "cancelling"}

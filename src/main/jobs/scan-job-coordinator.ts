@@ -1,6 +1,6 @@
 import type { ScanJobDto } from "../../shared/contracts/api";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
-import type { ScanLibrary } from "../application/scan-library";
+import type { ScanLibrary, ScanProgress } from "../application/scan-library";
 
 type Listener = (job: ScanJobDto) => void;
 
@@ -65,12 +65,29 @@ export class ScanJobCoordinator {
     this.save(jobId, { state: "running", detail: "Discovering audio files…" });
     try {
       let lastPersistedProgress = 0;
+      let lastPhase: ScanProgress["phase"] | undefined;
       const result = await this.scanner.execute(
         rootId,
-        (completed, total, detail) => {
+        (progress) => {
           const now = Date.now();
-          if (completed === total || now - lastPersistedProgress >= 100) {
+          const completed =
+            progress.phase === "discovery"
+              ? progress.discovered
+              : progress.completed;
+          const total = progress.phase === "discovery" ? 0 : progress.total;
+          const detail =
+            progress.phase === "discovery"
+              ? `Discovering: ${progress.discovered} audio ${progress.discovered === 1 ? "file" : "files"} found, ${progress.folderErrors} folder ${progress.folderErrors === 1 ? "problem" : "problems"}.`
+              : progress.total === 0
+                ? "Metadata: no changed audio files to read."
+                : `Reading metadata: ${progress.path}`;
+          if (
+            progress.phase !== lastPhase ||
+            (progress.phase === "metadata" && completed === total) ||
+            now - lastPersistedProgress >= 100
+          ) {
             lastPersistedProgress = now;
+            lastPhase = progress.phase;
             this.save(jobId, { completed, total, detail });
           }
         },

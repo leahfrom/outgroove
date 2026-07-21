@@ -220,12 +220,51 @@ describe("tag edit UI safety states", () => {
     await user.click(
       await screen.findByRole("button", { name: "Cancel scan" }),
     );
+    expect(
+      screen.getByRole("progressbar", { name: "Reading audio metadata" }),
+    ).toHaveAttribute("value", "1");
     expect(cancelScan).toHaveBeenCalledWith({
       jobId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
     });
     expect(
       await screen.findByRole("button", { name: "Cancelling…" }),
     ).toBeDisabled();
+  });
+
+  it("shows indeterminate discovery counts before metadata total is known", async () => {
+    const mockApi = api(true);
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        state: "running",
+        completed: 17,
+        total: 0,
+        detail: "Discovering: 17 audio files found, 2 folder problems.",
+        result: null,
+        error: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+        finishedAt: null,
+      } satisfies ScanJobDto,
+    });
+    Object.assign(mockApi, { getLatestScanJob });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(
+      await screen.findByText(
+        "Discovering: 17 audio files found, 2 folder problems.",
+      ),
+    ).toBeVisible();
+    const progress = screen.getByRole("progressbar", {
+      name: "Discovering audio files",
+    });
+    expect(progress).not.toHaveAttribute("value");
+    expect(screen.getByRole("button", { name: "Cancel scan" })).toBeEnabled();
   });
 
   it("submits bounded search intent and switches to item-level scan problems", async () => {

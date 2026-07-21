@@ -18,6 +18,19 @@ import type {
 const DISCOVERY_BATCH_SIZE = 250;
 const METADATA_PAGE_SIZE = 5_000;
 
+export type ScanProgress =
+  | {
+      readonly phase: "discovery";
+      readonly discovered: number;
+      readonly folderErrors: number;
+    }
+  | {
+      readonly phase: "metadata";
+      readonly completed: number;
+      readonly total: number;
+      readonly path: string;
+    };
+
 export function pathComparisonKey(path: string): string {
   return normalize(resolve(path)).normalize("NFC").toLocaleLowerCase("en-US");
 }
@@ -35,8 +48,7 @@ export class ScanLibrary {
 
   async execute(
     rootId: string,
-    onProgress: (completed: number, total: number, path: string) => void = () =>
-      undefined,
+    onProgress: (progress: ScanProgress) => void = () => undefined,
     signal?: AbortSignal,
   ): Promise<ScanResultDto> {
     const root = this.database.getLibraryRoot(rootId);
@@ -44,6 +56,8 @@ export class ScanLibrary {
     this.database.beginScan(rootId);
     try {
       let errors = 0;
+      let discovered = 0;
+      let folderErrors = 0;
       let unchanged = 0;
       let changedCount = 0;
       let discoveryBatch: ScanDiscoveryEntry[] = [];
@@ -57,12 +71,18 @@ export class ScanLibrary {
         if (item.kind === "directory-error") {
           flushDiscoveryBatch();
           errors++;
+          folderErrors++;
           this.database.recordScanDirectoryError(
             rootId,
             item.path,
             pathComparisonKey(item.path),
             item.message,
           );
+          onProgress({
+            phase: "discovery",
+            discovered,
+            folderErrors,
+          });
           continue;
         }
         const path = item.path;
@@ -89,10 +109,22 @@ export class ScanLibrary {
           errors++;
         }
         discoveryBatch.push({ pathKey, changed });
+        discovered++;
+        onProgress({
+          phase: "discovery",
+          discovered,
+          folderErrors,
+        });
         if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
           flushDiscoveryBatch();
       }
       flushDiscoveryBatch();
+      onProgress({
+        phase: "metadata",
+        completed: 0,
+        total: changedCount,
+        path: "",
+      });
 
       let parsed = 0;
       let processed = 0;
@@ -146,7 +178,12 @@ export class ScanLibrary {
             }
           },
           (completed, _total, path) =>
-            onProgress(processed + completed, changedCount, path),
+            onProgress({
+              phase: "metadata",
+              completed: processed + completed,
+              total: changedCount,
+              path,
+            }),
           signal,
         );
         flushSuccessfulBatch();
