@@ -7,6 +7,8 @@ import {
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   scanRequestSchema,
+  trackBatchEditPreviewRequestSchema,
+  trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
 
@@ -126,6 +128,58 @@ describe("validated IPC handlers", () => {
       ok: false,
       error: { code: "INVALID_REQUEST" },
     });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("strictly validates track metadata patches", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      trackTagEditPreviewRequestSchema,
+      useCase,
+    );
+    const fileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(
+      handler({}, { fileId, changes: { year: "2025-02-29" } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        { fileId, changes: { artist: "Artist", arbitraryFrame: "TXXX" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: {}, filePath: "/arbitrary/file.mp3" }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("limits batch edits to unique track ids and shared safe fields", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      trackBatchEditPreviewRequestSchema,
+      useCase,
+    );
+    const first = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const second = "e709f458-a288-4f90-a016-9c42347670bb";
+    await expect(
+      handler({}, { fileIds: [first, first], changes: { artist: "Artist" } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        { fileIds: [first, second], changes: { title: "Mass title" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { artist: "Artist" },
+          directory: "/arbitrary/path",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
   });
 });

@@ -95,6 +95,48 @@ function api(applyVerified: boolean): OutgrooveApi {
     listAlbumEditHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     previewAlbumTitleUndo: vi.fn(),
     applyAlbumTitleUndo: vi.fn(),
+    previewTrackTagEdit: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          operationId: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+          confirmationToken: "track-confirmation-token-long-enough",
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            { field: "title", before: "Track", after: "Renamed Track" },
+            {
+              field: "artist",
+              before: "Fixture Artist",
+              after: "Different Artist",
+            },
+          ],
+          warnings: [],
+        },
+      }),
+    ),
+    applyTrackTagEdit: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          operationId: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+          results: [
+            {
+              fileId: track.id,
+              path: track.path,
+              verified: applyVerified,
+              error: applyVerified ? null : "stale preview",
+            },
+          ],
+        },
+      }),
+    ),
+    previewTrackTagUndo: vi.fn(),
+    applyTrackTagUndo: vi.fn(),
+    previewTrackBatchEdit: vi.fn(),
+    applyTrackBatchEdit: vi.fn(),
+    previewTrackBatchUndo: vi.fn(),
+    applyTrackBatchUndo: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -125,6 +167,275 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Confirm and write 1 files" }),
     ).toBeEnabled();
+  });
+
+  it("previews selected track fields before confirmation and reports verified apply", async () => {
+    const mockApi = api(true);
+    const previewSpy = vi.spyOn(mockApi, "previewTrackTagEdit");
+    const applySpy = vi.spyOn(mockApi, "applyTrackTagEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit track metadata" }),
+    );
+    await user.clear(screen.getByLabelText("Track title"));
+    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
+    await user.clear(screen.getByLabelText("Track artist"));
+    await user.type(screen.getByLabelText("Track artist"), "Different Artist");
+    expect(
+      screen.queryByRole("button", { name: "Confirm and write track" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Preview track changes" }),
+    );
+    const preview = await screen.findByLabelText("Track metadata confirmation");
+    expect(within(preview).getByText("Renamed Track")).toBeInTheDocument();
+    expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and write track",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Track metadata write was re-read and verified.",
+      ),
+    );
+    expect(previewSpy).toHaveBeenCalledTimes(1);
+    expect(previewSpy.mock.calls[0]?.[0]).toMatchObject({
+      fileId: album.tracks[0]?.id,
+      changes: {
+        title: "Renamed Track",
+        artist: "Different Artist",
+      },
+    });
+    expect(applySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failed track edit preview visible with its stale-write error", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(false),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit track metadata" }),
+    );
+    await user.clear(screen.getByLabelText("Track title"));
+    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
+    await user.click(
+      screen.getByRole("button", { name: "Preview track changes" }),
+    );
+    const preview = await screen.findByLabelText("Track metadata confirmation");
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and write track",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Track metadata was not changed: stale preview",
+      ),
+    );
+    expect(
+      screen.getByLabelText("Track metadata confirmation"),
+    ).toBeInTheDocument();
+  });
+
+  it("requires explicit batch fields, previews each file, and reports partial failure", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      format: "FLAC",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const batchAlbum = { ...album, tracks: [...album.tracks, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [batchAlbum],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const preview = vi.spyOn(mockApi, "previewTrackBatchEdit");
+    preview.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+        confirmationToken: "batch-confirmation-token-long-enough",
+        files: batchAlbum.tracks.map((track) => ({
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Fixture Artist",
+              after: "Batch Artist",
+            },
+          ],
+          warnings: [],
+          willWrite: true,
+        })),
+      },
+    });
+    vi.spyOn(mockApi, "applyTrackBatchEdit").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+        results: [
+          {
+            fileId: firstTrack.id,
+            path: firstTrack.path,
+            verified: true,
+            error: null,
+          },
+          {
+            fileId: secondTrack.id,
+            path: secondTrack.path,
+            verified: false,
+            error: "stale preview",
+          },
+        ],
+      },
+    });
+    vi.spyOn(mockApi, "listAlbumEditHistory").mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+          kind: "track-tags-batch-edit",
+          sourceOperationId: null,
+          proposedTitle: "Batch metadata: artist",
+          state: "completed",
+          createdAt: "2026-07-21T00:00:00.000Z",
+          completedAt: "2026-07-21T00:01:00.000Z",
+          verifiedFiles: 2,
+          failedFiles: 0,
+        },
+      ],
+    });
+    const previewUndo = vi.spyOn(mockApi, "previewTrackBatchUndo");
+    previewUndo.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "94f1e501-f5c4-456e-91ae-8d03b65fd795",
+        confirmationToken: "batch-undo-confirmation-token-long-enough",
+        files: batchAlbum.tracks.map((track, index) => ({
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Batch Artist",
+              after: "Fixture Artist",
+            },
+          ],
+          warnings:
+            index === 0
+              ? [
+                  "A field changed after this batch edit; undo will not overwrite it.",
+                ]
+              : [],
+          willWrite: true,
+        })),
+      },
+    });
+    vi.spyOn(mockApi, "applyTrackBatchUndo").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "94f1e501-f5c4-456e-91ae-8d03b65fd795",
+        results: [
+          {
+            fileId: firstTrack.id,
+            path: firstTrack.path,
+            verified: false,
+            error: "stale batch field",
+          },
+          {
+            fileId: secondTrack.id,
+            path: secondTrack.path,
+            verified: true,
+            error: null,
+          },
+        ],
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(screen.getByRole("button", { name: "Select all tracks" }));
+    const previewButton = screen.getByRole("button", {
+      name: "Preview selected tracks",
+    });
+    expect(previewButton).toBeDisabled();
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change track artist" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch track artist value"),
+      "Batch Artist",
+    );
+    expect(previewButton).toBeEnabled();
+    await user.click(previewButton);
+    const confirmation = await screen.findByLabelText("Batch confirmation");
+    expect(
+      within(confirmation).getByText("/fixture/track.mp3"),
+    ).toBeInTheDocument();
+    expect(
+      within(confirmation).getByText("/fixture/second.flac"),
+    ).toBeInTheDocument();
+    expect(preview).toHaveBeenCalledWith({
+      fileIds: batchAlbum.tracks.map((track) => track.id),
+      changes: { artist: "Batch Artist" },
+    });
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "Confirm and write selected tracks",
+      }),
+    );
+    expect(await screen.findByText(/stale preview/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 writes verified; 1 failed/u),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Preview batch undo" }),
+    );
+    const undoConfirmation = await screen.findByLabelText(
+      "Batch metadata undo confirmation",
+    );
+    expect(within(undoConfirmation).getByRole("alert")).toHaveTextContent(
+      "changed after this batch edit",
+    );
+    const confirmUndo = within(undoConfirmation).getByRole("button", {
+      name: "Confirm safe batch undo writes",
+    });
+    expect(confirmUndo).toBeEnabled();
+    await user.click(confirmUndo);
+    expect(await screen.findByText(/stale batch field/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 undo writes verified; 1 refused/u),
+    ).toBeInTheDocument();
+    expect(previewUndo).toHaveBeenCalledWith({
+      operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+    });
   });
 
   it("reports verification failure without claiming success", async () => {
@@ -213,7 +524,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const history = await screen.findByLabelText("Album-title edit history");
+    const history = await screen.findByLabelText("Metadata edit history");
     expect(
       await within(history).findByText("Changed title to “Renamed Album”"),
     ).toBeVisible();
@@ -243,6 +554,171 @@ describe("tag edit UI safety states", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Verified undo for 1 files",
     );
+  });
+
+  it("previews and confirms field-scoped track metadata undo from history", async () => {
+    const mockApi = api(true);
+    const listAlbumEditHistory = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: [
+          {
+            operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+            kind: "track-tags-edit" as const,
+            sourceOperationId: null,
+            proposedTitle: "Track metadata: artist, year",
+            state: "completed" as const,
+            createdAt: "2026-07-22T00:00:00.000Z",
+            completedAt: "2026-07-22T00:00:01.000Z",
+            verifiedFiles: 1,
+            failedFiles: 0,
+          },
+        ],
+      }),
+    );
+    const previewTrackTagUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+          confirmationToken: "track-undo-confirmation-token-long-enough",
+          fileId: album.tracks[0]?.id ?? "",
+          path: "/fixture/track.mp3",
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Different Artist",
+              after: "Fixture Artist",
+            },
+            { field: "year" as const, before: "2030", after: "2026" },
+          ],
+          warnings: [],
+        },
+      }),
+    );
+    const applyTrackTagUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.mp3",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      }),
+    );
+    Object.assign(mockApi, {
+      listAlbumEditHistory,
+      previewTrackTagUndo,
+      applyTrackTagUndo,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const history = await screen.findByLabelText("Metadata edit history");
+    await user.click(
+      await within(history).findByRole("button", {
+        name: "Preview track undo",
+      }),
+    );
+    const preview = await screen.findByLabelText(
+      "Track metadata undo confirmation",
+    );
+    expect(preview).toHaveTextContent("Different Artist");
+    expect(preview).toHaveTextContent("Fixture Artist");
+    expect(preview).toHaveTextContent("2030");
+    expect(preview).toHaveTextContent("2026");
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo track fields",
+      }),
+    );
+    expect(previewTrackTagUndo).toHaveBeenCalledWith({
+      operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+    });
+    expect(applyTrackTagUndo).toHaveBeenCalledWith({
+      operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+      confirmationToken: "track-undo-confirmation-token-long-enough",
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Track metadata undo was re-read and verified.",
+    );
+  });
+
+  it("disables track undo confirmation when the preview reports a conflict", async () => {
+    const mockApi = api(true);
+    Object.assign(mockApi, {
+      listAlbumEditHistory: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: [
+            {
+              operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+              kind: "track-tags-edit" as const,
+              sourceOperationId: null,
+              proposedTitle: "Track metadata: artist",
+              state: "completed" as const,
+              createdAt: "2026-07-22T00:00:00.000Z",
+              completedAt: "2026-07-22T00:00:01.000Z",
+              verifiedFiles: 1,
+              failedFiles: 0,
+            },
+          ],
+        }),
+      ),
+      previewTrackTagUndo: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: {
+            operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+            confirmationToken: "track-undo-confirmation-token-long-enough",
+            fileId: album.tracks[0]?.id ?? "",
+            path: "/fixture/track.mp3",
+            changes: [
+              {
+                field: "artist" as const,
+                before: "External Artist",
+                after: "Fixture Artist",
+              },
+            ],
+            warnings: [
+              "A field changed after this edit; undo will not overwrite it.",
+            ],
+          },
+        }),
+      ),
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const history = await screen.findByLabelText("Metadata edit history");
+    await user.click(
+      await within(history).findByRole("button", {
+        name: "Preview track undo",
+      }),
+    );
+    const preview = await screen.findByLabelText(
+      "Track metadata undo confirmation",
+    );
+    expect(within(preview).getByRole("alert")).toHaveTextContent(
+      "undo will not overwrite it",
+    );
+    expect(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo track fields",
+      }),
+    ).toBeDisabled();
   });
 
   it("disables undo confirmation when an intervening edit creates a conflict", async () => {
@@ -530,7 +1006,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 6,
+          schemaVersion: 10,
           summary: {
             libraryRoots: 2,
             albums: 30,

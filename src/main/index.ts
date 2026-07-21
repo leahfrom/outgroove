@@ -10,6 +10,7 @@ import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
+import { EditTrackTags } from "./application/edit-track-tags";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -50,6 +51,7 @@ async function createWindow(): Promise<void> {
   database = new CatalogDatabase(databasePath);
   scanCatalog = new WorkerScanCatalog(databasePath);
   const reader = new MusicMetadataReader();
+  const writer = new SafeMetadataWriter(reader);
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
@@ -62,7 +64,8 @@ async function createWindow(): Promise<void> {
     database,
     backup,
     scanJobs: new ScanJobCoordinator(database, scanner),
-    editor: new EditAlbumTitle(database, new SafeMetadataWriter(reader)),
+    editor: new EditAlbumTitle(database, writer),
+    trackEditor: new EditTrackTags(database, writer),
     sync: new DeviceSync(database),
     window,
     restartApp: () => {

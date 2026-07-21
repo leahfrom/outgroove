@@ -201,6 +201,18 @@ pre {
   margin-top: 1.5rem;
   padding-top: 1.5rem;
 }
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+.field-grid input {
+  display: block;
+  margin-top: 0.35rem;
+  min-width: 0;
+  width: 100%;
+}
 .settings {
   background: white;
   border: 1px solid #d8ddd8;

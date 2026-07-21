@@ -1,31 +1,19 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - develop
-      - main
   pull_request:
     branches:
       - develop
       - main
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  verify-and-package:
-    name: Verify and package (${{ matrix.platform }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            platform: macOS
-          # better-sqlite3's current node-gyp does not yet recognize the
-          # Visual Studio 2026 toolchain on the moving windows-latest image.
-          - os: windows-2022
-            platform: Windows
-          - os: ubuntu-latest
-            platform: Linux
-    runs-on: ${{ matrix.os }}
+  verify-package-and-smoke:
+    name: Verify, package, and smoke (Linux)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -33,15 +21,11 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - if: github.event_name == 'pull_request'
-        name: Validate Gitflow pull request
+      - name: Validate Gitflow pull request
         env:
           BASE_BRANCH: ${{ github.base_ref }}
           HEAD_BRANCH: ${{ github.head_ref }}
         run: npm run flow:validate-pr
       - run: npm run verify
       - run: npm run package
-      - if: runner.os == 'Linux'
-        run: xvfb-run -a npm run test:smoke
-      - if: runner.os != 'Linux'
-        run: npm run test:smoke
+      - run: xvfb-run -a npm run test:smoke

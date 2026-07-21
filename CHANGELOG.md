@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — 2026-07-22
+
+- Add safe single-track editing for title, track artist, album artist,
+  track/disc numbers, and partial release date, with explicit per-field preview,
+  same-volume replacement, audio-payload verification, and re-read validation.
+- Add field-scoped undo for verified single-track edits without overwriting
+  targeted fields changed after the original operation or undo preview.
+- Add explicit multi-track selection and batch editing for shared artist, album
+  artist, disc number, and partial release-date fields. Unchanged tracks are
+  skipped and one failed file does not abort or misreport the remaining writes.
+- Add verified batch undo that includes only successful source writes, preserves
+  unrelated metadata changes, skips already restored files, and refuses stale
+  targets while continuing safe restores.
+- Migrate schema version 6 catalogs through versions 7–10 while preserving edit
+  history and tag snapshots.
+
 ## 0.4.0 — 2026-07-21
 
 - Show completed and failed album-title operations in the selected album's

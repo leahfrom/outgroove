@@ -9,6 +9,10 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
 - Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
+- Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
+- Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
+- Preview a field-scoped batch undo from edit history. Only verified writes participate; already restored files are skipped and stale files are refused without stopping safe restores.
+- Preview a field-scoped track metadata undo from edit history. It restores only fields changed by that verified operation and refuses targeted fields changed afterward.
 - Review confirmed album-title edit history and preview an honest per-file undo. Undo reuses the same safe writer and refuses to overwrite a title changed after the original edit.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
 - Repeat scans skip unchanged files; repeat syncs plan no unnecessary copies.
@@ -55,6 +59,11 @@ exclusive `FileShare.None` lock. It verifies that a locked metadata source and
 a locked manifest-owned sync destination fail without changing the existing
 file or advancing the manifest.
 
+To conserve private-repository Actions minutes, ordinary pull requests run one
+Linux verification/package/smoke job and cancel superseded runs. Tagged
+releases remain gated by the full macOS, Windows, and Linux matrix. Local macOS
+verification, packaging, and smoke tests are required before a feature PR.
+
 The real-volume exFAT conformance probe is intentionally manual. It requires an
 exact absolute path to an explicitly authorized disposable exFAT target:
 
@@ -97,13 +106,19 @@ decoder throughput. Current measurements and their limits are in
 
 The scanner asks `music-metadata` to read MP3, FLAC, M4A/MP4, Ogg Vorbis, Opus, WAV, AIFF, APE, and WavPack extensions. Actual malformed/unsupported inputs remain visible as item-level errors.
 
-Album-title writing is deliberately narrower:
+Metadata writing is deliberately narrower:
 
-| Format                | Read        | Album-title write | Evidence                                                                                                |
-| --------------------- | ----------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
-| MP3                   | Yes         | Yes               | ID3v2.4 write/re-read; Unicode, artwork, numbering, comment, ID, private `TXXX`, and audio preservation |
-| FLAC                  | Yes         | Yes               | Write/re-read; Unicode, artwork, numbering, comment, ID, private Vorbis field, and audio preservation   |
-| Other scanner formats | Best effort | No                | Preview warns and confirmation is disabled                                                              |
+| Format                | Read        | Common-field write | Evidence                                                                                                       |
+| --------------------- | ----------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| MP3                   | Yes         | Yes                | ID3v2.4 write/re-read; Unicode, artwork, numbering, dates, comment, ID, private `TXXX`, and audio preservation |
+| FLAC                  | Yes         | Yes                | Write/re-read; Unicode, artwork, numbering, dates, comment, ID, private Vorbis field, and audio preservation   |
+| Other scanner formats | Best effort | No                 | Preview warns and confirmation is disabled                                                                     |
+
+The currently editable common fields are album title plus a selected track's
+title, track artist, album artist, track/disc number, and partial release date.
+Batch editing is deliberately narrower: it supports only track artist, album
+artist, disc number, and partial release date, requires an explicit opt-in for
+each field, and does not mass-edit titles or track numbers.
 
 The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
@@ -115,6 +130,8 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
 - Album-title undo restores only verified Outgroove edits and only when the current album tag still equals that edit's recorded result. It is not a general-purpose rollback for external edits or other tag fields.
+- Track metadata undo restores only the fields recorded by a verified Outgroove edit. It cannot recover unsupported/private frames, external edits, disk failures, or edits whose current targeted values no longer match the recorded result.
+- Batch undo restores only fields recorded by the verified batch snapshots. It cannot recover unsupported/private frames, external edits to targeted fields, disk failures, or files whose current targeted values no longer match the recorded batch result.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.

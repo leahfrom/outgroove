@@ -20,6 +20,7 @@ import type {
   ScannedAudioFile,
 } from "../../../shared/domain/catalog";
 import { albumGroupingKey, sortTracks } from "../../../shared/domain/catalog";
+import type { TrackTagChanges } from "../../../shared/domain/tag-edit";
 import { migrations } from "./migrations";
 
 interface AudioFileRow {
@@ -851,6 +852,41 @@ export class CatalogDatabase {
       : undefined;
   }
 
+  getTrackAlbumId(fileId: string): string | undefined {
+    return (
+      this.connection
+        .prepare("SELECT album_id FROM tracks WHERE file_id=?")
+        .get(fileId) as { album_id: string } | undefined
+    )?.album_id;
+  }
+
+  getFileEditState(fileId: string):
+    | {
+        path: string;
+        tags: NormalizedTags;
+        scanState: "ok" | "error" | "missing";
+      }
+    | undefined {
+    const row = this.connection
+      .prepare(
+        "SELECT path, normalized_tags_json, scan_state FROM audio_files WHERE id=?",
+      )
+      .get(fileId) as
+      | {
+          path: string;
+          normalized_tags_json: string | null;
+          scan_state: "ok" | "error" | "missing";
+        }
+      | undefined;
+    return row?.normalized_tags_json
+      ? {
+          path: row.path,
+          tags: JSON.parse(row.normalized_tags_json) as NormalizedTags,
+          scanState: row.scan_state,
+        }
+      : undefined;
+  }
+
   createEditOperation(
     albumId: string,
     proposedTitle: string,
@@ -897,6 +933,122 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackEditOperation(
+    albumId: string,
+    fileId: string,
+    before: NormalizedTags,
+    changes: TrackTagChanges,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    const fields = Object.keys(changes).join(", ");
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, target_file_id, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-edit', ?, ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Track metadata: ${fields}`,
+        confirmationHash,
+        new Date().toISOString(),
+        fileId,
+        JSON.stringify(before),
+        JSON.stringify(changes),
+      );
+    return id;
+  }
+
+  createTrackUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    fileId: string,
+    current: NormalizedTags,
+    changes: TrackTagChanges,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    const fields = Object.keys(changes).join(", ");
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id, target_file_id, preview_tags_json,
+          proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-undo', ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Restore track metadata: ${fields}`,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+        fileId,
+        JSON.stringify(current),
+        JSON.stringify(changes),
+      );
+    return id;
+  }
+
+  createTrackBatchEditOperation(
+    albumId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    changes: TrackTagChanges,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    const fields = Object.keys(changes).join(", ");
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-batch-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Batch metadata: ${fields}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(changes),
+      );
+    return id;
+  }
+
+  createTrackBatchUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, 'Restore batch metadata', ?, 'previewed', ?,
+          'track-tags-batch-undo', ?, ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -904,14 +1056,24 @@ export class CatalogDatabase {
         proposed_title: string;
         confirmation_hash: string;
         state: string;
-        kind: "album-title-edit" | "album-title-undo";
+        kind:
+          | "album-title-edit"
+          | "album-title-undo"
+          | "track-tags-edit"
+          | "track-tags-undo"
+          | "track-tags-batch-edit"
+          | "track-tags-batch-undo";
         source_operation_id: string | null;
+        target_file_id: string | null;
+        preview_tags_json: string | null;
+        proposed_tags_json: string | null;
       }
     | undefined {
     return this.connection
       .prepare(
         `SELECT id, album_id, proposed_title, confirmation_hash, state, kind,
-          source_operation_id FROM edit_operations WHERE id = ?`,
+          source_operation_id, target_file_id, preview_tags_json,
+          proposed_tags_json FROM edit_operations WHERE id = ?`,
       )
       .get(id) as
       | {
@@ -920,8 +1082,17 @@ export class CatalogDatabase {
           proposed_title: string;
           confirmation_hash: string;
           state: string;
-          kind: "album-title-edit" | "album-title-undo";
+          kind:
+            | "album-title-edit"
+            | "album-title-undo"
+            | "track-tags-edit"
+            | "track-tags-undo"
+            | "track-tags-batch-edit"
+            | "track-tags-batch-undo";
           source_operation_id: string | null;
+          target_file_id: string | null;
+          preview_tags_json: string | null;
+          proposed_tags_json: string | null;
         }
       | undefined;
   }
@@ -948,7 +1119,13 @@ export class CatalogDatabase {
       )
       .all(albumId, albumId) as {
       id: string;
-      kind: "album-title-edit" | "album-title-undo";
+      kind:
+        | "album-title-edit"
+        | "album-title-undo"
+        | "track-tags-edit"
+        | "track-tags-undo"
+        | "track-tags-batch-edit"
+        | "track-tags-batch-undo";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";
