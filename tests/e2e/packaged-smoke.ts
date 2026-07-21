@@ -29,7 +29,14 @@ async function main(): Promise<void> {
           );
 
   await access(executable);
-  const child = spawn(executable, ["--smoke-test"], {
+  const args = ["--smoke-test"];
+  // GitHub's Linux runner cannot install Electron's chrome-sandbox helper as
+  // root-owned mode 4755. This affects only the disposable CI launch; the app's
+  // BrowserWindow sandbox configuration is still asserted by architecture tests.
+  if (process.platform === "linux" && process.env.CI === "true") {
+    args.push("--no-sandbox");
+  }
+  const child = spawn(executable, args, {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, OUTGROOVE_SMOKE_TEST: "1" },
   });
