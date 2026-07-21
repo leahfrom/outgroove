@@ -23,13 +23,15 @@ import {
 import { LocalMetadataJobRunner } from "../../src/main/jobs/metadata-runner";
 
 const temporary: string[] = [];
-afterEach(async () =>
-  Promise.all(
+const databases: CatalogDatabase[] = [];
+afterEach(async () => {
+  for (const database of databases.splice(0)) database.close();
+  await Promise.all(
     temporary
       .splice(0)
       .map((path) => rm(path, { recursive: true, force: true })),
-  ),
-);
+  );
+});
 
 async function setup(): Promise<{
   directory: string;
@@ -46,6 +48,7 @@ async function setup(): Promise<{
   });
   await mkdir(target);
   const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+  databases.push(database);
   const root = database.addLibraryRoot(library, pathComparisonKey(library));
   await new ScanLibrary(
     database,
