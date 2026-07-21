@@ -84,7 +84,8 @@ export async function audioPayloadHash(path: string): Promise<string> {
 }
 
 async function flushPath(path: string): Promise<void> {
-  const handle = await open(path, "r");
+  // Windows rejects FlushFileBuffers/fsync on a read-only handle.
+  const handle = await open(path, "r+");
   try {
     await handle.sync();
   } finally {
