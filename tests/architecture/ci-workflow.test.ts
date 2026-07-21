@@ -9,20 +9,18 @@ describe("CI workflow triggers", () => {
     "utf8",
   );
 
-  it("avoids duplicate feature-branch push and pull-request matrices", () => {
-    expect(workflow).toContain(`push:
-    branches:
-      - develop
-      - main`);
+  it("runs only for pull requests and cancels superseded work", () => {
+    expect(workflow).not.toContain("  push:");
     expect(workflow).toContain(`pull_request:
     branches:
       - develop
       - main`);
+    expect(workflow).toContain("cancel-in-progress: true");
   });
 
-  it("retains the three-platform package matrix", () => {
-    expect(workflow).toContain("macos-latest");
-    expect(workflow).toContain("windows-2022");
+  it("uses one Linux package smoke job for routine pull requests", () => {
+    expect(workflow).not.toContain("macos-latest");
+    expect(workflow).not.toContain("windows-2022");
     expect(workflow).toContain("ubuntu-latest");
     expect(workflow).toContain("npm run package");
     expect(workflow).toContain("npm run test:smoke");

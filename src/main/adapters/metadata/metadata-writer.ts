@@ -7,6 +7,7 @@ import {
   saveTrack,
   writeMetadata,
 } from "@akabeko/music-metadata-editor";
+import type { TagData } from "@akabeko/music-metadata-editor";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
 import { streamingFileHash } from "../filesystem/streaming-hash";
@@ -18,12 +19,67 @@ export interface MetadataWriteResult {
   readonly payloadHashAfter: string;
 }
 
+export interface MetadataTagChanges {
+  readonly title?: string;
+  readonly album?: string;
+  readonly artist?: string;
+  readonly albumArtist?: string;
+  readonly trackNumber?: number | null;
+  readonly discNumber?: number | null;
+  readonly year?: string | null;
+}
+
 export interface MetadataWriter {
   readonly writableExtensions: ReadonlySet<string>;
+  writeTags(
+    path: string,
+    changes: MetadataTagChanges,
+  ): Promise<MetadataWriteResult>;
   writeAlbumTitle(
     path: string,
     albumTitle: string,
   ): Promise<MetadataWriteResult>;
+}
+
+function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
+  const updated = { ...tag };
+  for (const field of ["title", "album", "artist", "albumArtist"] as const) {
+    if (!(field in changes)) continue;
+    const value = changes[field];
+    if (value === undefined) throw new Error(`${field} is invalid.`);
+    Object.assign(updated, { [field]: value });
+  }
+  if ("trackNumber" in changes) {
+    if (changes.trackNumber === null) delete updated.trackNumber;
+    else updated.trackNumber = changes.trackNumber;
+  }
+  if ("discNumber" in changes) {
+    if (changes.discNumber === null) delete updated.discNumber;
+    else updated.discNumber = changes.discNumber;
+  }
+  if ("year" in changes) {
+    const year = changes.year;
+    delete updated.year;
+    delete updated.recordingDate;
+    if (year && /^\d{4}$/u.test(year)) updated.year = Number(year);
+    else if (year) updated.recordingDate = year;
+  }
+  return updated;
+}
+
+function changesMatch(
+  file: ScannedAudioFile,
+  changes: MetadataTagChanges,
+): boolean {
+  return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
+    (field) => file.tags[field] === changes[field],
+  );
+}
+
+function expectedDescription(changes: MetadataTagChanges): string {
+  return (Object.entries(changes) as [string, unknown][])
+    .map(([field, value]) => `${field}=${JSON.stringify(value)}`)
+    .join(", ");
 }
 
 async function mp3PayloadRange(
@@ -130,6 +186,15 @@ export class SafeMetadataWriter implements MetadataWriter {
     path: string,
     albumTitle: string,
   ): Promise<MetadataWriteResult> {
+    return this.writeTags(path, { album: albumTitle });
+  }
+
+  async writeTags(
+    path: string,
+    changes: MetadataTagChanges,
+  ): Promise<MetadataWriteResult> {
+    if (Object.keys(changes).length === 0)
+      throw new Error("At least one metadata field must change.");
     const extension = extname(path).toLocaleLowerCase("en-US");
     if (!this.writableExtensions.has(extension))
       throw new Error(
@@ -149,11 +214,12 @@ export class SafeMetadataWriter implements MetadataWriter {
     let originalMoved = false;
     try {
       const loaded = await loadTrack(path);
+      const updatedTag = applyChanges(loaded.tag, changes);
       if (extension === ".mp3") {
         // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
         // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
         const bytes = await writeMetadata(path, {
-          tag: { ...loaded.tag, album: albumTitle },
+          tag: updatedTag,
           id3v2MajorVersion: 4,
         } as Parameters<typeof writeMetadata>[1] & {
           id3v2MajorVersion: 4;
@@ -161,15 +227,15 @@ export class SafeMetadataWriter implements MetadataWriter {
         await writeFile(temporary, bytes, { flag: "wx" });
       } else {
         await saveTrack(
-          { ...loaded, tag: { ...loaded.tag, album: albumTitle } },
+          { ...loaded, tag: updatedTag },
           { source: path, outputPath: temporary },
         );
       }
       await flushPath(temporary);
       const temporaryRead = await this.reader.read(temporary);
-      if (temporaryRead.tags.album !== albumTitle)
+      if (!changesMatch(temporaryRead, changes))
         throw new Error(
-          `Temporary write verification failed: expected album “${albumTitle}”.`,
+          `Temporary write verification failed: expected ${expectedDescription(changes)}.`,
         );
       const temporaryHash = await audioPayloadHash(temporary);
       if (temporaryHash !== hashBefore)
@@ -183,7 +249,7 @@ export class SafeMetadataWriter implements MetadataWriter {
       await flushPath(path);
       const finalRead = await this.reader.read(path);
       const hashAfter = await audioPayloadHash(path);
-      if (finalRead.tags.album !== albumTitle || hashAfter !== hashBefore)
+      if (!changesMatch(finalRead, changes) || hashAfter !== hashBefore)
         throw new Error("Post-replacement verification failed.");
       await bestEffortUnlink(rollback);
       return {

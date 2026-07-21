@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type { CatalogAlbum } from "../domain/catalog";
 import type { AppError, Result } from "../domain/errors";
+import { isValidPartialDate } from "../domain/tag-edit";
+import type { EditableTrackTagField } from "../domain/tag-edit";
 
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
@@ -28,6 +30,27 @@ export const albumEditHistoryRequestSchema = z
   .strict();
 export const albumEditUndoPreviewRequestSchema = z
   .object({ operationId: z.uuid() })
+  .strict();
+export const trackTagEditPreviewRequestSchema = z
+  .object({
+    fileId: z.uuid(),
+    changes: z
+      .object({
+        title: z.string().trim().min(1).max(400).optional(),
+        artist: z.string().trim().min(1).max(400).optional(),
+        albumArtist: z.string().trim().min(1).max(400).optional(),
+        trackNumber: z.number().int().min(1).max(9999).nullable().optional(),
+        discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        year: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+      })
+      .strict()
+      .refine((changes) => Object.keys(changes).length > 0),
+  })
   .strict();
 export const syncProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
@@ -119,9 +142,21 @@ export interface TagEditResultDto {
     error: string | null;
   }[];
 }
+export interface TrackTagEditPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly fileId: string;
+  readonly path: string;
+  readonly changes: readonly {
+    field: EditableTrackTagField;
+    before: string | number | null;
+    after: string | number | null;
+  }[];
+  readonly warnings: readonly string[];
+}
 export interface TagEditHistoryItemDto {
   readonly operationId: string;
-  readonly kind: "album-title-edit" | "album-title-undo";
+  readonly kind: "album-title-edit" | "album-title-undo" | "track-tags-edit";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -188,6 +223,12 @@ export interface OutgrooveApi {
     request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;
   applyAlbumTitleUndo(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewTrackTagEdit(
+    request: z.infer<typeof trackTagEditPreviewRequestSchema>,
+  ): Promise<Result<TrackTagEditPreviewDto>>;
+  applyTrackTagEdit(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

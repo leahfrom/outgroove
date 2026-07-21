@@ -62,6 +62,51 @@ describe.each(["01-first.mp3", "02-second.flac"])(
   },
 );
 
+describe.each(["01-first.mp3", "02-second.flac"])(
+  "safe multi-field metadata round trip: %s",
+  (fixture) => {
+    it("changes only requested common fields while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-fields-"));
+      temporary.push(directory);
+      const path = join(directory, basename(fixture));
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "album", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const before = await reader.read(path);
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(reader).writeTags(path, {
+        title: "Renamed track",
+        artist: "New track artist",
+        albumArtist: "New album artist",
+        trackNumber: 7,
+        discNumber: 2,
+        year: "2031-04",
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toEqual({
+        ...before.tags,
+        title: "Renamed track",
+        artist: "New track artist",
+        albumArtist: "New album artist",
+        trackNumber: 7,
+        discNumber: 2,
+        year: "2031-04",
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
 it("rejects unsupported writes without changing the source", async () => {
   const directory = await mkdtemp(join(tmpdir(), "outgroove-tags-fail-"));
   temporary.push(directory);

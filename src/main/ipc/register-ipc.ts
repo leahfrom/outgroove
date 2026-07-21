@@ -16,12 +16,14 @@ import {
   syncApplyRequestSchema,
   syncPlanRequestSchema,
   syncProfileRequestSchema,
+  trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
+import type { EditTrackTags } from "../application/edit-track-tags";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -31,6 +33,7 @@ interface Dependencies {
   backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
   editor: EditAlbumTitle;
+  trackEditor: EditTrackTags;
   sync: DeviceSync;
   window: BrowserWindow;
   restartApp: () => void;
@@ -188,6 +191,26 @@ export function registerIpc(
       albumEditApplyRequestSchema,
       ({ operationId, confirmationToken }) =>
         dependencies.editor.applyUndo(
+          operationId,
+          confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewTrackTagEdit,
+    createValidatedHandler(
+      trackTagEditPreviewRequestSchema,
+      ({ fileId, changes }) =>
+        dependencies.trackEditor.preview(fileId, changes),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyTrackTagEdit,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.trackEditor.apply(
           operationId,
           confirmationToken,
           progress("tag-edit"),
