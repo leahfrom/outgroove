@@ -17,6 +17,8 @@
     "test:watch": "vitest",
     "test:smoke": "tsx tests/e2e/packaged-smoke.ts",
     "test:exfat": "node --import tsx scripts/filesystem-conformance.ts",
+    "benchmark:library": "node --import tsx scripts/library-benchmark.ts",
+    "benchmark:library:100k": "npm run benchmark:library -- --files 100000",
     "fixtures:generate": "tsx scripts/generate-audio-fixtures.ts",
     "version:check": "node --import tsx scripts/gitflow.ts check-version",
     "flow:feature": "node --import tsx scripts/gitflow.ts start-feature",

@@ -44,6 +44,8 @@ npm run package        # unpacked platform application
 npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
 npm run make           # ZIP artifact for the current platform
 npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
+npm run benchmark:library # temporary 5,000-file synthetic catalog benchmark
+npm run benchmark:library:100k # opt-in 100,000-file synthetic benchmark
 ```
 
 Windows CI also opens fixture files from a separate PowerShell process with an
@@ -81,6 +83,13 @@ testing, not a claim of production readiness. See the repository's **Releases**
 page while signed into the GitHub account that can access this private project.
 
 Automated tests copy the CC0 generated fixtures under `fixtures/audio/` into OS temporary directories before any write. They never scan or modify a real music library or mounted device.
+
+The library benchmark likewise creates empty synthetic `.mp3` paths and a
+temporary SQLite database under the OS temporary directory, then removes the
+entire generated tree. It measures enumeration, incremental signatures,
+catalog writes, paging/search, cancellation, and process RSS—not real metadata
+decoder throughput. Current measurements and their limits are in
+[the performance baseline](docs/performance-baseline.md).
 
 ## Format status
 
@@ -120,5 +129,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice after running the manual exFAT matrix is a
-larger-library responsiveness benchmark—not online metadata or mirror deletion.
+The next performance slice is streaming metadata results into bounded catalog
+batches to lower 100,000-file peak memory, plus a smaller real-fixture parsing
+profile. The manual exFAT matrix also remains pending; neither requires online
+metadata or mirror deletion.
