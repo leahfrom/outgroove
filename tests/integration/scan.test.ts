@@ -14,6 +14,7 @@ import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-r
 import {
   ScanLibrary,
   pathComparisonKey,
+  type ScanProgress,
 } from "../../src/main/application/scan-library";
 import { LocalMetadataJobRunner } from "../../src/main/jobs/metadata-runner";
 
@@ -175,9 +176,27 @@ describe("incremental library scan", () => {
       statFile: (path) => nodeFileSystem.statFile(path),
     };
     const metadata = new LocalMetadataJobRunner(new MusicMetadataReader());
+    const progress: ScanProgress[] = [];
     await expect(
-      new ScanLibrary(database, metadata, partialFileSystem).execute(root.id),
+      new ScanLibrary(database, metadata, partialFileSystem).execute(
+        root.id,
+        (update) => progress.push(update),
+      ),
     ).resolves.toEqual({ parsed: 1, unchanged: 0, errors: 1 });
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "discovery",
+          discovered: 1,
+          folderErrors: 1,
+        }),
+        expect.objectContaining({
+          phase: "metadata",
+          completed: 1,
+          total: 1,
+        }),
+      ]),
+    );
     expect(
       database.getFileByPathKey(pathComparisonKey(hiddenPath))?.scan_state,
     ).toBe("ok");

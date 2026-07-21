@@ -116,7 +116,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
-- Scan jobs persist progress and terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
+- Scan jobs show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
 - macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs run in CI; manual packaged Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
