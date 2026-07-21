@@ -7,6 +7,7 @@ import type {
   SyncPlanDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
+  TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 
@@ -39,6 +40,17 @@ export function App(): React.JSX.Element {
     readonly TagEditHistoryItemDto[]
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
+  const [selectedTrackId, setSelectedTrackId] = useState<string>();
+  const [trackDraft, setTrackDraft] = useState({
+    title: "",
+    artist: "",
+    albumArtist: "",
+    trackNumber: "",
+    discNumber: "",
+    year: "",
+  });
+  const [trackEditPreview, setTrackEditPreview] =
+    useState<TrackTagEditPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -58,6 +70,10 @@ export function App(): React.JSX.Element {
   const selectedAlbum = useMemo(
     () => albums.find((album) => album.id === selectedAlbumId),
     [albums, selectedAlbumId],
+  );
+  const selectedTrack = useMemo(
+    () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
+    [selectedAlbum, selectedTrackId],
   );
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
@@ -139,6 +155,8 @@ export function App(): React.JSX.Element {
     let current = true;
     setEditPreview(undefined);
     setUndoPreview(undefined);
+    setSelectedTrackId(undefined);
+    setTrackEditPreview(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
@@ -304,6 +322,67 @@ export function App(): React.JSX.Element {
         setUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const editTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    setSelectedTrackId(track.id);
+    setTrackEditPreview(undefined);
+    setTrackDraft({
+      title: track.tags.title,
+      artist: track.tags.artist,
+      albumArtist: track.tags.albumArtist,
+      trackNumber: track.tags.trackNumber?.toString() ?? "",
+      discNumber: track.tags.discNumber?.toString() ?? "",
+      year: track.tags.year ?? "",
+    });
+  };
+
+  const previewTrackEdit = async (): Promise<void> => {
+    if (!selectedTrack) return;
+    const result = await window.outgroove.previewTrackTagEdit({
+      fileId: selectedTrack.id,
+      changes: {
+        title: trackDraft.title,
+        artist: trackDraft.artist,
+        albumArtist: trackDraft.albumArtist,
+        trackNumber: trackDraft.trackNumber
+          ? Number(trackDraft.trackNumber)
+          : null,
+        discNumber: trackDraft.discNumber
+          ? Number(trackDraft.discNumber)
+          : null,
+        year: trackDraft.year || null,
+      },
+    });
+    if (result.ok) setTrackEditPreview(result.value);
+    else setNotice(result.error.message);
+  };
+
+  const applyTrackEdit = async (): Promise<void> => {
+    if (!trackEditPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackTagEdit({
+        operationId: trackEditPreview.operationId,
+        confirmationToken: trackEditPreview.confirmationToken,
+      });
+      if (result.ok) {
+        const written = result.value.results[0];
+        setNotice(
+          written?.verified
+            ? "Track metadata write was re-read and verified."
+            : `Track metadata was not changed: ${written?.error ?? "verification failed"}`,
+        );
+        if (written?.verified) {
+          setTrackEditPreview(undefined);
+          setSelectedTrackId(undefined);
+          await refreshCatalog();
+          if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+        }
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -560,9 +639,170 @@ export function App(): React.JSX.Element {
                           <pre>{JSON.stringify(track.nativeTags, null, 2)}</pre>
                         </dd>
                       </dl>
+                      <button disabled={busy} onClick={() => editTrack(track)}>
+                        Edit track metadata
+                      </button>
                     </details>
                   ))}
                 </div>
+                {selectedTrack && (
+                  <section className="card" aria-label="Track metadata editor">
+                    <h3>Workbench · track metadata</h3>
+                    <p>
+                      Editing {selectedTrack.tags.title}. Only fields that
+                      differ will be included in the write.
+                    </p>
+                    <div className="field-grid">
+                      <label>
+                        Track title
+                        <input
+                          value={trackDraft.title}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              title: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Track artist
+                        <input
+                          value={trackDraft.artist}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              artist: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Album artist
+                        <input
+                          value={trackDraft.albumArtist}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              albumArtist: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Track number
+                        <input
+                          type="number"
+                          min="1"
+                          max="9999"
+                          value={trackDraft.trackNumber}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              trackNumber: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Disc number
+                        <input
+                          type="number"
+                          min="1"
+                          max="999"
+                          value={trackDraft.discNumber}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              discNumber: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Release date
+                        <input
+                          placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
+                          value={trackDraft.year}
+                          onChange={(event) =>
+                            setTrackDraft((draft) => ({
+                              ...draft,
+                              year: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="actions">
+                      <button
+                        disabled={busy}
+                        onClick={() => void previewTrackEdit()}
+                      >
+                        Preview track changes
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          setSelectedTrackId(undefined);
+                          setTrackEditPreview(undefined);
+                        }}
+                      >
+                        Close editor
+                      </button>
+                    </div>
+                    {trackEditPreview && (
+                      <div
+                        className="preview"
+                        aria-label="Track metadata confirmation"
+                      >
+                        <h4>Review before writing</h4>
+                        <p>
+                          No file has changed yet. The proposal will be checked
+                          again immediately before the safe write.
+                        </p>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Field</th>
+                              <th>Before</th>
+                              <th>After</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {trackEditPreview.changes.map((change) => (
+                              <tr key={change.field}>
+                                <td>{change.field}</td>
+                                <td>{change.before ?? "Not set"}</td>
+                                <td>{change.after ?? "Not set"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {trackEditPreview.warnings.map((warning) => (
+                          <p key={warning} role="alert">
+                            {warning}
+                          </p>
+                        ))}
+                        <div className="actions">
+                          <button
+                            className="primary"
+                            disabled={
+                              busy || trackEditPreview.warnings.length > 0
+                            }
+                            onClick={() => void applyTrackEdit()}
+                          >
+                            Confirm and write track
+                          </button>
+                          <button
+                            onClick={() => setTrackEditPreview(undefined)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
                 <section className="card">
                   <h3>Workbench · album title</h3>
                   <label htmlFor="album-title">Proposed title</label>
@@ -626,10 +866,7 @@ export function App(): React.JSX.Element {
                       </div>
                     </div>
                   )}
-                  <div
-                    className="history"
-                    aria-label="Album-title edit history"
-                  >
+                  <div className="history" aria-label="Metadata edit history">
                     <h4>Edit history</h4>
                     {editHistory.length === 0 ? (
                       <p>No confirmed edits for this album yet.</p>
@@ -641,7 +878,9 @@ export function App(): React.JSX.Element {
                               <strong>
                                 {item.kind === "album-title-edit"
                                   ? `Changed title to “${item.proposedTitle}”`
-                                  : `Restored “${item.proposedTitle}”`}
+                                  : item.kind === "album-title-undo"
+                                    ? `Restored “${item.proposedTitle}”`
+                                    : item.proposedTitle}
                               </strong>
                               <span>
                                 {item.state}; {item.verifiedFiles} verified

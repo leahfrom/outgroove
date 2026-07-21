@@ -7,6 +7,7 @@ import {
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   scanRequestSchema,
+  trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
 
@@ -126,6 +127,28 @@ describe("validated IPC handlers", () => {
       ok: false,
       error: { code: "INVALID_REQUEST" },
     });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("strictly validates track metadata patches", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      trackTagEditPreviewRequestSchema,
+      useCase,
+    );
+    const fileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(
+      handler({}, { fileId, changes: { year: "2025-02-29" } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        { fileId, changes: { artist: "Artist", arbitraryFrame: "TXXX" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: {}, filePath: "/arbitrary/file.mp3" }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
   });
 });

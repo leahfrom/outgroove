@@ -95,6 +95,42 @@ function api(applyVerified: boolean): OutgrooveApi {
     listAlbumEditHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     previewAlbumTitleUndo: vi.fn(),
     applyAlbumTitleUndo: vi.fn(),
+    previewTrackTagEdit: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          operationId: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+          confirmationToken: "track-confirmation-token-long-enough",
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            { field: "title", before: "Track", after: "Renamed Track" },
+            {
+              field: "artist",
+              before: "Fixture Artist",
+              after: "Different Artist",
+            },
+          ],
+          warnings: [],
+        },
+      }),
+    ),
+    applyTrackTagEdit: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          operationId: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+          results: [
+            {
+              fileId: track.id,
+              path: track.path,
+              verified: applyVerified,
+              error: applyVerified ? null : "stale preview",
+            },
+          ],
+        },
+      }),
+    ),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -125,6 +161,86 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Confirm and write 1 files" }),
     ).toBeEnabled();
+  });
+
+  it("previews selected track fields before confirmation and reports verified apply", async () => {
+    const mockApi = api(true);
+    const previewSpy = vi.spyOn(mockApi, "previewTrackTagEdit");
+    const applySpy = vi.spyOn(mockApi, "applyTrackTagEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit track metadata" }),
+    );
+    await user.clear(screen.getByLabelText("Track title"));
+    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
+    await user.clear(screen.getByLabelText("Track artist"));
+    await user.type(screen.getByLabelText("Track artist"), "Different Artist");
+    expect(
+      screen.queryByRole("button", { name: "Confirm and write track" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Preview track changes" }),
+    );
+    const preview = await screen.findByLabelText("Track metadata confirmation");
+    expect(within(preview).getByText("Renamed Track")).toBeInTheDocument();
+    expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and write track",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Track metadata write was re-read and verified.",
+      ),
+    );
+    expect(previewSpy).toHaveBeenCalledTimes(1);
+    expect(previewSpy.mock.calls[0]?.[0]).toMatchObject({
+      fileId: album.tracks[0]?.id,
+      changes: {
+        title: "Renamed Track",
+        artist: "Different Artist",
+      },
+    });
+    expect(applySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a failed track edit preview visible with its stale-write error", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(false),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(
+      screen.getByRole("button", { name: "Edit track metadata" }),
+    );
+    await user.clear(screen.getByLabelText("Track title"));
+    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
+    await user.click(
+      screen.getByRole("button", { name: "Preview track changes" }),
+    );
+    const preview = await screen.findByLabelText("Track metadata confirmation");
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and write track",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Track metadata was not changed: stale preview",
+      ),
+    );
+    expect(
+      screen.getByLabelText("Track metadata confirmation"),
+    ).toBeInTheDocument();
   });
 
   it("reports verification failure without claiming success", async () => {
@@ -213,7 +329,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const history = await screen.findByLabelText("Album-title edit history");
+    const history = await screen.findByLabelText("Metadata edit history");
     expect(
       await within(history).findByText("Changed title to “Renamed Album”"),
     ).toBeVisible();
@@ -530,7 +646,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 6,
+          schemaVersion: 7,
           summary: {
             libraryRoots: 2,
             albums: 30,
