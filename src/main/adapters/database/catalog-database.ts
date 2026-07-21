@@ -58,8 +58,21 @@ interface ScanStatements {
   readonly upsertScanError: Database.Statement;
   readonly clearSeenPaths: Database.Statement;
   readonly insertSeenPath: Database.Statement;
+  readonly clearChangedPaths: Database.Statement;
+  readonly insertChangedPath: Database.Statement;
+  readonly listChangedPaths: Database.Statement;
   readonly markMissingFiles: Database.Statement;
   readonly finishLibraryRoot: Database.Statement;
+}
+
+export interface ScanDiscoveryEntry {
+  readonly pathKey: string;
+  readonly changed: { readonly sequence: number; readonly path: string } | null;
+}
+
+export interface PendingScanPath {
+  readonly sequence: number;
+  readonly path: string;
 }
 
 function mapScanJob(row: ScanJobRow): ScanJobDto {
@@ -99,7 +112,13 @@ export class CatalogDatabase {
         root_id TEXT NOT NULL,
         path_key TEXT NOT NULL,
         PRIMARY KEY (root_id, path_key)
-      ) WITHOUT ROWID
+      ) WITHOUT ROWID;
+      CREATE TEMP TABLE scan_changed_paths (
+        root_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL,
+        path TEXT NOT NULL,
+        PRIMARY KEY (root_id, sequence)
+      ) WITHOUT ROWID;
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
@@ -136,6 +155,16 @@ export class CatalogDatabase {
       ),
       insertSeenPath: this.connection.prepare(
         "INSERT OR IGNORE INTO scan_seen_paths (root_id, path_key) VALUES (?, ?)",
+      ),
+      clearChangedPaths: this.connection.prepare(
+        "DELETE FROM scan_changed_paths WHERE root_id = ?",
+      ),
+      insertChangedPath: this.connection.prepare(
+        "INSERT INTO scan_changed_paths (root_id, sequence, path) VALUES (?, ?, ?)",
+      ),
+      listChangedPaths: this.connection.prepare(
+        `SELECT sequence, path FROM scan_changed_paths
+         WHERE root_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`,
       ),
       markMissingFiles: this.connection.prepare(
         `UPDATE audio_files SET scan_state='missing'
@@ -391,17 +420,58 @@ export class CatalogDatabase {
     );
   }
 
-  finishScan(rootId: string, seenPathKeys: readonly string[]): void {
+  beginScan(rootId: string): void {
     this.connection.transaction(() => {
       this.scanStatements.clearSeenPaths.run(rootId);
-      for (const pathKey of seenPathKeys)
-        this.scanStatements.insertSeenPath.run(rootId, pathKey);
+      this.scanStatements.clearChangedPaths.run(rootId);
+    })();
+  }
+
+  recordScanDiscoveryBatch(
+    rootId: string,
+    entries: readonly ScanDiscoveryEntry[],
+  ): void {
+    this.connection.transaction(() => {
+      for (const entry of entries) {
+        this.scanStatements.insertSeenPath.run(rootId, entry.pathKey);
+        if (entry.changed)
+          this.scanStatements.insertChangedPath.run(
+            rootId,
+            entry.changed.sequence,
+            entry.changed.path,
+          );
+      }
+    })();
+  }
+
+  listChangedScanPaths(
+    rootId: string,
+    afterSequence: number,
+    limit: number,
+  ): readonly PendingScanPath[] {
+    return this.scanStatements.listChangedPaths.all(
+      rootId,
+      afterSequence,
+      limit,
+    ) as PendingScanPath[];
+  }
+
+  finishScan(rootId: string): void {
+    this.connection.transaction(() => {
       this.scanStatements.markMissingFiles.run(rootId, rootId);
       this.scanStatements.finishLibraryRoot.run(
         new Date().toISOString(),
         rootId,
       );
       this.scanStatements.clearSeenPaths.run(rootId);
+      this.scanStatements.clearChangedPaths.run(rootId);
+    })();
+  }
+
+  abandonScan(rootId: string): void {
+    this.connection.transaction(() => {
+      this.scanStatements.clearSeenPaths.run(rootId);
+      this.scanStatements.clearChangedPaths.run(rootId);
     })();
   }
 

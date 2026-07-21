@@ -10,14 +10,14 @@ import { pathComparisonKey } from "../../src/main/application/scan-library";
 
 describe("synthetic large-library pipeline", () => {
   it("scans incrementally, pages, searches, and cancels without thresholds", async () => {
-    const report = await runLibraryBenchmark(500);
+    const report = await runLibraryBenchmark(5_250);
     expect(report).toMatchObject({
-      files: 500,
-      albums: 50,
-      initialResult: { parsed: 500, unchanged: 0, errors: 0 },
-      unchangedResult: { parsed: 0, unchanged: 500, errors: 0 },
+      files: 5_250,
+      albums: 525,
+      initialResult: { parsed: 5_250, unchanged: 0, errors: 0 },
+      unchangedResult: { parsed: 0, unchanged: 5_250, errors: 0 },
       cancellationState: "cancelled",
-      catalogItemsAfterCancellation: 50,
+      catalogItemsAfterCancellation: 525,
       firstPageItems: 20,
       searchItems: 1,
     });
@@ -59,10 +59,21 @@ it("finalizes more seen paths than SQLite's parameter limit", async () => {
         },
         nativeTags: [],
       });
-    const seen = Array.from({ length: 40_000 }, (_, index) =>
-      index === 0 ? pathComparisonKey(keptPath) : `/synthetic/${index}`,
-    );
-    expect(() => database.finishScan(root.id, seen)).not.toThrow();
+    database.beginScan(root.id);
+    for (let offset = 0; offset < 40_000; offset += 250) {
+      database.recordScanDiscoveryBatch(
+        root.id,
+        Array.from({ length: 250 }, (_, batchIndex) => {
+          const index = offset + batchIndex;
+          return {
+            pathKey:
+              index === 0 ? pathComparisonKey(keptPath) : `/synthetic/${index}`,
+            changed: null,
+          };
+        }),
+      );
+    }
+    expect(() => database.finishScan(root.id)).not.toThrow();
     expect(
       database.getFileByPathKey(pathComparisonKey(keptPath))?.scan_state,
     ).toBe("ok");

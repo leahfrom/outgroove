@@ -66,12 +66,6 @@ blocked metadata runner has started. Enumeration itself checks the same abort
 signal per directory entry, but this report does not claim a measured
 enumeration-cancellation latency.
 
-## Remaining limit
-
-The run completes and the unchanged path is materially faster, but the observed
-peak is too high for a final large-library claim. Complete path, changed-path,
-and seen-path arrays are still retained for a scan.
-
 ## Streaming-result experiment
 
 `MetadataJobRunner` now delivers each result to an async consumer with
@@ -87,6 +81,35 @@ The latest instrumented run measured 389 MiB peak JavaScript heap and a 150 MiB
 SQLite file. Replacing the remaining complete path arrays without weakening
 deterministic discovery or missing-file safety is the next evidence-backed
 performance task.
+
+## Streaming discovery and path state
+
+The benchmark originally retained its own 100,000-path fixture array after
+generation. Removing that measurement artifact produced a corrected pre-change
+peak of approximately 415 MiB RSS and 233 MiB JavaScript heap. The scanner now:
+
+- discovers supported files through a deterministic async iterator;
+- commits seen paths and changed-file work to connection-local temporary SQLite
+  tables in 250-entry discovery batches;
+- reads changed work back in bounded 5,000-path metadata pages; and
+- clears temporary state on cancellation or failure without marking unseen
+  catalog files missing.
+
+The same macOS arm64 100,000-file profile then measured:
+
+| Measurement          | Corrected before | Streaming path state |
+| -------------------- | ---------------- | -------------------- |
+| Initial scan         | 13.05 s          | 13.37 s              |
+| Unchanged rescan     | 4.07 s           | 4.20 s               |
+| Peak process RSS     | 415 MiB          | 269 MiB              |
+| Peak JavaScript heap | 233 MiB          | 76 MiB               |
+
+The cancellation path took 54 ms in the streamed run because it synchronously
+discarded the temporary 100,000-entry seen set before reporting completion.
+The disconnected-root regression test proves an enumeration failure abandons
+that state and preserves the prior catalog instead of treating the library as
+empty. These figures remain local observations, not platform-independent
+thresholds or evidence from real user media.
 
 ## Real metadata parsing profile
 

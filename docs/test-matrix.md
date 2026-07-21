@@ -8,7 +8,7 @@
 | MP3/FLAC safe replacement on native filesystem           | Passed on APFS fixture copies   | Passed on CI runner filesystem, including `FileShare.None`; manual packaged check pending | Unverified                           |
 | Locked manifest-owned sync destination                   | Passed simulated failure test   | Passed real `FileShare.None` CI test; manual packaged check pending                       | Unverified                           |
 | exFAT safe replacement and copy                          | Manual probe available; not run | Manual probe available; not run                                                           | Manual probe available; not run      |
-| Synthetic large-library catalog pipeline                 | 100,000 passed locally          | 500-file CI functional profile                                                            | 500-file CI functional profile       |
+| Synthetic large-library catalog pipeline                 | 100,000 passed locally          | 5,250-file CI functional profile                                                          | 5,250-file CI functional profile     |
 | Real DAP / SD card                                       | Not run                         | Not run                                                                                   | Not run                              |
 | Signed/notarized artifact                                | Not implemented                 | Not implemented                                                                           | Not applicable                       |
 

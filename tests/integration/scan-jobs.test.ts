@@ -69,6 +69,28 @@ describe("persistent scan jobs", () => {
       directory,
       pathComparisonKey(directory),
     );
+    const previouslyIndexedPath = join(directory, "previously-indexed.mp3");
+    database.upsertScannedFile(
+      root.id,
+      pathComparisonKey(previouslyIndexedPath),
+      {
+        path: previouslyIndexedPath,
+        size: 1,
+        modifiedMs: 1,
+        format: "Synthetic",
+        durationSeconds: 1,
+        tags: {
+          title: "Previously indexed",
+          album: "Cancellation safety",
+          artist: "Fixture artist",
+          albumArtist: "Fixture artist",
+          trackNumber: 1,
+          discNumber: 1,
+          year: "2026",
+        },
+        nativeTags: [],
+      },
+    );
     const runner: MetadataJobRunner = {
       processAll: (_paths, _onResult, _onItem, signal) =>
         new Promise((_resolve, reject) =>
@@ -89,6 +111,10 @@ describe("persistent scan jobs", () => {
     expect(coordinator.cancel(started.id).state).toBe("cancelling");
     await expect(finished).resolves.toMatchObject({ state: "cancelled" });
     expect(database.listLibraryRoots()[0]?.lastScanAt).toBeNull();
+    expect(
+      database.getFileByPathKey(pathComparisonKey(previouslyIndexedPath))
+        ?.scan_state,
+    ).toBe("ok");
     database.close();
   });
 });

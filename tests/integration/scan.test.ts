@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -80,6 +80,32 @@ describe("incremental library scan", () => {
       ]),
     );
     expect(database.listAlbums()).toEqual([]);
+    database.close();
+  });
+
+  it("does not mark catalog files missing when the library root is disconnected", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-disconnected-"));
+    temporary.push(directory);
+    const library = join(directory, "library");
+    await cp(join(process.cwd(), "fixtures", "audio", "album"), library, {
+      recursive: true,
+    });
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(library, pathComparisonKey(library));
+    const scanner = new ScanLibrary(
+      database,
+      new LocalMetadataJobRunner(new MusicMetadataReader()),
+    );
+    await scanner.execute(root.id);
+    const indexedPath = database.listAlbums()[0]?.tracks[0]?.path;
+    expect(indexedPath).toBeDefined();
+
+    await rename(library, join(directory, "disconnected-library"));
+    await expect(scanner.execute(root.id)).rejects.toThrow();
+    expect(
+      indexedPath &&
+        database.getFileByPathKey(pathComparisonKey(indexedPath))?.scan_state,
+    ).toBe("ok");
     database.close();
   });
 });
