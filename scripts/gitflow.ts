@@ -135,6 +135,18 @@ function validatePr(): void {
   console.log(result.reason);
 }
 
+function validateReleaseTag(): void {
+  const tag = process.env.RELEASE_TAG;
+  const expected = `v${packageVersion()}`;
+  if (tag !== expected) {
+    fail(
+      `Release tag ${tag ?? "<missing>"} does not match package version ${expected}.`,
+    );
+  }
+  checkVersion();
+  console.log(`Release tag ${tag} matches the package version.`);
+}
+
 function tagRelease(): void {
   requireBranch("main");
   requireCleanWorktree();
@@ -166,6 +178,9 @@ try {
       break;
     case "validate-pr":
       validatePr();
+      break;
+    case "validate-release-tag":
+      validateReleaseTag();
       break;
     case "tag-release":
       tagRelease();
