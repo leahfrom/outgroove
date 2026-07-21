@@ -130,7 +130,9 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next performance slice is streaming discovery/path state instead of
-retaining complete path, changed-path, and seen-path arrays. Metadata results
-are now backpressured, but the 100,000-file measurement shows they were not the
-dominant RSS cost. The manual exFAT matrix also remains pending.
+Large scans now stream deterministic discovery, keep seen/changed work in
+connection-local temporary SQLite tables, and feed metadata through bounded
+pages. On the current macOS arm64 development machine this reduced the corrected
+100,000-file synthetic peak from approximately 415 MiB to 269 MiB RSS; see
+`docs/performance-baseline.md` for scope and caveats. The manual exFAT matrix
+remains pending.

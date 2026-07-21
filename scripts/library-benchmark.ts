@@ -94,20 +94,29 @@ async function boundedForEach<T>(
 async function generateLibrary(
   root: string,
   fileCount: number,
-): Promise<readonly string[]> {
+): Promise<string> {
   const albumCount = Math.ceil(fileCount / tracksPerAlbum);
   const albumDirectories = Array.from({ length: albumCount }, (_, index) =>
     join(root, `album-${String(index).padStart(6, "0")}`),
   );
-  await boundedForEach(albumDirectories, 32, (path) => mkdir(path));
-  const paths = Array.from({ length: fileCount }, (_, index) =>
-    join(
-      albumDirectories[Math.floor(index / tracksPerAlbum)] ?? root,
-      `track-${String(index).padStart(6, "0")}.mp3`,
-    ),
-  );
-  await boundedForEach(paths, 64, (path) => writeFile(path, ""));
-  return paths;
+  await boundedForEach(albumDirectories, 32, async (directory) => {
+    await mkdir(directory);
+    const albumIndex = Number(directory.slice(directory.lastIndexOf("-") + 1));
+    const firstTrack = albumIndex * tracksPerAlbum;
+    const tracksInAlbum = Math.min(tracksPerAlbum, fileCount - firstTrack);
+    await Promise.all(
+      Array.from({ length: tracksInAlbum }, (_, offset) =>
+        writeFile(
+          join(
+            directory,
+            `track-${String(firstTrack + offset).padStart(6, "0")}.mp3`,
+          ),
+          "",
+        ),
+      ),
+    );
+  });
+  return join(albumDirectories[0] ?? root, "track-000000.mp3");
 }
 
 function indexFromPath(path: string): number {
@@ -117,6 +126,8 @@ function indexFromPath(path: string): number {
 }
 
 class SyntheticMetadataRunner implements MetadataJobRunner {
+  constructor(private readonly totalFiles: number) {}
+
   async processAll(
     paths: readonly string[],
     onResult: (result: MetadataJobResult) => void | Promise<void>,
@@ -144,7 +155,7 @@ class SyntheticMetadataRunner implements MetadataJobRunner {
             durationSeconds: 1,
             tags: {
               title:
-                itemIndex === paths.length - 1
+                itemIndex === this.totalFiles - 1
                   ? `Needle Track ${itemIndex}`
                   : `Track ${itemIndex}`,
               album: `Album ${Math.floor(itemIndex / tracksPerAlbum)}`,
@@ -230,14 +241,17 @@ export async function runLibraryBenchmark(
     const library = join(directory, "library");
     await mkdir(library);
     let started = performance.now();
-    const paths = await generateLibrary(library, fileCount);
+    const firstPath = await generateLibrary(library, fileCount);
     sampleMemory();
     const fixtureGeneration = elapsed(started);
 
     const databasePath = join(directory, "catalog.sqlite3");
     database = new CatalogDatabase(databasePath);
     const root = database.addLibraryRoot(library, pathComparisonKey(library));
-    const scanner = new ScanLibrary(database, new SyntheticMetadataRunner());
+    const scanner = new ScanLibrary(
+      database,
+      new SyntheticMetadataRunner(fileCount),
+    );
     started = performance.now();
     const initialResult = await scanner.execute(root.id);
     sampleMemory();
@@ -266,8 +280,6 @@ export async function runLibraryBenchmark(
     });
     const searchQuery = elapsed(started);
 
-    const firstPath = paths[0];
-    if (!firstPath) throw new Error("Synthetic library did not create a file.");
     await writeFile(firstPath, "changed");
     const blocking = new BlockingMetadataRunner();
     const coordinator = new ScanJobCoordinator(
