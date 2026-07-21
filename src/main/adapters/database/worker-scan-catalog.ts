@@ -42,6 +42,7 @@ export class WorkerScanCatalog implements ScanCatalog {
   private nextRequestId = 1;
   private readonly pending = new Map<number, PendingRequest>();
   private readonly activeRoots = new Set<string>();
+  private readonly searchRecoveryRoots = new Set<string>();
 
   constructor(
     private readonly databasePath: string,
@@ -60,6 +61,7 @@ export class WorkerScanCatalog implements ScanCatalog {
       await this.request({ operation: "begin", rootId });
     } catch (error) {
       this.activeRoots.delete(rootId);
+      this.searchRecoveryRoots.delete(rootId);
       if (this.activeRoots.size === 0) await this.close();
       throw error;
     }
@@ -120,15 +122,19 @@ export class WorkerScanCatalog implements ScanCatalog {
   async finishScan(rootId: string): Promise<void> {
     await this.request({ operation: "finish", rootId });
     this.activeRoots.delete(rootId);
+    this.searchRecoveryRoots.delete(rootId);
     if (this.activeRoots.size === 0) await this.close();
   }
 
   async abandonScan(rootId: string): Promise<void> {
     if (!this.activeRoots.has(rootId)) return;
+    const recoverSearch = this.searchRecoveryRoots.has(rootId);
     try {
-      await this.request({ operation: "abandon", rootId });
+      await this.request({ operation: "abandon", rootId, recoverSearch });
+      if (recoverSearch) this.searchRecoveryRoots.clear();
     } finally {
       this.activeRoots.delete(rootId);
+      this.searchRecoveryRoots.delete(rootId);
       if (this.activeRoots.size === 0) await this.close();
     }
   }
@@ -137,6 +143,7 @@ export class WorkerScanCatalog implements ScanCatalog {
     const worker = this.worker;
     this.worker = undefined;
     this.activeRoots.clear();
+    this.searchRecoveryRoots.clear();
     if (!worker) return;
     this.failPending(new Error("Scan database worker closed."));
     await worker.terminate();
@@ -182,7 +189,7 @@ export class WorkerScanCatalog implements ScanCatalog {
   private workerFailed(worker: ScanDatabaseWorker, error: Error): void {
     if (this.worker !== worker) return;
     this.worker = undefined;
-    this.activeRoots.clear();
+    for (const rootId of this.activeRoots) this.searchRecoveryRoots.add(rootId);
     this.failPending(error);
   }
 

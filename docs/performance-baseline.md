@@ -165,6 +165,40 @@ increases because the native worker adds another V8 isolate and SQLite
 connection. The packaged smoke now scans through discovery, metadata, and
 SQLite workers before verifying a database backup on every release platform.
 
+## Catalog query projections
+
+The original album page and search queries joined the complete track and audio
+file catalog before applying their limit. At 100,000 files, a 20-album page
+took approximately 389 ms and an exact synthetic track search took
+approximately 354 ms on the macOS arm64 development machine.
+
+Schema version 5 adds two rebuildable, file-derived projections: a compact set
+of albums with available tracks and an FTS5 trigram index for track title,
+track artist, path, and format. Album title and album artist remain covered by
+an escaped `LIKE` branch. Literal queries shorter than three Unicode code
+points retain the prior escaped `LIKE` behavior because the trigram tokenizer
+cannot represent them. Projection refresh happens once after a successful scan
+or verified edit, never once per input file. A scan-worker crash forces a
+rebuild from the authoritative catalog before the connection is abandoned.
+
+The production discovery- and database-worker profile measured:
+
+| Measurement                      | Before projection | After projection |
+| -------------------------------- | ----------------- | ---------------- |
+| Initial scan                     | 12.58 s           | 14.99 s          |
+| Unchanged rescan                 | 3.68 s            | 3.40 s           |
+| First 20-album page              | 388.50 ms         | 4.13 ms          |
+| Exact synthetic track search     | 354.34 ms         | 8.96 ms          |
+| Active metadata cancellation     | 64.37 ms          | 60.82 ms         |
+| Initial maximum event-loop delay | 2.49 ms           | 2.90 ms          |
+| Peak total process RSS           | 349 MiB           | 339 MiB          |
+| SQLite database                  | 150.5 MiB         | 248.9 MiB        |
+
+This is an explicit disk and initial-write tradeoff for bounded interactive
+query latency. The in-process version of the same post-change profile measured
+a 5.24 ms first page and 9.23 ms exact search. These local synthetic results are
+regression evidence, not universal latency guarantees.
+
 ## Real metadata parsing profile
 
 `npm run benchmark:metadata` copies the redistributable preservation MP3 1,000
