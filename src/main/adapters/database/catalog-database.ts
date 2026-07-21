@@ -31,6 +31,7 @@ interface AudioFileRow {
   duration_seconds: number | null;
   normalized_tags_json: string | null;
   native_tags_json: string | null;
+  scan_state: "ok" | "error" | "missing";
   scan_error: string | null;
 }
 
@@ -46,6 +47,19 @@ interface ScanJobRow {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+}
+
+interface ScanStatements {
+  readonly getFileByPathKey: Database.Statement;
+  readonly getAlbumByGroupingKey: Database.Statement;
+  readonly upsertAlbum: Database.Statement;
+  readonly upsertAudioFile: Database.Statement;
+  readonly upsertTrack: Database.Statement;
+  readonly upsertScanError: Database.Statement;
+  readonly clearSeenPaths: Database.Statement;
+  readonly insertSeenPath: Database.Statement;
+  readonly markMissingFiles: Database.Statement;
+  readonly finishLibraryRoot: Database.Statement;
 }
 
 function mapScanJob(row: ScanJobRow): ScanJobDto {
@@ -72,6 +86,7 @@ export interface StoredFile extends AudioFileRow {
 
 export class CatalogDatabase {
   readonly connection: Database.Database;
+  private readonly scanStatements: ScanStatements;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -79,6 +94,60 @@ export class CatalogDatabase {
     this.connection.pragma("foreign_keys = ON");
     this.connection.pragma("journal_mode = WAL");
     this.migrate();
+    this.connection.exec(`
+      CREATE TEMP TABLE scan_seen_paths (
+        root_id TEXT NOT NULL,
+        path_key TEXT NOT NULL,
+        PRIMARY KEY (root_id, path_key)
+      ) WITHOUT ROWID
+    `);
+    this.scanStatements = {
+      getFileByPathKey: this.connection.prepare(
+        "SELECT * FROM audio_files WHERE path_key = ?",
+      ),
+      getAlbumByGroupingKey: this.connection.prepare(
+        "SELECT id FROM albums WHERE grouping_key = ?",
+      ),
+      upsertAlbum: this.connection.prepare(
+        `INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)
+         ON CONFLICT(grouping_key) DO UPDATE SET title = excluded.title, album_artist = excluded.album_artist`,
+      ),
+      upsertAudioFile: this.connection.prepare(
+        `INSERT INTO audio_files
+         (id, root_id, path, path_key, size, modified_ms, signature, format, duration_seconds, normalized_tags_json, native_tags_json, scan_state, scan_error, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NULL, ?)
+         ON CONFLICT(id) DO UPDATE SET path=excluded.path, path_key=excluded.path_key, size=excluded.size, modified_ms=excluded.modified_ms,
+           signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds, normalized_tags_json=excluded.normalized_tags_json,
+           native_tags_json=excluded.native_tags_json, scan_state='ok', scan_error=NULL, scanned_at=excluded.scanned_at`,
+      ),
+      upsertTrack: this.connection.prepare(
+        `INSERT INTO tracks (id, file_id, album_id, title, track_number, disc_number) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(file_id) DO UPDATE SET album_id=excluded.album_id, title=excluded.title, track_number=excluded.track_number, disc_number=excluded.disc_number`,
+      ),
+      upsertScanError: this.connection.prepare(
+        `INSERT INTO audio_files
+         (id, root_id, path, path_key, size, modified_ms, signature, scan_state, scan_error, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'error', ?, ?)
+         ON CONFLICT(id) DO UPDATE SET size=excluded.size, modified_ms=excluded.modified_ms, signature=excluded.signature,
+           scan_state='error', scan_error=excluded.scan_error, scanned_at=excluded.scanned_at`,
+      ),
+      clearSeenPaths: this.connection.prepare(
+        "DELETE FROM scan_seen_paths WHERE root_id = ?",
+      ),
+      insertSeenPath: this.connection.prepare(
+        "INSERT OR IGNORE INTO scan_seen_paths (root_id, path_key) VALUES (?, ?)",
+      ),
+      markMissingFiles: this.connection.prepare(
+        `UPDATE audio_files SET scan_state='missing'
+         WHERE root_id = ? AND NOT EXISTS (
+           SELECT 1 FROM scan_seen_paths seen
+           WHERE seen.root_id = ? AND seen.path_key = audio_files.path_key
+         )`,
+      ),
+      finishLibraryRoot: this.connection.prepare(
+        "UPDATE library_roots SET last_scan_at = ? WHERE id = ?",
+      ),
+    };
     this.interruptOrphanedJobs();
   }
 
@@ -231,12 +300,31 @@ export class CatalogDatabase {
   }
 
   getFileByPathKey(pathKey: string): AudioFileRow | undefined {
-    return this.connection
-      .prepare("SELECT * FROM audio_files WHERE path_key = ?")
-      .get(pathKey) as AudioFileRow | undefined;
+    return this.scanStatements.getFileByPathKey.get(pathKey) as
+      AudioFileRow | undefined;
   }
 
   upsertScannedFile(
+    rootId: string,
+    pathKey: string,
+    file: ScannedAudioFile,
+  ): string {
+    return this.connection.transaction(() =>
+      this.upsertScannedFileInTransaction(rootId, pathKey, file),
+    )();
+  }
+
+  upsertScannedFiles(
+    rootId: string,
+    files: readonly { pathKey: string; file: ScannedAudioFile }[],
+  ): void {
+    this.connection.transaction(() => {
+      for (const entry of files)
+        this.upsertScannedFileInTransaction(rootId, entry.pathKey, entry.file);
+    })();
+  }
+
+  private upsertScannedFileInTransaction(
     rootId: string,
     pathKey: string,
     file: ScannedAudioFile,
@@ -246,60 +334,38 @@ export class CatalogDatabase {
     const signature = `${file.size}:${Math.trunc(file.modifiedMs)}`;
     const parentFolder = file.path.replace(/[\\/][^\\/]+$/u, "");
     const groupingKey = albumGroupingKey(file.tags, parentFolder);
-    const album = this.connection
-      .prepare("SELECT id FROM albums WHERE grouping_key = ?")
-      .get(groupingKey) as { id: string } | undefined;
+    const album = this.scanStatements.getAlbumByGroupingKey.get(groupingKey) as
+      { id: string } | undefined;
     const albumId = album?.id ?? randomUUID();
     const now = new Date().toISOString();
-    this.connection.transaction(() => {
-      this.connection
-        .prepare(
-          `INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)
-        ON CONFLICT(grouping_key) DO UPDATE SET title = excluded.title, album_artist = excluded.album_artist`,
-        )
-        .run(
-          albumId,
-          groupingKey,
-          file.tags.album,
-          file.tags.albumArtist || file.tags.artist,
-        );
-      this.connection
-        .prepare(
-          `INSERT INTO audio_files
-        (id, root_id, path, path_key, size, modified_ms, signature, format, duration_seconds, normalized_tags_json, native_tags_json, scan_state, scan_error, scanned_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NULL, ?)
-        ON CONFLICT(id) DO UPDATE SET path=excluded.path, path_key=excluded.path_key, size=excluded.size, modified_ms=excluded.modified_ms,
-          signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds, normalized_tags_json=excluded.normalized_tags_json,
-          native_tags_json=excluded.native_tags_json, scan_state='ok', scan_error=NULL, scanned_at=excluded.scanned_at`,
-        )
-        .run(
-          fileId,
-          rootId,
-          file.path,
-          pathKey,
-          file.size,
-          file.modifiedMs,
-          signature,
-          file.format,
-          file.durationSeconds,
-          JSON.stringify(file.tags),
-          JSON.stringify(file.nativeTags),
-          now,
-        );
-      this.connection
-        .prepare(
-          `INSERT INTO tracks (id, file_id, album_id, title, track_number, disc_number) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(file_id) DO UPDATE SET album_id=excluded.album_id, title=excluded.title, track_number=excluded.track_number, disc_number=excluded.disc_number`,
-        )
-        .run(
-          randomUUID(),
-          fileId,
-          albumId,
-          file.tags.title,
-          file.tags.trackNumber,
-          file.tags.discNumber,
-        );
-    })();
+    this.scanStatements.upsertAlbum.run(
+      albumId,
+      groupingKey,
+      file.tags.album,
+      file.tags.albumArtist || file.tags.artist,
+    );
+    this.scanStatements.upsertAudioFile.run(
+      fileId,
+      rootId,
+      file.path,
+      pathKey,
+      file.size,
+      file.modifiedMs,
+      signature,
+      file.format,
+      file.durationSeconds,
+      JSON.stringify(file.tags),
+      JSON.stringify(file.nativeTags),
+      now,
+    );
+    this.scanStatements.upsertTrack.run(
+      randomUUID(),
+      fileId,
+      albumId,
+      file.tags.title,
+      file.tags.trackNumber,
+      file.tags.discNumber,
+    );
     return fileId;
   }
 
@@ -312,46 +378,30 @@ export class CatalogDatabase {
     message: string,
   ): void {
     const existing = this.getFileByPathKey(pathKey);
-    this.connection
-      .prepare(
-        `INSERT INTO audio_files
-      (id, root_id, path, path_key, size, modified_ms, signature, scan_state, scan_error, scanned_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'error', ?, ?)
-      ON CONFLICT(id) DO UPDATE SET size=excluded.size, modified_ms=excluded.modified_ms, signature=excluded.signature,
-        scan_state='error', scan_error=excluded.scan_error, scanned_at=excluded.scanned_at`,
-      )
-      .run(
-        existing?.id ?? randomUUID(),
-        rootId,
-        path,
-        pathKey,
-        size,
-        modifiedMs,
-        `${size}:${Math.trunc(modifiedMs)}`,
-        message,
-        new Date().toISOString(),
-      );
+    this.scanStatements.upsertScanError.run(
+      existing?.id ?? randomUUID(),
+      rootId,
+      path,
+      pathKey,
+      size,
+      modifiedMs,
+      `${size}:${Math.trunc(modifiedMs)}`,
+      message,
+      new Date().toISOString(),
+    );
   }
 
   finishScan(rootId: string, seenPathKeys: readonly string[]): void {
     this.connection.transaction(() => {
-      this.connection
-        .prepare("UPDATE library_roots SET last_scan_at = ? WHERE id = ?")
-        .run(new Date().toISOString(), rootId);
-      if (seenPathKeys.length === 0) {
-        this.connection
-          .prepare(
-            "UPDATE audio_files SET scan_state='missing' WHERE root_id = ?",
-          )
-          .run(rootId);
-      } else {
-        const placeholders = seenPathKeys.map(() => "?").join(",");
-        this.connection
-          .prepare(
-            `UPDATE audio_files SET scan_state='missing' WHERE root_id = ? AND path_key NOT IN (${placeholders})`,
-          )
-          .run(rootId, ...seenPathKeys);
-      }
+      this.scanStatements.clearSeenPaths.run(rootId);
+      for (const pathKey of seenPathKeys)
+        this.scanStatements.insertSeenPath.run(rootId, pathKey);
+      this.scanStatements.markMissingFiles.run(rootId, rootId);
+      this.scanStatements.finishLibraryRoot.run(
+        new Date().toISOString(),
+        rootId,
+      );
+      this.scanStatements.clearSeenPaths.run(rootId);
     })();
   }
 

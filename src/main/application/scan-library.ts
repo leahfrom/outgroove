@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 
 import type { ScanResultDto } from "../../shared/contracts/api";
+import type { ScannedAudioFile } from "../../shared/domain/catalog";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { MetadataJobRunner } from "../jobs/metadata-runner";
 
@@ -102,15 +103,22 @@ export class ScanLibrary {
     }
     let errors = 0;
     const results = await this.metadata.readAll(changed, onProgress, signal);
+    let successfulBatch: { pathKey: string; file: ScannedAudioFile }[] = [];
+    const flushSuccessfulBatch = (): void => {
+      if (successfulBatch.length === 0) return;
+      this.database.upsertScannedFiles(rootId, successfulBatch);
+      successfulBatch = [];
+    };
     for (const result of results) {
       throwIfCancelled(signal);
-      if (result.ok)
-        this.database.upsertScannedFile(
-          rootId,
-          pathComparisonKey(result.file.path),
-          result.file,
-        );
-      else {
+      if (result.ok) {
+        successfulBatch.push({
+          pathKey: pathComparisonKey(result.file.path),
+          file: result.file,
+        });
+        if (successfulBatch.length === 250) flushSuccessfulBatch();
+      } else {
+        flushSuccessfulBatch();
         errors++;
         let info = { size: 0, mtimeMs: 0 };
         try {
@@ -128,6 +136,7 @@ export class ScanLibrary {
         );
       }
     }
+    flushSuccessfulBatch();
     throwIfCancelled(signal);
     this.database.finishScan(rootId, seenKeys);
     return { parsed: results.length - errors, unchanged, errors };
