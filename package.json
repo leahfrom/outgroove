@@ -1,6 +1,6 @@
 {
   "name": "outgroove",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local-first music library and safe DAP sync",
   "main": ".vite/build/main.js",
   "private": true,
@@ -21,6 +21,7 @@
     "flow:release": "node --import tsx scripts/gitflow.ts start-release",
     "flow:hotfix": "node --import tsx scripts/gitflow.ts start-hotfix",
     "flow:validate-pr": "node --import tsx scripts/gitflow.ts validate-pr",
+    "flow:validate-release-tag": "node --import tsx scripts/gitflow.ts validate-release-tag",
     "release:tag": "npm run verify && node --import tsx scripts/gitflow.ts tag-release",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run version:check && npm test"
   },

@@ -48,6 +48,18 @@ and hotfix branches with the guarded npm commands documented in
 [CONTRIBUTING.md](CONTRIBUTING.md); CI rejects pull requests that bypass the
 `develop`/`main` integration paths.
 
+## Downloads
+
+Stable version tags produce a private GitHub prerelease with ZIP downloads for
+macOS arm64, Windows x64, and Linux x64 plus a `SHA256SUMS.txt` file. Release
+publication happens only after verification, packaging, and packaged-app smoke
+tests pass on all three runners.
+
+Current downloads are unsigned and not notarized. macOS Gatekeeper and Windows
+SmartScreen may warn or block first launch; these builds are for controlled
+testing, not a claim of production readiness. See the repository's **Releases**
+page while signed into the GitHub account that can access this private project.
+
 Automated tests copy the CC0 generated fixtures under `fixtures/audio/` into OS temporary directories before any write. They never scan or modify a real music library or mounted device.
 
 ## Format status
