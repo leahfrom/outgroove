@@ -255,6 +255,27 @@ select {
   padding: 1rem;
   margin-top: 1rem;
 }
+.history {
+  margin-top: 1.25rem;
+}
+.history ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.history li {
+  align-items: center;
+  border-top: 1px solid #d8ddd8;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+.history li span {
+  color: #526159;
+  display: block;
+  margin-top: 0.2rem;
+}
 table {
   border-collapse: collapse;
   width: 100%;

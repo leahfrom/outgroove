@@ -23,6 +23,12 @@ export const albumEditPreviewRequestSchema = z
 export const albumEditApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const albumEditHistoryRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
+export const albumEditUndoPreviewRequestSchema = z
+  .object({ operationId: z.uuid() })
+  .strict();
 export const syncProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
   .strict();
@@ -113,6 +119,17 @@ export interface TagEditResultDto {
     error: string | null;
   }[];
 }
+export interface TagEditHistoryItemDto {
+  readonly operationId: string;
+  readonly kind: "album-title-edit" | "album-title-undo";
+  readonly sourceOperationId: string | null;
+  readonly proposedTitle: string;
+  readonly state: "completed" | "failed";
+  readonly createdAt: string;
+  readonly completedAt: string | null;
+  readonly verifiedFiles: number;
+  readonly failedFiles: number;
+}
 
 export interface SyncPlanItemDto {
   readonly sourceFileId: string;
@@ -162,6 +179,15 @@ export interface OutgrooveApi {
     request: z.infer<typeof albumEditPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;
   applyAlbumTitleEdit(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  listAlbumEditHistory(
+    request: z.infer<typeof albumEditHistoryRequestSchema>,
+  ): Promise<Result<readonly TagEditHistoryItemDto[]>>;
+  previewAlbumTitleUndo(
+    request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
+  ): Promise<Result<TagEditPreviewDto>>;
+  applyAlbumTitleUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

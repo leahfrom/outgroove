@@ -5,7 +5,9 @@ import { dialog, type BrowserWindow, type IpcMain } from "electron";
 
 import {
   albumEditApplyRequestSchema,
+  albumEditHistoryRequestSchema,
   albumEditPreviewRequestSchema,
+  albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
   emptyRequestSchema,
   libraryQueryRequestSchema,
@@ -161,6 +163,31 @@ export function registerIpc(
       albumEditApplyRequestSchema,
       ({ operationId, confirmationToken }) =>
         dependencies.editor.apply(
+          operationId,
+          confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.listAlbumEditHistory,
+    createValidatedHandler(albumEditHistoryRequestSchema, ({ albumId }) =>
+      dependencies.editor.history(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewAlbumTitleUndo,
+    createValidatedHandler(
+      albumEditUndoPreviewRequestSchema,
+      ({ operationId }) => dependencies.editor.previewUndo(operationId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyAlbumTitleUndo,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.editor.applyUndo(
           operationId,
           confirmationToken,
           progress("tag-edit"),
