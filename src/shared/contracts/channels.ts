@@ -15,6 +15,8 @@ export const channels = {
   applyAlbumTitleUndo: "tagging:apply-album-title-undo",
   previewTrackTagEdit: "tagging:preview-track-tags",
   applyTrackTagEdit: "tagging:apply-track-tags",
+  previewTrackTagUndo: "tagging:preview-track-tags-undo",
+  applyTrackTagUndo: "tagging:apply-track-tags-undo",
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",
   applySync: "sync:apply",

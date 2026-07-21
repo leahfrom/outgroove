@@ -60,6 +60,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
       const { database, reader, editor, fileId, albumId, path } =
         await createTrackEditor(fixture);
       const payloadBefore = await audioPayloadHash(path);
+      const tagsBefore = (await reader.read(path)).tags;
       const preview = editor.preview(fileId, {
         title: "Edited track",
         artist: "Edited artist",
@@ -102,6 +103,28 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         state: "completed",
         verifiedFiles: 1,
       });
+
+      const undoPreview = editor.previewUndo(preview.operationId);
+      expect(undoPreview.warnings).toEqual([]);
+      expect(undoPreview.changes.map((change) => change.field)).toEqual(
+        preview.changes.map((change) => change.field),
+      );
+      const undoResult = await editor.applyUndo(
+        undoPreview.operationId,
+        undoPreview.confirmationToken,
+      );
+      expect(undoResult.results).toMatchObject([
+        { verified: true, error: null },
+      ]);
+      expect((await reader.read(path)).tags).toEqual(tagsBefore);
+      expect(await audioPayloadHash(path)).toBe(payloadBefore);
+      const restoredAlbumId = database.getTrackAlbumId(fileId) ?? albumId;
+      expect(
+        database
+          .listEditHistory(restoredAlbumId)
+          .slice(0, 2)
+          .map((item) => item.kind),
+      ).toEqual(["track-tags-undo", "track-tags-edit"]);
       database.close();
     });
   },
@@ -127,5 +150,37 @@ it("refuses a confirmed preview when a targeted field changed externally", async
   ]);
   expect((await reader.read(path)).tags.artist).toBe("External Artist");
   expect(database.getEditOperation(preview.operationId)?.state).toBe("failed");
+  database.close();
+});
+
+it("refuses track undo when a targeted field changed after the edit", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const preview = editor.preview(fileId, { artist: "Outgroove Artist" });
+  const edit = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(edit.results[0]?.verified).toBe(true);
+  const manual = await writer.writeTags(path, { artist: "External Artist" });
+  database.updateFileAfterEdit(fileId, manual.file);
+
+  const undoPreview = editor.previewUndo(preview.operationId);
+  expect(undoPreview.warnings.join(" ")).toContain("changed after this edit");
+  const result = await editor.applyUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      verified: false,
+      error:
+        "A field changed after the original edit; undo did not overwrite it.",
+    },
+  ]);
+  expect((await reader.read(path)).tags.artist).toBe("External Artist");
+  expect(database.getEditOperation(undoPreview.operationId)?.state).toBe(
+    "failed",
+  );
   database.close();
 });

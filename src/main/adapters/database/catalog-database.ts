@@ -962,6 +962,38 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    fileId: string,
+    current: NormalizedTags,
+    changes: TrackTagChanges,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    const fields = Object.keys(changes).join(", ");
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id, target_file_id, preview_tags_json,
+          proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-undo', ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Restore track metadata: ${fields}`,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+        fileId,
+        JSON.stringify(current),
+        JSON.stringify(changes),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -969,7 +1001,11 @@ export class CatalogDatabase {
         proposed_title: string;
         confirmation_hash: string;
         state: string;
-        kind: "album-title-edit" | "album-title-undo" | "track-tags-edit";
+        kind:
+          | "album-title-edit"
+          | "album-title-undo"
+          | "track-tags-edit"
+          | "track-tags-undo";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -989,7 +1025,11 @@ export class CatalogDatabase {
           proposed_title: string;
           confirmation_hash: string;
           state: string;
-          kind: "album-title-edit" | "album-title-undo" | "track-tags-edit";
+          kind:
+            | "album-title-edit"
+            | "album-title-undo"
+            | "track-tags-edit"
+            | "track-tags-undo";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -1020,7 +1060,11 @@ export class CatalogDatabase {
       )
       .all(albumId, albumId) as {
       id: string;
-      kind: "album-title-edit" | "album-title-undo" | "track-tags-edit";
+      kind:
+        | "album-title-edit"
+        | "album-title-undo"
+        | "track-tags-edit"
+        | "track-tags-undo";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";

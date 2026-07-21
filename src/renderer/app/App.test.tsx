@@ -131,6 +131,8 @@ function api(applyVerified: boolean): OutgrooveApi {
         },
       }),
     ),
+    previewTrackTagUndo: vi.fn(),
+    applyTrackTagUndo: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -359,6 +361,171 @@ describe("tag edit UI safety states", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Verified undo for 1 files",
     );
+  });
+
+  it("previews and confirms field-scoped track metadata undo from history", async () => {
+    const mockApi = api(true);
+    const listAlbumEditHistory = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: [
+          {
+            operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+            kind: "track-tags-edit" as const,
+            sourceOperationId: null,
+            proposedTitle: "Track metadata: artist, year",
+            state: "completed" as const,
+            createdAt: "2026-07-22T00:00:00.000Z",
+            completedAt: "2026-07-22T00:00:01.000Z",
+            verifiedFiles: 1,
+            failedFiles: 0,
+          },
+        ],
+      }),
+    );
+    const previewTrackTagUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+          confirmationToken: "track-undo-confirmation-token-long-enough",
+          fileId: album.tracks[0]?.id ?? "",
+          path: "/fixture/track.mp3",
+          changes: [
+            {
+              field: "artist" as const,
+              before: "Different Artist",
+              after: "Fixture Artist",
+            },
+            { field: "year" as const, before: "2030", after: "2026" },
+          ],
+          warnings: [],
+        },
+      }),
+    );
+    const applyTrackTagUndo = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.mp3",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      }),
+    );
+    Object.assign(mockApi, {
+      listAlbumEditHistory,
+      previewTrackTagUndo,
+      applyTrackTagUndo,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const history = await screen.findByLabelText("Metadata edit history");
+    await user.click(
+      await within(history).findByRole("button", {
+        name: "Preview track undo",
+      }),
+    );
+    const preview = await screen.findByLabelText(
+      "Track metadata undo confirmation",
+    );
+    expect(preview).toHaveTextContent("Different Artist");
+    expect(preview).toHaveTextContent("Fixture Artist");
+    expect(preview).toHaveTextContent("2030");
+    expect(preview).toHaveTextContent("2026");
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo track fields",
+      }),
+    );
+    expect(previewTrackTagUndo).toHaveBeenCalledWith({
+      operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+    });
+    expect(applyTrackTagUndo).toHaveBeenCalledWith({
+      operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+      confirmationToken: "track-undo-confirmation-token-long-enough",
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Track metadata undo was re-read and verified.",
+    );
+  });
+
+  it("disables track undo confirmation when the preview reports a conflict", async () => {
+    const mockApi = api(true);
+    Object.assign(mockApi, {
+      listAlbumEditHistory: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: [
+            {
+              operationId: "65c67a16-cd0d-445d-b2b9-5377e804b84c",
+              kind: "track-tags-edit" as const,
+              sourceOperationId: null,
+              proposedTitle: "Track metadata: artist",
+              state: "completed" as const,
+              createdAt: "2026-07-22T00:00:00.000Z",
+              completedAt: "2026-07-22T00:00:01.000Z",
+              verifiedFiles: 1,
+              failedFiles: 0,
+            },
+          ],
+        }),
+      ),
+      previewTrackTagUndo: vi.fn(() =>
+        Promise.resolve({
+          ok: true as const,
+          value: {
+            operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
+            confirmationToken: "track-undo-confirmation-token-long-enough",
+            fileId: album.tracks[0]?.id ?? "",
+            path: "/fixture/track.mp3",
+            changes: [
+              {
+                field: "artist" as const,
+                before: "External Artist",
+                after: "Fixture Artist",
+              },
+            ],
+            warnings: [
+              "A field changed after this edit; undo will not overwrite it.",
+            ],
+          },
+        }),
+      ),
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const history = await screen.findByLabelText("Metadata edit history");
+    await user.click(
+      await within(history).findByRole("button", {
+        name: "Preview track undo",
+      }),
+    );
+    const preview = await screen.findByLabelText(
+      "Track metadata undo confirmation",
+    );
+    expect(within(preview).getByRole("alert")).toHaveTextContent(
+      "undo will not overwrite it",
+    );
+    expect(
+      within(preview).getByRole("button", {
+        name: "Confirm and undo track fields",
+      }),
+    ).toBeDisabled();
   });
 
   it("disables undo confirmation when an intervening edit creates a conflict", async () => {
@@ -646,7 +813,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 7,
+          schemaVersion: 8,
           summary: {
             libraryRoots: 2,
             albums: 30,
