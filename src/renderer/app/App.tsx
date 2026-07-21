@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
+  DatabaseRestorePreviewDto,
   ScanErrorDto,
+  ScanJobDto,
   SyncPlanDto,
   TagEditPreviewDto,
 } from "../../shared/contracts/api";
@@ -14,10 +16,21 @@ interface Progress {
   detail: string;
 }
 
+const PAGE_SIZE = 20;
+
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
+  const [searchText, setSearchText] = useState("");
+  const [query, setQuery] = useState("");
+  const [libraryView, setLibraryView] = useState<"albums" | "scan-errors">(
+    "albums",
+  );
+  const [pageOffset, setPageOffset] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const [restorePreview, setRestorePreview] =
+    useState<DatabaseRestorePreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
@@ -28,35 +41,94 @@ export function App(): React.JSX.Element {
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
   const [progress, setProgress] = useState<Progress>();
+  const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
     "Choose a fixture or test library folder to begin.",
   );
   const [busy, setBusy] = useState(false);
+  const scanActive =
+    scanJob?.state === "queued" ||
+    scanJob?.state === "running" ||
+    scanJob?.state === "cancelling";
   const selectedAlbum = useMemo(
     () => albums.find((album) => album.id === selectedAlbumId),
     [albums, selectedAlbumId],
   );
 
-  const refreshCatalog = async (): Promise<void> => {
-    const [albumResult, errorResult] = await Promise.all([
-      window.outgroove.listAlbums(),
-      window.outgroove.listScanErrors(),
-    ]);
-    if (albumResult.ok) {
-      setAlbums(albumResult.value);
+  const refreshCatalog = useCallback(async (): Promise<void> => {
+    const result = await window.outgroove.queryLibrary({
+      query,
+      view: libraryView,
+      offset: pageOffset,
+      limit: PAGE_SIZE,
+    });
+    if (result.ok) {
+      if (result.value.totalItems <= pageOffset && pageOffset > 0) {
+        setPageOffset(
+          result.value.totalItems === 0
+            ? 0
+            : Math.floor((result.value.totalItems - 1) / PAGE_SIZE) * PAGE_SIZE,
+        );
+        return;
+      }
+      setAlbums(result.value.albums);
+      setScanErrors(result.value.scanErrors);
+      setTotalItems(result.value.totalItems);
       setSelectedAlbumId((current) =>
-        current && albumResult.value.some((album) => album.id === current)
+        current && result.value.albums.some((album) => album.id === current)
           ? current
-          : albumResult.value[0]?.id,
+          : result.value.albums[0]?.id,
       );
-    } else setNotice(albumResult.error.message);
-    if (errorResult.ok) setScanErrors(errorResult.value);
-  };
+    } else setNotice(result.error.message);
+  }, [libraryView, pageOffset, query]);
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
+    const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
+      setScanJob(job);
+      if (job.state === "completed" && job.result) {
+        setNotice(
+          `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+        );
+        void refreshCatalog();
+      } else if (job.state === "cancelled") setNotice(job.detail);
+      else if (job.state === "failed" || job.state === "interrupted")
+        setNotice(job.error ?? job.detail);
+    });
+    void Promise.all([
+      window.outgroove.listLibraryRoots(),
+      window.outgroove.getLatestScanJob(),
+    ]).then(([roots, latest]) => {
+      if (roots.ok)
+        setRootId(
+          latest.ok && latest.value ? latest.value.rootId : roots.value[0]?.id,
+        );
+      if (latest.ok && latest.value) {
+        setScanJob(latest.value);
+        if (
+          latest.value.state === "failed" ||
+          latest.value.state === "interrupted"
+        )
+          setNotice(latest.value.error ?? latest.value.detail);
+      }
+    });
+    return unsubscribe;
+  }, [refreshCatalog]);
+  useEffect(() => {
     void refreshCatalog();
-  }, []);
+  }, [refreshCatalog]);
+
+  const startScan = async (selectedRootId: string): Promise<void> => {
+    const started = await window.outgroove.scanLibrary({
+      rootId: selectedRootId,
+    });
+    if (started.ok) {
+      setScanJob(started.value);
+      setNotice(
+        "Scan started. You can cancel it without losing the previous catalog.",
+      );
+    } else setNotice(started.error.message);
+  };
 
   const chooseAndScan = async (): Promise<void> => {
     setBusy(true);
@@ -71,17 +143,7 @@ export function App(): React.JSX.Element {
         return;
       }
       setRootId(selected.value.id);
-      const scanned = await window.outgroove.scanLibrary({
-        rootId: selected.value.id,
-      });
-      if (!scanned.ok) {
-        setNotice(scanned.error.message);
-        return;
-      }
-      setNotice(
-        `Scan finished: ${scanned.value.parsed} parsed, ${scanned.value.unchanged} unchanged, ${scanned.value.errors} errors.`,
-      );
-      await refreshCatalog();
+      await startScan(selected.value.id);
     } finally {
       setBusy(false);
     }
@@ -89,17 +151,58 @@ export function App(): React.JSX.Element {
 
   const rescan = async (): Promise<void> => {
     if (!rootId) return;
+    await startScan(rootId);
+  };
+
+  const cancelScan = async (): Promise<void> => {
+    if (!scanJob || !scanActive) return;
+    const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
+    if (cancelled.ok) setScanJob(cancelled.value);
+    else setNotice(cancelled.error.message);
+  };
+
+  const createBackup = async (): Promise<void> => {
     setBusy(true);
     try {
-      const scanned = await window.outgroove.scanLibrary({ rootId });
-      setNotice(
-        scanned.ok
-          ? `Repeat scan: ${scanned.value.parsed} parsed, ${scanned.value.unchanged} unchanged, ${scanned.value.errors} errors.`
-          : scanned.error.message,
-      );
-      await refreshCatalog();
+      const result = await window.outgroove.createDatabaseBackup();
+      if (!result.ok) setNotice(result.error.message);
+      else if (!result.value) setNotice("Database backup cancelled.");
+      else
+        setNotice(`Database backup verified and saved to ${result.value.path}`);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const chooseRestore = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.chooseDatabaseRestore();
+      if (!result.ok) setNotice(result.error.message);
+      else if (!result.value) setNotice("Database restore cancelled.");
+      else {
+        setRestorePreview(result.value);
+        setNotice("Backup verified. Review its contents before restoring.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyRestore = async (): Promise<void> => {
+    if (!restorePreview) return;
+    setBusy(true);
+    const result = await window.outgroove.applyDatabaseRestore({
+      operationId: restorePreview.operationId,
+      confirmationToken: restorePreview.confirmationToken,
+    });
+    if (result.ok)
+      setNotice(
+        `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+      );
+    else {
+      setBusy(false);
+      setNotice(result.error.message);
     }
   };
 
@@ -186,10 +289,16 @@ export function App(): React.JSX.Element {
           <h1>Outgroove</h1>
         </div>
         <div className="actions">
-          <button disabled={busy} onClick={() => void chooseAndScan()}>
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void chooseAndScan()}
+          >
             Choose library folder
           </button>
-          <button disabled={busy || !rootId} onClick={() => void rescan()}>
+          <button
+            disabled={busy || scanActive || !rootId}
+            onClick={() => void rescan()}
+          >
             Scan again
           </button>
         </div>
@@ -205,17 +314,123 @@ export function App(): React.JSX.Element {
           </span>
         </div>
       )}
-      {albums.length === 0 ? (
-        <main className="empty">
-          <h2>Your Library is empty</h2>
-          <p>
-            Select a folder containing disposable fixtures or files you
-            explicitly intend Outgroove to scan. Scanning and browsing stay
-            offline.
-          </p>
-          <button disabled={busy} onClick={() => void chooseAndScan()}>
-            Choose a library folder
+      {scanJob && (
+        <section className="scan-job" aria-label="Scan activity">
+          <div>
+            <strong>Library scan: {scanJob.state}</strong>
+            <span>{scanJob.detail || "Waiting to start…"}</span>
+            {scanJob.error && <span role="alert">{scanJob.error}</span>}
+          </div>
+          {scanJob.state === "running" && scanJob.total === 0 ? (
+            <progress aria-label="Discovering audio files" />
+          ) : scanJob.total > 0 ? (
+            <progress
+              aria-label="Reading audio metadata"
+              value={scanJob.completed}
+              max={scanJob.total}
+            />
+          ) : null}
+          {scanActive && (
+            <button
+              disabled={scanJob.state === "cancelling"}
+              onClick={() => void cancelScan()}
+            >
+              {scanJob.state === "cancelling" ? "Cancelling…" : "Cancel scan"}
+            </button>
+          )}
+          {(scanJob.state === "cancelled" ||
+            scanJob.state === "failed" ||
+            scanJob.state === "interrupted") && (
+            <button disabled={!rootId} onClick={() => void rescan()}>
+              Retry scan
+            </button>
+          )}
+        </section>
+      )}
+      <form
+        className="library-toolbar"
+        role="search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setPageOffset(0);
+          setQuery(searchText.trim());
+        }}
+      >
+        <label htmlFor="library-search">Search Library</label>
+        <input
+          id="library-search"
+          type="search"
+          value={searchText}
+          placeholder="Album, artist, track, format, or path"
+          onChange={(event) => setSearchText(event.target.value)}
+        />
+        <label htmlFor="library-view">View</label>
+        <select
+          id="library-view"
+          value={libraryView}
+          onChange={(event) => {
+            setLibraryView(event.target.value as "albums" | "scan-errors");
+            setPageOffset(0);
+          }}
+        >
+          <option value="albums">Albums</option>
+          <option value="scan-errors">Scan problems</option>
+        </select>
+        <button type="submit">Search</button>
+        {(query || searchText) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchText("");
+              setQuery("");
+              setPageOffset(0);
+            }}
+          >
+            Clear search
           </button>
+        )}
+      </form>
+      <p className="result-count" aria-live="polite">
+        {totalItems} {libraryView === "albums" ? "albums" : "scan problems"}
+        {query ? ` matching “${query}”` : ""}
+      </p>
+      {libraryView === "scan-errors" ? (
+        <main className="errors" aria-labelledby="scan-errors">
+          <h2 id="scan-errors">Scan problems</h2>
+          {scanErrors.length === 0 ? (
+            <p>No scan problems match this view.</p>
+          ) : (
+            <ul>
+              {scanErrors.map((error) => (
+                <li key={`${error.kind}:${error.path}`}>
+                  <span>
+                    {error.kind === "directory"
+                      ? "Folder could not be scanned"
+                      : "Audio file could not be read"}
+                  </span>
+                  <strong>{error.path}</strong>
+                  <span>{error.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+      ) : albums.length === 0 ? (
+        <main className="empty">
+          <h2>{query ? "No matching albums" : "Your Library is empty"}</h2>
+          <p>
+            {query
+              ? "Try a different album, artist, track, format, or path."
+              : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+          </p>
+          {!query && (
+            <button
+              disabled={busy || scanActive}
+              onClick={() => void chooseAndScan()}
+            >
+              Choose a library folder
+            </button>
+          )}
         </main>
       ) : (
         <main className="workspace">
@@ -400,19 +615,88 @@ export function App(): React.JSX.Element {
           </section>
         </main>
       )}
-      {scanErrors.length > 0 && (
-        <section className="errors" aria-labelledby="scan-errors">
-          <h2 id="scan-errors">Scan errors ({scanErrors.length})</h2>
-          <ul>
-            {scanErrors.map((error) => (
-              <li key={error.path}>
-                <strong>{error.path}</strong>
-                <span>{error.message}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {totalItems > PAGE_SIZE && (
+        <nav className="pagination" aria-label="Library pages">
+          <button
+            disabled={pageOffset === 0}
+            onClick={() => setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))}
+          >
+            Previous page
+          </button>
+          <span>
+            {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)} of{" "}
+            {totalItems}
+          </span>
+          <button
+            disabled={pageOffset + PAGE_SIZE >= totalItems}
+            onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+          >
+            Next page
+          </button>
+        </nav>
       )}
+      <section className="card settings" aria-labelledby="database-safety">
+        <h2 id="database-safety">Database safety</h2>
+        <p>
+          Backups contain the local catalog, edit history, and DAP profiles, but
+          never copy or change audio files.
+        </p>
+        <div className="actions">
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void createBackup()}
+          >
+            Create database backup
+          </button>
+          <button
+            disabled={busy || scanActive}
+            onClick={() => void chooseRestore()}
+          >
+            Restore from backup
+          </button>
+        </div>
+        {restorePreview && (
+          <div className="preview" aria-label="Database restore confirmation">
+            <h3>Review database replacement</h3>
+            <p>
+              <strong>{restorePreview.sourceName}</strong> passed integrity and
+              schema checks. Restoring replaces the current Outgroove database
+              and restarts the app. Source audio and DAP files are untouched.
+            </p>
+            <dl>
+              <dt>Library roots</dt>
+              <dd>{restorePreview.summary.libraryRoots}</dd>
+              <dt>Albums</dt>
+              <dd>{restorePreview.summary.albums}</dd>
+              <dt>Tracks</dt>
+              <dd>{restorePreview.summary.tracks}</dd>
+              <dt>DAP profiles</dt>
+              <dd>{restorePreview.summary.syncProfiles}</dd>
+              <dt>Schema</dt>
+              <dd>Version {restorePreview.schemaVersion}</dd>
+            </dl>
+            <p>
+              Outgroove creates and verifies an automatic rollback backup before
+              replacing anything.
+            </p>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={busy || scanActive}
+                onClick={() => void applyRestore()}
+              >
+                Confirm restore and restart
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setRestorePreview(undefined)}
+              >
+                Cancel restore
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

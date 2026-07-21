@@ -5,11 +5,13 @@ Outgroove is a local-first Electron application for understanding a local music 
 ## What works
 
 - Choose one library folder with a native dialog and scan supported audio extensions in a bounded worker pool.
+- Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
-- Browse albums and tracks in a sandboxed React renderer.
+- Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
 - Repeat scans skip unchanged files; repeat syncs plan no unnecessary copies.
+- Export a verified SQLite database backup, preview and explicitly confirm a restore, preserve an automatic rollback backup, verify the replacement, and restart into it without touching audio or DAP files.
 
 No provider calls, telemetry, source moves, transcoding, target deletions, mirror mode, or automatic updates exist in this slice.
 
@@ -39,9 +41,30 @@ npm run typecheck      # strict TypeScript
 npm test               # unit, UI, and temporary-directory integration tests
 npm run verify         # all source checks above
 npm run package        # unpacked platform application
-npm run test:smoke     # launch package; verify SQLite, renderer, and metadata worker
+npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
 npm run make           # ZIP artifact for the current platform
+npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
+npm run benchmark:library # temporary 5,000-file synthetic catalog benchmark
+npm run benchmark:library:100k # opt-in 100,000-file synthetic benchmark
+npm run benchmark:metadata # parse 1,000 copied redistributable MP3 fixtures
 ```
+
+Windows CI also opens fixture files from a separate PowerShell process with an
+exclusive `FileShare.None` lock. It verifies that a locked metadata source and
+a locked manifest-owned sync destination fail without changing the existing
+file or advancing the manifest.
+
+The real-volume exFAT conformance probe is intentionally manual. It requires an
+exact absolute path to an explicitly authorized disposable exFAT target:
+
+```sh
+npm run test:exfat -- --target "/absolute/path/to/disposable-target" --confirm-disposable-exfat-probe
+```
+
+The command verifies the detected filesystem before writing, creates one
+unique `.outgroove-exfat-probe-*` child directory, uses only generated fixtures,
+and removes only that directory. Do not point it at a real music library or an
+unbacked-up card. See [the filesystem conformance procedure](docs/filesystem-conformance.md).
 
 Development uses Gitflow and stable semantic versions. Start feature, release,
 and hotfix branches with the guarded npm commands documented in
@@ -62,30 +85,40 @@ page while signed into the GitHub account that can access this private project.
 
 Automated tests copy the CC0 generated fixtures under `fixtures/audio/` into OS temporary directories before any write. They never scan or modify a real music library or mounted device.
 
+The library benchmark likewise creates empty synthetic `.mp3` paths and a
+temporary SQLite database under the OS temporary directory, then removes the
+entire generated tree. It measures enumeration, incremental signatures,
+catalog writes, paging/search, cancellation, and process RSS—not real metadata
+decoder throughput. Current measurements and their limits are in
+[the performance baseline](docs/performance-baseline.md).
+
 ## Format status
 
 The scanner asks `music-metadata` to read MP3, FLAC, M4A/MP4, Ogg Vorbis, Opus, WAV, AIFF, APE, and WavPack extensions. Actual malformed/unsupported inputs remain visible as item-level errors.
 
 Album-title writing is deliberately narrower:
 
-| Format                | Read        | Album-title write | Evidence                                                                          |
-| --------------------- | ----------- | ----------------- | --------------------------------------------------------------------------------- |
-| MP3                   | Yes         | Yes               | Write/re-read, private `TXXX` preservation, identical audio-payload hash          |
-| FLAC                  | Yes         | Yes               | Write/re-read, private Vorbis field preservation, identical FLAC audio-frame hash |
-| Other scanner formats | Best effort | No                | Preview warns and confirmation is disabled                                        |
+| Format                | Read        | Album-title write | Evidence                                                                                                |
+| --------------------- | ----------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| MP3                   | Yes         | Yes               | ID3v2.4 write/re-read; Unicode, artwork, numbering, comment, ID, private `TXXX`, and audio preservation |
+| FLAC                  | Yes         | Yes               | Write/re-read; Unicode, artwork, numbering, comment, ID, private Vorbis field, and audio preservation   |
+| Other scanner formats | Best effort | No                | Preview warns and confirmation is disabled                                                              |
 
-The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
+The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
 ## Safety status and limitations
 
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
+- Library queries are capped at 50 items per request, escape SQL wildcard input, and return complete track details only for the selected album page.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
+- Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
 - Sync is copy-only. Unknown target files are not adopted or replaced, and there is no deletion implementation.
 - Target identity is currently the explicitly selected folder path plus manifest/profile identity; removable-volume identity is deferred.
-- Content hashing currently reads a complete file into memory. This is acceptable for the tiny first slice but must become streaming before large-library claims.
-- Scan cancellation is available at the job boundary but is not yet exposed by a UI cancel button or persisted for resume.
-- macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs are configured in CI; Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
+- Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
+- Scan jobs run high-volume discovery/stat and metadata parsing in bounded workers, show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
+- Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
+- macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs run in CI; manual packaged Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
 - Packages are unsigned and not notarized.
 
 ## Repository boundaries
@@ -94,8 +127,14 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `src/preload`: fixed typed bridge
 - `src/main`: Electron orchestration, validated IPC, SQLite, filesystem, metadata, edit, and sync services
 - `src/shared`: serializable contracts and pure domain rules
-- `src/workers`: bounded metadata worker entry point
+- `src/workers`: bounded filesystem-discovery and metadata worker entry points
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 
-The next smallest valuable slice is persistent/cancellable scan-job UX plus streaming hashes and an expanded writer fixture corpus, followed by packaged Windows verification—not online metadata or mirror deletion.
+Large scans now stream deterministic worker-backed discovery in acknowledged
+250-item batches, keep seen/changed work in connection-local temporary SQLite
+tables, and feed metadata through bounded pages. On the current macOS arm64
+development machine the path-state work reduced the corrected 100,000-file
+synthetic peak from approximately 415 MiB to 269 MiB RSS; see
+`docs/performance-baseline.md` for scope and caveats. The manual exFAT matrix
+remains pending.

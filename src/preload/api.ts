@@ -6,9 +6,17 @@ import { channels } from "../shared/contracts/channels";
 export const api: OutgrooveApi = {
   chooseLibraryFolder: () =>
     ipcRenderer.invoke(channels.chooseLibraryFolder, {}),
+  listLibraryRoots: () => ipcRenderer.invoke(channels.listLibraryRoots, {}),
   scanLibrary: (request) => ipcRenderer.invoke(channels.scanLibrary, request),
-  listAlbums: () => ipcRenderer.invoke(channels.listAlbums, {}),
-  listScanErrors: () => ipcRenderer.invoke(channels.listScanErrors, {}),
+  cancelScan: (request) => ipcRenderer.invoke(channels.cancelScan, request),
+  getLatestScanJob: () => ipcRenderer.invoke(channels.getLatestScanJob, {}),
+  createDatabaseBackup: () =>
+    ipcRenderer.invoke(channels.createDatabaseBackup, {}),
+  chooseDatabaseRestore: () =>
+    ipcRenderer.invoke(channels.chooseDatabaseRestore, {}),
+  applyDatabaseRestore: (request) =>
+    ipcRenderer.invoke(channels.applyDatabaseRestore, request),
+  queryLibrary: (request) => ipcRenderer.invoke(channels.queryLibrary, request),
   previewAlbumTitleEdit: (request) =>
     ipcRenderer.invoke(channels.previewAlbumTitleEdit, request),
   applyAlbumTitleEdit: (request) =>
@@ -29,5 +37,13 @@ export const api: OutgrooveApi = {
     ): void => listener(value);
     ipcRenderer.on(channels.jobProgress, wrapped);
     return () => ipcRenderer.removeListener(channels.jobProgress, wrapped);
+  },
+  onScanJobUpdated: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      value: Parameters<typeof listener>[0],
+    ): void => listener(value);
+    ipcRenderer.on(channels.scanJobUpdated, wrapped);
+    return () => ipcRenderer.removeListener(channels.scanJobUpdated, wrapped);
   },
 };

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OutgrooveApi } from "../../shared/contracts/api";
+import type { OutgrooveApi, ScanJobDto } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import { App } from "./App";
 
@@ -39,9 +39,25 @@ function api(applyVerified: boolean): OutgrooveApi {
   if (!track) throw new Error("Test track missing");
   return {
     chooseLibraryFolder: vi.fn(),
+    listLibraryRoots: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     scanLibrary: vi.fn(),
-    listAlbums: vi.fn(() => Promise.resolve({ ok: true, value: [album] })),
-    listScanErrors: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    cancelScan: vi.fn(),
+    getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
+    createDatabaseBackup: vi.fn(),
+    chooseDatabaseRestore: vi.fn(),
+    applyDatabaseRestore: vi.fn(),
+    queryLibrary: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          albums: [album],
+          scanErrors: [],
+          totalItems: 1,
+          offset: 0,
+          limit: 20,
+        },
+      }),
+    ),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -80,6 +96,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
+    onScanJobUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
 }
 
@@ -126,5 +143,297 @@ describe("tag edit UI safety states", () => {
       "1 writes failed verification",
     );
     expect(screen.getByRole("status")).not.toHaveTextContent("Verified 1");
+  });
+
+  it("restores an interrupted scan and offers an explicit retry", async () => {
+    const mockApi = api(true);
+    const listLibraryRoots = vi.fn().mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          path: "/fixture",
+          lastScanAt: null,
+        },
+      ],
+    });
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        state: "interrupted",
+        completed: 4,
+        total: 10,
+        detail: "Scan interrupted",
+        result: null,
+        error: "Outgroove closed before this scan finished.",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        finishedAt: "2026-01-01T00:01:00.000Z",
+      },
+    });
+    Object.assign(mockApi, { listLibraryRoots, getLatestScanJob });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(await screen.findByText("Library scan: interrupted")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
+  });
+
+  it("exposes cancellation only for an active scan", async () => {
+    const mockApi = api(true);
+    const runningJob: ScanJobDto = {
+      id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      state: "running",
+      completed: 1,
+      total: 3,
+      detail: "track.mp3",
+      result: null,
+      error: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+      finishedAt: null,
+    };
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: runningJob,
+    });
+    const cancelScan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        ...runningJob,
+        state: "cancelling",
+        detail: "Cancelling safely…",
+      },
+    });
+    Object.assign(mockApi, { getLatestScanJob, cancelScan });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Cancel scan" }),
+    );
+    expect(
+      screen.getByRole("progressbar", { name: "Reading audio metadata" }),
+    ).toHaveAttribute("value", "1");
+    expect(cancelScan).toHaveBeenCalledWith({
+      jobId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+    });
+    expect(
+      await screen.findByRole("button", { name: "Cancelling…" }),
+    ).toBeDisabled();
+  });
+
+  it("shows indeterminate discovery counts before metadata total is known", async () => {
+    const mockApi = api(true);
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        state: "running",
+        completed: 17,
+        total: 0,
+        detail: "Discovering: 17 audio files found, 2 folder problems.",
+        result: null,
+        error: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+        finishedAt: null,
+      } satisfies ScanJobDto,
+    });
+    Object.assign(mockApi, { getLatestScanJob });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(
+      await screen.findByText(
+        "Discovering: 17 audio files found, 2 folder problems.",
+      ),
+    ).toBeVisible();
+    const progress = screen.getByRole("progressbar", {
+      name: "Discovering audio files",
+    });
+    expect(progress).not.toHaveAttribute("value");
+    expect(screen.getByRole("button", { name: "Cancel scan" })).toBeEnabled();
+  });
+
+  it("submits bounded search intent and switches to item-level scan problems", async () => {
+    const mockApi = api(true);
+    const queryLibrary = vi.fn((request: { view: string }) =>
+      Promise.resolve({
+        ok: true as const,
+        value:
+          request.view === "scan-errors"
+            ? {
+                albums: [],
+                scanErrors: [
+                  {
+                    kind: "file" as const,
+                    path: "/fixture/corrupt.mp3",
+                    message: "Invalid MPEG",
+                  },
+                  {
+                    kind: "directory" as const,
+                    path: "/fixture/blocked",
+                    message: "Permission denied",
+                  },
+                ],
+                totalItems: 2,
+                offset: 0,
+                limit: 20,
+              }
+            : {
+                albums: [album],
+                scanErrors: [],
+                totalItems: 1,
+                offset: 0,
+                limit: 20,
+              },
+      }),
+    );
+    Object.assign(mockApi, { queryLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search Library" }),
+      "Needle",
+    );
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenCalledWith({
+        query: "Needle",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText("View"), "scan-errors");
+    expect(await screen.findByText("/fixture/corrupt.mp3")).toBeVisible();
+    expect(screen.getByText("Audio file could not be read")).toBeVisible();
+    expect(screen.getByText("Invalid MPEG")).toBeVisible();
+    expect(screen.getByText("Folder could not be scanned")).toBeVisible();
+    expect(screen.getByText("/fixture/blocked")).toBeVisible();
+  });
+
+  it("requests the next bounded album page from main", async () => {
+    const mockApi = api(true);
+    const queryLibrary = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          albums: [album],
+          scanErrors: [],
+          totalItems: 21,
+          offset: 0,
+          limit: 20,
+        },
+      }),
+    );
+    Object.assign(mockApi, { queryLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenCalledWith({
+        query: "",
+        view: "albums",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+  });
+
+  it("shows a database restore preview before explicit confirmation", async () => {
+    const mockApi = api(true);
+    const chooseDatabaseRestore = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+          confirmationToken: "database-confirmation-token-long-enough",
+          sourceName: "outgroove-backup.sqlite3",
+          schemaVersion: 4,
+          summary: {
+            libraryRoots: 2,
+            albums: 30,
+            tracks: 300,
+            syncProfiles: 1,
+          },
+        },
+      }),
+    );
+    const applyDatabaseRestore = vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: {
+          rollbackBackupPath: "/fixture/automatic-rollback.sqlite3",
+          restarting: true as const,
+        },
+      }),
+    );
+    Object.assign(mockApi, { chooseDatabaseRestore, applyDatabaseRestore });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Restore from backup" }),
+    );
+    const preview = await screen.findByLabelText(
+      "Database restore confirmation",
+    );
+    expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
+    expect(preview).toHaveTextContent("300");
+    await user.click(
+      screen.getByRole("button", { name: "Confirm restore and restart" }),
+    );
+    expect(applyDatabaseRestore).toHaveBeenCalledWith({
+      operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      confirmationToken: "database-confirmation-token-long-enough",
+    });
+  });
+
+  it("shows backup export failure without claiming success", async () => {
+    const mockApi = api(true);
+    const createDatabaseBackup = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        error: { code: "INTERNAL_ERROR", message: "Backup disk is full" },
+      }),
+    );
+    Object.assign(mockApi, { createDatabaseBackup });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Create database backup" }),
+    );
+    expect(await screen.findByText("Backup disk is full")).toBeVisible();
+    expect(
+      screen.queryByText(/backup verified and saved/iu),
+    ).not.toBeInTheDocument();
   });
 });

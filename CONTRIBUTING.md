@@ -82,4 +82,6 @@ On the private GitHub repository, protect both long-lived branches:
 - restrict `main` pull requests to the Gitflow policy enforced by CI;
 - use merge commits for release/hotfix PRs and the `main` back-merge.
 
-Signing, notarization, installer publication, and automatic GitHub releases are not enabled yet. A SemVer tag identifies reviewed source; it does not claim an artifact is signed or production-supported.
+Signing, notarization, and installer publication are not enabled yet. A stable
+SemVer tag automatically publishes unsigned ZIP archives as a GitHub prerelease;
+it does not claim that an artifact is signed or production-supported.

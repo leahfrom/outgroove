@@ -1,109 +1,154 @@
-import { readdir, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { normalize, resolve } from "node:path";
 
 import type { ScanResultDto } from "../../shared/contracts/api";
-import type { CatalogDatabase } from "../adapters/database/catalog-database";
-import type { MetadataJobRunner } from "../jobs/metadata-runner";
+import type { ScannedAudioFile } from "../../shared/domain/catalog";
+import type {
+  CatalogDatabase,
+  ScanDiscoveryEntry,
+} from "../adapters/database/catalog-database";
+import {
+  NodeLibraryFileSystem,
+  type LibraryFileSystem,
+} from "../adapters/filesystem/library-filesystem";
+import type {
+  MetadataJobResult,
+  MetadataJobRunner,
+} from "../jobs/metadata-runner";
 
-const SUPPORTED_EXTENSIONS = new Set([
-  ".mp3",
-  ".flac",
-  ".m4a",
-  ".mp4",
-  ".ogg",
-  ".opus",
-  ".wav",
-  ".aiff",
-  ".aif",
-  ".ape",
-  ".wv",
-]);
+const DISCOVERY_BATCH_SIZE = 250;
+const METADATA_PAGE_SIZE = 5_000;
+
+export type ScanProgress =
+  | {
+      readonly phase: "discovery";
+      readonly discovered: number;
+      readonly folderErrors: number;
+    }
+  | {
+      readonly phase: "metadata";
+      readonly completed: number;
+      readonly total: number;
+      readonly path: string;
+    };
 
 export function pathComparisonKey(path: string): string {
   return normalize(resolve(path)).normalize("NFC").toLocaleLowerCase("en-US");
 }
 
-async function enumerateAudioFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  const pending = [root];
-  while (pending.length > 0) {
-    const directory = pending.pop();
-    if (!directory) continue;
-    let entries;
-    try {
-      entries = await readdir(directory, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const path = join(directory, entry.name);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) pending.push(path);
-      else if (
-        entry.isFile() &&
-        SUPPORTED_EXTENSIONS.has(extname(entry.name).toLocaleLowerCase("en-US"))
-      )
-        files.push(path);
-    }
-  }
-  return files.sort((left, right) => left.localeCompare(right));
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException("Scan cancelled", "AbortError");
 }
 
 export class ScanLibrary {
   constructor(
     private readonly database: CatalogDatabase,
     private readonly metadata: MetadataJobRunner,
+    private readonly fileSystem: LibraryFileSystem = new NodeLibraryFileSystem(),
   ) {}
 
   async execute(
     rootId: string,
-    onProgress: (completed: number, total: number, path: string) => void = () =>
-      undefined,
+    onProgress: (progress: ScanProgress) => void = () => undefined,
     signal?: AbortSignal,
   ): Promise<ScanResultDto> {
     const root = this.database.getLibraryRoot(rootId);
     if (!root) throw new Error("Library root does not exist.");
-    const paths = await enumerateAudioFiles(root.path);
-    const seenKeys: string[] = [];
-    const changed: string[] = [];
-    let unchanged = 0;
-    for (const path of paths) {
-      const pathKey = pathComparisonKey(path);
-      seenKeys.push(pathKey);
-      try {
-        const info = await stat(path);
+    this.database.beginScan(rootId);
+    try {
+      let errors = 0;
+      let discovered = 0;
+      let folderErrors = 0;
+      let unchanged = 0;
+      let changedCount = 0;
+      let discoveryBatch: ScanDiscoveryEntry[] = [];
+      const flushDiscoveryBatch = (): void => {
+        if (discoveryBatch.length === 0) return;
+        this.database.recordScanDiscoveryBatch(rootId, discoveryBatch);
+        discoveryBatch = [];
+      };
+      for await (const item of this.fileSystem.discover(root.path, signal)) {
+        throwIfCancelled(signal);
+        if (item.kind === "directory-error") {
+          flushDiscoveryBatch();
+          errors++;
+          folderErrors++;
+          this.database.recordScanDirectoryError(
+            rootId,
+            item.path,
+            pathComparisonKey(item.path),
+            item.message,
+          );
+          onProgress({
+            phase: "discovery",
+            discovered,
+            folderErrors,
+          });
+          continue;
+        }
+        const path = item.path;
+        const pathKey = pathComparisonKey(path);
+        if (item.kind === "file-error") {
+          this.database.upsertScanError(
+            rootId,
+            path,
+            pathKey,
+            0,
+            0,
+            item.message,
+          );
+          errors++;
+          discovered++;
+          discoveryBatch.push({ pathKey, changed: null });
+          onProgress({
+            phase: "discovery",
+            discovered,
+            folderErrors,
+          });
+          if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
+            flushDiscoveryBatch();
+          continue;
+        }
+        let changed: ScanDiscoveryEntry["changed"] = null;
         const existing = this.database.getFileByPathKey(pathKey);
         if (
-          existing?.size === info.size &&
-          Math.trunc(existing.modified_ms) === Math.trunc(info.mtimeMs)
+          existing?.size === item.size &&
+          Math.trunc(existing.modified_ms) === Math.trunc(item.modifiedMs)
         )
           unchanged++;
-        else changed.push(path);
-      } catch (error) {
-        this.database.upsertScanError(
-          rootId,
-          path,
-          pathKey,
-          0,
-          0,
-          error instanceof Error ? error.message : String(error),
-        );
+        else changed = { sequence: changedCount++, path };
+        discoveryBatch.push({ pathKey, changed });
+        discovered++;
+        onProgress({
+          phase: "discovery",
+          discovered,
+          folderErrors,
+        });
+        if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
+          flushDiscoveryBatch();
       }
-    }
-    let errors = 0;
-    const results = await this.metadata.readAll(changed, onProgress, signal);
-    for (const result of results) {
-      if (result.ok)
-        this.database.upsertScannedFile(
-          rootId,
-          pathComparisonKey(result.file.path),
-          result.file,
-        );
-      else {
-        errors++;
-        let info = { size: 0, mtimeMs: 0 };
+      flushDiscoveryBatch();
+      onProgress({
+        phase: "metadata",
+        completed: 0,
+        total: changedCount,
+        path: "",
+      });
+
+      let parsed = 0;
+      let processed = 0;
+      let afterSequence = -1;
+      let successfulBatch: { pathKey: string; file: ScannedAudioFile }[] = [];
+      const flushSuccessfulBatch = (): void => {
+        if (successfulBatch.length === 0) return;
+        this.database.upsertScannedFiles(rootId, successfulBatch);
+        successfulBatch = [];
+      };
+      const persistError = async (
+        result: Extract<MetadataJobResult, { ok: false }>,
+      ): Promise<void> => {
+        let info = { size: 0, modifiedMs: 0 };
         try {
-          info = await stat(result.path);
+          info = await this.fileSystem.statFile(result.path);
         } catch {
           /* retained as an item-level error */
         }
@@ -112,12 +157,61 @@ export class ScanLibrary {
           result.path,
           pathComparisonKey(result.path),
           info.size,
-          info.mtimeMs,
+          info.modifiedMs,
           result.error,
         );
+      };
+      throwIfCancelled(signal);
+      let page = this.database.listChangedScanPaths(
+        rootId,
+        afterSequence,
+        METADATA_PAGE_SIZE,
+      );
+      while (page.length > 0) {
+        await this.metadata.processAll(
+          page.map((entry) => entry.path),
+          (result) => {
+            throwIfCancelled(signal);
+            if (result.ok) {
+              parsed++;
+              successfulBatch.push({
+                pathKey: pathComparisonKey(result.file.path),
+                file: result.file,
+              });
+              if (successfulBatch.length === 250) flushSuccessfulBatch();
+            } else {
+              flushSuccessfulBatch();
+              errors++;
+              return persistError(result);
+            }
+          },
+          (completed, _total, path) =>
+            onProgress({
+              phase: "metadata",
+              completed: processed + completed,
+              total: changedCount,
+              path,
+            }),
+          signal,
+        );
+        flushSuccessfulBatch();
+        processed += page.length;
+        const last = page.at(-1);
+        if (!last) throw new Error("Changed-path page unexpectedly empty.");
+        afterSequence = last.sequence;
+        throwIfCancelled(signal);
+        page = this.database.listChangedScanPaths(
+          rootId,
+          afterSequence,
+          METADATA_PAGE_SIZE,
+        );
       }
+      throwIfCancelled(signal);
+      this.database.finishScan(rootId);
+      return { parsed, unchanged, errors };
+    } catch (error) {
+      this.database.abandonScan(rootId);
+      throw error;
     }
-    this.database.finishScan(rootId, seenKeys);
-    return { parsed: results.length - errors, unchanged, errors };
   }
 }

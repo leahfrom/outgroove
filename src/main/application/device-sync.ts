@@ -5,7 +5,6 @@ import {
   link,
   mkdir,
   open,
-  readFile,
   rename,
   stat,
   statfs,
@@ -20,6 +19,7 @@ import type {
   SyncPlanItemDto,
 } from "../../shared/contracts/api";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
+import { streamingFileHash } from "../adapters/filesystem/streaming-hash";
 import { containedDestination, trackDestinationSegments } from "./sync-paths";
 
 interface Manifest {
@@ -35,11 +35,6 @@ interface Manifest {
 interface ApplyHooks {
   beforeCopy?: (item: SyncPlanItemDto) => Promise<void>;
   beforeManifest?: () => Promise<void>;
-}
-
-async function fileHash(path: string): Promise<string> {
-  const bytes = await readFile(path);
-  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function flushFile(path: string): Promise<void> {
@@ -250,7 +245,10 @@ export class DeviceSync {
         const rollback = `${destination.absolute}.outgroove-${randomUUID()}.rollback`;
         await copyFile(item.sourcePath, temporary);
         await flushFile(temporary);
-        if ((await fileHash(item.sourcePath)) !== (await fileHash(temporary)))
+        if (
+          (await streamingFileHash(item.sourcePath)) !==
+          (await streamingFileHash(temporary))
+        )
           throw new Error("Copied file verification failed.");
         const sourceAfterCopy = await stat(item.sourcePath);
         if (
@@ -289,8 +287,8 @@ export class DeviceSync {
               constants.COPYFILE_EXCL,
             );
             if (
-              (await fileHash(destination.absolute)) !==
-              (await fileHash(temporary))
+              (await streamingFileHash(destination.absolute)) !==
+              (await streamingFileHash(temporary))
             )
               throw new Error("Exclusive target copy verification failed.");
           }

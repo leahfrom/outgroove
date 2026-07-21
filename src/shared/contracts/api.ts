@@ -5,6 +5,15 @@ import type { AppError, Result } from "../domain/errors";
 
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
+export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
+export const libraryQueryRequestSchema = z
+  .object({
+    query: z.string().trim().max(200),
+    view: z.enum(["albums", "scan-errors"]),
+    offset: z.number().int().min(0),
+    limit: z.number().int().min(1).max(50),
+  })
+  .strict();
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -21,6 +30,9 @@ export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const databaseRestoreApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 
 export interface LibraryRootDto {
   readonly id: string;
@@ -32,9 +44,53 @@ export interface ScanResultDto {
   readonly unchanged: number;
   readonly errors: number;
 }
+export type ScanJobState =
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "interrupted";
+export interface ScanJobDto {
+  readonly id: string;
+  readonly rootId: string;
+  readonly state: ScanJobState;
+  readonly completed: number;
+  readonly total: number;
+  readonly detail: string;
+  readonly result: ScanResultDto | null;
+  readonly error: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly finishedAt: string | null;
+}
 export interface ScanErrorDto {
+  readonly kind: "file" | "directory";
   readonly path: string;
   readonly message: string;
+}
+export interface LibraryPageDto {
+  readonly albums: readonly CatalogAlbum[];
+  readonly scanErrors: readonly ScanErrorDto[];
+  readonly totalItems: number;
+  readonly offset: number;
+  readonly limit: number;
+}
+export interface DatabaseBackupResultDto {
+  readonly path: string;
+}
+export interface DatabaseRestorePreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly sourceName: string;
+  readonly schemaVersion: number;
+  readonly summary: {
+    readonly libraryRoots: number;
+    readonly albums: number;
+    readonly tracks: number;
+    readonly syncProfiles: number;
+  };
 }
 export interface TagEditFilePreviewDto {
   readonly fileId: string;
@@ -86,11 +142,22 @@ export interface SyncApplyResultDto {
 
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
+  listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
   scanLibrary(
     request: z.infer<typeof scanRequestSchema>,
-  ): Promise<Result<ScanResultDto>>;
-  listAlbums(): Promise<Result<readonly CatalogAlbum[]>>;
-  listScanErrors(): Promise<Result<readonly ScanErrorDto[]>>;
+  ): Promise<Result<ScanJobDto>>;
+  cancelScan(
+    request: z.infer<typeof scanCancelRequestSchema>,
+  ): Promise<Result<ScanJobDto>>;
+  getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
+  createDatabaseBackup(): Promise<Result<DatabaseBackupResultDto | null>>;
+  chooseDatabaseRestore(): Promise<Result<DatabaseRestorePreviewDto | null>>;
+  applyDatabaseRestore(
+    request: z.infer<typeof databaseRestoreApplyRequestSchema>,
+  ): Promise<Result<{ rollbackBackupPath: string; restarting: true }>>;
+  queryLibrary(
+    request: z.infer<typeof libraryQueryRequestSchema>,
+  ): Promise<Result<LibraryPageDto>>;
   previewAlbumTitleEdit(
     request: z.infer<typeof albumEditPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;
@@ -114,6 +181,7 @@ export interface OutgrooveApi {
       detail: string;
     }) => void,
   ): () => void;
+  onScanJobUpdated(listener: (job: ScanJobDto) => void): () => void;
 }
 
 export interface SerializableFailure extends AppError {
