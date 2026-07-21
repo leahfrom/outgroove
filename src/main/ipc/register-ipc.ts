@@ -6,6 +6,7 @@ import { dialog, type BrowserWindow, type IpcMain } from "electron";
 import {
   albumEditApplyRequestSchema,
   albumEditPreviewRequestSchema,
+  databaseRestoreApplyRequestSchema,
   emptyRequestSchema,
   libraryQueryRequestSchema,
   scanCancelRequestSchema,
@@ -16,6 +17,7 @@ import {
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
+import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import { pathComparisonKey } from "../application/scan-library";
@@ -24,10 +26,12 @@ import { createValidatedHandler } from "./validated-handler";
 
 interface Dependencies {
   database: CatalogDatabase;
+  backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
   editor: EditAlbumTitle;
   sync: DeviceSync;
   window: BrowserWindow;
+  restartApp: () => void;
 }
 
 export function registerIpc(
@@ -87,6 +91,54 @@ export function registerIpc(
     channels.getLatestScanJob,
     createValidatedHandler(emptyRequestSchema, () =>
       dependencies.scanJobs.latest(),
+    ),
+  );
+  ipcMain.handle(
+    channels.createDatabaseBackup,
+    createValidatedHandler(emptyRequestSchema, async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const selected = await dialog.showSaveDialog(dependencies.window, {
+        title: "Export Outgroove database backup",
+        defaultPath: `outgroove-backup-${date}.sqlite3`,
+        filters: [{ name: "SQLite database", extensions: ["sqlite3"] }],
+      });
+      return selected.canceled || !selected.filePath
+        ? null
+        : dependencies.backup.exportTo(selected.filePath);
+    }),
+  );
+  ipcMain.handle(
+    channels.chooseDatabaseRestore,
+    createValidatedHandler(emptyRequestSchema, async () => {
+      const selected = await dialog.showOpenDialog(dependencies.window, {
+        title: "Choose an Outgroove database backup",
+        properties: ["openFile"],
+        filters: [{ name: "SQLite database", extensions: ["sqlite3"] }],
+      });
+      const path = selected.filePaths[0];
+      return selected.canceled || !path
+        ? null
+        : dependencies.backup.previewRestore(path);
+    }),
+  );
+  ipcMain.handle(
+    channels.applyDatabaseRestore,
+    createValidatedHandler(
+      databaseRestoreApplyRequestSchema,
+      async ({ operationId, confirmationToken }) => {
+        try {
+          const result = await dependencies.backup.applyRestore(
+            operationId,
+            confirmationToken,
+          );
+          setTimeout(dependencies.restartApp, 250);
+          return result;
+        } catch (error) {
+          if (!dependencies.database.connection.open)
+            setTimeout(dependencies.restartApp, 250);
+          throw error;
+        }
+      },
     ),
   );
   ipcMain.handle(

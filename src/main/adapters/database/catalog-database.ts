@@ -83,7 +83,7 @@ export class CatalogDatabase {
   }
 
   close(): void {
-    this.connection.close();
+    if (this.connection.open) this.connection.close();
   }
 
   private migrate(): void {

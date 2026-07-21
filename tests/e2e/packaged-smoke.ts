@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 async function main(): Promise<void> {
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
           );
 
   await access(executable);
+  const userData = await mkdtemp(join(tmpdir(), "outgroove-smoke-profile-"));
   const args = ["--smoke-test"];
   // GitHub's Linux runner cannot install Electron's chrome-sandbox helper as
   // root-owned mode 4755. This affects only the disposable CI launch; the app's
@@ -38,7 +40,11 @@ async function main(): Promise<void> {
   }
   const child = spawn(executable, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, OUTGROOVE_SMOKE_TEST: "1" },
+    env: {
+      ...process.env,
+      OUTGROOVE_SMOKE_TEST: "1",
+      OUTGROOVE_SMOKE_USER_DATA: userData,
+    },
   });
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => {
@@ -52,10 +58,11 @@ async function main(): Promise<void> {
     child.once("exit", resolve),
   );
   clearTimeout(timeout);
+  await rm(userData, { recursive: true, force: true });
   if (exitCode !== 0 || !output.includes("OUTGROOVE_SMOKE_OK"))
     throw new Error(`Packaged smoke failed (${exitCode}).\n${output}`);
   console.log(
-    "Packaged app launched, opened SQLite, loaded the sandboxed renderer, parsed a fixture in its worker, and exited cleanly.",
+    "Packaged app used an isolated profile, loaded the sandboxed renderer, parsed a fixture, verified a SQLite backup, and exited cleanly.",
   );
 }
 

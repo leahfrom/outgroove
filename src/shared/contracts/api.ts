@@ -30,6 +30,9 @@ export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const databaseRestoreApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 
 export interface LibraryRootDto {
   readonly id: string;
@@ -72,6 +75,21 @@ export interface LibraryPageDto {
   readonly totalItems: number;
   readonly offset: number;
   readonly limit: number;
+}
+export interface DatabaseBackupResultDto {
+  readonly path: string;
+}
+export interface DatabaseRestorePreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly sourceName: string;
+  readonly schemaVersion: number;
+  readonly summary: {
+    readonly libraryRoots: number;
+    readonly albums: number;
+    readonly tracks: number;
+    readonly syncProfiles: number;
+  };
 }
 export interface TagEditFilePreviewDto {
   readonly fileId: string;
@@ -131,6 +149,11 @@ export interface OutgrooveApi {
     request: z.infer<typeof scanCancelRequestSchema>,
   ): Promise<Result<ScanJobDto>>;
   getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
+  createDatabaseBackup(): Promise<Result<DatabaseBackupResultDto | null>>;
+  chooseDatabaseRestore(): Promise<Result<DatabaseRestorePreviewDto | null>>;
+  applyDatabaseRestore(
+    request: z.infer<typeof databaseRestoreApplyRequestSchema>,
+  ): Promise<Result<{ rollbackBackupPath: string; restarting: true }>>;
   queryLibrary(
     request: z.infer<typeof libraryQueryRequestSchema>,
   ): Promise<Result<LibraryPageDto>>;
