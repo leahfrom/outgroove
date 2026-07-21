@@ -10,6 +10,7 @@ import { EditAlbumTitle } from "./application/edit-album-title";
 import { ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
+import { ScanJobCoordinator } from "./jobs/scan-job-coordinator";
 import { contentSecurityPolicy } from "./windows/security-policy";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
@@ -40,9 +41,10 @@ async function createWindow(): Promise<void> {
   );
   const reader = new MusicMetadataReader();
   const metadataRunner = new WorkerMetadataJobRunner();
+  const scanner = new ScanLibrary(database, metadataRunner);
   registerIpc(ipcMain, {
     database,
-    scanner: new ScanLibrary(database, metadataRunner),
+    scanJobs: new ScanJobCoordinator(database, scanner),
     editor: new EditAlbumTitle(database, new SafeMetadataWriter(reader)),
     sync: new DeviceSync(database),
     window,

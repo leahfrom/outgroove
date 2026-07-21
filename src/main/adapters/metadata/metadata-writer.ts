@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
-import { open, readFile, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { open, rename, stat, unlink } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
 import { loadTrack, saveTrack } from "@akabeko/music-metadata-editor";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
+import { streamingFileHash } from "../filesystem/streaming-hash";
 import type { MetadataReader } from "./metadata-reader";
 
 export interface MetadataWriteResult {
@@ -21,66 +22,81 @@ export interface MetadataWriter {
   ): Promise<MetadataWriteResult>;
 }
 
-function mp3Payload(bytes: Uint8Array): Uint8Array {
+async function mp3PayloadRange(
+  path: string,
+): Promise<{ start: number; endExclusive: number }> {
+  const size = (await stat(path)).size;
+  const handle = await open(path, "r");
   let start = 0;
-  if (
-    bytes.length >= 10 &&
-    bytes[0] === 0x49 &&
-    bytes[1] === 0x44 &&
-    bytes[2] === 0x33
-  ) {
-    start =
-      10 +
-      ((bytes[6] ?? 0) << 21) +
-      ((bytes[7] ?? 0) << 14) +
-      ((bytes[8] ?? 0) << 7) +
-      (bytes[9] ?? 0);
+  let endExclusive = size;
+  try {
+    const header = Buffer.alloc(10);
+    const headerRead = await handle.read(header, 0, header.length, 0);
+    if (
+      headerRead.bytesRead === 10 &&
+      header.subarray(0, 3).equals(Buffer.from("ID3"))
+    )
+      start =
+        10 +
+        ((header[6] ?? 0) << 21) +
+        ((header[7] ?? 0) << 14) +
+        ((header[8] ?? 0) << 7) +
+        (header[9] ?? 0);
+    if (size >= 128) {
+      const trailer = Buffer.alloc(3);
+      await handle.read(trailer, 0, trailer.length, size - 128);
+      if (trailer.equals(Buffer.from("TAG"))) endExclusive -= 128;
+    }
+  } finally {
+    await handle.close();
   }
-  let end = bytes.length;
-  if (
-    end >= 128 &&
-    bytes[end - 128] === 0x54 &&
-    bytes[end - 127] === 0x41 &&
-    bytes[end - 126] === 0x47
-  )
-    end -= 128;
-  return bytes.subarray(start, end);
+  if (start > endExclusive) throw new Error("Invalid MP3 tag boundaries");
+  return { start, endExclusive };
 }
 
-function flacPayload(bytes: Uint8Array): Uint8Array {
-  if (
-    bytes.length < 8 ||
-    String.fromCharCode(...bytes.subarray(0, 4)) !== "fLaC"
-  )
-    throw new Error("Invalid FLAC header");
+async function flacPayloadRange(
+  path: string,
+): Promise<{ start: number; endExclusive: number }> {
+  const size = (await stat(path)).size;
+  const handle = await open(path, "r");
   let offset = 4;
-  let last = false;
-  while (!last) {
-    if (offset + 4 > bytes.length) throw new Error("Truncated FLAC metadata");
-    last = ((bytes[offset] ?? 0) & 0x80) !== 0;
-    const length =
-      ((bytes[offset + 1] ?? 0) << 16) |
-      ((bytes[offset + 2] ?? 0) << 8) |
-      (bytes[offset + 3] ?? 0);
-    offset += 4 + length;
+  try {
+    const magic = Buffer.alloc(4);
+    if (
+      (await handle.read(magic, 0, 4, 0)).bytesRead !== 4 ||
+      magic.toString() !== "fLaC"
+    )
+      throw new Error("Invalid FLAC header");
+    let last = false;
+    while (!last) {
+      const header = Buffer.alloc(4);
+      if ((await handle.read(header, 0, 4, offset)).bytesRead !== 4)
+        throw new Error("Truncated FLAC metadata");
+      last = ((header[0] ?? 0) & 0x80) !== 0;
+      const length =
+        ((header[1] ?? 0) << 16) | ((header[2] ?? 0) << 8) | (header[3] ?? 0);
+      offset += 4 + length;
+      if (offset > size) throw new Error("Truncated FLAC metadata");
+    }
+  } finally {
+    await handle.close();
   }
-  return bytes.subarray(offset);
+  return { start: offset, endExclusive: size };
 }
 
 export async function audioPayloadHash(path: string): Promise<string> {
-  const bytes = await readFile(path);
   const extension = extname(path).toLocaleLowerCase("en-US");
-  const payload =
+  const range =
     extension === ".mp3"
-      ? mp3Payload(bytes)
+      ? await mp3PayloadRange(path)
       : extension === ".flac"
-        ? flacPayload(bytes)
+        ? await flacPayloadRange(path)
         : undefined;
-  if (!payload)
+  if (!range)
     throw new Error(
       `Audio-payload verification is not implemented for ${extension}`,
     );
-  return createHash("sha256").update(payload).digest("hex");
+  return streamingFileHash(path, range);
 }
 
 async function flushPath(path: string): Promise<void> {

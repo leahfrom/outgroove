@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { scanRequestSchema } from "../../shared/contracts/api";
+import {
+  scanCancelRequestSchema,
+  scanRequestSchema,
+} from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
@@ -34,5 +37,20 @@ describe("validated IPC handlers", () => {
       ok: true,
       value: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
     });
+  });
+
+  it("rejects unknown fields on cancellation requests", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(scanCancelRequestSchema, useCase);
+    await expect(
+      handler(
+        {},
+        {
+          jobId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          arbitraryChannel: "filesystem:delete",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import type { AppError, Result } from "../domain/errors";
 
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
+export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -31,6 +32,27 @@ export interface ScanResultDto {
   readonly parsed: number;
   readonly unchanged: number;
   readonly errors: number;
+}
+export type ScanJobState =
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "interrupted";
+export interface ScanJobDto {
+  readonly id: string;
+  readonly rootId: string;
+  readonly state: ScanJobState;
+  readonly completed: number;
+  readonly total: number;
+  readonly detail: string;
+  readonly result: ScanResultDto | null;
+  readonly error: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly finishedAt: string | null;
 }
 export interface ScanErrorDto {
   readonly path: string;
@@ -86,9 +108,14 @@ export interface SyncApplyResultDto {
 
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
+  listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
   scanLibrary(
     request: z.infer<typeof scanRequestSchema>,
-  ): Promise<Result<ScanResultDto>>;
+  ): Promise<Result<ScanJobDto>>;
+  cancelScan(
+    request: z.infer<typeof scanCancelRequestSchema>,
+  ): Promise<Result<ScanJobDto>>;
+  getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
   listAlbums(): Promise<Result<readonly CatalogAlbum[]>>;
   listScanErrors(): Promise<Result<readonly ScanErrorDto[]>>;
   previewAlbumTitleEdit(
@@ -114,6 +141,7 @@ export interface OutgrooveApi {
       detail: string;
     }) => void,
   ): () => void;
+  onScanJobUpdated(listener: (job: ScanJobDto) => void): () => void;
 }
 
 export interface SerializableFailure extends AppError {

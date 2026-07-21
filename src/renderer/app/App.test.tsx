@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OutgrooveApi } from "../../shared/contracts/api";
+import type { OutgrooveApi, ScanJobDto } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import { App } from "./App";
 
@@ -39,7 +39,10 @@ function api(applyVerified: boolean): OutgrooveApi {
   if (!track) throw new Error("Test track missing");
   return {
     chooseLibraryFolder: vi.fn(),
+    listLibraryRoots: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     scanLibrary: vi.fn(),
+    cancelScan: vi.fn(),
+    getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
     listAlbums: vi.fn(() => Promise.resolve({ ok: true, value: [album] })),
     listScanErrors: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     previewAlbumTitleEdit: vi.fn(() =>
@@ -80,6 +83,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
+    onScanJobUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
 }
 
@@ -126,5 +130,88 @@ describe("tag edit UI safety states", () => {
       "1 writes failed verification",
     );
     expect(screen.getByRole("status")).not.toHaveTextContent("Verified 1");
+  });
+
+  it("restores an interrupted scan and offers an explicit retry", async () => {
+    const mockApi = api(true);
+    const listLibraryRoots = vi.fn().mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          path: "/fixture",
+          lastScanAt: null,
+        },
+      ],
+    });
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        state: "interrupted",
+        completed: 4,
+        total: 10,
+        detail: "Scan interrupted",
+        result: null,
+        error: "Outgroove closed before this scan finished.",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        finishedAt: "2026-01-01T00:01:00.000Z",
+      },
+    });
+    Object.assign(mockApi, { listLibraryRoots, getLatestScanJob });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(await screen.findByText("Library scan: interrupted")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
+  });
+
+  it("exposes cancellation only for an active scan", async () => {
+    const mockApi = api(true);
+    const runningJob: ScanJobDto = {
+      id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      state: "running",
+      completed: 1,
+      total: 3,
+      detail: "track.mp3",
+      result: null,
+      error: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+      finishedAt: null,
+    };
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: runningJob,
+    });
+    const cancelScan = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        ...runningJob,
+        state: "cancelling",
+        detail: "Cancelling safely…",
+      },
+    });
+    Object.assign(mockApi, { getLatestScanJob, cancelScan });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Cancel scan" }),
+    );
+    expect(cancelScan).toHaveBeenCalledWith({
+      jobId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+    });
+    expect(
+      await screen.findByRole("button", { name: "Cancelling…" }),
+    ).toBeDisabled();
   });
 });
