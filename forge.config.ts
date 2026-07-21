@@ -31,6 +31,10 @@ const config: ForgeConfig = {
           entry: "src/workers/library-discovery-worker.ts",
           config: "vite.worker.config.ts",
         },
+        {
+          entry: "src/workers/scan-database-worker.ts",
+          config: "vite.worker.config.ts",
+        },
       ],
       renderer: [
         {

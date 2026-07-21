@@ -2,10 +2,7 @@ import { normalize, resolve } from "node:path";
 
 import type { ScanResultDto } from "../../shared/contracts/api";
 import type { ScannedAudioFile } from "../../shared/domain/catalog";
-import type {
-  CatalogDatabase,
-  ScanDiscoveryEntry,
-} from "../adapters/database/catalog-database";
+import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import {
   NodeLibraryFileSystem,
   type LibraryFileSystem,
@@ -14,6 +11,8 @@ import type {
   MetadataJobResult,
   MetadataJobRunner,
 } from "../jobs/metadata-runner";
+import type { ScanCatalog } from "./scan-catalog";
+import type { ScanDatabaseDiscoveryEntry } from "../../shared/contracts/scan-database-worker";
 
 const DISCOVERY_BATCH_SIZE = 250;
 const METADATA_PAGE_SIZE = 5_000;
@@ -44,6 +43,7 @@ export class ScanLibrary {
     private readonly database: CatalogDatabase,
     private readonly metadata: MetadataJobRunner,
     private readonly fileSystem: LibraryFileSystem = new NodeLibraryFileSystem(),
+    private readonly scanCatalog: ScanCatalog = database,
   ) {}
 
   async execute(
@@ -53,70 +53,72 @@ export class ScanLibrary {
   ): Promise<ScanResultDto> {
     const root = this.database.getLibraryRoot(rootId);
     if (!root) throw new Error("Library root does not exist.");
-    this.database.beginScan(rootId);
+    await this.scanCatalog.beginScan(rootId);
     try {
       let errors = 0;
       let discovered = 0;
       let folderErrors = 0;
       let unchanged = 0;
       let changedCount = 0;
-      let discoveryBatch: ScanDiscoveryEntry[] = [];
-      const flushDiscoveryBatch = (): void => {
+      let discoveryBatch: ScanDatabaseDiscoveryEntry[] = [];
+      const flushDiscoveryBatch = async (): Promise<void> => {
         if (discoveryBatch.length === 0) return;
-        this.database.recordScanDiscoveryBatch(rootId, discoveryBatch);
+        const entries = discoveryBatch;
         discoveryBatch = [];
+        const result = await this.scanCatalog.recordScanDiscoveryBatch(
+          rootId,
+          entries,
+        );
+        unchanged += result.unchanged;
+        changedCount += result.changed;
       };
       for await (const item of this.fileSystem.discover(root.path, signal)) {
         throwIfCancelled(signal);
         if (item.kind === "directory-error") {
-          flushDiscoveryBatch();
           errors++;
           folderErrors++;
-          this.database.recordScanDirectoryError(
-            rootId,
-            item.path,
-            pathComparisonKey(item.path),
-            item.message,
-          );
-          onProgress({
-            phase: "discovery",
-            discovered,
-            folderErrors,
+          discoveryBatch.push({
+            kind: "directory-error",
+            path: item.path,
+            pathKey: pathComparisonKey(item.path),
+            message: item.message,
           });
-          continue;
-        }
-        const path = item.path;
-        const pathKey = pathComparisonKey(path);
-        if (item.kind === "file-error") {
-          this.database.upsertScanError(
-            rootId,
-            path,
-            pathKey,
-            0,
-            0,
-            item.message,
-          );
-          errors++;
-          discovered++;
-          discoveryBatch.push({ pathKey, changed: null });
           onProgress({
             phase: "discovery",
             discovered,
             folderErrors,
           });
           if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
-            flushDiscoveryBatch();
+            await flushDiscoveryBatch();
           continue;
         }
-        let changed: ScanDiscoveryEntry["changed"] = null;
-        const existing = this.database.getFileByPathKey(pathKey);
-        if (
-          existing?.size === item.size &&
-          Math.trunc(existing.modified_ms) === Math.trunc(item.modifiedMs)
-        )
-          unchanged++;
-        else changed = { sequence: changedCount++, path };
-        discoveryBatch.push({ pathKey, changed });
+        const path = item.path;
+        const pathKey = pathComparisonKey(path);
+        if (item.kind === "file-error") {
+          errors++;
+          discovered++;
+          discoveryBatch.push({
+            kind: "file-error",
+            path,
+            pathKey,
+            message: item.message,
+          });
+          onProgress({
+            phase: "discovery",
+            discovered,
+            folderErrors,
+          });
+          if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
+            await flushDiscoveryBatch();
+          continue;
+        }
+        discoveryBatch.push({
+          kind: "file",
+          path,
+          pathKey,
+          size: item.size,
+          modifiedMs: item.modifiedMs,
+        });
         discovered++;
         onProgress({
           phase: "discovery",
@@ -124,9 +126,9 @@ export class ScanLibrary {
           folderErrors,
         });
         if (discoveryBatch.length === DISCOVERY_BATCH_SIZE)
-          flushDiscoveryBatch();
+          await flushDiscoveryBatch();
       }
-      flushDiscoveryBatch();
+      await flushDiscoveryBatch();
       onProgress({
         phase: "metadata",
         completed: 0,
@@ -138,10 +140,11 @@ export class ScanLibrary {
       let processed = 0;
       let afterSequence = -1;
       let successfulBatch: { pathKey: string; file: ScannedAudioFile }[] = [];
-      const flushSuccessfulBatch = (): void => {
+      const flushSuccessfulBatch = async (): Promise<void> => {
         if (successfulBatch.length === 0) return;
-        this.database.upsertScannedFiles(rootId, successfulBatch);
+        const files = successfulBatch;
         successfulBatch = [];
+        await this.scanCatalog.upsertScannedFiles(rootId, files);
       };
       const persistError = async (
         result: Extract<MetadataJobResult, { ok: false }>,
@@ -152,7 +155,7 @@ export class ScanLibrary {
         } catch {
           /* retained as an item-level error */
         }
-        this.database.upsertScanError(
+        await this.scanCatalog.upsertScanError(
           rootId,
           result.path,
           pathComparisonKey(result.path),
@@ -162,7 +165,7 @@ export class ScanLibrary {
         );
       };
       throwIfCancelled(signal);
-      let page = this.database.listChangedScanPaths(
+      let page = await this.scanCatalog.listChangedScanPaths(
         rootId,
         afterSequence,
         METADATA_PAGE_SIZE,
@@ -170,7 +173,7 @@ export class ScanLibrary {
       while (page.length > 0) {
         await this.metadata.processAll(
           page.map((entry) => entry.path),
-          (result) => {
+          async (result) => {
             throwIfCancelled(signal);
             if (result.ok) {
               parsed++;
@@ -178,11 +181,11 @@ export class ScanLibrary {
                 pathKey: pathComparisonKey(result.file.path),
                 file: result.file,
               });
-              if (successfulBatch.length === 250) flushSuccessfulBatch();
+              if (successfulBatch.length === 250) await flushSuccessfulBatch();
             } else {
-              flushSuccessfulBatch();
+              await flushSuccessfulBatch();
               errors++;
-              return persistError(result);
+              await persistError(result);
             }
           },
           (completed, _total, path) =>
@@ -194,23 +197,27 @@ export class ScanLibrary {
             }),
           signal,
         );
-        flushSuccessfulBatch();
+        await flushSuccessfulBatch();
         processed += page.length;
         const last = page.at(-1);
         if (!last) throw new Error("Changed-path page unexpectedly empty.");
         afterSequence = last.sequence;
         throwIfCancelled(signal);
-        page = this.database.listChangedScanPaths(
+        page = await this.scanCatalog.listChangedScanPaths(
           rootId,
           afterSequence,
           METADATA_PAGE_SIZE,
         );
       }
       throwIfCancelled(signal);
-      this.database.finishScan(rootId);
+      await this.scanCatalog.finishScan(rootId);
       return { parsed, unchanged, errors };
     } catch (error) {
-      this.database.abandonScan(rootId);
+      try {
+        await this.scanCatalog.abandonScan(rootId);
+      } catch {
+        // A crashed worker loses its temporary scan tables with its connection.
+      }
       throw error;
     }
   }

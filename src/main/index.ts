@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { app, BrowserWindow, ipcMain, session } from "electron";
 
 import { CatalogDatabase } from "./adapters/database/catalog-database";
+import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
@@ -25,6 +26,7 @@ if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
   app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
 
 let database: CatalogDatabase | undefined;
+let scanCatalog: WorkerScanCatalog | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -46,12 +48,14 @@ async function createWindow(): Promise<void> {
 
   const databasePath = join(app.getPath("userData"), "outgroove.sqlite3");
   database = new CatalogDatabase(databasePath);
+  scanCatalog = new WorkerScanCatalog(databasePath);
   const reader = new MusicMetadataReader();
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
     metadataRunner,
     new WorkerLibraryFileSystem(),
+    scanCatalog,
   );
   const backup = new DatabaseBackupService(database, databasePath);
   registerIpc(ipcMain, {
@@ -82,7 +86,7 @@ async function createWindow(): Promise<void> {
     const smokeResult = await scanner.execute(smokeRoot.id);
     if (smokeResult.parsed !== 2 || smokeResult.errors !== 1)
       throw new Error(
-        "Packaged discovery and metadata workers could not scan their fixtures.",
+        "Packaged discovery, metadata, and SQLite workers could not scan their fixtures.",
       );
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
@@ -94,6 +98,7 @@ async function createWindow(): Promise<void> {
       throw new Error("Packaged database backup failed verification.");
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
+    await scanCatalog.close();
     app.exit(0);
   }
 }
@@ -124,4 +129,7 @@ void app
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => database?.close());
+app.on("before-quit", () => {
+  void scanCatalog?.close();
+  database?.close();
+});

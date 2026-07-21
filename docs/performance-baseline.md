@@ -19,10 +19,10 @@ npm run benchmark:metadata
 ```
 
 After Forge has built `.vite/build/library-discovery-worker.js`, the synthetic
-profile can exercise the production worker boundary explicitly:
+profile can exercise both production worker boundaries explicitly:
 
 ```sh
-npm run benchmark:library -- --files 100000 --worker-path .vite/build/library-discovery-worker.js
+npm run benchmark:library -- --files 100000 --worker-path .vite/build/library-discovery-worker.js --database-worker-path .vite/build/scan-database-worker.js
 ```
 
 All commands create and remove their own OS-temporary directory. The 100,000
@@ -122,11 +122,9 @@ thresholds or evidence from real user media.
 
 The Electron app runs deterministic traversal and bulk file stat calls in a
 dedicated worker. It sends at most 250 results and then waits for main to consume
-and acknowledge that batch before continuing. SQLite comparison and catalog
-transactions remain main-owned. Cancellation terminates the worker; a crash
-rejects the scan and abandons temporary scan state instead of finalizing an
-apparently empty library. The packaged smoke scans the fixture album through
-both discovery and metadata workers on every release platform.
+and acknowledge that batch before continuing. Cancellation terminates the
+worker; a crash rejects the scan and abandons temporary scan state instead of
+finalizing an apparently empty library.
 
 The default synthetic benchmark deliberately retains its in-process filesystem
 adapter so it can run without a Forge build. Use the explicit `--worker-path`
@@ -138,6 +136,34 @@ scan, 3.70 s unchanged rescan, approximately 323 MiB peak process RSS, and
 adapter includes the additional worker isolate; this boundary is intended to
 protect Electron main responsiveness and failure isolation, not reduce total
 process memory. These remain local synthetic observations.
+
+## Scan database worker boundary
+
+Discovery classification, temporary seen/changed staging, and catalog write
+transactions now run through a serialized, scan-scoped SQLite worker. The
+worker owns its temporary tables, commits at most 250 discovered or parsed
+files per transaction, and closes after the final active scan finishes or is
+abandoned. Electron main retains paginated queries, persisted job state, and
+backup/restore orchestration. A crash drops the connection-local staging tables
+and fails the scan without running missing-file finalization.
+
+The benchmark samples a 10 ms timer while each scan runs and reports the
+largest delay beyond the expected timer deadline. On the same macOS arm64
+machine, consecutive 100,000-file runs measured:
+
+| Measurement                        | Main-owned scan writes | SQLite scan worker |
+| ---------------------------------- | ---------------------- | ------------------ |
+| Initial scan                       | 13.83 s                | 12.58 s            |
+| Initial maximum event-loop delay   | 41.08 ms               | 2.49 ms            |
+| Unchanged rescan                   | 3.43 s                 | 3.68 s             |
+| Unchanged maximum event-loop delay | 4.16 ms                | 2.02 ms            |
+| Peak total process RSS             | 314 MiB                | 349 MiB            |
+| Peak main-process JavaScript heap  | 66 MiB                 | 68 MiB             |
+
+The timer is a regression signal, not a hard real-time guarantee. Total RSS
+increases because the native worker adds another V8 isolate and SQLite
+connection. The packaged smoke now scans through discovery, metadata, and
+SQLite workers before verifying a database backup on every release platform.
 
 ## Real metadata parsing profile
 

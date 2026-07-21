@@ -65,10 +65,16 @@ it("finalizes more seen paths than SQLite's parameter limit", async () => {
         root.id,
         Array.from({ length: 250 }, (_, batchIndex) => {
           const index = offset + batchIndex;
+          const path =
+            index === 0
+              ? keptPath
+              : join(directory, "synthetic", `${index}.mp3`);
           return {
-            pathKey:
-              index === 0 ? pathComparisonKey(keptPath) : `/synthetic/${index}`,
-            changed: null,
+            kind: "file" as const,
+            path,
+            pathKey: pathComparisonKey(path),
+            size: 1,
+            modifiedMs: 1,
           };
         }),
       );
