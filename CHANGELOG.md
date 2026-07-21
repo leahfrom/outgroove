@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 — 2026-07-21
+
+- Show completed and failed album-title operations in the selected album's
+  Workbench history, including per-file verification counts.
+- Add explicit per-file undo preview and confirmation for verified MP3 and FLAC
+  edits, using the same snapshot, temporary-write, payload-hash, replacement,
+  re-read, and verification path as the original edit.
+- Refuse to overwrite album titles changed after the original operation and
+  record those conflicts as visible failed undo results.
+- Migrate released schema version 5 catalogs to version 6 while preserving edit
+  operations and tag snapshots.
+
 ## 0.3.1 — 2026-07-21
 
 - Move scan classification, temporary scan state, and catalog write batches to
