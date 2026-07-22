@@ -90,6 +90,7 @@ function runQuery(): LibraryQualityWorkerMessage {
     page: {
       albums,
       artists: [],
+      formats: [],
       tracks: [],
       scanErrors: [],
       totalItems: matchingAlbums,

@@ -15,6 +15,7 @@ export const libraryQueryRequestSchema = z
     view: z.enum([
       "albums",
       "artists",
+      "formats",
       "tracks",
       "data-quality",
       "scan-errors",
@@ -24,13 +25,18 @@ export const libraryQueryRequestSchema = z
     qualityFilter: z.enum(albumDiagnosticFilters).optional(),
     albumArtist: z.string().trim().min(1).max(400).optional(),
     albumId: z.uuid().optional(),
+    format: z.string().trim().min(1).max(100).optional(),
   })
   .strict()
   .refine(
     ({ view, albumArtist, albumId }) =>
       (albumArtist === undefined && albumId === undefined) || view === "albums",
     { message: "Album filters require Albums." },
-  );
+  )
+  .refine(({ view, format }) => format === undefined || view === "tracks", {
+    path: ["format"],
+    message: "Format filters require Tracks.",
+  });
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -161,6 +167,10 @@ export interface LibraryArtistDto {
   readonly albumCount: number;
   readonly trackCount: number;
 }
+export interface LibraryFormatDto {
+  readonly name: string;
+  readonly trackCount: number;
+}
 export interface LibraryTrackDto {
   readonly id: string;
   readonly albumId: string;
@@ -177,6 +187,7 @@ export interface LibraryTrackDto {
 export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
   readonly artists: readonly LibraryArtistDto[];
+  readonly formats: readonly LibraryFormatDto[];
   readonly tracks: readonly LibraryTrackDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;

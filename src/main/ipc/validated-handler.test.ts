@@ -180,6 +180,48 @@ describe("validated IPC handlers", () => {
       handler(
         {},
         {
+          query: "fl",
+          view: "formats",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          format: "FLAC",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+      format: "FLAC",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "formats",
+          offset: 0,
+          limit: 20,
+          format: "FLAC",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
           query: "",
           view: "albums",
           offset: 0,

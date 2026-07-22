@@ -156,6 +156,24 @@ describe("paginated library query", () => {
       },
       nativeTags: [],
     });
+    const unknownFormatPath = join(directory, "Album 08", "unknown.bin");
+    database.upsertScannedFile(root.id, pathComparisonKey(unknownFormatPath), {
+      path: unknownFormatPath,
+      size: 80,
+      modifiedMs: 80,
+      format: "",
+      durationSeconds: 8,
+      tags: {
+        title: "Unknown Format Track",
+        album: "Album 08",
+        artist: "Fixture Artist",
+        albumArtist: "Fixture Artist",
+        trackNumber: 2,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    });
 
     const first = database.queryLibrary({
       query: "",
@@ -203,7 +221,7 @@ describe("paginated library query", () => {
       offset: 0,
       limit: 10,
     });
-    expect(tracks.totalItems).toBe(26);
+    expect(tracks.totalItems).toBe(27);
     expect(tracks.tracks).toHaveLength(10);
     expect(tracks.tracks[0]).toMatchObject({
       title: "Track 0",
@@ -242,6 +260,44 @@ describe("paginated library query", () => {
         limit: 10,
       }).tracks[0]?.albumTitle,
     ).toBe("Album 17");
+    const formats = database.queryLibrary({
+      query: "",
+      view: "formats",
+      offset: 0,
+      limit: 10,
+    });
+    expect(formats.totalItems).toBe(3);
+    expect(formats.formats).toEqual([
+      { name: "FLAC", trackCount: 25 },
+      { name: "SpecialCodec", trackCount: 1 },
+      { name: "unknown", trackCount: 1 },
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "special",
+        view: "formats",
+        offset: 0,
+        limit: 10,
+      }).formats,
+    ).toEqual([{ name: "SpecialCodec", trackCount: 1 }]);
+    const formatTracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+      format: "specialcodec",
+    });
+    expect(formatTracks.totalItems).toBe(1);
+    expect(formatTracks.tracks[0]?.albumTitle).toBe("Album 17");
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 10,
+        format: "unknown",
+      }).tracks[0],
+    ).toMatchObject({ title: "Unknown Format Track", format: "unknown" });
     database.close();
   });
 

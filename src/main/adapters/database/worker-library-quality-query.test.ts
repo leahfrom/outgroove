@@ -28,6 +28,7 @@ afterEach(async () => {
 const emptyPage: LibraryPageDto = {
   albums: [],
   artists: [],
+  formats: [],
   tracks: [],
   scanErrors: [],
   totalItems: 0,

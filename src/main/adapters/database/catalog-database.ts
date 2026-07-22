@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
 import type {
+  LibraryFormatDto,
   LibraryPageDto,
   LibraryTrackDto,
   LibraryRootDto,
@@ -818,11 +819,12 @@ export class CatalogDatabase {
 
   queryLibrary(request: {
     query: string;
-    view: "albums" | "artists" | "tracks" | "scan-errors";
+    view: "albums" | "artists" | "formats" | "tracks" | "scan-errors";
     offset: number;
     limit: number;
     albumArtist?: string;
     albumId?: string;
+    format?: string;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -850,6 +852,7 @@ export class CatalogDatabase {
       return {
         albums: [],
         artists: [],
+        formats: [],
         tracks: [],
         scanErrors,
         totalItems,
@@ -858,7 +861,50 @@ export class CatalogDatabase {
       };
     }
 
+    if (request.view === "formats") {
+      const normalizedFormat =
+        "COALESCE(NULLIF(TRIM(f.format), ''), 'unknown')";
+      const search = request.query
+        ? ` AND ${normalizedFormat} LIKE ? ESCAPE '\\' COLLATE NOCASE`
+        : "";
+      const searchParameters = request.query ? [pattern] : [];
+      const visibleFormats = ` FROM audio_files f
+        JOIN tracks t ON t.file_id=f.id
+        WHERE f.scan_state='ok'${search}
+        GROUP BY ${normalizedFormat} COLLATE NOCASE`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM (SELECT 1${visibleFormats})`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const formats = this.connection
+        .prepare(
+          `SELECT MIN(${normalizedFormat}) AS name,
+            COUNT(DISTINCT f.id) AS trackCount
+           ${visibleFormats}
+           ORDER BY name COLLATE NOCASE, name LIMIT ? OFFSET ?`,
+        )
+        .all(
+          ...searchParameters,
+          request.limit,
+          request.offset,
+        ) as LibraryFormatDto[];
+      return {
+        albums: [],
+        artists: [],
+        formats,
+        tracks: [],
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
     if (request.view === "tracks") {
+      const formatFilter = request.format
+        ? ` AND COALESCE(NULLIF(TRIM(f.format), ''), 'unknown') = ? COLLATE NOCASE`
+        : "";
+      const formatParameters = request.format ? [request.format] : [];
       const search = request.query
         ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -873,18 +919,18 @@ export class CatalogDatabase {
       const visibleTracks = ` FROM tracks t
         JOIN audio_files f ON f.id=t.file_id
         JOIN albums a ON a.id=t.album_id
-        WHERE f.scan_state='ok'${search}`;
+        WHERE f.scan_state='ok'${formatFilter}${search}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleTracks}`)
         .pluck()
-        .get(...searchParameters) as number;
+        .get(...formatParameters, ...searchParameters) as number;
       const tracks = this.connection
         .prepare(
           `SELECT f.id, a.id AS albumId, t.title,
             COALESCE(json_extract(f.normalized_tags_json, '$.artist'), '') AS artist,
             a.title AS albumTitle, a.album_artist AS albumArtist,
             t.track_number AS trackNumber, t.disc_number AS discNumber,
-            COALESCE(f.format, 'unknown') AS format,
+            COALESCE(NULLIF(TRIM(f.format), ''), 'unknown') AS format,
             f.duration_seconds AS durationSeconds, f.path
            ${visibleTracks}
            ORDER BY a.album_artist, a.title, a.id,
@@ -892,6 +938,7 @@ export class CatalogDatabase {
            LIMIT ? OFFSET ?`,
         )
         .all(
+          ...formatParameters,
           ...searchParameters,
           request.limit,
           request.offset,
@@ -899,6 +946,7 @@ export class CatalogDatabase {
       return {
         albums: [],
         artists: [],
+        formats: [],
         tracks,
         scanErrors: [],
         totalItems,
@@ -938,6 +986,7 @@ export class CatalogDatabase {
       return {
         albums: [],
         artists,
+        formats: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -976,6 +1025,7 @@ export class CatalogDatabase {
       return {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
+        formats: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -1021,6 +1071,7 @@ export class CatalogDatabase {
       return {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
+        formats: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -1057,6 +1108,7 @@ export class CatalogDatabase {
     return {
       albums: this.listAlbumsByIds(albumIds),
       artists: [],
+      formats: [],
       tracks: [],
       scanErrors: [],
       totalItems,
