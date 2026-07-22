@@ -1174,6 +1174,121 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
 
+  it("shows watched folders and routes a named keyboard action into the existing scan", async () => {
+    const mockApi = api(true);
+    const firstRootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const secondRootId = "98748ad4-e155-4320-b949-1433dd377762";
+    const listLibraryRoots = vi.fn().mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: firstRootId,
+          path: "/fixture/never-scanned",
+          lastScanAt: null,
+        },
+        {
+          id: secondRootId,
+          path: "/fixture/scanned",
+          lastScanAt: "2026-07-20T12:00:00.000Z",
+        },
+      ],
+    });
+    const scanLibrary = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: secondRootId,
+        state: "queued",
+        completed: 0,
+        total: 0,
+        detail: "Queued",
+        result: null,
+        error: null,
+        createdAt: "2026-07-22T00:00:00.000Z",
+        updatedAt: "2026-07-22T00:00:00.000Z",
+        finishedAt: null,
+      } satisfies ScanJobDto,
+    });
+    Object.assign(mockApi, { listLibraryRoots, scanLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const roots = await screen.findByRole("region", {
+      name: "Watched Library folders",
+    });
+    expect(within(roots).getByText("/fixture/never-scanned")).toBeVisible();
+    expect(within(roots).getByText("Status: Never scanned")).toBeVisible();
+    expect(within(roots).getByText("/fixture/scanned")).toBeVisible();
+    expect(within(roots).getByText(/Status: Last scanned/)).toBeVisible();
+
+    const secondScan = within(roots).getByRole("button", {
+      name: "Scan folder /fixture/scanned",
+    });
+    secondScan.focus();
+    await user.keyboard("{Enter}");
+    expect(scanLibrary).toHaveBeenCalledWith({ rootId: secondRootId });
+    expect(await within(roots).findByText("Current scan target")).toBeVisible();
+    expect(
+      within(roots).getByRole("button", {
+        name: "Scan folder /fixture/never-scanned",
+      }),
+    ).toBeDisabled();
+  });
+
+  it("refreshes the watched-folder status after a completed scan", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const scannedAt = "2026-07-22T12:34:00.000Z";
+    const listLibraryRoots = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [{ id: rootId, path: "/fixture", lastScanAt: null }],
+      })
+      .mockResolvedValue({
+        ok: true,
+        value: [{ id: rootId, path: "/fixture", lastScanAt: scannedAt }],
+      });
+    let emitScanJob: ((job: ScanJobDto) => void) | undefined;
+    const onScanJobUpdated = vi.fn((listener: (job: ScanJobDto) => void) => {
+      emitScanJob = listener;
+      return () => undefined;
+    });
+    Object.assign(mockApi, { listLibraryRoots, onScanJobUpdated });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(await screen.findByText("Status: Never scanned")).toBeVisible();
+
+    act(() => {
+      emitScanJob?.({
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId,
+        state: "completed",
+        completed: 1,
+        total: 1,
+        detail: "Scan complete",
+        result: { parsed: 1, unchanged: 0, errors: 0 },
+        error: null,
+        createdAt: "2026-07-22T12:33:00.000Z",
+        updatedAt: scannedAt,
+        finishedAt: scannedAt,
+      });
+    });
+
+    const lastScanned = await screen.findByText(/Status: Last scanned/);
+    expect(lastScanned).toContainElement(
+      screen.getByText(new Date(scannedAt).toLocaleString()),
+    );
+    expect(listLibraryRoots).toHaveBeenCalledTimes(2);
+  });
+
   it("exposes cancellation only for an active scan", async () => {
     const mockApi = api(true);
     const runningJob: ScanJobDto = {

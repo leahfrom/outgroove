@@ -294,6 +294,33 @@ pre {
   border-radius: 14px;
   padding: 1rem;
 }
+.library-root-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.library-root-list li {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 9px;
+}
+.library-root-list div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.library-root-list strong,
+.library-root-list span {
+  overflow-wrap: anywhere;
+}
+.library-root-list span {
+  color: #526159;
+}
 label {
   display: block;
   font-weight: 700;
@@ -390,6 +417,10 @@ td {
 @media (max-width: 900px) {
   .library-toolbar {
     grid-template-columns: 1fr;
+  }
+  .library-root-list li {
+    align-items: stretch;
+    flex-direction: column;
   }
   .workspace {
     grid-template-columns: 1fr;
