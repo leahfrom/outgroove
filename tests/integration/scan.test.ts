@@ -57,6 +57,24 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()).toHaveLength(1);
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
+    const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
+    expect(
+      scannedTracks.find((track) => track.format === "MPEG"),
+    ).toMatchObject({
+      codec: "MPEG 1 Layer 3",
+      bitrate: 128_000,
+      sampleRate: 44_100,
+      bitDepth: null,
+      channels: 1,
+    });
+    expect(
+      scannedTracks.find((track) => track.format === "FLAC"),
+    ).toMatchObject({
+      codec: "FLAC",
+      sampleRate: 44_100,
+      bitDepth: 16,
+      channels: 1,
+    });
     expect(database.listScanErrors()).toHaveLength(1);
     expect(database.listScanErrors()[0]?.path).toContain("corrupt.mp3");
     await expect(scanner.execute(root.id)).resolves.toEqual({

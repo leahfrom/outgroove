@@ -20,6 +20,11 @@ export interface ScannedAudioFile {
   readonly modifiedMs: number;
   readonly format: string;
   readonly durationSeconds: number | null;
+  readonly codec?: string | null;
+  readonly bitrate?: number | null;
+  readonly sampleRate?: number | null;
+  readonly bitDepth?: number | null;
+  readonly channels?: number | null;
   readonly tags: NormalizedTags;
   readonly nativeTags: readonly NativeTagValue[];
 }

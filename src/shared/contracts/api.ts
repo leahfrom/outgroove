@@ -234,6 +234,12 @@ export interface LibraryTrackDto {
   readonly discNumber: number | null;
   readonly format: string;
   readonly durationSeconds: number | null;
+  readonly codec: string | null;
+  readonly bitrate: number | null;
+  readonly sampleRate: number | null;
+  readonly bitDepth: number | null;
+  readonly channels: number | null;
+  readonly size: number;
   readonly path: string;
 }
 export interface LibraryPageDto {

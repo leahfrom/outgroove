@@ -19,6 +19,11 @@ const album: CatalogAlbum = {
       modifiedMs: 1,
       format: "MPEG",
       durationSeconds: 1,
+      codec: "MPEG 1 Layer 3",
+      bitrate: 128_000,
+      sampleRate: 44_100,
+      bitDepth: null,
+      channels: 1,
       tags: {
         title: "Track",
         album: "Fixture Album",
@@ -156,6 +161,31 @@ function api(applyVerified: boolean): OutgrooveApi {
 describe("tag edit UI safety states", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("shows complete technical details with keyboard-accessible disclosure", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    const trackLabel = screen.getByText("1.1 Track");
+    const details = trackLabel.closest("details");
+    const summary = trackLabel.closest("summary");
+    if (!details || !summary) throw new Error("Track disclosure missing");
+    summary.focus();
+    expect(summary).toHaveFocus();
+    await user.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(within(details).getByText("128 kbps")).toBeVisible();
+    expect(within(details).getByText("44.1 kHz")).toBeVisible();
+    expect(within(details).getByText("Mono (1 channel)")).toBeVisible();
+    expect(within(details).getByText("100 B")).toBeVisible();
+    expect(
+      within(details).getByText("Bit depth").nextElementSibling,
+    ).toHaveTextContent("Unknown");
   });
 
   it("shows per-file before/after preview before exposing explicit confirmation", async () => {
@@ -1693,6 +1723,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -1793,6 +1829,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -1890,6 +1932,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -1989,6 +2037,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]

@@ -387,4 +387,15 @@ export const migrations: readonly { version: number; sql: string }[] = [
         ON library_roots(created_at) WHERE removed_at IS NULL;
     `,
   },
+  {
+    version: 14,
+    sql: `
+      ALTER TABLE audio_files ADD COLUMN codec TEXT;
+      ALTER TABLE audio_files ADD COLUMN bitrate REAL;
+      ALTER TABLE audio_files ADD COLUMN sample_rate INTEGER;
+      ALTER TABLE audio_files ADD COLUMN bit_depth INTEGER;
+      ALTER TABLE audio_files ADD COLUMN channels INTEGER;
+      ALTER TABLE audio_files ADD COLUMN technical_properties_version INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];
