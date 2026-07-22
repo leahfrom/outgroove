@@ -91,6 +91,7 @@ function runQuery(): LibraryQualityWorkerMessage {
       albums,
       artists: [],
       formats: [],
+      folders: [],
       tracks: [],
       scanErrors: [],
       totalItems: matchingAlbums,

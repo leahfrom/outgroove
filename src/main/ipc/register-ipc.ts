@@ -173,14 +173,17 @@ export function registerIpc(
               ? "artists"
               : request.view === "formats"
                 ? "formats"
-                : request.view === "tracks"
-                  ? "tracks"
-                  : "albums",
+                : request.view === "folders"
+                  ? "folders"
+                  : request.view === "tracks"
+                    ? "tracks"
+                    : "albums",
         offset: request.offset,
         limit: request.limit,
         ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
         ...(request.albumId ? { albumId: request.albumId } : {}),
         ...(request.format ? { format: request.format } : {}),
+        ...(request.folderId ? { folderId: request.folderId } : {}),
       });
     }),
   );

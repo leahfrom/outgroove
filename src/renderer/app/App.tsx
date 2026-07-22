@@ -4,6 +4,7 @@ import type {
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
+  LibraryFolderDto,
   LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
@@ -73,18 +74,27 @@ export function App(): React.JSX.Element {
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
+  const [folders, setFolders] = useState<readonly LibraryFolderDto[]>([]);
   const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
-    "albums" | "artists" | "formats" | "tracks" | "data-quality" | "scan-errors"
+    | "albums"
+    | "artists"
+    | "formats"
+    | "folders"
+    | "tracks"
+    | "data-quality"
+    | "scan-errors"
   >("albums");
   const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
   const [albumIdFilter, setAlbumIdFilter] = useState<string>();
   const [trackRouteLabel, setTrackRouteLabel] = useState<string>();
   const [pendingTrackId, setPendingTrackId] = useState<string>();
   const [trackFormatFilter, setTrackFormatFilter] = useState<string>();
+  const [trackFolderFilter, setTrackFolderFilter] =
+    useState<Pick<LibraryFolderDto, "id" | "path">>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
@@ -219,6 +229,9 @@ export function App(): React.JSX.Element {
       ...(libraryView === "tracks" && trackFormatFilter
         ? { format: trackFormatFilter }
         : {}),
+      ...(libraryView === "tracks" && trackFolderFilter
+        ? { folderId: trackFolderFilter.id }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -233,6 +246,7 @@ export function App(): React.JSX.Element {
       setAlbums(result.value.albums);
       setArtists(result.value.artists);
       setFormats(result.value.formats);
+      setFolders(result.value.folders);
       setTracks(result.value.tracks);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
@@ -249,6 +263,7 @@ export function App(): React.JSX.Element {
     pageOffset,
     qualityFilter,
     query,
+    trackFolderFilter,
     trackFormatFilter,
   ]);
 
@@ -937,6 +952,7 @@ export function App(): React.JSX.Element {
               | "albums"
               | "artists"
               | "formats"
+              | "folders"
               | "tracks"
               | "data-quality"
               | "scan-errors";
@@ -946,6 +962,7 @@ export function App(): React.JSX.Element {
             setTrackRouteLabel(undefined);
             setPendingTrackId(undefined);
             setTrackFormatFilter(undefined);
+            setTrackFolderFilter(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
@@ -954,6 +971,7 @@ export function App(): React.JSX.Element {
           <option value="albums">Albums</option>
           <option value="artists">Album artists</option>
           <option value="formats">Formats</option>
+          <option value="folders">Folders</option>
           <option value="tracks">Tracks</option>
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
@@ -1030,6 +1048,17 @@ export function App(): React.JSX.Element {
             Show all formats
           </button>
         )}
+        {libraryView === "tracks" && trackFolderFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setTrackFolderFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all folders
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
@@ -1045,17 +1074,21 @@ export function App(): React.JSX.Element {
               ? totalItems === 1
                 ? "format"
                 : "formats"
-              : libraryView === "tracks"
+              : libraryView === "folders"
                 ? totalItems === 1
-                  ? "track"
-                  : "tracks"
-                : libraryView === "data-quality"
+                  ? "folder"
+                  : "folders"
+                : libraryView === "tracks"
                   ? totalItems === 1
-                    ? "album needing review"
-                    : "albums needing review"
-                  : totalItems === 1
-                    ? "album"
-                    : "albums"}
+                    ? "track"
+                    : "tracks"
+                  : libraryView === "data-quality"
+                    ? totalItems === 1
+                      ? "album needing review"
+                      : "albums needing review"
+                    : totalItems === 1
+                      ? "album"
+                      : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
@@ -1068,6 +1101,9 @@ export function App(): React.JSX.Element {
           : ""}
         {libraryView === "tracks" && trackFormatFilter
           ? ` in “${trackFormatFilter}” format`
+          : ""}
+        {libraryView === "tracks" && trackFolderFilter
+          ? ` in folder “${trackFolderFilter.path}”`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -1152,6 +1188,7 @@ export function App(): React.JSX.Element {
                     <button
                       onClick={() => {
                         setTrackFormatFilter(format.name);
+                        setTrackFolderFilter(undefined);
                         setLibraryView("tracks");
                         setSearchText("");
                         setQuery("");
@@ -1169,6 +1206,51 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "folders" ? (
+        <main className="folders" aria-labelledby="library-folders">
+          <h2 id="library-folders">Folders</h2>
+          {folders.length === 0 ? (
+            <p>
+              {query
+                ? "No folders match this search."
+                : "The current catalog has no folders."}
+            </p>
+          ) : (
+            <ul>
+              {folders.map((folder) => (
+                <li key={folder.id}>
+                  <article>
+                    <h3>{folder.path}</h3>
+                    <p>
+                      Status: {folder.albumCount}{" "}
+                      {folder.albumCount === 1 ? "album" : "albums"} ·{" "}
+                      {folder.trackCount}{" "}
+                      {folder.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTrackFolderFilter({
+                          id: folder.id,
+                          path: folder.path,
+                        });
+                        setTrackFormatFilter(undefined);
+                        setLibraryView("tracks");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(
+                          `Showing tracks in ${folder.path} from the local catalog.`,
+                        );
+                      }}
+                    >
+                      Browse tracks in {folder.path}
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
       ) : libraryView === "tracks" ? (
         <main className="tracks" aria-labelledby="library-tracks">
           <h2 id="library-tracks">Tracks</h2>
@@ -1176,9 +1258,11 @@ export function App(): React.JSX.Element {
             <p>
               {query
                 ? "No tracks match this search."
-                : trackFormatFilter
-                  ? `No tracks use ${trackFormatFilter} format.`
-                  : "The current catalog has no tracks."}
+                : trackFolderFilter
+                  ? `No tracks are cataloged in ${trackFolderFilter.path}.`
+                  : trackFormatFilter
+                    ? `No tracks use ${trackFormatFilter} format.`
+                    : "The current catalog has no tracks."}
             </p>
           ) : (
             <div className="track-table-scroll">
@@ -1219,6 +1303,7 @@ export function App(): React.JSX.Element {
                             setTrackRouteLabel(track.title);
                             setPendingTrackId(track.id);
                             setTrackFormatFilter(undefined);
+                            setTrackFolderFilter(undefined);
                             setAlbumArtistFilter(undefined);
                             setLibraryView("albums");
                             setSearchText("");

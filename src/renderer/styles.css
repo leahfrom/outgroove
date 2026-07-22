@@ -145,6 +145,7 @@ aside,
 .errors,
 .artists,
 .formats,
+.folders,
 .tracks {
   background: white;
   border: 1px solid #d8ddd8;
@@ -163,7 +164,8 @@ aside,
   max-width: 320px;
 }
 .artists ul,
-.formats ul {
+.formats ul,
+.folders ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem;
@@ -172,14 +174,19 @@ aside,
   padding: 0;
 }
 .artists article,
-.formats article {
+.formats article,
+.folders article {
   border: 1px solid #c5cec7;
   border-radius: 10px;
   padding: 1rem;
 }
 .artists article p,
-.formats article p {
+.formats article p,
+.folders article p {
   color: #526159;
+}
+.folders h3 {
+  overflow-wrap: anywhere;
 }
 aside {
   position: sticky;
