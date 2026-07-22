@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
+  LibraryFormatDto,
+  LibraryFolderDto,
+  LibraryRootDto,
+  LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
@@ -69,25 +73,41 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
+  const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
+    [],
+  );
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
+  const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
+  const [folders, setFolders] = useState<readonly LibraryFolderDto[]>([]);
   const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
-    "albums" | "artists" | "tracks" | "data-quality" | "scan-errors"
+    | "albums"
+    | "artists"
+    | "formats"
+    | "folders"
+    | "tracks"
+    | "data-quality"
+    | "scan-errors"
   >("albums");
   const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
   const [albumIdFilter, setAlbumIdFilter] = useState<string>();
   const [trackRouteLabel, setTrackRouteLabel] = useState<string>();
   const [pendingTrackId, setPendingTrackId] = useState<string>();
+  const [trackFormatFilter, setTrackFormatFilter] = useState<string>();
+  const [trackFolderFilter, setTrackFolderFilter] =
+    useState<Pick<LibraryFolderDto, "id" | "path">>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [restorePreview, setRestorePreview] =
     useState<DatabaseRestorePreviewDto>();
+  const [rootRemovalPreview, setRootRemovalPreview] =
+    useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
@@ -213,6 +233,12 @@ export function App(): React.JSX.Element {
       ...(libraryView === "albums" && albumIdFilter
         ? { albumId: albumIdFilter }
         : {}),
+      ...(libraryView === "tracks" && trackFormatFilter
+        ? { format: trackFormatFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackFolderFilter
+        ? { folderId: trackFolderFilter.id }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -226,6 +252,8 @@ export function App(): React.JSX.Element {
       }
       setAlbums(result.value.albums);
       setArtists(result.value.artists);
+      setFormats(result.value.formats);
+      setFolders(result.value.folders);
       setTracks(result.value.tracks);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
@@ -242,6 +270,8 @@ export function App(): React.JSX.Element {
     pageOffset,
     qualityFilter,
     query,
+    trackFolderFilter,
+    trackFormatFilter,
   ]);
 
   const refreshEditHistory = useCallback(
@@ -253,6 +283,18 @@ export function App(): React.JSX.Element {
     [],
   );
 
+  const refreshLibraryRoots = useCallback(async (): Promise<void> => {
+    const result = await window.outgroove.listLibraryRoots();
+    if (result.ok) {
+      setLibraryRoots(result.value);
+      setRootId((current) =>
+        current && result.value.some((root) => root.id === current)
+          ? current
+          : result.value[0]?.id,
+      );
+    } else setNotice(result.error.message);
+  }, []);
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -261,6 +303,7 @@ export function App(): React.JSX.Element {
         setNotice(
           `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
         );
+        void refreshLibraryRoots();
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
@@ -270,10 +313,16 @@ export function App(): React.JSX.Element {
       window.outgroove.listLibraryRoots(),
       window.outgroove.getLatestScanJob(),
     ]).then(([roots, latest]) => {
-      if (roots.ok)
-        setRootId(
-          latest.ok && latest.value ? latest.value.rootId : roots.value[0]?.id,
-        );
+      if (roots.ok) {
+        setLibraryRoots(roots.value);
+        const latestRootId =
+          latest.ok &&
+          latest.value &&
+          roots.value.some((root) => root.id === latest.value?.rootId)
+            ? latest.value.rootId
+            : undefined;
+        setRootId(latestRootId ?? roots.value[0]?.id);
+      } else setNotice(roots.error.message);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
         if (
@@ -284,7 +333,7 @@ export function App(): React.JSX.Element {
       }
     });
     return unsubscribe;
-  }, [refreshCatalog]);
+  }, [refreshCatalog, refreshLibraryRoots]);
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
@@ -329,6 +378,7 @@ export function App(): React.JSX.Element {
   }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
+    setRootId(selectedRootId);
     const started = await window.outgroove.scanLibrary({
       rootId: selectedRootId,
     });
@@ -352,8 +402,16 @@ export function App(): React.JSX.Element {
         setNotice("Folder selection cancelled.");
         return;
       }
-      setRootId(selected.value.id);
-      await startScan(selected.value.id);
+      const selectedRoot = selected.value;
+      setLibraryRoots((current) => {
+        const existing = current.find((root) => root.id === selectedRoot.id);
+        return existing
+          ? current.map((root) =>
+              root.id === selectedRoot.id ? selectedRoot : root,
+            )
+          : [...current, selectedRoot];
+      });
+      await startScan(selectedRoot.id);
     } finally {
       setBusy(false);
     }
@@ -362,6 +420,42 @@ export function App(): React.JSX.Element {
   const rescan = async (): Promise<void> => {
     if (!rootId) return;
     await startScan(rootId);
+  };
+
+  const previewRootRemoval = async (rootId: string): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewLibraryRootRemoval({
+        rootId,
+      });
+      if (result.ok) setRootRemovalPreview(result.value);
+      else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyRootRemoval = async (): Promise<void> => {
+    if (!rootRemovalPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyLibraryRootRemoval({
+        operationId: rootRemovalPreview.operationId,
+        confirmationToken: rootRemovalPreview.confirmationToken,
+      });
+      if (!result.ok) {
+        setNotice(result.error.message);
+        return;
+      }
+      setRootRemovalPreview(undefined);
+      if (scanJob?.rootId === result.value.rootId) setScanJob(undefined);
+      await Promise.all([refreshLibraryRoots(), refreshCatalog()]);
+      setNotice(
+        `Stopped watching ${rootRemovalPreview.path}. ${result.value.visibleTracksHidden} visible tracks hidden; no audio files deleted.`,
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const cancelScan = async (): Promise<void> => {
@@ -855,7 +949,7 @@ export function App(): React.JSX.Element {
             disabled={busy || scanActive || !rootId}
             onClick={() => void rescan()}
           >
-            Scan again
+            Scan current folder
           </button>
         </div>
       </header>
@@ -897,7 +991,10 @@ export function App(): React.JSX.Element {
           {(scanJob.state === "cancelled" ||
             scanJob.state === "failed" ||
             scanJob.state === "interrupted") && (
-            <button disabled={!rootId} onClick={() => void rescan()}>
+            <button
+              disabled={!scanJob.rootId}
+              onClick={() => void startScan(scanJob.rootId)}
+            >
               Retry scan
             </button>
           )}
@@ -926,12 +1023,20 @@ export function App(): React.JSX.Element {
           value={libraryView}
           onChange={(event) => {
             const view = event.target.value as
-              "albums" | "artists" | "tracks" | "data-quality" | "scan-errors";
+              | "albums"
+              | "artists"
+              | "formats"
+              | "folders"
+              | "tracks"
+              | "data-quality"
+              | "scan-errors";
             setLibraryView(view);
             setAlbumArtistFilter(undefined);
             setAlbumIdFilter(undefined);
             setTrackRouteLabel(undefined);
             setPendingTrackId(undefined);
+            setTrackFormatFilter(undefined);
+            setTrackFolderFilter(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
@@ -939,6 +1044,8 @@ export function App(): React.JSX.Element {
         >
           <option value="albums">Albums</option>
           <option value="artists">Album artists</option>
+          <option value="formats">Formats</option>
+          <option value="folders">Folders</option>
           <option value="tracks">Tracks</option>
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
@@ -1004,6 +1111,28 @@ export function App(): React.JSX.Element {
             Show all albums
           </button>
         )}
+        {libraryView === "tracks" && trackFormatFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setTrackFormatFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all formats
+          </button>
+        )}
+        {libraryView === "tracks" && trackFolderFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setTrackFolderFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all folders
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
@@ -1015,17 +1144,25 @@ export function App(): React.JSX.Element {
             ? totalItems === 1
               ? "album artist"
               : "album artists"
-            : libraryView === "tracks"
+            : libraryView === "formats"
               ? totalItems === 1
-                ? "track"
-                : "tracks"
-              : libraryView === "data-quality"
+                ? "format"
+                : "formats"
+              : libraryView === "folders"
                 ? totalItems === 1
-                  ? "album needing review"
-                  : "albums needing review"
-                : totalItems === 1
-                  ? "album"
-                  : "albums"}
+                  ? "folder"
+                  : "folders"
+                : libraryView === "tracks"
+                  ? totalItems === 1
+                    ? "track"
+                    : "tracks"
+                  : libraryView === "data-quality"
+                    ? totalItems === 1
+                      ? "album needing review"
+                      : "albums needing review"
+                    : totalItems === 1
+                      ? "album"
+                      : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
@@ -1035,6 +1172,12 @@ export function App(): React.JSX.Element {
           : ""}
         {libraryView === "albums" && trackRouteLabel
           ? ` containing “${trackRouteLabel}”`
+          : ""}
+        {libraryView === "tracks" && trackFormatFilter
+          ? ` in “${trackFormatFilter}” format`
+          : ""}
+        {libraryView === "tracks" && trackFolderFilter
+          ? ` in folder “${trackFolderFilter.path}”`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -1097,6 +1240,91 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "formats" ? (
+        <main className="formats" aria-labelledby="library-formats">
+          <h2 id="library-formats">Formats</h2>
+          {formats.length === 0 ? (
+            <p>
+              {query
+                ? "No formats match this search."
+                : "The current catalog has no formats."}
+            </p>
+          ) : (
+            <ul>
+              {formats.map((format) => (
+                <li key={format.name}>
+                  <article>
+                    <h3>{format.name}</h3>
+                    <p>
+                      Status: {format.trackCount}{" "}
+                      {format.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTrackFormatFilter(format.name);
+                        setTrackFolderFilter(undefined);
+                        setLibraryView("tracks");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(
+                          `Showing tracks in ${format.name} format from the local catalog.`,
+                        );
+                      }}
+                    >
+                      Browse {format.name} tracks
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+      ) : libraryView === "folders" ? (
+        <main className="folders" aria-labelledby="library-folders">
+          <h2 id="library-folders">Folders</h2>
+          {folders.length === 0 ? (
+            <p>
+              {query
+                ? "No folders match this search."
+                : "The current catalog has no folders."}
+            </p>
+          ) : (
+            <ul>
+              {folders.map((folder) => (
+                <li key={folder.id}>
+                  <article>
+                    <h3>{folder.path}</h3>
+                    <p>
+                      Status: {folder.albumCount}{" "}
+                      {folder.albumCount === 1 ? "album" : "albums"} ·{" "}
+                      {folder.trackCount}{" "}
+                      {folder.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTrackFolderFilter({
+                          id: folder.id,
+                          path: folder.path,
+                        });
+                        setTrackFormatFilter(undefined);
+                        setLibraryView("tracks");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(
+                          `Showing tracks in ${folder.path} from the local catalog.`,
+                        );
+                      }}
+                    >
+                      Browse tracks in {folder.path}
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
       ) : libraryView === "tracks" ? (
         <main className="tracks" aria-labelledby="library-tracks">
           <h2 id="library-tracks">Tracks</h2>
@@ -1104,7 +1332,11 @@ export function App(): React.JSX.Element {
             <p>
               {query
                 ? "No tracks match this search."
-                : "The current catalog has no tracks."}
+                : trackFolderFilter
+                  ? `No tracks are cataloged in ${trackFolderFilter.path}.`
+                  : trackFormatFilter
+                    ? `No tracks use ${trackFormatFilter} format.`
+                    : "The current catalog has no tracks."}
             </p>
           ) : (
             <div className="track-table-scroll">
@@ -1144,6 +1376,8 @@ export function App(): React.JSX.Element {
                             setAlbumIdFilter(track.albumId);
                             setTrackRouteLabel(track.title);
                             setPendingTrackId(track.id);
+                            setTrackFormatFilter(undefined);
+                            setTrackFolderFilter(undefined);
                             setAlbumArtistFilter(undefined);
                             setLibraryView("albums");
                             setSearchText("");
@@ -2328,6 +2562,100 @@ export function App(): React.JSX.Element {
           </button>
         </nav>
       )}
+      <section
+        className="card settings"
+        aria-labelledby="watched-library-folders"
+      >
+        <h2 id="watched-library-folders">Watched Library folders</h2>
+        <p>
+          Outgroove scans only folders you explicitly choose. Rescanning reads
+          that folder through the existing incremental scan and never changes
+          audio files.
+        </p>
+        {libraryRoots.length === 0 ? (
+          <p>No Library folders have been chosen yet.</p>
+        ) : (
+          <ul className="library-root-list">
+            {libraryRoots.map((root) => {
+              const isCurrent = root.id === rootId;
+              const isScanning = scanActive && scanJob.rootId === root.id;
+              return (
+                <li key={root.id}>
+                  <div>
+                    <strong>{root.path}</strong>
+                    <span>
+                      Status: {isScanning ? "Scan in progress" : null}
+                      {isScanning && root.lastScanAt ? " · " : null}
+                      {root.lastScanAt ? (
+                        <>
+                          Last scanned{" "}
+                          <time dateTime={root.lastScanAt}>
+                            {new Date(root.lastScanAt).toLocaleString()}
+                          </time>
+                        </>
+                      ) : isScanning ? null : (
+                        "Never scanned"
+                      )}
+                    </span>
+                    {isCurrent && <span>Current scan target</span>}
+                  </div>
+                  <div className="library-root-actions">
+                    <button
+                      disabled={busy || scanActive}
+                      onClick={() => void startScan(root.id)}
+                    >
+                      Scan folder {root.path}
+                    </button>
+                    <button
+                      disabled={busy || scanActive}
+                      onClick={() => void previewRootRemoval(root.id)}
+                    >
+                      Stop watching {root.path}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {rootRemovalPreview && (
+          <div className="preview" aria-label="Library folder removal preview">
+            <h3>Stop watching this Library folder?</h3>
+            <p>
+              <strong>{rootRemovalPreview.path}</strong>
+            </p>
+            <dl>
+              <dt>Visible tracks hidden</dt>
+              <dd>{rootRemovalPreview.visibleTracks}</dd>
+              <dt>Albums no longer visible</dt>
+              <dd>{rootRemovalPreview.albumsHidden}</dd>
+              <dt>Scan problems hidden</dt>
+              <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
+            </dl>
+            <p>
+              <strong>No audio or DAP files will be deleted.</strong> Catalog
+              identities, edit history, DAP profiles, sync manifests, and scan
+              history are retained. Choosing this folder again reuses its
+              catalog identity and requires a rescan before tracks reappear.
+            </p>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={busy || scanActive}
+                onClick={() => void applyRootRemoval()}
+              >
+                Confirm stop watching
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setRootRemovalPreview(undefined)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
       <section className="card settings" aria-labelledby="database-safety">
         <h2 id="database-safety">Database safety</h2>
         <p>

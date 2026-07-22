@@ -131,7 +131,8 @@ describe("paginated library query", () => {
   it("returns stable bounded pages and searches track, path, and format", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-query-"));
     temporary.push(directory);
-    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const databasePath = join(directory, "catalog.sqlite3");
+    const database = new CatalogDatabase(databasePath);
     const root = database.addLibraryRoot(
       directory,
       pathComparisonKey(directory),
@@ -148,6 +149,24 @@ describe("paginated library query", () => {
       tags: {
         title: "Companion Track",
         album: "Album 09",
+        artist: "Fixture Artist",
+        albumArtist: "Fixture Artist",
+        trackNumber: 2,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    });
+    const unknownFormatPath = join(directory, "Album 08", "unknown.bin");
+    database.upsertScannedFile(root.id, pathComparisonKey(unknownFormatPath), {
+      path: unknownFormatPath,
+      size: 80,
+      modifiedMs: 80,
+      format: "",
+      durationSeconds: 8,
+      tags: {
+        title: "Unknown Format Track",
+        album: "Album 08",
         artist: "Fixture Artist",
         albumArtist: "Fixture Artist",
         trackNumber: 2,
@@ -203,7 +222,7 @@ describe("paginated library query", () => {
       offset: 0,
       limit: 10,
     });
-    expect(tracks.totalItems).toBe(26);
+    expect(tracks.totalItems).toBe(27);
     expect(tracks.tracks).toHaveLength(10);
     expect(tracks.tracks[0]).toMatchObject({
       title: "Track 0",
@@ -242,7 +261,117 @@ describe("paginated library query", () => {
         limit: 10,
       }).tracks[0]?.albumTitle,
     ).toBe("Album 17");
+    const firstFolders = database.queryLibrary({
+      query: "",
+      view: "folders",
+      offset: 0,
+      limit: 10,
+    });
+    const lastFolders = database.queryLibrary({
+      query: "",
+      view: "folders",
+      offset: 20,
+      limit: 10,
+    });
+    expect(firstFolders.totalItems).toBe(25);
+    expect(firstFolders.folders).toHaveLength(10);
+    expect(firstFolders.folders[0]).toMatchObject({
+      path: join(directory, "Album 00"),
+      albumCount: 1,
+      trackCount: 1,
+    });
+    expect(lastFolders.folders.map((folder) => folder.path)).toEqual([
+      join(directory, "Album 20"),
+      join(directory, "Album 21"),
+      join(directory, "Album 22"),
+      join(directory, "Album 23"),
+      join(directory, "Album 24"),
+    ]);
+    const folder = database.queryLibrary({
+      query: "Album 09",
+      view: "folders",
+      offset: 0,
+      limit: 10,
+    }).folders[0];
+    expect(folder).toMatchObject({
+      path: join(directory, "Album 09"),
+      albumCount: 1,
+      trackCount: 2,
+    });
+    if (!folder) throw new Error("Folder result missing");
+    const folderTracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+      folderId: folder.id,
+    });
+    expect(folderTracks.totalItems).toBe(2);
+    expect(folderTracks.tracks.map((track) => track.albumTitle)).toEqual([
+      "Album 09",
+      "Album 09",
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "%",
+        view: "folders",
+        offset: 0,
+        limit: 10,
+      }).folders,
+    ).toEqual([]);
+    const formats = database.queryLibrary({
+      query: "",
+      view: "formats",
+      offset: 0,
+      limit: 10,
+    });
+    expect(formats.totalItems).toBe(3);
+    expect(formats.formats).toEqual([
+      { name: "FLAC", trackCount: 25 },
+      { name: "SpecialCodec", trackCount: 1 },
+      { name: "unknown", trackCount: 1 },
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "special",
+        view: "formats",
+        offset: 0,
+        limit: 10,
+      }).formats,
+    ).toEqual([{ name: "SpecialCodec", trackCount: 1 }]);
+    const formatTracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+      format: "specialcodec",
+    });
+    expect(formatTracks.totalItems).toBe(1);
+    expect(formatTracks.tracks[0]?.albumTitle).toBe("Album 17");
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 10,
+        format: "unknown",
+      }).tracks[0],
+    ).toMatchObject({ title: "Unknown Format Track", format: "unknown" });
     database.close();
+    const reopened = new CatalogDatabase(databasePath);
+    expect(
+      reopened.queryLibrary({
+        query: "Album 09",
+        view: "folders",
+        offset: 0,
+        limit: 10,
+      }).folders[0],
+    ).toMatchObject({
+      path: join(directory, "Album 09"),
+      albumCount: 1,
+      trackCount: 2,
+    });
+    reopened.close();
   });
 
   it("keeps exact Unicode, wildcard, short, and edited search values synchronized", async () => {

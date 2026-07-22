@@ -144,6 +144,8 @@ aside,
 .detail,
 .errors,
 .artists,
+.formats,
+.folders,
 .tracks {
   background: white;
   border: 1px solid #d8ddd8;
@@ -161,7 +163,9 @@ aside,
 .tracks td:nth-child(6) {
   max-width: 320px;
 }
-.artists ul {
+.artists ul,
+.formats ul,
+.folders ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem;
@@ -169,13 +173,20 @@ aside,
   margin: 0;
   padding: 0;
 }
-.artists article {
+.artists article,
+.formats article,
+.folders article {
   border: 1px solid #c5cec7;
   border-radius: 10px;
   padding: 1rem;
 }
-.artists article p {
+.artists article p,
+.formats article p,
+.folders article p {
   color: #526159;
+}
+.folders h3 {
+  overflow-wrap: anywhere;
 }
 aside {
   position: sticky;
@@ -283,6 +294,38 @@ pre {
   border-radius: 14px;
   padding: 1rem;
 }
+.library-root-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.library-root-list li {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 9px;
+}
+.library-root-list > li > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.library-root-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-direction: column;
+}
+.library-root-list strong,
+.library-root-list span {
+  overflow-wrap: anywhere;
+}
+.library-root-list span {
+  color: #526159;
+}
 label {
   display: block;
   font-weight: 700;
@@ -379,6 +422,10 @@ td {
 @media (max-width: 900px) {
   .library-toolbar {
     grid-template-columns: 1fr;
+  }
+  .library-root-list li {
+    align-items: stretch;
+    flex-direction: column;
   }
   .workspace {
     grid-template-columns: 1fr;

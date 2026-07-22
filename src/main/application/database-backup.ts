@@ -123,7 +123,9 @@ export class DatabaseBackupService {
         throw new Error("Staged backup failed integrity verification.");
       const summary = {
         libraryRoots: staged.connection
-          .prepare("SELECT COUNT(*) FROM library_roots")
+          .prepare(
+            "SELECT COUNT(*) FROM library_roots WHERE removed_at IS NULL",
+          )
           .pluck()
           .get() as number,
         albums: staged.connection

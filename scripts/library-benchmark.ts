@@ -43,6 +43,8 @@ export interface LibraryBenchmarkReport {
     readonly unchangedRescan: number;
     readonly unchangedRescanMaxEventLoopDelay: number;
     readonly firstPageQuery: number;
+    readonly folderPageQuery: number;
+    readonly folderTrackQuery: number;
     readonly searchQuery: number;
     readonly cancellation: number;
   };
@@ -59,6 +61,8 @@ export interface LibraryBenchmarkReport {
   readonly cancellationState: string;
   readonly catalogItemsAfterCancellation: number;
   readonly firstPageItems: number;
+  readonly folderItems: number;
+  readonly folderTrackItems: number;
   readonly searchItems: number;
   readonly baselineRssBytes: number;
   readonly peakRssBytes: number;
@@ -318,6 +322,26 @@ export async function runLibraryBenchmark(
     const firstPageQuery = elapsed(started);
 
     started = performance.now();
+    const folderPage = database.queryLibrary({
+      query: "",
+      view: "folders",
+      offset: 0,
+      limit: 20,
+    });
+    const folderPageQuery = elapsed(started);
+    const firstFolder = folderPage.folders[0];
+    if (!firstFolder) throw new Error("Synthetic folder page was empty.");
+    started = performance.now();
+    const folderTracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+      folderId: firstFolder.id,
+    });
+    const folderTrackQuery = elapsed(started);
+
+    started = performance.now();
     const search = database.queryLibrary({
       query: `Needle Track ${fileCount - 1}`,
       view: "albums",
@@ -357,6 +381,8 @@ export async function runLibraryBenchmark(
         unchangedRescan,
         unchangedRescanMaxEventLoopDelay: unchangedMeasurement.maxDelayMs,
         firstPageQuery,
+        folderPageQuery,
+        folderTrackQuery,
         searchQuery,
         cancellation,
       },
@@ -365,6 +391,8 @@ export async function runLibraryBenchmark(
       cancellationState: cancelled.state,
       catalogItemsAfterCancellation: afterCancellation.totalItems,
       firstPageItems: firstPage.albums.length,
+      folderItems: folderPage.folders.length,
+      folderTrackItems: folderTracks.tracks.length,
       searchItems: search.albums.length,
       baselineRssBytes,
       peakRssBytes,

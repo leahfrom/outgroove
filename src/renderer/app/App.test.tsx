@@ -40,6 +40,8 @@ function api(applyVerified: boolean): OutgrooveApi {
   return {
     chooseLibraryFolder: vi.fn(),
     listLibraryRoots: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    previewLibraryRootRemoval: vi.fn(),
+    applyLibraryRootRemoval: vi.fn(),
     scanLibrary: vi.fn(),
     cancelScan: vi.fn(),
     getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
@@ -52,6 +54,8 @@ function api(applyVerified: boolean): OutgrooveApi {
         value: {
           albums: [album],
           artists: [],
+          formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 1,
@@ -270,6 +274,8 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [batchAlbum],
         artists: [],
+        formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -461,6 +467,8 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [sequenceAlbum],
         artists: [],
+        formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -581,6 +589,8 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [diagnosticAlbum],
         artists: [],
+        formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -655,6 +665,8 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [diagnosticAlbum],
         artists: [],
+        formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -739,6 +751,8 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [album, flaggedAlbum],
         artists: [],
+        formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 2,
@@ -1162,6 +1176,250 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
 
+  it("shows watched folders and routes a named keyboard action into the existing scan", async () => {
+    const mockApi = api(true);
+    const firstRootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const secondRootId = "98748ad4-e155-4320-b949-1433dd377762";
+    const listLibraryRoots = vi.fn().mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: firstRootId,
+          path: "/fixture/never-scanned",
+          lastScanAt: null,
+        },
+        {
+          id: secondRootId,
+          path: "/fixture/scanned",
+          lastScanAt: "2026-07-20T12:00:00.000Z",
+        },
+      ],
+    });
+    const scanLibrary = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: secondRootId,
+        state: "queued",
+        completed: 0,
+        total: 0,
+        detail: "Queued",
+        result: null,
+        error: null,
+        createdAt: "2026-07-22T00:00:00.000Z",
+        updatedAt: "2026-07-22T00:00:00.000Z",
+        finishedAt: null,
+      } satisfies ScanJobDto,
+    });
+    Object.assign(mockApi, { listLibraryRoots, scanLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const roots = await screen.findByRole("region", {
+      name: "Watched Library folders",
+    });
+    expect(within(roots).getByText("/fixture/never-scanned")).toBeVisible();
+    expect(within(roots).getByText("Status: Never scanned")).toBeVisible();
+    expect(within(roots).getByText("/fixture/scanned")).toBeVisible();
+    expect(within(roots).getByText(/Status: Last scanned/)).toBeVisible();
+
+    const secondScan = within(roots).getByRole("button", {
+      name: "Scan folder /fixture/scanned",
+    });
+    secondScan.focus();
+    await user.keyboard("{Enter}");
+    expect(scanLibrary).toHaveBeenCalledWith({ rootId: secondRootId });
+    expect(await within(roots).findByText("Current scan target")).toBeVisible();
+    expect(
+      within(roots).getByRole("button", {
+        name: "Scan folder /fixture/never-scanned",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(roots).getByRole("button", {
+        name: "Stop watching /fixture/never-scanned",
+      }),
+    ).toBeDisabled();
+  });
+
+  it("refreshes the watched-folder status after a completed scan", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const scannedAt = "2026-07-22T12:34:00.000Z";
+    const listLibraryRoots = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [{ id: rootId, path: "/fixture", lastScanAt: null }],
+      })
+      .mockResolvedValue({
+        ok: true,
+        value: [{ id: rootId, path: "/fixture", lastScanAt: scannedAt }],
+      });
+    let emitScanJob: ((job: ScanJobDto) => void) | undefined;
+    const onScanJobUpdated = vi.fn((listener: (job: ScanJobDto) => void) => {
+      emitScanJob = listener;
+      return () => undefined;
+    });
+    Object.assign(mockApi, { listLibraryRoots, onScanJobUpdated });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    expect(await screen.findByText("Status: Never scanned")).toBeVisible();
+
+    act(() => {
+      emitScanJob?.({
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId,
+        state: "completed",
+        completed: 1,
+        total: 1,
+        detail: "Scan complete",
+        result: { parsed: 1, unchanged: 0, errors: 0 },
+        error: null,
+        createdAt: "2026-07-22T12:33:00.000Z",
+        updatedAt: scannedAt,
+        finishedAt: scannedAt,
+      });
+    });
+
+    const lastScanned = await screen.findByText(/Status: Last scanned/);
+    expect(lastScanned).toContainElement(
+      screen.getByText(new Date(scannedAt).toLocaleString()),
+    );
+    expect(listLibraryRoots).toHaveBeenCalledTimes(2);
+  });
+
+  it("previews and keyboard-confirms stopping a watched folder without claiming file deletion", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const root = { id: rootId, path: "/fixture", lastScanAt: null };
+    const listLibraryRoots = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: [root] })
+      .mockResolvedValue({ ok: true, value: [] });
+    const previewLibraryRootRemoval = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        confirmationToken: "root-removal-confirmation-token",
+        rootId,
+        path: "/fixture",
+        visibleTracks: 12,
+        albumsHidden: 2,
+        scanProblemsHidden: 1,
+      },
+    });
+    const applyLibraryRootRemoval = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        rootId,
+        visibleTracksHidden: 12,
+        albumsHidden: 2,
+        scanProblemsHidden: 1,
+        audioFilesDeleted: 0,
+      },
+    });
+    Object.assign(mockApi, {
+      listLibraryRoots,
+      previewLibraryRootRemoval,
+      applyLibraryRootRemoval,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const stop = await screen.findByRole("button", {
+      name: "Stop watching /fixture",
+    });
+    stop.focus();
+    await user.keyboard("{Enter}");
+    const preview = await screen.findByLabelText(
+      "Library folder removal preview",
+    );
+    expect(preview).toHaveTextContent("/fixture");
+    expect(within(preview).getByText("Visible tracks hidden")).toBeVisible();
+    expect(within(preview).getByText("12")).toBeVisible();
+    expect(within(preview).getByText("Albums no longer visible")).toBeVisible();
+    expect(within(preview).getByText("2")).toBeVisible();
+    expect(within(preview).getByText("Scan problems hidden")).toBeVisible();
+    expect(within(preview).getByText("1")).toBeVisible();
+    expect(preview).toHaveTextContent("No audio or DAP files will be deleted");
+    expect(applyLibraryRootRemoval).not.toHaveBeenCalled();
+
+    const confirm = within(preview).getByRole("button", {
+      name: "Confirm stop watching",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applyLibraryRootRemoval).toHaveBeenCalledWith({
+      operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      confirmationToken: "root-removal-confirmation-token",
+    });
+    expect(
+      await screen.findByText("No Library folders have been chosen yet."),
+    ).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "12 visible tracks hidden; no audio files deleted",
+    );
+  });
+
+  it("keeps a root-removal preview open after a recoverable apply failure", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    vi.spyOn(mockApi, "listLibraryRoots").mockResolvedValue({
+      ok: true,
+      value: [{ id: rootId, path: "/fixture", lastScanAt: null }],
+    });
+    vi.spyOn(mockApi, "previewLibraryRootRemoval").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        confirmationToken: "root-removal-confirmation-token",
+        rootId,
+        path: "/fixture",
+        visibleTracks: 1,
+        albumsHidden: 1,
+        scanProblemsHidden: 0,
+      },
+    });
+    vi.spyOn(mockApi, "applyLibraryRootRemoval").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "The Library folder changed after preview.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Stop watching /fixture" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Confirm stop watching" }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The Library folder changed after preview.",
+    );
+    expect(
+      screen.getByLabelText("Library folder removal preview"),
+    ).toBeVisible();
+  });
+
   it("exposes cancellation only for an active scan", async () => {
     const mockApi = api(true);
     const runningJob: ScanJobDto = {
@@ -1256,6 +1514,8 @@ describe("tag edit UI safety states", () => {
             ? {
                 albums: [],
                 artists: [],
+                formats: [],
+                folders: [],
                 tracks: [],
                 scanErrors: [
                   {
@@ -1276,6 +1536,8 @@ describe("tag edit UI safety states", () => {
             : {
                 albums: [album],
                 artists: [],
+                formats: [],
+                folders: [],
                 tracks: [],
                 scanErrors: [],
                 totalItems: 1,
@@ -1331,6 +1593,8 @@ describe("tag edit UI safety states", () => {
                     },
                   ]
                 : [],
+            formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: request.view === "artists" ? 21 : 1,
@@ -1398,6 +1662,212 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("browses formats and opens an exact removable track filter", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            formats:
+              request.view === "formats"
+                ? [{ name: "FLAC", trackCount: 7 }]
+                : [],
+            folders: [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "formats" ? 21 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "formats");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "formats",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(await screen.findByText("Status: 7 tracks")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "formats",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Browse FLAC tracks" }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        format: "FLAC",
+      }),
+    );
+    expect(screen.getByText("1 track in “FLAC” format")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Show all formats" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+  });
+
+  it("browses folders and opens an exact removable track filter", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const folderPath = "/fixture";
+    const mockApi = api(true);
+    const previewTrackTagEdit = vi.spyOn(mockApi, "previewTrackTagEdit");
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            formats: [],
+            folders:
+              request.view === "folders"
+                ? [
+                    {
+                      id: folderPath,
+                      path: folderPath,
+                      albumCount: 2,
+                      trackCount: 7,
+                    },
+                  ]
+                : [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "folders" ? 21 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "folders");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "folders",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(await screen.findByText(folderPath)).toBeVisible();
+    expect(screen.getByText("Status: 2 albums · 7 tracks")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "folders",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `Browse tracks in ${folderPath}`,
+      }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        folderId: folderPath,
+      }),
+    );
+    expect(screen.getByText(`1 track in folder “${folderPath}”`)).toBeVisible();
+    expect(screen.getByText(firstTrack.path)).toBeVisible();
+    expect(previewTrackTagEdit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Show all folders" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+  });
+
   it("browses tracks with file context and opens the existing preview-only editor", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1411,6 +1881,8 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: request.view === "albums" ? [album] : [],
             artists: [],
+            formats: [],
+            folders: [],
             tracks:
               request.view === "tracks"
                 ? [
@@ -1510,6 +1982,8 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: request.view === "data-quality" ? [flaggedAlbum] : [album],
             artists: [],
+            formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 1,
@@ -1609,6 +2083,8 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: albumQueries === 1 ? [album] : [freshAlbum],
             artists: [],
+            formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 1,
@@ -1645,6 +2121,8 @@ describe("tag edit UI safety states", () => {
         value: {
           albums: [],
           artists: [],
+          formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 0,
@@ -1667,6 +2145,8 @@ describe("tag edit UI safety states", () => {
         value: {
           albums: [album],
           artists: [],
+          formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 21,
@@ -1722,6 +2202,8 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: request.offset === 0 ? [album] : [flaggedAlbum],
             artists: [],
+            formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 21,

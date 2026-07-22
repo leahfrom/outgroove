@@ -11,6 +11,8 @@ import {
   databaseRestoreApplyRequestSchema,
   emptyRequestSchema,
   libraryQueryRequestSchema,
+  libraryRootRemovalApplyRequestSchema,
+  libraryRootRemovalPreviewRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
@@ -27,6 +29,7 @@ import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import type { EditTrackTags } from "../application/edit-track-tags";
+import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -36,6 +39,7 @@ interface Dependencies {
   qualityQuery: WorkerLibraryQualityQuery;
   backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
+  libraryRoots: ManageLibraryRoots;
   editor: EditAlbumTitle;
   trackEditor: EditTrackTags;
   sync: DeviceSync;
@@ -82,6 +86,21 @@ export function registerIpc(
     channels.listLibraryRoots,
     createValidatedHandler(emptyRequestSchema, () =>
       dependencies.database.listLibraryRoots(),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewLibraryRootRemoval,
+    createValidatedHandler(
+      libraryRootRemovalPreviewRequestSchema,
+      ({ rootId }) => dependencies.libraryRoots.previewRemoval(rootId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyLibraryRootRemoval,
+    createValidatedHandler(
+      libraryRootRemovalApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.libraryRoots.applyRemoval(operationId, confirmationToken),
     ),
   );
   ipcMain.handle(
@@ -171,13 +190,19 @@ export function registerIpc(
             ? "scan-errors"
             : request.view === "artists"
               ? "artists"
-              : request.view === "tracks"
-                ? "tracks"
-                : "albums",
+              : request.view === "formats"
+                ? "formats"
+                : request.view === "folders"
+                  ? "folders"
+                  : request.view === "tracks"
+                    ? "tracks"
+                    : "albums",
         offset: request.offset,
         limit: request.limit,
         ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
         ...(request.albumId ? { albumId: request.albumId } : {}),
+        ...(request.format ? { format: request.format } : {}),
+        ...(request.folderId ? { folderId: request.folderId } : {}),
       });
     }),
   );

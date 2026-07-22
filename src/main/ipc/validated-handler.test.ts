@@ -6,6 +6,8 @@ import {
   databaseRestoreApplyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
+  libraryRootRemovalApplyRequestSchema,
+  libraryRootRemovalPreviewRequestSchema,
   scanRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
@@ -46,6 +48,40 @@ describe("validated IPC handlers", () => {
     });
   });
 
+  it("validates both stages of watched-root removal without accepting paths", async () => {
+    const preview = vi.fn();
+    const previewHandler = createValidatedHandler(
+      libraryRootRemovalPreviewRequestSchema,
+      preview,
+    );
+    await expect(
+      previewHandler(
+        {},
+        {
+          rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          path: "/fixture",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(preview).not.toHaveBeenCalled();
+
+    const apply = vi.fn();
+    const applyHandler = createValidatedHandler(
+      libraryRootRemovalApplyRequestSchema,
+      apply,
+    );
+    await expect(
+      applyHandler(
+        {},
+        {
+          operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+          confirmationToken: "too-short",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown fields on cancellation requests", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(scanCancelRequestSchema, useCase);
@@ -80,6 +116,48 @@ describe("validated IPC handlers", () => {
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "folders",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          folderId: "/library/album",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+      folderId: "/library/album",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "folders",
+          offset: 0,
+          limit: 20,
+          folderId: "/library/album",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
       handler(
         {},
@@ -176,6 +254,48 @@ describe("validated IPC handlers", () => {
       offset: 0,
       limit: 20,
     });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fl",
+          view: "formats",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          format: "FLAC",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+      format: "FLAC",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "formats",
+          offset: 0,
+          limit: 20,
+          format: "FLAC",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
       handler(
         {},
