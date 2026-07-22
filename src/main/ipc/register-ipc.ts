@@ -393,7 +393,7 @@ export function registerIpc(
     channels.createSyncProfile,
     createValidatedHandler(
       syncProfileRequestSchema,
-      async ({ name, albumId }) => {
+      async ({ name, albumIds }) => {
         const selected = await dialog.showOpenDialog(dependencies.window, {
           title: "Choose a folder-backed DAP target",
           properties: ["openDirectory", "createDirectory"],
@@ -404,7 +404,7 @@ export function registerIpc(
           : dependencies.database.createSyncProfile(
               name,
               normalize(resolve(targetPath)),
-              albumId,
+              albumIds,
             );
       },
     ),

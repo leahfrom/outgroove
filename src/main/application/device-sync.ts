@@ -94,8 +94,6 @@ export class DeviceSync {
   async plan(profileId: string): Promise<SyncPlanDto> {
     const profile = this.database.getSyncProfile(profileId);
     if (!profile) throw new Error("Sync profile does not exist.");
-    const album = this.database.getAlbum(profile.album_id);
-    if (!album) throw new Error("Selected album is unavailable.");
     const previous = this.database.getLatestManifest(profileId);
     const previousManifest = previous
       ? (JSON.parse(previous.manifest_json) as Manifest)
@@ -111,7 +109,13 @@ export class DeviceSync {
     const conflicts: string[] = [];
     const errors: string[] = [];
     const destinations = new Map<string, string>();
-    for (const track of album.tracks) {
+    const albums = profile.album_selections.flatMap((selection) => {
+      const album = this.database.getAlbum(selection.id);
+      if (album) return [album];
+      errors.push(`Selected album “${selection.title}” is unavailable.`);
+      return [];
+    });
+    for (const track of albums.flatMap((album) => album.tracks)) {
       try {
         const sourceInfo = await stat(track.path);
         const signature = `${sourceInfo.size}:${Math.trunc(sourceInfo.mtimeMs)}`;

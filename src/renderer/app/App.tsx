@@ -205,10 +205,14 @@ export function App(): React.JSX.Element {
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
+  const [syncAlbums, setSyncAlbums] = useState<
+    readonly Pick<CatalogAlbum, "id" | "title" | "albumArtist">[]
+  >([]);
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
     targetPath: string;
+    albumIds: readonly string[];
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
   const [progress, setProgress] = useState<Progress>();
@@ -967,16 +971,46 @@ export function App(): React.JSX.Element {
   };
 
   const chooseTarget = async (): Promise<void> => {
-    if (!selectedAlbum) return;
+    if (syncAlbums.length === 0) return;
     const result = await window.outgroove.chooseSyncTargetAndCreateProfile({
-      name: `${selectedAlbum.title} test DAP`,
-      albumId: selectedAlbum.id,
+      name:
+        syncAlbums.length === 1
+          ? `${syncAlbums[0]?.title ?? "Album"} DAP`
+          : `Outgroove ${syncAlbums.length}-album DAP`,
+      albumIds: syncAlbums.map((album) => album.id),
     });
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
       setNotice(`DAP target selected: ${result.value.targetPath}`);
     } else if (!result.ok) setNotice(result.error.message);
+  };
+
+  const toggleSyncAlbum = (album: CatalogAlbum): void => {
+    const selected = syncAlbums.some((candidate) => candidate.id === album.id);
+    if (!selected && syncAlbums.length >= 100) {
+      setNotice("A DAP profile can contain up to 100 albums.");
+      return;
+    }
+    setSyncAlbums((current) =>
+      selected
+        ? current.filter((candidate) => candidate.id !== album.id)
+        : [...current, album]
+            .map(({ id, title, albumArtist }) => ({ id, title, albumArtist }))
+            .sort(
+              (left, right) =>
+                left.albumArtist.localeCompare(right.albumArtist) ||
+                left.title.localeCompare(right.title) ||
+                left.id.localeCompare(right.id),
+            ),
+    );
+    setProfile(undefined);
+    setSyncPlan(undefined);
+    setNotice(
+      selected
+        ? `Removed ${album.title} from the DAP selection.`
+        : `Added ${album.title} to the DAP selection. Choose a target only after the selection is complete.`,
+    );
   };
 
   const currentLibraryFilterDefinition = ():
@@ -2897,15 +2931,66 @@ export function App(): React.JSX.Element {
                     Copies only. This slice never deletes target files or
                     modifies source audio.
                   </p>
-                  <button disabled={busy} onClick={() => void chooseTarget()}>
-                    Choose fake DAP target
+                  <button
+                    disabled={
+                      busy ||
+                      (syncAlbums.length >= 100 &&
+                        !syncAlbums.some(
+                          (album) => album.id === selectedAlbum.id,
+                        ))
+                    }
+                    aria-pressed={syncAlbums.some(
+                      (album) => album.id === selectedAlbum.id,
+                    )}
+                    onClick={() => toggleSyncAlbum(selectedAlbum)}
+                  >
+                    {syncAlbums.some((album) => album.id === selectedAlbum.id)
+                      ? `Remove ${selectedAlbum.title} from DAP selection`
+                      : `Add ${selectedAlbum.title} to DAP selection`}
                   </button>
+                  <p aria-live="polite">
+                    {syncAlbums.length} of 100 albums selected for the next DAP
+                    profile.
+                  </p>
+                  {syncAlbums.length > 0 && (
+                    <ul aria-label="Albums selected for DAP sync">
+                      {syncAlbums.map((album) => (
+                        <li key={album.id}>
+                          {album.albumArtist} — {album.title}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="actions">
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => void chooseTarget()}
+                    >
+                      Choose DAP target for selected albums
+                    </button>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => {
+                        setSyncAlbums([]);
+                        setProfile(undefined);
+                        setSyncPlan(undefined);
+                        setNotice("Cleared the DAP album selection.");
+                      }}
+                    >
+                      Clear DAP album selection
+                    </button>
+                  </div>
                   {profile && (
                     <div>
                       <p>
                         <strong>{profile.name}</strong>
                         <br />
                         {profile.targetPath}
+                      </p>
+                      <p>
+                        Status: {profile.albumIds.length} selected{" "}
+                        {profile.albumIds.length === 1 ? "album" : "albums"}{" "}
+                        saved in this profile.
                       </p>
                       <button onClick={() => void planSync()}>
                         Preview sync plan

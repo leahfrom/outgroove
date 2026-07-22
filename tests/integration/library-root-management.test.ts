@@ -77,11 +77,9 @@ describe("watched Library root removal", () => {
          VALUES ('snapshot', 'operation', ?, '{}', '{}', 1)`,
       )
       .run(file.id);
-    database.createSyncProfile(
-      "Fixture DAP",
-      join(directory, "target"),
+    database.createSyncProfile("Fixture DAP", join(directory, "target"), [
       album.id,
-    );
+    ]);
     const completedJob = database.createScanJob(root.id);
     database.updateScanJob(completedJob.id, {
       state: "completed",

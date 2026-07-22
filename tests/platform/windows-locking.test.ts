@@ -107,11 +107,9 @@ async function setupSync(): Promise<{
   ).execute(root.id);
   const album = database.listAlbums()[0];
   if (!album) throw new Error("Fixture album missing");
-  const profile = database.createSyncProfile(
-    "Windows lock DAP",
-    target,
+  const profile = database.createSyncProfile("Windows lock DAP", target, [
     album.id,
-  );
+  ]);
   return { database, profileId: profile.id, target };
 }
 

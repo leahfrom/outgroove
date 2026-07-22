@@ -48,10 +48,14 @@ describe("database backup and restore", () => {
       query: "restored",
       view: "albums",
     });
-    donor.createSyncProfile(
+    const restoredAlbumIds = [
+      createAlbum(donor, "restored-album"),
+      createAlbum(donor, "second-album"),
+    ];
+    const profile = donor.createSyncProfile(
       "Fixture DAP",
       "/fixture/target",
-      createAlbum(donor, "restored-album"),
+      restoredAlbumIds,
     );
     await donor.backup(selectedPath);
     donor.close();
@@ -60,11 +64,11 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 15,
+      schemaVersion: 16,
       summary: {
         libraryRoots: 1,
-        albums: 1,
-        tracks: 1,
+        albums: 2,
+        tracks: 2,
         syncProfiles: 1,
         savedLibraryFilters: 1,
       },
@@ -77,6 +81,9 @@ describe("database backup and restore", () => {
     const restored = new CatalogDatabase(livePath);
     expect(restored.listLibraryRoots()[0]?.path).toBe("/restored/library");
     expect(restored.listSavedLibraryFilters()[0]?.name).toBe("Restored albums");
+    expect(restored.getSyncProfile(profile.id)?.album_ids).toEqual(
+      [...restoredAlbumIds].sort(),
+    );
     restored.close();
     const rollback = new CatalogDatabase(result.rollbackBackupPath);
     expect(rollback.listLibraryRoots()[0]?.path).toBe("/current/library");
@@ -124,7 +131,7 @@ function createAlbum(database: CatalogDatabase, suffix: string): string {
     durationSeconds: 1,
     tags: {
       title: "Track",
-      album: "Album",
+      album: `Album ${suffix}`,
       artist: "Artist",
       albumArtist: "Artist",
       trackNumber: 1,
@@ -133,7 +140,9 @@ function createAlbum(database: CatalogDatabase, suffix: string): string {
     },
     nativeTags: [],
   });
-  const album = database.listAlbums()[0];
+  const album = database
+    .listAlbums()
+    .find((candidate) => candidate.title === `Album ${suffix}`);
   if (!album) throw new Error("Fixture album missing");
   return album.id;
 }
