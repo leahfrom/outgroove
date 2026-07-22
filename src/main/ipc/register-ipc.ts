@@ -21,6 +21,8 @@ import {
   syncApplyRequestSchema,
   syncCancelRequestSchema,
   syncHistoryRequestSchema,
+  syncRecoveryApplyRequestSchema,
+  syncRecoveryPreviewRequestSchema,
   syncPlanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
@@ -456,6 +458,26 @@ export function registerIpc(
     channels.cancelSync,
     createValidatedHandler(syncCancelRequestSchema, ({ planId }) =>
       dependencies.sync.cancel(planId),
+    ),
+  );
+  ipcMain.handle(
+    channels.listSyncRecoveries,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.sync.listRecoverySummaries(),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewSyncRecovery,
+    createValidatedHandler(syncRecoveryPreviewRequestSchema, ({ runId }) =>
+      dependencies.sync.previewRecovery(runId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applySyncRecovery,
+    createValidatedHandler(
+      syncRecoveryApplyRequestSchema,
+      ({ runId, confirmationToken }) =>
+        dependencies.sync.recover(runId, confirmationToken),
     ),
   );
 }

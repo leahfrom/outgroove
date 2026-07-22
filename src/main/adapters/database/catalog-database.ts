@@ -76,6 +76,30 @@ interface ScanJobRow {
   finished_at: string | null;
 }
 
+export interface SyncRunChangeRecord {
+  readonly id: string;
+  readonly sequence: number;
+  readonly kind: "copy" | "playlist" | "manifest";
+  readonly relativeDestination: string;
+  readonly temporaryRelative: string;
+  readonly rollbackRelative: string | null;
+  readonly expectedHash: string;
+  readonly installed: boolean;
+}
+
+export interface SyncRunRecord {
+  readonly id: string;
+  readonly planId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly phase: "copying" | "finalizing";
+  readonly state: "applying" | "recovery-required" | "committed-cleanup";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly changes: readonly SyncRunChangeRecord[];
+}
+
 interface ScanStatements {
   readonly getFileByPathKey: Database.Statement;
   readonly restoreUnchangedFile: Database.Statement;
@@ -467,12 +491,20 @@ export class CatalogDatabase {
 
   private interruptOrphanedJobs(): void {
     const now = new Date().toISOString();
-    this.connection
-      .prepare(
-        `UPDATE jobs SET state='interrupted', error='Outgroove closed before this scan finished.', updated_at=?, finished_at=?
-         WHERE state IN ('queued', 'running', 'cancelling')`,
-      )
-      .run(now, now);
+    this.connection.transaction(() => {
+      this.connection
+        .prepare(
+          `UPDATE jobs SET state='interrupted', error='Outgroove closed before this scan finished.', updated_at=?, finished_at=?
+           WHERE state IN ('queued', 'running', 'cancelling')`,
+        )
+        .run(now, now);
+      this.connection
+        .prepare(
+          `UPDATE sync_runs SET state='recovery-required', updated_at=?
+           WHERE state='applying'`,
+        )
+        .run(now);
+    })();
   }
 
   backup(destinationPath: string): Promise<void> {
@@ -2287,6 +2319,200 @@ export class CatalogDatabase {
       .get(profileId) as { manifest_json: string } | undefined;
   }
 
+  createSyncRun(
+    planId: string,
+    profileId: string,
+    targetPath: string,
+  ): SyncRunRecord {
+    if (this.getSyncRunForProfile(profileId))
+      throw new Error(
+        "Recover this profile's interrupted sync before applying another plan.",
+      );
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `INSERT INTO sync_runs
+         (id, plan_id, profile_id, target_path, phase, state, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'copying', 'applying', ?, ?)`,
+      )
+      .run(id, planId, profileId, targetPath, now, now);
+    const run = this.getSyncRun(id);
+    if (!run)
+      throw new Error("Created sync recovery journal could not be read.");
+    return run;
+  }
+
+  addSyncRunChange(
+    runId: string,
+    change: Omit<SyncRunChangeRecord, "id" | "sequence" | "installed">,
+  ): SyncRunChangeRecord {
+    const id = randomUUID();
+    this.connection.transaction(() => {
+      const sequence = this.connection
+        .prepare(
+          `SELECT COALESCE(MAX(sequence), 0) + 1
+           FROM sync_run_changes WHERE run_id=?`,
+        )
+        .pluck()
+        .get(runId) as number;
+      this.connection
+        .prepare(
+          `INSERT INTO sync_run_changes
+           (id, run_id, sequence, kind, relative_destination,
+            temporary_relative, rollback_relative, expected_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          runId,
+          sequence,
+          change.kind,
+          change.relativeDestination,
+          change.temporaryRelative,
+          change.rollbackRelative,
+          change.expectedHash,
+        );
+      this.connection
+        .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+        .run(new Date().toISOString(), runId);
+    })();
+    const recorded = this.getSyncRun(runId)?.changes.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!recorded) throw new Error("Sync recovery change could not be read.");
+    return recorded;
+  }
+
+  markSyncRunChangeInstalled(runId: string, changeId: string): void {
+    const updated = this.connection
+      .prepare(
+        `UPDATE sync_run_changes SET installed=1
+         WHERE id=? AND run_id=?`,
+      )
+      .run(changeId, runId);
+    if (updated.changes !== 1)
+      throw new Error("Sync recovery change no longer exists.");
+    this.connection
+      .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), runId);
+  }
+
+  deleteSyncRunChange(runId: string, changeId: string): void {
+    this.connection
+      .prepare("DELETE FROM sync_run_changes WHERE id=? AND run_id=?")
+      .run(changeId, runId);
+    this.connection
+      .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), runId);
+  }
+
+  updateSyncRun(
+    runId: string,
+    update: {
+      phase?: SyncRunRecord["phase"];
+      state?: SyncRunRecord["state"];
+    },
+  ): SyncRunRecord {
+    const current = this.getSyncRun(runId);
+    if (!current) throw new Error("Sync recovery journal does not exist.");
+    this.connection
+      .prepare(`UPDATE sync_runs SET phase=?, state=?, updated_at=? WHERE id=?`)
+      .run(
+        update.phase ?? current.phase,
+        update.state ?? current.state,
+        new Date().toISOString(),
+        runId,
+      );
+    const updated = this.getSyncRun(runId);
+    if (!updated) throw new Error("Updated sync recovery journal is missing.");
+    return updated;
+  }
+
+  deleteSyncRun(runId: string): void {
+    this.connection.prepare("DELETE FROM sync_runs WHERE id=?").run(runId);
+  }
+
+  getSyncRunForProfile(profileId: string): SyncRunRecord | undefined {
+    const id = this.connection
+      .prepare("SELECT id FROM sync_runs WHERE profile_id=?")
+      .pluck()
+      .get(profileId) as string | undefined;
+    return id ? this.getSyncRun(id) : undefined;
+  }
+
+  getSyncRun(runId: string): SyncRunRecord | undefined {
+    const row = this.connection
+      .prepare(
+        `SELECT run.*, profile.name AS profile_name
+         FROM sync_runs run
+         JOIN sync_profiles profile ON profile.id=run.profile_id
+         WHERE run.id=?`,
+      )
+      .get(runId) as
+      | {
+          id: string;
+          plan_id: string;
+          profile_id: string;
+          profile_name: string;
+          target_path: string;
+          phase: SyncRunRecord["phase"];
+          state: SyncRunRecord["state"];
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return undefined;
+    const changes = this.connection
+      .prepare(
+        `SELECT id, sequence, kind, relative_destination,
+           temporary_relative, rollback_relative, expected_hash, installed
+         FROM sync_run_changes WHERE run_id=? ORDER BY sequence`,
+      )
+      .all(runId) as {
+      id: string;
+      sequence: number;
+      kind: SyncRunChangeRecord["kind"];
+      relative_destination: string;
+      temporary_relative: string;
+      rollback_relative: string | null;
+      expected_hash: string;
+      installed: 0 | 1;
+    }[];
+    return {
+      id: row.id,
+      planId: row.plan_id,
+      profileId: row.profile_id,
+      profileName: row.profile_name,
+      targetPath: row.target_path,
+      phase: row.phase,
+      state: row.state,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      changes: changes.map((change) => ({
+        id: change.id,
+        sequence: change.sequence,
+        kind: change.kind,
+        relativeDestination: change.relative_destination,
+        temporaryRelative: change.temporary_relative,
+        rollbackRelative: change.rollback_relative,
+        expectedHash: change.expected_hash,
+        installed: change.installed === 1,
+      })),
+    };
+  }
+
+  listSyncRuns(): readonly SyncRunRecord[] {
+    const ids = this.connection
+      .prepare("SELECT id FROM sync_runs ORDER BY created_at, id")
+      .pluck()
+      .all() as string[];
+    return ids.flatMap((id) => {
+      const run = this.getSyncRun(id);
+      return run ? [run] : [];
+    });
+  }
+
   listSyncHistory(profileId: string): readonly SyncHistoryItemDto[] {
     const profileExists = this.connection
       .prepare("SELECT 1 FROM sync_profiles WHERE id=?")
@@ -2333,31 +2559,74 @@ export class CatalogDatabase {
       }[];
     },
   ): void {
-    const manifestId = randomUUID();
+    this.connection.transaction(() =>
+      this.insertManifest(profileId, targetPath, manifest),
+    )();
+  }
+
+  completeSyncRun(
+    runId: string,
+    profileId: string,
+    targetPath: string,
+    manifest: {
+      entries: readonly {
+        sourceFileId: string;
+        relativeDestination: string;
+        signature: string;
+        size: number;
+      }[];
+    },
+  ): void {
     this.connection.transaction(() => {
+      const run = this.getSyncRun(runId);
+      if (!run) throw new Error("Sync recovery journal no longer exists.");
+      if (run.profileId !== profileId || run.targetPath !== targetPath)
+        throw new Error("Sync recovery journal no longer matches this plan.");
+      this.insertManifest(profileId, targetPath, manifest);
       this.connection
         .prepare(
-          "INSERT INTO sync_manifests (id, profile_id, target_path, created_at, manifest_json) VALUES (?, ?, ?, ?, ?)",
+          `UPDATE sync_runs SET state='committed-cleanup', updated_at=?
+           WHERE id=?`,
         )
-        .run(
-          manifestId,
-          profileId,
-          targetPath,
-          new Date().toISOString(),
-          JSON.stringify(manifest),
-        );
-      const insert = this.connection.prepare(
-        "INSERT INTO sync_entries (id, manifest_id, source_file_id, relative_destination, source_signature, size) VALUES (?, ?, ?, ?, ?, ?)",
-      );
-      for (const entry of manifest.entries)
-        insert.run(
-          randomUUID(),
-          manifestId,
-          entry.sourceFileId,
-          entry.relativeDestination,
-          entry.signature,
-          entry.size,
-        );
+        .run(new Date().toISOString(), runId);
     })();
+  }
+
+  private insertManifest(
+    profileId: string,
+    targetPath: string,
+    manifest: {
+      entries: readonly {
+        sourceFileId: string;
+        relativeDestination: string;
+        signature: string;
+        size: number;
+      }[];
+    },
+  ): void {
+    const manifestId = randomUUID();
+    this.connection
+      .prepare(
+        "INSERT INTO sync_manifests (id, profile_id, target_path, created_at, manifest_json) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        manifestId,
+        profileId,
+        targetPath,
+        new Date().toISOString(),
+        JSON.stringify(manifest),
+      );
+    const insert = this.connection.prepare(
+      "INSERT INTO sync_entries (id, manifest_id, source_file_id, relative_destination, source_signature, size) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    for (const entry of manifest.entries)
+      insert.run(
+        randomUUID(),
+        manifestId,
+        entry.sourceFileId,
+        entry.relativeDestination,
+        entry.signature,
+        entry.size,
+      );
   }
 }

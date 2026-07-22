@@ -14,6 +14,8 @@ import type {
   ScanErrorDto,
   ScanJobDto,
   SyncHistoryItemDto,
+  SyncRecoveryPreviewDto,
+  SyncRecoverySummaryDto,
   SyncPlanDto,
   SyncProfileDto,
   TagEditResultDto,
@@ -221,6 +223,11 @@ export function App(): React.JSX.Element {
   );
   const [syncHistoryProfileId, setSyncHistoryProfileId] = useState<string>();
   const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
+  const [syncRecoveries, setSyncRecoveries] = useState<
+    readonly SyncRecoverySummaryDto[]
+  >([]);
+  const [syncRecoveryPreview, setSyncRecoveryPreview] =
+    useState<SyncRecoveryPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -425,6 +432,14 @@ export function App(): React.JSX.Element {
     [],
   );
 
+  const refreshSyncRecoveries = useCallback(async (): Promise<void> => {
+    const result = await window.outgroove.listSyncRecoveries();
+    if (result.ok) {
+      setSyncRecoveries(result.value);
+      setSyncRecoveryPreview(undefined);
+    } else setNotice(result.error.message);
+  }, []);
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -473,6 +488,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
+  useEffect(() => {
+    void refreshSyncRecoveries();
+  }, [refreshSyncRecoveries]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -1313,7 +1331,7 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         if (result.value.outcome === "completed")
           setNotice(
-            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.`,
+            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
           );
         else if (result.value.outcome === "cancelled")
           setNotice(
@@ -1329,6 +1347,7 @@ export function App(): React.JSX.Element {
           await planSync();
           await refreshSyncHistory(applyingPlan.profileId);
         }
+        await refreshSyncRecoveries();
       } else setNotice(result.error.message);
     } finally {
       setProgress((current) => (current?.job === "sync" ? undefined : current));
@@ -1357,6 +1376,52 @@ export function App(): React.JSX.Element {
         "The sync is committing its playlist and manifest and can no longer be cancelled safely.",
       );
     else setNotice("The sync is no longer running.");
+  };
+
+  const applySyncRecovery = async (
+    recovery: SyncRecoveryPreviewDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncRecovery({
+        runId: recovery.runId,
+        confirmationToken: recovery.confirmationToken,
+      });
+      if (!result.ok) {
+        setNotice(result.error.message);
+        await refreshSyncRecoveries();
+        return;
+      }
+      await refreshSyncRecoveries();
+      if (result.value.complete) {
+        await refreshSyncHistory(recovery.profileId);
+        setNotice(
+          result.value.errors.length === 0
+            ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
+            : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
+        );
+      } else
+        setNotice(
+          `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
+        );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewSyncRecovery = async (
+    recovery: SyncRecoverySummaryDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewSyncRecovery({
+        runId: recovery.runId,
+      });
+      if (result.ok) setSyncRecoveryPreview(result.value);
+      else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -3231,8 +3296,71 @@ export function App(): React.JSX.Element {
         <p>
           Saved profiles can be reopened after restarting Outgroove. Opening a
           profile only restores its selection; it does not read or change the
-          target until you request a preview.
+          target until you request a preview. Interrupted syncs are detected at
+          startup, but the target is inspected read-only only when you review a
+          recovery.
         </p>
+        {syncRecoveries.length > 0 && (
+          <section aria-labelledby="sync-recovery-title" className="preview">
+            <h3 id="sync-recovery-title">Interrupted sync recovery</h3>
+            <p>
+              Review every action before confirming. Recovery never changes
+              source audio and leaves target files with unexpected contents
+              untouched.
+            </p>
+            <ul aria-label="Interrupted sync recoveries">
+              {syncRecoveries.map((recovery) => (
+                <li key={recovery.runId}>
+                  <strong>{recovery.profileName}</strong>
+                  <p>
+                    Status:{" "}
+                    {recovery.mode === "committed-cleanup"
+                      ? "Sync committed; internal cleanup was interrupted"
+                      : `Interrupted during ${recovery.phase}`}
+                  </p>
+                  <p>{recovery.targetPath}</p>
+                  <button
+                    disabled={busy}
+                    onClick={() => void reviewSyncRecovery(recovery)}
+                  >
+                    Review recovery for {recovery.profileName}
+                  </button>
+                  {syncRecoveryPreview?.runId === recovery.runId && (
+                    <div className="preview">
+                      {syncRecoveryPreview.actions.length === 0 ? (
+                        <p>No target changes can currently be applied.</p>
+                      ) : (
+                        <ul
+                          aria-label={`Recovery actions for ${recovery.profileName}`}
+                        >
+                          {syncRecoveryPreview.actions.map((action) => (
+                            <li key={`${action.action}:${action.path}`}>
+                              {action.action === "restore"
+                                ? "Restore"
+                                : "Remove"}
+                              : {action.path}. {action.explanation}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {syncRecoveryPreview.warnings.map((warning) => (
+                        <p key={warning}>Warning: {warning}</p>
+                      ))}
+                      <button
+                        disabled={busy || !syncRecoveryPreview.canRecover}
+                        onClick={() =>
+                          void applySyncRecovery(syncRecoveryPreview)
+                        }
+                      >
+                        Confirm recovery for {recovery.profileName}
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {syncProfiles.length === 0 ? (
           <p>No DAP profiles have been saved yet.</p>
         ) : (

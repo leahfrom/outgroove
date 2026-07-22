@@ -37,6 +37,9 @@ export const channels = {
   planSync: "sync:plan",
   applySync: "sync:apply",
   cancelSync: "sync:cancel",
+  listSyncRecoveries: "sync:list-recoveries",
+  previewSyncRecovery: "sync:preview-recovery",
+  applySyncRecovery: "sync:apply-recovery",
   jobProgress: "jobs:progress",
   scanJobUpdated: "jobs:scan-updated",
 } as const;

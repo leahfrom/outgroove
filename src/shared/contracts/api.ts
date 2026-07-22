@@ -228,6 +228,12 @@ export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
 export const syncCancelRequestSchema = z.object({ planId: z.uuid() }).strict();
+export const syncRecoveryApplyRequestSchema = z
+  .object({ runId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
+export const syncRecoveryPreviewRequestSchema = z
+  .object({ runId: z.uuid() })
+  .strict();
 export const databaseRestoreApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
@@ -473,6 +479,38 @@ export interface SyncCancelResultDto {
   readonly accepted: boolean;
   readonly state: "cancelling" | "finalizing" | "not-running";
 }
+export interface SyncRecoveryPreviewDto {
+  readonly runId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly interruptedAt: string;
+  readonly phase: "copying" | "finalizing";
+  readonly mode: "rollback" | "committed-cleanup";
+  readonly actions: readonly {
+    readonly path: string;
+    readonly action: "remove" | "restore";
+    readonly explanation: string;
+  }[];
+  readonly warnings: readonly string[];
+  readonly canRecover: boolean;
+  readonly confirmationToken: string;
+}
+export interface SyncRecoverySummaryDto {
+  readonly runId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly interruptedAt: string;
+  readonly phase: "copying" | "finalizing";
+  readonly mode: "rollback" | "committed-cleanup";
+}
+export interface SyncRecoveryResultDto {
+  readonly runId: string;
+  readonly recovered: number;
+  readonly errors: readonly string[];
+  readonly complete: boolean;
+}
 
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
@@ -582,6 +620,13 @@ export interface OutgrooveApi {
   cancelSync(
     request: z.infer<typeof syncCancelRequestSchema>,
   ): Promise<Result<SyncCancelResultDto>>;
+  listSyncRecoveries(): Promise<Result<readonly SyncRecoverySummaryDto[]>>;
+  previewSyncRecovery(
+    request: z.infer<typeof syncRecoveryPreviewRequestSchema>,
+  ): Promise<Result<SyncRecoveryPreviewDto>>;
+  applySyncRecovery(
+    request: z.infer<typeof syncRecoveryApplyRequestSchema>,
+  ): Promise<Result<SyncRecoveryResultDto>>;
   onJobProgress(
     listener: (progress: {
       job: "scan" | "tag-edit" | "sync" | "library-quality";

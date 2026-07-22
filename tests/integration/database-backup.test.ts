@@ -64,7 +64,7 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 16,
+      schemaVersion: 17,
       summary: {
         libraryRoots: 1,
         albums: 2,
@@ -114,6 +114,17 @@ describe("database backup and restore", () => {
     await expect(
       service.applyRestore(preview.operationId, preview.confirmationToken),
     ).rejects.toThrow("Cancel active scans");
+    live.updateScanJob(activeJob.id, { state: "cancelled", finished: true });
+    const albumId = createAlbum(live, "active-sync");
+    const profile = live.createSyncProfile("Active DAP", directory, [albumId]);
+    const run = live.createSyncRun("plan", profile.id, directory);
+    await expect(
+      service.applyRestore(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("pending DAP sync");
+    live.updateSyncRun(run.id, { state: "recovery-required" });
+    await expect(
+      service.applyRestore(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("pending DAP sync");
     expect(live.connection.open).toBe(true);
     expect(live.listLibraryRoots()).toHaveLength(1);
     live.close();

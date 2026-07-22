@@ -187,6 +187,9 @@ function api(applyVerified: boolean): OutgrooveApi {
     planSync: vi.fn(),
     applySync: vi.fn(),
     cancelSync: vi.fn(),
+    listSyncRecoveries: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    previewSyncRecovery: vi.fn(),
+    applySyncRecovery: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
@@ -2798,6 +2801,92 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("No new manifest was committed");
     expect(listSyncHistory).toHaveBeenCalledTimes(2);
     expect(retryConfirm).toBeEnabled();
+  });
+
+  it("shows restart-safe sync recovery actions and confirms them with the keyboard", async () => {
+    const mockApi = api(true);
+    const runId = "a0be4702-0050-4fca-b6df-cbba6529b5f9";
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const confirmationToken = "sync-recovery-confirmation-token-long-enough";
+    const listSyncRecoveries = vi
+      .spyOn(mockApi, "listSyncRecoveries")
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [
+          {
+            runId,
+            profileId,
+            profileName: "Road DAP",
+            targetPath: "/fixture/dap",
+            interruptedAt: "2026-07-22T10:00:00.000Z",
+            phase: "copying",
+            mode: "rollback",
+          },
+        ],
+      })
+      .mockResolvedValue({ ok: true, value: [] });
+    const previewSyncRecovery = vi
+      .spyOn(mockApi, "previewSyncRecovery")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          runId,
+          profileId,
+          profileName: "Road DAP",
+          targetPath: "/fixture/dap",
+          interruptedAt: "2026-07-22T10:00:00.000Z",
+          phase: "copying",
+          mode: "rollback",
+          actions: [
+            {
+              path: "/fixture/dap/Artist/Album/01 Track.flac",
+              action: "remove",
+              explanation: "Remove the uncommitted Outgroove copy.",
+            },
+          ],
+          warnings: [],
+          canRecover: true,
+          confirmationToken,
+        },
+      });
+    const applySyncRecovery = vi
+      .spyOn(mockApi, "applySyncRecovery")
+      .mockResolvedValue({
+        ok: true,
+        value: { runId, recovered: 1, errors: [], complete: true },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const recoveries = await screen.findByRole("list", {
+      name: "Interrupted sync recoveries",
+    });
+    const review = within(recoveries).getByRole("button", {
+      name: "Review recovery for Road DAP",
+    });
+    review.focus();
+    await user.keyboard("{Enter}");
+    expect(previewSyncRecovery).toHaveBeenCalledWith({ runId });
+    expect(recoveries).toHaveTextContent(
+      "Remove: /fixture/dap/Artist/Album/01 Track.flac",
+    );
+    const confirm = within(recoveries).getByRole("button", {
+      name: "Confirm recovery for Road DAP",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applySyncRecovery).toHaveBeenCalledWith({
+      runId,
+      confirmationToken,
+    });
+    expect(
+      await screen.findByText(/Interrupted sync recovery complete/u),
+    ).toHaveTextContent("1 change restored or removed");
+    await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(2));
   });
 
   it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {
