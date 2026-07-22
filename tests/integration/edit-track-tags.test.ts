@@ -175,12 +175,19 @@ it("applies and undoes track numbers in the exact confirmed order", async () => 
   const preview = editor.previewTrackNumberSequence(
     [second.fileId, first.fileId],
     7,
+    3,
   );
   expect(preview.files.map((file) => file.fileId)).toEqual([
     second.fileId,
     first.fileId,
   ]);
   expect(preview.files.map((file) => file.changes[0]?.after)).toEqual([7, 8]);
+  expect(
+    preview.files.map(
+      (file) =>
+        file.changes.find((change) => change.field === "discNumber")?.after,
+    ),
+  ).toEqual([3, 3]);
 
   const applied = await editor.applyTrackNumberSequence(
     preview.operationId,
@@ -190,10 +197,12 @@ it("applies and undoes track numbers in the exact confirmed order", async () => 
   expect((await reader.read(second.path)).tags).toMatchObject({
     title: original[1]?.title,
     trackNumber: 7,
+    discNumber: 3,
   });
   expect((await reader.read(first.path)).tags).toMatchObject({
     title: original[0]?.title,
     trackNumber: 8,
+    discNumber: 3,
   });
   expect(database.getEditOperation(preview.operationId)).toMatchObject({
     kind: "track-number-sequence-edit",
@@ -238,7 +247,7 @@ it("refuses a stale track number without aborting the remaining sequence", async
       fileId: first.fileId,
       verified: false,
       error:
-        "The track number changed after this preview; sequencing did not overwrite it.",
+        "A track or disc number changed after this preview; sequencing did not overwrite it.",
     },
     { fileId: second.fileId, verified: true, error: null },
   ]);

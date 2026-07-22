@@ -1054,6 +1054,7 @@ export class CatalogDatabase {
     previews: readonly { fileId: string; tags: NormalizedTags }[],
     proposals: readonly { fileId: string; changes: TrackTagChanges }[],
     startNumber: number,
+    discNumber: number | undefined,
     confirmationHash: string,
   ): string {
     const id = randomUUID();
@@ -1067,7 +1068,9 @@ export class CatalogDatabase {
       .run(
         id,
         albumId,
-        `Sequence track numbers from ${startNumber}`,
+        discNumber === undefined
+          ? `Sequence track numbers from ${startNumber}`
+          : `Sequence disc ${discNumber} track numbers from ${startNumber}`,
         confirmationHash,
         new Date().toISOString(),
         JSON.stringify(previews),

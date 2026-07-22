@@ -71,6 +71,8 @@ export function App(): React.JSX.Element {
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
   const [sequenceStart, setSequenceStart] = useState("1");
+  const [sequenceDiscEnabled, setSequenceDiscEnabled] = useState(false);
+  const [sequenceDiscNumber, setSequenceDiscNumber] = useState("1");
   const [sequencePreview, setSequencePreview] =
     useState<TrackBatchEditPreviewDto>();
   const [sequenceResult, setSequenceResult] = useState<TagEditResultDto>();
@@ -539,6 +541,9 @@ export function App(): React.JSX.Element {
     const result = await window.outgroove.previewTrackNumberSequence({
       fileIds: batchTrackIds,
       startNumber: Number(sequenceStart),
+      ...(sequenceDiscEnabled
+        ? { discNumber: Number(sequenceDiscNumber) }
+        : {}),
     });
     if (result.ok) {
       setSequencePreview(result.value);
@@ -1158,13 +1163,45 @@ export function App(): React.JSX.Element {
                         }}
                       />
                     </label>
+                    <div>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={sequenceDiscEnabled}
+                          onChange={(event) => {
+                            setSequenceDiscEnabled(event.target.checked);
+                            setSequencePreview(undefined);
+                          }}
+                        />
+                        Set one disc number for this sequence
+                      </label>
+                      <label>
+                        Sequence disc number
+                        <input
+                          type="number"
+                          min="1"
+                          max="999"
+                          disabled={!sequenceDiscEnabled}
+                          value={sequenceDiscNumber}
+                          onChange={(event) => {
+                            setSequenceDiscNumber(event.target.value);
+                            setSequencePreview(undefined);
+                          }}
+                        />
+                      </label>
+                    </div>
                     <button
                       disabled={
                         busy ||
                         batchTrackIds.length < 2 ||
                         !Number.isInteger(Number(sequenceStart)) ||
                         Number(sequenceStart) < 1 ||
-                        Number(sequenceStart) + batchTrackIds.length - 1 > 9999
+                        Number(sequenceStart) + batchTrackIds.length - 1 >
+                          9999 ||
+                        (sequenceDiscEnabled &&
+                          (!Number.isInteger(Number(sequenceDiscNumber)) ||
+                            Number(sequenceDiscNumber) < 1 ||
+                            Number(sequenceDiscNumber) > 999))
                       }
                       onClick={() => void previewTrackNumberSequence()}
                     >
@@ -1181,10 +1218,15 @@ export function App(): React.JSX.Element {
                             <li key={file.fileId}>
                               <strong>{file.path}</strong>:{" "}
                               {file.willWrite ? (
-                                <>
-                                  {file.changes[0]?.before ?? "Not set"} →{" "}
-                                  {file.changes[0]?.after}
-                                </>
+                                <ul>
+                                  {file.changes.map((change) => (
+                                    <li key={change.field}>
+                                      {change.field}:{" "}
+                                      {change.before ?? "Not set"} →{" "}
+                                      {change.after ?? "Not set"}
+                                    </li>
+                                  ))}
+                                </ul>
                               ) : (
                                 "unchanged — skipped"
                               )}

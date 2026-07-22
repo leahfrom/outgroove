@@ -282,10 +282,11 @@ export function registerIpc(
     channels.previewTrackNumberSequence,
     createValidatedHandler(
       trackNumberSequencePreviewRequestSchema,
-      ({ fileIds, startNumber }) =>
+      ({ fileIds, startNumber, discNumber }) =>
         dependencies.trackEditor.previewTrackNumberSequence(
           fileIds,
           startNumber,
+          discNumber,
         ),
     ),
   );

@@ -476,6 +476,7 @@ export class EditTrackTags {
   previewTrackNumberSequence(
     fileIds: readonly string[],
     startNumber: number,
+    discNumber?: number,
   ): TrackBatchEditPreviewDto {
     const tracks = fileIds.map((fileId) => {
       const track = this.database.getTrack(fileId);
@@ -491,6 +492,7 @@ export class EditTrackTags {
     const files = tracks.map(({ fileId, track }, index) => {
       const changes = changedTrackTags(track.tags, {
         trackNumber: startNumber + index,
+        ...(discNumber === undefined ? {} : { discNumber }),
       });
       const extension = extname(track.path).toLocaleLowerCase("en-US");
       return {
@@ -498,15 +500,17 @@ export class EditTrackTags {
         path: track.path,
         tags: track.tags,
         proposed: changes,
-        changes: Object.keys(changes).length
-          ? [
-              {
-                field: "trackNumber" as const,
-                before: track.tags.trackNumber,
-                after: changes.trackNumber ?? null,
-              },
-            ]
-          : [],
+        changes: editableTrackTagFields
+          .filter(
+            (field) =>
+              (field === "trackNumber" || field === "discNumber") &&
+              field in changes,
+          )
+          .map((field) => ({
+            field,
+            before: track.tags[field],
+            after: changes[field] ?? null,
+          })),
         warnings: this.writer.writableExtensions.has(extension)
           ? []
           : [`${extension || "This format"} is read-only in this slice.`],
@@ -525,6 +529,7 @@ export class EditTrackTags {
         changes: proposed,
       })),
       startNumber,
+      discNumber,
       tokenHash(confirmationToken),
     );
     return {
@@ -564,7 +569,13 @@ export class EditTrackTags {
       (JSON.parse(operation.proposed_tags_json) as StoredBatchProposal[]).map(
         (proposal) => {
           const changes = normalizeTrackTagChanges(proposal.changes);
-          if (Object.keys(changes).length !== 1 || !("trackNumber" in changes))
+          const fields = Object.keys(changes);
+          if (
+            fields.length === 0 ||
+            fields.some(
+              (field) => field !== "trackNumber" && field !== "discNumber",
+            )
+          )
             throw new Error("The stored track-number sequence is invalid.");
           return [proposal.fileId, changes] as const;
         },
@@ -594,7 +605,7 @@ export class EditTrackTags {
         error = "The file is not currently available for writing.";
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
-          "The track number changed after this preview; sequencing did not overwrite it.";
+          "A track or disc number changed after this preview; sequencing did not overwrite it.";
       else {
         try {
           const write = await this.writer.writeTags(target.path, changes);
