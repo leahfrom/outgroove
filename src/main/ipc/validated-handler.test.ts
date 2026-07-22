@@ -11,6 +11,7 @@ import {
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
   scanRequestSchema,
+  syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
@@ -49,6 +50,29 @@ describe("validated IPC handlers", () => {
       ok: true,
       value: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
     });
+  });
+
+  it("validates bounded, distinct multi-album DAP selections without accepting target paths", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(syncProfileRequestSchema, useCase);
+    const albumIds = [
+      "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+    ];
+    await expect(handler({}, { name: "Road DAP", albumIds })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ name: "Road DAP", albumIds });
+    for (const request of [
+      { name: "Empty", albumIds: [] },
+      { name: "Duplicate", albumIds: [albumIds[0], albumIds[0]] },
+      { name: "Path injection", albumIds, targetPath: "/Volumes/DAP" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
   });
 
   it("validates both stages of watched-root removal without accepting paths", async () => {

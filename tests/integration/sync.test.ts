@@ -1,6 +1,7 @@
 import {
   access,
   cp,
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -38,6 +39,7 @@ async function setup(): Promise<{
   database: CatalogDatabase;
   target: string;
   profileId: string;
+  albumId: string;
 }> {
   const directory = await mkdtemp(join(tmpdir(), "outgroove-sync-"));
   temporary.push(directory);
@@ -56,8 +58,14 @@ async function setup(): Promise<{
   ).execute(root.id);
   const album = database.listAlbums()[0];
   if (!album) throw new Error("Fixture album missing");
-  const profile = database.createSyncProfile("Fixture DAP", target, album.id);
-  return { directory, database, target, profileId: profile.id };
+  const profile = database.createSyncProfile("Fixture DAP", target, [album.id]);
+  return {
+    directory,
+    database,
+    target,
+    profileId: profile.id,
+    albumId: album.id,
+  };
 }
 
 describe("deterministic manifest-based sync", () => {
@@ -107,6 +115,70 @@ describe("deterministic manifest-based sync", () => {
     database.close();
   });
 
+  it("plans, applies, manifests, and repeats an explicit multi-album selection deterministically", async () => {
+    const { directory, database, target, albumId } = await setup();
+    const root = database.listLibraryRoots()[0];
+    const source = database.getAlbum(albumId)?.tracks[0]?.path;
+    if (!root || !source) throw new Error("Sync fixture source missing");
+    const secondPath = join(directory, "library", "second-album.mp3");
+    await copyFile(source, secondPath);
+    const info = await stat(secondPath);
+    database.upsertScannedFile(root.id, pathComparisonKey(secondPath), {
+      path: secondPath,
+      size: info.size,
+      modifiedMs: info.mtimeMs,
+      format: "MPEG",
+      durationSeconds: 1,
+      tags: {
+        title: "Other Track",
+        album: "Second Album",
+        artist: "Other Artist",
+        albumArtist: "Other Artist",
+        trackNumber: 1,
+        discNumber: 1,
+        year: "2025",
+      },
+      nativeTags: [],
+    });
+    const secondAlbum = database
+      .listAlbums()
+      .find((album) => album.title === "Second Album");
+    if (!secondAlbum) throw new Error("Second sync album missing");
+    expect(() =>
+      database.createSyncProfile("Duplicate selection", target, [
+        albumId,
+        albumId,
+      ]),
+    ).toThrow("distinct albums");
+    const profile = database.createSyncProfile("Two albums", target, [
+      secondAlbum.id,
+      albumId,
+    ]);
+    expect(profile.albumIds).toEqual([...profile.albumIds].sort());
+    expect(database.getSyncProfile(profile.id)?.album_ids).toEqual(
+      profile.albumIds,
+    );
+    const sync = new DeviceSync(database);
+    const first = await sync.plan(profile.id);
+    await expect(sync.plan(profile.id)).resolves.toEqual(first);
+    expect(first.copies).toHaveLength(3);
+    expect(first.conflicts).toEqual([]);
+    expect(first.errors).toEqual([]);
+    const result = await sync.apply(first.id, first.confirmationToken);
+    expect(result).toMatchObject({ copied: 3, unchanged: 0, errors: [] });
+    const playlist = await readFile(join(target, "Outgroove.m3u8"), "utf8");
+    expect(playlist).toContain("Fixture Album");
+    expect(playlist).toContain("Second Album");
+    const manifest = JSON.parse(
+      await readFile(join(target, ".outgroove", "manifest.json"), "utf8"),
+    ) as { entries: unknown[] };
+    expect(manifest.entries).toHaveLength(3);
+    const noOp = await sync.plan(profile.id);
+    expect(noOp.copies).toHaveLength(0);
+    expect(noOp.unchanged).toHaveLength(3);
+    database.close();
+  });
+
   it("refuses an unknown file at a generated destination", async () => {
     const { database, target, profileId } = await setup();
     const destination = join(
@@ -122,6 +194,68 @@ describe("deterministic manifest-based sync", () => {
       expect.stringContaining("Unknown target file"),
     ]);
     expect(await readFile(destination, "utf8")).toBe("user owned");
+    database.close();
+  });
+
+  it("reports an unavailable selected album in the preview instead of silently omitting it", async () => {
+    const { database, profileId } = await setup();
+    database.connection
+      .prepare("UPDATE audio_files SET scan_state='missing'")
+      .run();
+    const plan = await new DeviceSync(database).plan(profileId);
+    expect(plan.copies).toEqual([]);
+    expect(plan.unchanged).toEqual([]);
+    expect(plan.errors).toEqual([
+      "Selected album “Fixture Album” is unavailable.",
+    ]);
+    database.close();
+  });
+
+  it("reports a destination collision across selected albums before apply", async () => {
+    const { directory, database, target, albumId } = await setup();
+    const root = database.listLibraryRoots()[0];
+    const original = database.getAlbum(albumId)?.tracks[0];
+    if (!root || !original) throw new Error("Collision fixture missing");
+    const duplicatePath = join(directory, "library", "collision.mp3");
+    await copyFile(original.path, duplicatePath);
+    const info = await stat(duplicatePath);
+    const duplicateFileId = database.upsertScannedFile(
+      root.id,
+      pathComparisonKey(duplicatePath),
+      {
+        ...original,
+        path: duplicatePath,
+        size: info.size,
+        modifiedMs: info.mtimeMs,
+      },
+    );
+    const duplicateAlbumId = "00000000-0000-4000-8000-000000000001";
+    database.connection
+      .prepare(
+        `INSERT INTO albums (id, grouping_key, title, album_artist)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(
+        duplicateAlbumId,
+        "collision-fixture",
+        original.tags.album,
+        original.tags.albumArtist,
+      );
+    database.connection
+      .prepare("UPDATE tracks SET album_id=? WHERE file_id=?")
+      .run(duplicateAlbumId, duplicateFileId);
+    const profile = database.createSyncProfile("Collision", target, [
+      albumId,
+      duplicateAlbumId,
+    ]);
+    const sync = new DeviceSync(database);
+    const plan = await sync.plan(profile.id);
+    expect(plan.conflicts).toEqual([
+      expect.stringContaining("Destination collision"),
+    ]);
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "Resolve sync conflicts",
+    );
     database.close();
   });
 

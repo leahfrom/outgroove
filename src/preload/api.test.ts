@@ -52,4 +52,20 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("invoke");
     expect(api).not.toHaveProperty("ipcRenderer");
   });
+
+  it("maps a multi-album DAP selection to the fixed profile channel", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: null });
+    const request = {
+      name: "Road DAP",
+      albumIds: [
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      ],
+    };
+    await api.chooseSyncTargetAndCreateProfile(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.createSyncProfile,
+      request,
+    );
+  });
 });

@@ -202,7 +202,16 @@ export const trackNumberSequencePreviewRequestSchema = z
     { message: "The resulting track number exceeds 9999." },
   );
 export const syncProfileRequestSchema = z
-  .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
+  .object({
+    name: z.string().trim().min(1).max(100),
+    albumIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Choose each album only once.",
+      }),
+  })
   .strict();
 export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
@@ -509,7 +518,14 @@ export interface OutgrooveApi {
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(
     request: z.infer<typeof syncProfileRequestSchema>,
-  ): Promise<Result<{ id: string; name: string; targetPath: string } | null>>;
+  ): Promise<
+    Result<{
+      id: string;
+      name: string;
+      targetPath: string;
+      albumIds: readonly string[];
+    } | null>
+  >;
   planSync(
     request: z.infer<typeof syncPlanRequestSchema>,
   ): Promise<Result<SyncPlanDto>>;

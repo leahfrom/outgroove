@@ -420,6 +420,15 @@ export class CatalogDatabase {
             .run(canonical, duplicate);
           this.connection
             .prepare(
+              `INSERT OR IGNORE INTO sync_profile_albums (profile_id, album_id)
+               SELECT profile_id, ? FROM sync_profile_albums WHERE album_id=?`,
+            )
+            .run(canonical, duplicate);
+          this.connection
+            .prepare("DELETE FROM sync_profile_albums WHERE album_id=?")
+            .run(duplicate);
+          this.connection
+            .prepare(
               "UPDATE album_grouping_aliases SET album_id=? WHERE album_id=?",
             )
             .run(canonical, duplicate);
@@ -2088,29 +2097,78 @@ export class CatalogDatabase {
   createSyncProfile(
     name: string,
     targetPath: string,
-    albumId: string,
-  ): { id: string; name: string; targetPath: string } {
-    const id = randomUUID();
-    this.connection
+    albumIds: readonly string[],
+  ): { id: string; name: string; targetPath: string; albumIds: string[] } {
+    const selectedAlbumIds = [...new Set(albumIds)].sort();
+    if (
+      selectedAlbumIds.length < 1 ||
+      selectedAlbumIds.length > 100 ||
+      selectedAlbumIds.length !== albumIds.length
+    )
+      throw new Error("Choose between 1 and 100 distinct albums.");
+    const existingAlbums = this.connection
       .prepare(
-        "INSERT INTO sync_profiles (id, name, target_path, album_id, created_at) VALUES (?, ?, ?, ?, ?)",
+        `SELECT COUNT(*) FROM albums
+         WHERE id IN (${selectedAlbumIds.map(() => "?").join(",")})`,
       )
-      .run(id, name, targetPath, albumId, new Date().toISOString());
-    return { id, name, targetPath };
+      .pluck()
+      .get(...selectedAlbumIds) as number;
+    if (existingAlbums !== selectedAlbumIds.length)
+      throw new Error("One or more selected albums no longer exist.");
+    const id = randomUUID();
+    this.connection.transaction(() => {
+      this.connection
+        .prepare(
+          "INSERT INTO sync_profiles (id, name, target_path, album_id, created_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          name,
+          targetPath,
+          selectedAlbumIds[0],
+          new Date().toISOString(),
+        );
+      const insertSelection = this.connection.prepare(
+        "INSERT INTO sync_profile_albums (profile_id, album_id) VALUES (?, ?)",
+      );
+      for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
+    })();
+    return { id, name, targetPath, albumIds: selectedAlbumIds };
   }
 
-  getSyncProfile(
-    id: string,
-  ):
-    | { id: string; name: string; target_path: string; album_id: string }
+  getSyncProfile(id: string):
+    | {
+        id: string;
+        name: string;
+        target_path: string;
+        album_id: string;
+        album_ids: readonly string[];
+        album_selections: readonly { id: string; title: string }[];
+      }
     | undefined {
-    return this.connection
+    const profile = this.connection
       .prepare(
         "SELECT id, name, target_path, album_id FROM sync_profiles WHERE id=?",
       )
       .get(id) as
       | { id: string; name: string; target_path: string; album_id: string }
       | undefined;
+    if (!profile) return undefined;
+    const albumSelections = this.connection
+      .prepare(
+        `SELECT selection.album_id AS id, album.title
+         FROM sync_profile_albums selection
+         JOIN albums album ON album.id=selection.album_id
+         WHERE selection.profile_id=? ORDER BY selection.album_id`,
+      )
+      .all(id) as { id: string; title: string }[];
+    if (albumSelections.length === 0)
+      throw new Error("Sync profile has no selected albums.");
+    return {
+      ...profile,
+      album_ids: albumSelections.map((selection) => selection.id),
+      album_selections: albumSelections,
+    };
   }
 
   getLatestManifest(profileId: string): { manifest_json: string } | undefined {

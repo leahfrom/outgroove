@@ -43,6 +43,25 @@ const album: CatalogAlbum = {
   ],
 };
 
+const secondAlbum: CatalogAlbum = {
+  ...album,
+  id: "adb9be31-d450-45f9-99de-c9c6143988ad",
+  title: "Second Album",
+  albumArtist: "Other Artist",
+  tracks: album.tracks.map((track) => ({
+    ...track,
+    id: "1f5053fe-7aab-4ca8-861b-4ed97bc69f91",
+    path: "/fixture/second.mp3",
+    tags: {
+      ...track.tags,
+      title: "Other Track",
+      album: "Second Album",
+      artist: "Other Artist",
+      albumArtist: "Other Artist",
+    },
+  })),
+};
+
 function api(applyVerified: boolean): OutgrooveApi {
   const track = album.tracks[0];
   if (!track) throw new Error("Test track missing");
@@ -2601,6 +2620,120 @@ describe("tag edit UI safety states", () => {
       view: "albums",
       offset: 20,
       limit: 20,
+    });
+  });
+
+  it("selects multiple albums with the keyboard and requires a sync preview before copying", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, secondAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const chooseSyncTargetAndCreateProfile = vi
+      .spyOn(mockApi, "chooseSyncTargetAndCreateProfile")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          id: profileId,
+          name: "Outgroove 2-album DAP",
+          targetPath: "/fixture/dap",
+          albumIds: [album.id, secondAlbum.id],
+        },
+      });
+    const plan = {
+      id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+      profileId,
+      targetPath: "/fixture/dap",
+      confirmationToken: "sync-confirmation-token-long-enough",
+      copies: [album, secondAlbum].map((item) => ({
+        sourceFileId: item.tracks[0]?.id ?? item.id,
+        sourcePath: item.tracks[0]?.path ?? `/fixture/${item.id}.mp3`,
+        relativeDestination: `${item.albumArtist}/${item.title}/01-01 Track.mp3`,
+        size: 100,
+        signature: "100:1",
+      })),
+      unchanged: [],
+      conflicts: [],
+      errors: [],
+      requiredBytes: 200,
+    };
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({ ok: true, value: plan });
+    const applySync = vi.spyOn(mockApi, "applySync").mockResolvedValue({
+      ok: true,
+      value: {
+        copied: 2,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: [],
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const addFirst = await screen.findByRole("button", {
+      name: "Add Fixture Album to DAP selection",
+    });
+    addFirst.focus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: /^Second Album/u }));
+    const addSecond = screen.getByRole("button", {
+      name: "Add Second Album to DAP selection",
+    });
+    addSecond.focus();
+    await user.keyboard("{Enter}");
+    const selection = screen.getByRole("list", {
+      name: "Albums selected for DAP sync",
+    });
+    expect(
+      within(selection).getByText("Fixture Artist — Fixture Album"),
+    ).toBeVisible();
+    expect(
+      within(selection).getByText("Other Artist — Second Album"),
+    ).toBeVisible();
+
+    const chooseTarget = screen.getByRole("button", {
+      name: "Choose DAP target for selected albums",
+    });
+    chooseTarget.focus();
+    await user.keyboard("{Enter}");
+    expect(chooseSyncTargetAndCreateProfile).toHaveBeenCalledWith({
+      name: "Outgroove 2-album DAP",
+      albumIds: [album.id, secondAlbum.id],
+    });
+    expect(applySync).not.toHaveBeenCalled();
+
+    const previewButton = await screen.findByRole("button", {
+      name: "Preview sync plan",
+    });
+    previewButton.focus();
+    await user.keyboard("{Enter}");
+    const preview = await screen.findByLabelText("Sync confirmation");
+    expect(preview).toHaveTextContent("Fixture Album");
+    expect(preview).toHaveTextContent("Second Album");
+    expect(applySync).not.toHaveBeenCalled();
+    const confirm = within(preview).getByRole("button", {
+      name: "Confirm and apply copy plan",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applySync).toHaveBeenCalledWith({
+      planId: plan.id,
+      confirmationToken: plan.confirmationToken,
     });
   });
 
