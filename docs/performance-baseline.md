@@ -220,6 +220,41 @@ folder mapping, the 10 matching tracks loaded in 0.44 ms. These figures are
 local regression evidence; folder projection rebuild cost is included in scan
 or database-open work rather than the interactive query.
 
+## Local catalog milestone audit (2026-07-22)
+
+The v0.8 milestone audit rebuilt the packaged workers and repeated the full
+production discovery- and scan-database-worker profile twice on macOS 26.5.2
+arm64. The first attempt exposed an empty folder page after a successful scan:
+the worker had refreshed its own connection-local folder projection, while the
+main catalog connection still held its pre-scan projection. Scan completion and
+safe abandonment now refresh that main-connection projection without adding a
+durable table or changing IPC.
+
+The two fixed runs measured:
+
+| Measurement                        | Observed range |
+| ---------------------------------- | -------------- |
+| Fixture-tree generation            | 5.73 s         |
+| Initial scan                       | 20.52–20.73 s  |
+| Initial maximum event-loop delay   | 1.99–2.16 ms   |
+| Unchanged rescan                   | 5.25–5.68 s    |
+| Unchanged maximum event-loop delay | 1.35–1.42 ms   |
+| First 20-album page                | 5.85–6.95 ms   |
+| First 20-folder page               | 0.18–0.23 ms   |
+| Exact 10-track folder page         | 0.30–0.32 ms   |
+| Exact synthetic track search       | 8.03–13.36 ms  |
+| Active metadata cancellation       | 0.83–0.93 s    |
+| Peak total process RSS             | 600–602 MiB    |
+| Peak main-process JavaScript heap  | 74–96 MiB      |
+
+Both runs cataloged all 100,000 files without errors, returned all expected
+album, folder, folder-track, and search results, preserved all 10,000 albums
+after cancellation, and classified every file as unchanged on the repeat scan.
+Cancellation remains bounded but is slower than the earlier local observation;
+the measurement includes safe worker abandonment and rebuilding the main
+connection's temporary folder projection. It is a performance follow-up, not a
+data-safety failure or a platform-independent guarantee.
+
 ## Real metadata parsing profile
 
 `npm run benchmark:metadata` copies the redistributable preservation MP3 1,000

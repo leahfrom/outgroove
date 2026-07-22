@@ -2004,6 +2004,10 @@ export class CatalogDatabase {
     this.catalogSearchDirty = false;
   }
 
+  refreshConnectionLocalProjections(): void {
+    this.rebuildFolderCatalog();
+  }
+
   private rebuildCatalogSearch(): void {
     this.connection.exec(`
       DELETE FROM catalog_search_documents;

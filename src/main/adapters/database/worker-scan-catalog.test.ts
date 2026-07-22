@@ -109,6 +109,17 @@ describe("worker scan catalog", () => {
       });
       expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
       expect(database.listScanErrors()[0]?.path).toContain("corrupt.mp3");
+      expect(
+        database.queryLibrary({
+          query: "",
+          view: "folders",
+          offset: 0,
+          limit: 20,
+        }),
+      ).toMatchObject({
+        totalItems: 1,
+        folders: [{ albumCount: 1, trackCount: 2 }],
+      });
       await catalog.close();
       database.close();
       const movedDatabasePath = join(directory, "moved-catalog.sqlite3");
