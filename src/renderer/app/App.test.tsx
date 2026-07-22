@@ -550,6 +550,147 @@ describe("tag edit UI safety states", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows affected files and routes a keyboard action into sequencing without previewing", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const duplicateA: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/duplicate-a.flac",
+      tags: { ...firstTrack.tags, title: "Duplicate A", trackNumber: 2 },
+    };
+    const duplicateB: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "b9b669f0-5996-4365-b2ec-9f1348bedaf5",
+      path: "/fixture/duplicate-b.mp3",
+      tags: { ...firstTrack.tags, title: "Duplicate B", trackNumber: 2 },
+    };
+    const diagnosticAlbum = {
+      ...album,
+      tracks: [firstTrack, duplicateB, duplicateA],
+    };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [diagnosticAlbum],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const previewSequence = vi.spyOn(mockApi, "previewTrackNumberSequence");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const diagnostics = await screen.findByLabelText("Album data quality");
+    const duplicateFinding = within(diagnostics)
+      .getByRole("heading", { name: "Duplicate number on disc 1" })
+      .closest("article");
+    if (!duplicateFinding) throw new Error("Duplicate finding missing");
+    expect(duplicateFinding).toHaveTextContent("/fixture/duplicate-a.flac");
+    expect(duplicateFinding).toHaveTextContent("/fixture/duplicate-b.mp3");
+    expect(duplicateFinding).toHaveTextContent("Status: Needs attention");
+    const route = within(duplicateFinding).getByRole("button", {
+      name: "Select affected tracks for sequencing",
+    });
+    route.focus();
+    await user.keyboard("[Enter]");
+
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select Duplicate A for batch edit",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select Duplicate B for batch edit",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select Track for batch edit" }),
+    ).not.toBeChecked();
+    expect(screen.getByLabelText("Track number sequencing")).toHaveFocus();
+    expect(previewSequence).not.toHaveBeenCalled();
+    expect(
+      screen.queryByLabelText("Track number sequence confirmation"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "no preview or write has started",
+    );
+  });
+
+  it("routes inconsistent catalog values to an empty batch proposal", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      tags: {
+        ...firstTrack.tags,
+        title: "Second",
+        trackNumber: 2,
+        albumArtist: "Different Album Artist",
+        year: "2026-07",
+      },
+    };
+    const diagnosticAlbum = { ...album, tracks: [firstTrack, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [diagnosticAlbum],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const previewBatch = vi.spyOn(mockApi, "previewTrackBatchEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const diagnostics = await screen.findByLabelText("Album data quality");
+    expect(
+      within(diagnostics).getByRole("heading", {
+        name: "Inconsistent release dates",
+      }),
+    ).toBeVisible();
+    await user.click(
+      within(diagnostics).getByRole("button", {
+        name: "Select affected tracks for album artist review",
+      }),
+    );
+
+    expect(screen.getByLabelText("Batch metadata editor")).toHaveFocus();
+    expect(
+      screen.getByRole("checkbox", { name: "Change album artist" }),
+    ).toBeChecked();
+    expect(screen.getByLabelText("Batch album artist value")).toHaveValue("");
+    expect(
+      screen.getAllByRole("checkbox", { name: /for batch edit/u }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ checked: true }),
+        expect.objectContaining({ checked: true }),
+      ]),
+    );
+    expect(previewBatch).not.toHaveBeenCalled();
+    expect(
+      screen.queryByLabelText("Batch confirmation"),
+    ).not.toBeInTheDocument();
+  });
+
   it("reports verification failure without claiming success", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,

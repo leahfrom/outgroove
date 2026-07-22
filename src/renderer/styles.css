@@ -36,7 +36,8 @@ button:hover:not(:disabled) {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+[tabindex="-1"]:focus-visible {
   outline: 3px solid #e59b2d;
   outline-offset: 2px;
 }
@@ -200,6 +201,30 @@ pre {
   border-top: 1px solid #cdd5ce;
   margin-top: 1.5rem;
   padding-top: 1.5rem;
+}
+.diagnostic-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.diagnostic-list > li {
+  border: 1px solid #c5cec7;
+  border-radius: 10px;
+  margin-top: 0.75rem;
+  padding: 1rem;
+}
+.diagnostic-list h4,
+.diagnostic-list h5 {
+  margin-bottom: 0.4rem;
+}
+.diagnostic-list ul {
+  margin-bottom: 1rem;
+  overflow-wrap: anywhere;
+}
+.diagnostic-status {
+  color: #71352f;
+  font-weight: 750;
+  margin-bottom: 0.3rem;
 }
 .field-grid {
   display: grid;

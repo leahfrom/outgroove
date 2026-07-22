@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DatabaseRestorePreviewDto,
@@ -12,6 +12,11 @@ import type {
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  diagnoseAlbum,
+  type AlbumDiagnostic,
+  type AlbumDiagnosticWorkflow,
+} from "../../shared/domain/album-diagnostics";
 
 interface Progress {
   job: "scan" | "tag-edit" | "sync";
@@ -21,6 +26,23 @@ interface Progress {
 }
 
 const PAGE_SIZE = 20;
+
+function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
+  switch (workflow) {
+    case "track-editor":
+      return "Open affected track in the single-track editor";
+    case "sequence":
+      return "Select affected tracks for sequencing";
+    case "batch-track-artist":
+      return "Select affected tracks for track artist review";
+    case "batch-album-artist":
+      return "Select affected tracks for album artist review";
+    case "batch-release-date":
+      return "Select affected tracks for release date review";
+    case "album-title":
+      return "Open the album title editor";
+  }
+}
 
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
@@ -91,6 +113,14 @@ export function App(): React.JSX.Element {
     "Choose a fixture or test library folder to begin.",
   );
   const [busy, setBusy] = useState(false);
+  const [diagnosticDestination, setDiagnosticDestination] = useState<{
+    target: "track" | "batch" | "sequence" | "album-title";
+    request: number;
+  }>();
+  const trackEditorRef = useRef<HTMLElement>(null);
+  const batchEditorRef = useRef<HTMLElement>(null);
+  const sequenceEditorRef = useRef<HTMLDivElement>(null);
+  const albumTitleEditorRef = useRef<HTMLElement>(null);
   const scanActive =
     scanJob?.state === "queued" ||
     scanJob?.state === "running" ||
@@ -103,6 +133,21 @@ export function App(): React.JSX.Element {
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
   );
+  const albumDiagnostics = useMemo(
+    () => (selectedAlbum ? diagnoseAlbum(selectedAlbum) : []),
+    [selectedAlbum],
+  );
+
+  useEffect(() => {
+    if (!diagnosticDestination) return;
+    const target = {
+      track: trackEditorRef.current,
+      batch: batchEditorRef.current,
+      sequence: sequenceEditorRef.current,
+      "album-title": albumTitleEditorRef.current,
+    }[diagnosticDestination.target];
+    target?.focus();
+  }, [diagnosticDestination]);
 
   useEffect(() => {
     setBatchTrackIds([]);
@@ -374,6 +419,70 @@ export function App(): React.JSX.Element {
       discNumber: track.tags.discNumber?.toString() ?? "",
       year: track.tags.year ?? "",
     });
+  };
+
+  const routeDiagnostic = (finding: AlbumDiagnostic): void => {
+    if (!selectedAlbum) return;
+    const affectedIds = [...finding.affectedTrackIds];
+    setBatchTrackIds(affectedIds);
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+    let target: "track" | "batch" | "sequence" | "album-title";
+    switch (finding.workflow) {
+      case "track-editor": {
+        const firstTrack = selectedAlbum.tracks.find((track) =>
+          affectedIds.includes(track.id),
+        );
+        if (firstTrack) editTrack(firstTrack);
+        target = "track";
+        break;
+      }
+      case "sequence":
+        target = "sequence";
+        break;
+      case "batch-track-artist":
+        setBatchEnabled({
+          artist: true,
+          albumArtist: false,
+          discNumber: false,
+          year: false,
+        });
+        setBatchDraft((draft) => ({ ...draft, artist: "" }));
+        target = "batch";
+        break;
+      case "batch-album-artist":
+        setBatchEnabled({
+          artist: false,
+          albumArtist: true,
+          discNumber: false,
+          year: false,
+        });
+        setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
+        target = "batch";
+        break;
+      case "batch-release-date":
+        setBatchEnabled({
+          artist: false,
+          albumArtist: false,
+          discNumber: false,
+          year: true,
+        });
+        setBatchDraft((draft) => ({ ...draft, year: "" }));
+        target = "batch";
+        break;
+      case "album-title":
+        target = "album-title";
+        break;
+    }
+    setNotice(
+      "Affected tracks selected. Review and propose a change in the Workbench; no preview or write has started.",
+    );
+    setDiagnosticDestination((current) => ({
+      target,
+      request: (current?.request ?? 0) + 1,
+    }));
   };
 
   const previewTrackEdit = async (): Promise<void> => {
@@ -839,6 +948,63 @@ export function App(): React.JSX.Element {
                     <p>{selectedAlbum.albumArtist}</p>
                   </div>
                 </div>
+                <section
+                  className="card diagnostics"
+                  aria-label="Album data quality"
+                >
+                  <h3>Workbench · album data quality</h3>
+                  <p>
+                    Findings come from the current local catalog. They select a
+                    review workflow but never infer, preview, or write a
+                    correction.
+                  </p>
+                  {albumDiagnostics.length === 0 ? (
+                    <p>Status: No data-quality findings for this album.</p>
+                  ) : (
+                    <ol className="diagnostic-list">
+                      {albumDiagnostics.map((finding) => {
+                        const affectedTracks = finding.affectedTrackIds.flatMap(
+                          (fileId) => {
+                            const track = selectedAlbum.tracks.find(
+                              (candidate) => candidate.id === fileId,
+                            );
+                            return track ? [track] : [];
+                          },
+                        );
+                        return (
+                          <li key={finding.id}>
+                            <article
+                              aria-labelledby={`diagnostic-${finding.id}`}
+                            >
+                              <p className="diagnostic-status">
+                                Status:{" "}
+                                {finding.severity === "needs-attention"
+                                  ? "Needs attention"
+                                  : "Review recommended"}
+                              </p>
+                              <h4 id={`diagnostic-${finding.id}`}>
+                                {finding.title}
+                              </h4>
+                              <p>{finding.explanation}</p>
+                              <h5>Affected files</h5>
+                              <ul>
+                                {affectedTracks.map((track) => (
+                                  <li key={track.id}>{track.path}</li>
+                                ))}
+                              </ul>
+                              <button
+                                disabled={busy}
+                                onClick={() => routeDiagnostic(finding)}
+                              >
+                                {diagnosticActionLabel(finding.workflow)}
+                              </button>
+                            </article>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </section>
                 <div className="track-list">
                   {selectedAlbum.tracks.map((track) => (
                     <details key={track.id}>
@@ -878,7 +1044,12 @@ export function App(): React.JSX.Element {
                     </details>
                   ))}
                 </div>
-                <section className="card" aria-label="Batch metadata editor">
+                <section
+                  className="card"
+                  aria-label="Batch metadata editor"
+                  ref={batchEditorRef}
+                  tabIndex={-1}
+                >
                   <h3>Workbench · batch metadata</h3>
                   <p>
                     {batchTrackIds.length} tracks selected. Enable only the
@@ -1111,7 +1282,12 @@ export function App(): React.JSX.Element {
                       </ul>
                     </div>
                   )}
-                  <div className="preview" aria-label="Track number sequencing">
+                  <div
+                    className="preview"
+                    aria-label="Track number sequencing"
+                    ref={sequenceEditorRef}
+                    tabIndex={-1}
+                  >
                     <h4>Sequence track numbers</h4>
                     <p>
                       Outgroove uses exactly the order below. Reorder it
@@ -1275,7 +1451,12 @@ export function App(): React.JSX.Element {
                   </div>
                 </section>
                 {selectedTrack && (
-                  <section className="card" aria-label="Track metadata editor">
+                  <section
+                    className="card"
+                    aria-label="Track metadata editor"
+                    ref={trackEditorRef}
+                    tabIndex={-1}
+                  >
                     <h3>Workbench · track metadata</h3>
                     <p>
                       Editing {selectedTrack.tags.title}. Only fields that
@@ -1432,7 +1613,12 @@ export function App(): React.JSX.Element {
                     )}
                   </section>
                 )}
-                <section className="card">
+                <section
+                  className="card"
+                  aria-label="Album title editor"
+                  ref={albumTitleEditorRef}
+                  tabIndex={-1}
+                >
                   <h3>Workbench · album title</h3>
                   <label htmlFor="album-title">Proposed title</label>
                   <div className="inline">
