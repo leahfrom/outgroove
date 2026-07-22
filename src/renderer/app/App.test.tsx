@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1294,6 +1294,159 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByText("Invalid MPEG")).toBeVisible();
     expect(screen.getByText("Folder could not be scanned")).toBeVisible();
     expect(screen.getByText("/fixture/blocked")).toBeVisible();
+  });
+
+  it("queries the worker-backed data-quality view and shows its progress", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const flaggedAlbum: CatalogAlbum = {
+      ...album,
+      id: "8c196850-bca9-48b7-ae7f-dc760fbf8f2b",
+      title: "Flagged Album",
+      tracks: [
+        {
+          ...firstTrack,
+          id: "dbb54a30-a8ce-45e1-9354-d6ae9a432afc",
+          path: "/fixture/flagged.flac",
+          tags: {
+            ...firstTrack.tags,
+            album: "Flagged Album",
+            title: "Unknown title",
+          },
+        },
+      ],
+    };
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "data-quality" ? [flaggedAlbum] : [album],
+            scanErrors: [],
+            totalItems: 1,
+            offset: request.offset,
+            limit: 20,
+          },
+        }),
+      );
+    vi.spyOn(mockApi, "onJobProgress").mockImplementation((listener) => {
+      listener({
+        job: "library-quality",
+        completed: 5,
+        total: 10,
+        detail: "Checked 5 of 10 albums.",
+      });
+      return () => undefined;
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByLabelText("library-quality progress"),
+    ).toBeVisible();
+    expect(screen.getByText("5/10: Checked 5 of 10 albums.")).toBeVisible();
+    await user.selectOptions(screen.getByLabelText("View"), "data-quality");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "data-quality",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(await screen.findByText("1 album needing review")).toBeVisible();
+    expect(
+      screen.getByText("Albums needing review on this page: 1 of 1."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Missing track titles" }),
+    ).toBeVisible();
+  });
+
+  it("ignores a superseded data-quality result after returning to Albums", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const freshAlbum: CatalogAlbum = {
+      ...album,
+      id: "700f2cf0-8c79-4db2-8788-39745eb51bee",
+      title: "Fresh Albums View",
+      tracks: [
+        {
+          ...firstTrack,
+          id: "c9792048-cf37-4994-b936-feba233552f9",
+          tags: { ...firstTrack.tags, album: "Fresh Albums View" },
+        },
+      ],
+    };
+    let resolveQuality:
+      | ((result: Awaited<ReturnType<OutgrooveApi["queryLibrary"]>>) => void)
+      | undefined;
+    const qualityResult = new Promise<
+      Awaited<ReturnType<OutgrooveApi["queryLibrary"]>>
+    >((resolve) => {
+      resolveQuality = resolve;
+    });
+    const mockApi = api(true);
+    let albumQueries = 0;
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) => {
+        if (request.view === "data-quality") return qualityResult;
+        albumQueries++;
+        return Promise.resolve({
+          ok: true,
+          value: {
+            albums: albumQueries === 1 ? [album] : [freshAlbum],
+            scanErrors: [],
+            totalItems: 1,
+            offset: request.offset,
+            limit: 20,
+          },
+        });
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "data-quality");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenCalledWith({
+        query: "",
+        view: "data-quality",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.selectOptions(screen.getByLabelText("View"), "albums");
+    expect(
+      await screen.findByRole("heading", { name: "Fresh Albums View" }),
+    ).toBeVisible();
+    act(() => {
+      resolveQuality?.({
+        ok: true,
+        value: {
+          albums: [],
+          scanErrors: [],
+          totalItems: 0,
+          offset: 0,
+          limit: 20,
+        },
+      });
+    });
+    expect(
+      screen.getByRole("heading", { name: "Fresh Albums View" }),
+    ).toBeVisible();
+    expect(screen.queryByText("No albums need review")).not.toBeInTheDocument();
   });
 
   it("requests the next bounded album page from main", async () => {

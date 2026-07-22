@@ -19,7 +19,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 
 interface Progress {
-  job: "scan" | "tag-edit" | "sync";
+  job: "scan" | "tag-edit" | "sync" | "library-quality";
   completed: number;
   total: number;
   detail: string;
@@ -50,9 +50,9 @@ export function App(): React.JSX.Element {
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
-  const [libraryView, setLibraryView] = useState<"albums" | "scan-errors">(
-    "albums",
-  );
+  const [libraryView, setLibraryView] = useState<
+    "albums" | "data-quality" | "scan-errors"
+  >("albums");
   const [pageOffset, setPageOffset] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [restorePreview, setRestorePreview] =
@@ -121,6 +121,7 @@ export function App(): React.JSX.Element {
   const batchEditorRef = useRef<HTMLElement>(null);
   const sequenceEditorRef = useRef<HTMLDivElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
+  const libraryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
     scanJob?.state === "running" ||
@@ -168,12 +169,14 @@ export function App(): React.JSX.Element {
   }, [selectedAlbumId]);
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
+    const requestId = ++libraryRequestId.current;
     const result = await window.outgroove.queryLibrary({
       query,
       view: libraryView,
       offset: pageOffset,
       limit: PAGE_SIZE,
     });
+    if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
       if (result.value.totalItems <= pageOffset && pageOffset > 0) {
         setPageOffset(
@@ -865,11 +868,16 @@ export function App(): React.JSX.Element {
           id="library-view"
           value={libraryView}
           onChange={(event) => {
-            setLibraryView(event.target.value as "albums" | "scan-errors");
+            const view = event.target.value as
+              "albums" | "data-quality" | "scan-errors";
+            setLibraryView(view);
             setPageOffset(0);
+            if (view === "data-quality")
+              setNotice("Checking album data quality in a background worker…");
           }}
         >
           <option value="albums">Albums</option>
+          <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
         </select>
         <button type="submit">Search</button>
@@ -887,7 +895,18 @@ export function App(): React.JSX.Element {
         )}
       </form>
       <p className="result-count" aria-live="polite">
-        {totalItems} {libraryView === "albums" ? "albums" : "scan problems"}
+        {totalItems}{" "}
+        {libraryView === "scan-errors"
+          ? totalItems === 1
+            ? "scan problem"
+            : "scan problems"
+          : libraryView === "data-quality"
+            ? totalItems === 1
+              ? "album needing review"
+              : "albums needing review"
+            : totalItems === 1
+              ? "album"
+              : "albums"}
         {query ? ` matching “${query}”` : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -913,13 +932,21 @@ export function App(): React.JSX.Element {
         </main>
       ) : albums.length === 0 ? (
         <main className="empty">
-          <h2>{query ? "No matching albums" : "Your Library is empty"}</h2>
+          <h2>
+            {query
+              ? "No matching albums"
+              : libraryView === "data-quality"
+                ? "No albums need review"
+                : "Your Library is empty"}
+          </h2>
           <p>
             {query
               ? "Try a different album, artist, track, format, or path."
-              : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+              : libraryView === "data-quality"
+                ? "The current catalog has no album data-quality findings."
+                : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
           </p>
-          {!query && (
+          {!query && libraryView !== "data-quality" && (
             <button
               disabled={busy || scanActive}
               onClick={() => void chooseAndScan()}

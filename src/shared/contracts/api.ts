@@ -11,7 +11,7 @@ export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum(["albums", "scan-errors"]),
+    view: z.enum(["albums", "data-quality", "scan-errors"]),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
   })
@@ -325,7 +325,7 @@ export interface OutgrooveApi {
   ): Promise<Result<SyncApplyResultDto>>;
   onJobProgress(
     listener: (progress: {
-      job: "scan" | "tag-edit" | "sync";
+      job: "scan" | "tag-edit" | "sync" | "library-quality";
       completed: number;
       total: number;
       detail: string;
