@@ -15,6 +15,8 @@ import {
   scanRequestSchema,
   syncProfileRequestSchema,
   syncHistoryRequestSchema,
+  syncRecoveryApplyRequestSchema,
+  syncRecoveryPreviewRequestSchema,
   syncCancelRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
@@ -223,6 +225,53 @@ describe("validated IPC handlers", () => {
       { planId: "not-a-uuid" },
       { planId, targetPath: "/Volumes/DAP" },
       { planId, deletePartialFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("requires an exact interrupted-sync recovery confirmation", async () => {
+    const useCase = vi.fn(() => ({ complete: true }));
+    const handler = createValidatedHandler(
+      syncRecoveryApplyRequestSchema,
+      useCase,
+    );
+    const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const confirmationToken = "sync-recovery-confirmation-token-long-enough";
+    await expect(
+      handler({}, { runId, confirmationToken }),
+    ).resolves.toMatchObject({ ok: true, value: { complete: true } });
+    expect(useCase).toHaveBeenCalledWith({ runId, confirmationToken });
+    for (const request of [
+      { runId, confirmationToken: "short" },
+      { runId: "not-a-uuid", confirmationToken },
+      { runId, confirmationToken, targetPath: "/Volumes/DAP" },
+      { runId, confirmationToken, deleteUnknownFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only a recovery run identifier for read-only inspection", async () => {
+    const useCase = vi.fn(() => ({ actions: [] }));
+    const handler = createValidatedHandler(
+      syncRecoveryPreviewRequestSchema,
+      useCase,
+    );
+    const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { runId })).resolves.toMatchObject({
+      ok: true,
+      value: { actions: [] },
+    });
+    expect(useCase).toHaveBeenCalledWith({ runId });
+    for (const request of [
+      { runId: "not-a-uuid" },
+      { runId, targetPath: "/Volumes/DAP" },
+      { runId, deleteUnknownFiles: true },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,

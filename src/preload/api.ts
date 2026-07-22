@@ -71,6 +71,11 @@ export const api: OutgrooveApi = {
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),
   applySync: (request) => ipcRenderer.invoke(channels.applySync, request),
   cancelSync: (request) => ipcRenderer.invoke(channels.cancelSync, request),
+  listSyncRecoveries: () => ipcRenderer.invoke(channels.listSyncRecoveries, {}),
+  previewSyncRecovery: (request) =>
+    ipcRenderer.invoke(channels.previewSyncRecovery, request),
+  applySyncRecovery: (request) =>
+    ipcRenderer.invoke(channels.applySyncRecovery, request),
   onJobProgress: (listener) => {
     const wrapped = (
       _event: Electron.IpcRendererEvent,

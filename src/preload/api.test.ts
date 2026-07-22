@@ -104,5 +104,26 @@ describe("preload saved-filter allowlist", () => {
       channels.cancelSync,
       cancellation,
     );
+
+    await api.listSyncRecoveries();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listSyncRecoveries,
+      {},
+    );
+    const recoveryPreview = { runId: update.id };
+    await api.previewSyncRecovery(recoveryPreview);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewSyncRecovery,
+      recoveryPreview,
+    );
+    const recovery = {
+      runId: update.id,
+      confirmationToken: "sync-recovery-confirmation-token-long-enough",
+    };
+    await api.applySyncRecovery(recovery);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.applySyncRecovery,
+      recovery,
+    );
   });
 });

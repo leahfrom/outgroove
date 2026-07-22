@@ -5,8 +5,10 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
+  symlink,
   utimes,
   writeFile,
 } from "node:fs/promises";
@@ -69,7 +71,330 @@ async function setup(): Promise<{
   };
 }
 
+async function firstRecovery(
+  sync: DeviceSync,
+): Promise<Awaited<ReturnType<DeviceSync["previewRecovery"]>>> {
+  const summary = sync.listRecoverySummaries()[0];
+  if (!summary) throw new Error("Sync recovery summary missing.");
+  return sync.previewRecovery(summary.runId);
+}
+
 describe("deterministic manifest-based sync", () => {
+  it("detects a copy-stage process interruption and recovers after reconnect", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markInstalled: () => void = () => undefined;
+    const installed = new Promise<void>((resolve) => {
+      markInstalled = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      afterCopyInstalled: async () => {
+        markInstalled();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await installed;
+    const firstDestination = plan.copies[0]?.relativeDestination;
+    if (!firstDestination) throw new Error("Recovery fixture copy missing.");
+    expect(await readFile(join(target, firstDestination))).toBeDefined();
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const disconnected = `${target}-disconnected`;
+    await rename(target, disconnected);
+    const unavailable = await firstRecovery(recoverySync);
+    expect(unavailable).toMatchObject({
+      profileId,
+      phase: "copying",
+      mode: "rollback",
+      canRecover: false,
+    });
+    await rename(disconnected, target);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: join(target, firstDestination),
+          action: "remove",
+        }),
+      ]),
+    );
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).resolves.toMatchObject({ complete: true, recovered: 1, errors: [] });
+    await expect(access(join(target, firstDestination))).rejects.toThrow();
+    expect(reopened.listSyncRuns()).toEqual([]);
+    const retry = await recoverySync.plan(profileId);
+    expect(retry.conflicts).toEqual([]);
+    expect(retry.copies).toHaveLength(2);
+  });
+
+  it("restores manifest-owned bytes after a replacement process interruption", async () => {
+    const { directory, database, target, profileId } = await setup();
+    const initial = new DeviceSync(database);
+    const initialPlan = await initial.plan(profileId);
+    await initial.apply(initialPlan.id, initialPlan.confirmationToken);
+    const first = initialPlan.copies[0];
+    if (!first) throw new Error("Replacement recovery fixture missing.");
+    const destination = join(target, first.relativeDestination);
+    const previousBytes = await readFile(destination);
+    const sourceInfo = await stat(first.sourcePath);
+    await writeFile(
+      first.sourcePath,
+      Buffer.concat([await readFile(first.sourcePath), Buffer.from("changed")]),
+    );
+    const changedTime = new Date(sourceInfo.mtimeMs + 2_000);
+    await utimes(first.sourcePath, changedTime, changedTime);
+
+    let markInstalled: () => void = () => undefined;
+    const installed = new Promise<void>((resolve) => {
+      markInstalled = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const interrupted = new DeviceSync(database, {
+      afterCopyInstalled: async () => {
+        markInstalled();
+        await neverResume;
+      },
+    });
+    const replacement = await interrupted.plan(profileId);
+    void interrupted.apply(replacement.id, replacement.confirmationToken);
+    await installed;
+    expect(await readFile(destination)).not.toEqual(previousBytes);
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: destination, action: "restore" }),
+      ]),
+    );
+    await recoverySync.recover(preview.runId, preview.confirmationToken);
+    expect(await readFile(destination)).toEqual(previousBytes);
+    expect(reopened.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("rolls back copies and playlist after a finalization interruption", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markFinalizing: () => void = () => undefined;
+    const finalizing = new Promise<void>((resolve) => {
+      markFinalizing = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      beforeManifest: async () => {
+        markFinalizing();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await finalizing;
+    expect(await readFile(join(target, "Outgroove.m3u8"), "utf8")).toContain(
+      "#EXTM3U",
+    );
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview).toMatchObject({ phase: "finalizing", mode: "rollback" });
+    expect(preview.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: join(target, "Outgroove.m3u8"),
+          action: "remove",
+        }),
+      ]),
+    );
+    await recoverySync.recover(preview.runId, preview.confirmationToken);
+    await expect(access(join(target, "Outgroove.m3u8"))).rejects.toThrow();
+    await expect(
+      access(join(target, ".outgroove", "manifest.json")),
+    ).rejects.toThrow();
+    for (const item of plan.copies)
+      await expect(
+        access(join(target, item.relativeDestination)),
+      ).rejects.toThrow();
+    expect(reopened.listSyncHistory(profileId)).toEqual([]);
+  });
+
+  it("rolls back a target manifest installed before SQLite commit", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markManifestInstalled: () => void = () => undefined;
+    const manifestInstalled = new Promise<void>((resolve) => {
+      markManifestInstalled = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      afterTargetManifestInstalled: async () => {
+        markManifestInstalled();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await manifestInstalled;
+    expect(
+      await readFile(join(target, ".outgroove", "manifest.json"), "utf8"),
+    ).toContain(profileId);
+    expect(database.listSyncHistory(profileId)).toEqual([]);
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: join(target, ".outgroove", "manifest.json"),
+          action: "remove",
+        }),
+      ]),
+    );
+    await recoverySync.recover(preview.runId, preview.confirmationToken);
+    await expect(
+      access(join(target, ".outgroove", "manifest.json")),
+    ).rejects.toThrow();
+    expect(reopened.listSyncHistory(profileId)).toEqual([]);
+  });
+
+  it("leaves a destination changed after process interruption untouched", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markInstalled: () => void = () => undefined;
+    const installed = new Promise<void>((resolve) => {
+      markInstalled = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      afterCopyInstalled: async () => {
+        markInstalled();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await installed;
+    const firstDestination = plan.copies[0]?.relativeDestination;
+    if (!firstDestination) throw new Error("External-change fixture missing.");
+    const destination = join(target, firstDestination);
+    await writeFile(destination, "external replacement");
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.warnings).toEqual([
+      expect.stringContaining("will remain untouched"),
+    ]);
+    expect(preview.actions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: destination, action: "remove" }),
+      ]),
+    );
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).resolves.toMatchObject({
+      complete: true,
+      errors: [expect.stringContaining("left untouched")],
+    });
+    expect(await readFile(destination, "utf8")).toBe("external replacement");
+    const retry = await recoverySync.plan(profileId);
+    expect(retry.conflicts).toEqual([
+      expect.stringContaining("Unknown target file"),
+    ]);
+  });
+
+  it("refuses recovery through a target path replaced by a symbolic link", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markInstalled: () => void = () => undefined;
+    const installed = new Promise<void>((resolve) => {
+      markInstalled = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      afterCopyInstalled: async () => {
+        markInstalled();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await installed;
+    const firstDestination = plan.copies[0]?.relativeDestination;
+    const firstSegment = firstDestination?.split(/[\\/]/u)[0];
+    if (!firstSegment) throw new Error("Symlink recovery fixture missing.");
+    const originalDirectory = join(target, firstSegment);
+    const retainedDirectory = join(target, "retained-original");
+    const outside = join(directory, "outside");
+    await rename(originalDirectory, retainedDirectory);
+    await mkdir(outside);
+    await symlink(outside, originalDirectory, "dir");
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.canRecover).toBe(false);
+    expect(preview.warnings).toEqual([
+      expect.stringContaining("symbolic link"),
+    ]);
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).rejects.toThrow("before applying recovery");
+    expect(await access(outside)).toBeUndefined();
+  });
+
+  it("finishes internal cleanup without rolling back a committed manifest", async () => {
+    const { directory, database, target, profileId } = await setup();
+    let markCommitted: () => void = () => undefined;
+    const committed = new Promise<void>((resolve) => {
+      markCommitted = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const sync = new DeviceSync(database, {
+      afterManifestCommitted: async () => {
+        markCommitted();
+        await neverResume;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    void sync.apply(plan.id, plan.confirmationToken);
+    await committed;
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview).toMatchObject({
+      mode: "committed-cleanup",
+      canRecover: true,
+    });
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).resolves.toMatchObject({ complete: true });
+    expect(reopened.listSyncHistory(profileId)).toHaveLength(1);
+    expect(
+      await readFile(join(target, ".outgroove", "manifest.json"), "utf8"),
+    ).toContain(profileId);
+    for (const item of plan.copies)
+      expect(
+        await readFile(join(target, item.relativeDestination)),
+      ).toBeDefined();
+  });
+
   it("cancels between copies, rolls back this run, and retries the same preview", async () => {
     const { database, target, profileId } = await setup();
     let hookCalls = 0;

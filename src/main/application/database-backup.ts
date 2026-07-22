@@ -190,6 +190,14 @@ export class DatabaseBackupService {
       .get() as number;
     if (activeJobs > 0)
       throw new Error("Cancel active scans before restoring a backup.");
+    const activeSyncs = this.database.connection
+      .prepare("SELECT COUNT(*) FROM sync_runs")
+      .pluck()
+      .get() as number;
+    if (activeSyncs > 0)
+      throw new Error(
+        "Finish or recover the pending DAP sync before restoring a backup.",
+      );
     verifyReadableDatabase(preview.stagingPath);
     const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
     const rollbackBackupPath = join(
