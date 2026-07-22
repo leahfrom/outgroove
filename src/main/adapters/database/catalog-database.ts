@@ -10,6 +10,8 @@ import type {
   LibraryPageDto,
   LibraryTrackDto,
   LibraryRootDto,
+  LibraryRootRemovalPreviewDto,
+  LibraryRootRemovalResultDto,
   ScanErrorDto,
   ScanJobDto,
   ScanJobState,
@@ -61,6 +63,7 @@ interface ScanJobRow {
 
 interface ScanStatements {
   readonly getFileByPathKey: Database.Statement;
+  readonly restoreUnchangedFile: Database.Statement;
   readonly getAlbumByGroupingKey: Database.Statement;
   readonly getAlbumByFolderKey: Database.Statement;
   readonly insertAlbum: Database.Statement;
@@ -216,6 +219,10 @@ export class CatalogDatabase {
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
         "SELECT * FROM audio_files WHERE path_key = ?",
+      ),
+      restoreUnchangedFile: this.connection.prepare(
+        `UPDATE audio_files SET scan_state='ok', scan_error=NULL, scanned_at=?
+         WHERE id=? AND root_id=? AND scan_state='missing'`,
       ),
       getAlbumByGroupingKey: this.connection.prepare(
         `SELECT album_id AS id FROM album_grouping_aliases
@@ -451,12 +458,16 @@ export class CatalogDatabase {
       )
       .get(pathKey) as
       { id: string; path: string; last_scan_at: string | null } | undefined;
-    if (existing)
+    if (existing) {
+      this.connection
+        .prepare("UPDATE library_roots SET path=?, removed_at=NULL WHERE id=?")
+        .run(path, existing.id);
       return {
         id: existing.id,
-        path: existing.path,
+        path,
         lastScanAt: existing.last_scan_at,
       };
+    }
     const id = randomUUID();
     this.connection
       .prepare(
@@ -468,16 +479,98 @@ export class CatalogDatabase {
 
   getLibraryRoot(id: string): { id: string; path: string } | undefined {
     return this.connection
-      .prepare("SELECT id, path FROM library_roots WHERE id = ?")
+      .prepare(
+        "SELECT id, path FROM library_roots WHERE id = ? AND removed_at IS NULL",
+      )
       .get(id) as { id: string; path: string } | undefined;
   }
 
   listLibraryRoots(): readonly LibraryRootDto[] {
     return this.connection
       .prepare(
-        "SELECT id, path, last_scan_at AS lastScanAt FROM library_roots ORDER BY created_at",
+        `SELECT id, path, last_scan_at AS lastScanAt FROM library_roots
+         WHERE removed_at IS NULL ORDER BY created_at`,
       )
       .all() as LibraryRootDto[];
+  }
+
+  getLibraryRootRemovalImpact(
+    rootId: string,
+  ):
+    | Omit<LibraryRootRemovalPreviewDto, "operationId" | "confirmationToken">
+    | undefined {
+    const root = this.getLibraryRoot(rootId);
+    if (!root) return undefined;
+    const visibleTracks = this.connection
+      .prepare(
+        `SELECT COUNT(*) FROM tracks t JOIN audio_files f ON f.id=t.file_id
+         WHERE f.root_id=? AND f.scan_state='ok'`,
+      )
+      .pluck()
+      .get(rootId) as number;
+    const albumsHidden = this.connection
+      .prepare(
+        `SELECT COUNT(*) FROM (
+           SELECT DISTINCT current_track.album_id
+           FROM tracks current_track
+           JOIN audio_files current_file ON current_file.id=current_track.file_id
+           WHERE current_file.root_id=? AND current_file.scan_state='ok'
+             AND NOT EXISTS (
+               SELECT 1 FROM tracks other_track
+               JOIN audio_files other_file ON other_file.id=other_track.file_id
+               WHERE other_track.album_id=current_track.album_id
+                 AND other_file.root_id<>? AND other_file.scan_state='ok'
+             )
+         )`,
+      )
+      .pluck()
+      .get(rootId, rootId) as number;
+    const fileProblems = this.connection
+      .prepare(
+        "SELECT COUNT(*) FROM audio_files WHERE root_id=? AND scan_state='error'",
+      )
+      .pluck()
+      .get(rootId) as number;
+    const directoryProblems = this.connection
+      .prepare("SELECT COUNT(*) FROM scan_directory_errors WHERE root_id=?")
+      .pluck()
+      .get(rootId) as number;
+    return {
+      rootId,
+      path: root.path,
+      visibleTracks,
+      albumsHidden,
+      scanProblemsHidden: fileProblems + directoryProblems,
+    };
+  }
+
+  stopWatchingLibraryRoot(rootId: string): LibraryRootRemovalResultDto {
+    return this.connection.transaction(() => {
+      const impact = this.getLibraryRootRemovalImpact(rootId);
+      if (!impact) throw new Error("Watched Library folder does not exist.");
+      if (this.getActiveScanJob(rootId))
+        throw new Error("Cancel this folder's active scan before removing it.");
+      this.connection
+        .prepare(
+          "UPDATE library_roots SET removed_at=? WHERE id=? AND removed_at IS NULL",
+        )
+        .run(new Date().toISOString(), rootId);
+      this.connection
+        .prepare("UPDATE audio_files SET scan_state='missing' WHERE root_id=?")
+        .run(rootId);
+      this.connection
+        .prepare("DELETE FROM scan_directory_errors WHERE root_id=?")
+        .run(rootId);
+      this.rebuildCatalogSearch();
+      this.catalogSearchDirty = false;
+      return {
+        rootId,
+        visibleTracksHidden: impact.visibleTracks,
+        albumsHidden: impact.albumsHidden,
+        scanProblemsHidden: impact.scanProblemsHidden,
+        audioFilesDeleted: 0 as const,
+      };
+    })();
   }
 
   createScanJob(rootId: string): ScanJobDto {
@@ -541,7 +634,10 @@ export class CatalogDatabase {
   getLatestScanJob(): ScanJobDto | null {
     const row = this.connection
       .prepare(
-        "SELECT * FROM jobs WHERE type='scan' ORDER BY created_at DESC LIMIT 1",
+        `SELECT job.* FROM jobs job
+         JOIN library_roots root ON root.id=job.root_id
+         WHERE job.type='scan' AND root.removed_at IS NULL
+         ORDER BY job.created_at DESC LIMIT 1`,
       )
       .get() as ScanJobRow | undefined;
     return row ? mapScanJob(row) : null;
@@ -750,6 +846,12 @@ export class CatalogDatabase {
           existing?.size === entry.size &&
           Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs)
         ) {
+          const restored = this.scanStatements.restoreUnchangedFile.run(
+            new Date().toISOString(),
+            existing.id,
+            rootId,
+          );
+          if (restored.changes > 0) this.catalogSearchDirty = true;
           unchanged++;
           continue;
         }

@@ -6,6 +6,7 @@ import type {
   LibraryFormatDto,
   LibraryFolderDto,
   LibraryRootDto,
+  LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
@@ -105,6 +106,8 @@ export function App(): React.JSX.Element {
   const [totalItems, setTotalItems] = useState(0);
   const [restorePreview, setRestorePreview] =
     useState<DatabaseRestorePreviewDto>();
+  const [rootRemovalPreview, setRootRemovalPreview] =
+    useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
@@ -312,9 +315,13 @@ export function App(): React.JSX.Element {
     ]).then(([roots, latest]) => {
       if (roots.ok) {
         setLibraryRoots(roots.value);
-        setRootId(
-          latest.ok && latest.value ? latest.value.rootId : roots.value[0]?.id,
-        );
+        const latestRootId =
+          latest.ok &&
+          latest.value &&
+          roots.value.some((root) => root.id === latest.value?.rootId)
+            ? latest.value.rootId
+            : undefined;
+        setRootId(latestRootId ?? roots.value[0]?.id);
       } else setNotice(roots.error.message);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
@@ -413,6 +420,42 @@ export function App(): React.JSX.Element {
   const rescan = async (): Promise<void> => {
     if (!rootId) return;
     await startScan(rootId);
+  };
+
+  const previewRootRemoval = async (rootId: string): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewLibraryRootRemoval({
+        rootId,
+      });
+      if (result.ok) setRootRemovalPreview(result.value);
+      else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyRootRemoval = async (): Promise<void> => {
+    if (!rootRemovalPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyLibraryRootRemoval({
+        operationId: rootRemovalPreview.operationId,
+        confirmationToken: rootRemovalPreview.confirmationToken,
+      });
+      if (!result.ok) {
+        setNotice(result.error.message);
+        return;
+      }
+      setRootRemovalPreview(undefined);
+      if (scanJob?.rootId === result.value.rootId) setScanJob(undefined);
+      await Promise.all([refreshLibraryRoots(), refreshCatalog()]);
+      setNotice(
+        `Stopped watching ${rootRemovalPreview.path}. ${result.value.visibleTracksHidden} visible tracks hidden; no audio files deleted.`,
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const cancelScan = async (): Promise<void> => {
@@ -2556,16 +2599,61 @@ export function App(): React.JSX.Element {
                     </span>
                     {isCurrent && <span>Current scan target</span>}
                   </div>
-                  <button
-                    disabled={busy || scanActive}
-                    onClick={() => void startScan(root.id)}
-                  >
-                    Scan folder {root.path}
-                  </button>
+                  <div className="library-root-actions">
+                    <button
+                      disabled={busy || scanActive}
+                      onClick={() => void startScan(root.id)}
+                    >
+                      Scan folder {root.path}
+                    </button>
+                    <button
+                      disabled={busy || scanActive}
+                      onClick={() => void previewRootRemoval(root.id)}
+                    >
+                      Stop watching {root.path}
+                    </button>
+                  </div>
                 </li>
               );
             })}
           </ul>
+        )}
+        {rootRemovalPreview && (
+          <div className="preview" aria-label="Library folder removal preview">
+            <h3>Stop watching this Library folder?</h3>
+            <p>
+              <strong>{rootRemovalPreview.path}</strong>
+            </p>
+            <dl>
+              <dt>Visible tracks hidden</dt>
+              <dd>{rootRemovalPreview.visibleTracks}</dd>
+              <dt>Albums no longer visible</dt>
+              <dd>{rootRemovalPreview.albumsHidden}</dd>
+              <dt>Scan problems hidden</dt>
+              <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
+            </dl>
+            <p>
+              <strong>No audio or DAP files will be deleted.</strong> Catalog
+              identities, edit history, DAP profiles, sync manifests, and scan
+              history are retained. Choosing this folder again reuses its
+              catalog identity and requires a rescan before tracks reappear.
+            </p>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={busy || scanActive}
+                onClick={() => void applyRootRemoval()}
+              >
+                Confirm stop watching
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => setRootRemovalPreview(undefined)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </section>
       <section className="card settings" aria-labelledby="database-safety">

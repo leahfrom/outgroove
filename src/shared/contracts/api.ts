@@ -9,6 +9,12 @@ import type { EditableTrackTagField } from "../domain/tag-edit";
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
 export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
+export const libraryRootRemovalPreviewRequestSchema = z
+  .object({ rootId: z.uuid() })
+  .strict();
+export const libraryRootRemovalApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
@@ -136,6 +142,22 @@ export interface LibraryRootDto {
   readonly id: string;
   readonly path: string;
   readonly lastScanAt: string | null;
+}
+export interface LibraryRootRemovalPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly rootId: string;
+  readonly path: string;
+  readonly visibleTracks: number;
+  readonly albumsHidden: number;
+  readonly scanProblemsHidden: number;
+}
+export interface LibraryRootRemovalResultDto {
+  readonly rootId: string;
+  readonly visibleTracksHidden: number;
+  readonly albumsHidden: number;
+  readonly scanProblemsHidden: number;
+  readonly audioFilesDeleted: 0;
 }
 export interface ScanResultDto {
   readonly parsed: number;
@@ -313,6 +335,12 @@ export interface SyncApplyResultDto {
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
   listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
+  previewLibraryRootRemoval(
+    request: z.infer<typeof libraryRootRemovalPreviewRequestSchema>,
+  ): Promise<Result<LibraryRootRemovalPreviewDto>>;
+  applyLibraryRootRemoval(
+    request: z.infer<typeof libraryRootRemovalApplyRequestSchema>,
+  ): Promise<Result<LibraryRootRemovalResultDto>>;
   scanLibrary(
     request: z.infer<typeof scanRequestSchema>,
   ): Promise<Result<ScanJobDto>>;

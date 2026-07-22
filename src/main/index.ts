@@ -12,6 +12,7 @@ import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { EditTrackTags } from "./application/edit-track-tags";
+import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -68,6 +69,7 @@ async function createWindow(): Promise<void> {
     qualityQuery,
     backup,
     scanJobs: new ScanJobCoordinator(database, scanner),
+    libraryRoots: new ManageLibraryRoots(database),
     editor: new EditAlbumTitle(database, writer),
     trackEditor: new EditTrackTags(database, writer),
     sync: new DeviceSync(database),

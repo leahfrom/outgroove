@@ -1,6 +1,8 @@
 export const channels = {
   chooseLibraryFolder: "library:choose-folder",
   listLibraryRoots: "library:list-roots",
+  previewLibraryRootRemoval: "library:preview-root-removal",
+  applyLibraryRootRemoval: "library:apply-root-removal",
   scanLibrary: "library:scan",
   cancelScan: "library:cancel-scan",
   getLatestScanJob: "library:latest-scan-job",
