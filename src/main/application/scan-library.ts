@@ -211,10 +211,14 @@ export class ScanLibrary {
       }
       throwIfCancelled(signal);
       await this.scanCatalog.finishScan(rootId);
+      if (this.scanCatalog !== this.database)
+        this.database.refreshConnectionLocalProjections();
       return { parsed, unchanged, errors };
     } catch (error) {
       try {
         await this.scanCatalog.abandonScan(rootId);
+        if (this.scanCatalog !== this.database)
+          this.database.refreshConnectionLocalProjections();
       } catch {
         // A crashed worker loses its temporary scan tables with its connection.
       }
