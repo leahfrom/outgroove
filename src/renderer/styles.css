@@ -144,6 +144,7 @@ aside,
 .detail,
 .errors,
 .artists,
+.genres,
 .formats,
 .folders,
 .tracks {
@@ -164,6 +165,7 @@ aside,
   max-width: 320px;
 }
 .artists ul,
+.genres ul,
 .formats ul,
 .folders ul {
   display: grid;
@@ -174,6 +176,7 @@ aside,
   padding: 0;
 }
 .artists article,
+.genres article,
 .formats article,
 .folders article {
   border: 1px solid #c5cec7;
@@ -181,6 +184,7 @@ aside,
   padding: 1rem;
 }
 .artists article p,
+.genres article p,
 .formats article p,
 .folders article p {
   color: #526159;

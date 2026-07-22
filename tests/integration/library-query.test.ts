@@ -442,6 +442,169 @@ describe("paginated library query", () => {
     database.close();
   });
 
+  it("derives deterministic multi-value genre pages and exact track filters", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-genres-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    const addTrack = (name: string, genres?: readonly string[]): void => {
+      const path = join(directory, `${name}.flac`);
+      database.upsertScannedFile(root.id, pathComparisonKey(path), {
+        path,
+        size: name.length,
+        modifiedMs: name.length,
+        format: "FLAC",
+        durationSeconds: 10,
+        tags: {
+          title: name,
+          album: name,
+          artist: "Fixture Artist",
+          albumArtist: "Fixture Artist",
+          trackNumber: 1,
+          discNumber: 1,
+          year: "2026",
+          ...(genres ? { genres } : {}),
+        },
+        nativeTags: [],
+      });
+    };
+    addTrack("Both", ["Rock", "Ambient"]);
+    addTrack("Case variant", ["rock"]);
+    addTrack("Literal", ["100%_Mix"]);
+    addTrack("Literal label", ["No genre tag"]);
+    addTrack("Missing");
+
+    const firstPage = database.queryLibrary({
+      query: "",
+      view: "genres",
+      offset: 0,
+      limit: 3,
+    });
+    expect(firstPage.totalItems).toBe(5);
+    expect(firstPage.genres).toEqual([
+      { name: "100%_Mix", trackCount: 1, missing: false },
+      { name: "Ambient", trackCount: 1, missing: false },
+      { name: "No genre tag", trackCount: 1, missing: false },
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "genres",
+        offset: 3,
+        limit: 3,
+      }).genres,
+    ).toEqual([
+      { name: "Rock", trackCount: 2, missing: false },
+      { name: "No genre tag", trackCount: 1, missing: true },
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "%_",
+        view: "genres",
+        offset: 0,
+        limit: 10,
+      }).genres,
+    ).toEqual([{ name: "100%_Mix", trackCount: 1, missing: false }]);
+    expect(
+      database
+        .queryLibrary({
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 10,
+          genre: "ROCK",
+        })
+        .tracks.map((track) => track.title),
+    ).toEqual(["Both", "Case variant"]);
+    expect(
+      database
+        .queryLibrary({
+          query: "ambient",
+          view: "tracks",
+          offset: 0,
+          limit: 10,
+        })
+        .tracks.map((track) => track.title),
+    ).toEqual(["Both"]);
+    expect(
+      database
+        .queryLibrary({
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 10,
+          missingGenre: true,
+        })
+        .tracks.map((track) => track.title),
+    ).toEqual(["Missing"]);
+    database.close();
+  });
+
+  it("re-reads unchanged legacy catalog rows once to hydrate genres", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-genres-legacy-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    const path = join(directory, "legacy.flac");
+    const file = {
+      path,
+      size: 10,
+      modifiedMs: 20,
+      format: "FLAC",
+      durationSeconds: 30,
+      tags: {
+        title: "Legacy",
+        album: "Legacy",
+        artist: "Fixture",
+        albumArtist: "Fixture",
+        trackNumber: 1,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    } as const;
+    database.upsertScannedFile(root.id, pathComparisonKey(path), file);
+    database.connection
+      .prepare(
+        `UPDATE audio_files
+         SET normalized_tags_json=json_remove(normalized_tags_json, '$.genres')`,
+      )
+      .run();
+    database.beginScan(root.id);
+    expect(
+      database.recordScanDiscoveryBatch(root.id, [
+        {
+          kind: "file",
+          path,
+          pathKey: pathComparisonKey(path),
+          size: 10,
+          modifiedMs: 20,
+        },
+      ]),
+    ).toEqual({ changed: 1, unchanged: 0 });
+    database.upsertScannedFile(root.id, pathComparisonKey(path), file);
+    database.finishScan(root.id);
+    database.beginScan(root.id);
+    expect(
+      database.recordScanDiscoveryBatch(root.id, [
+        {
+          kind: "file",
+          path,
+          pathKey: pathComparisonKey(path),
+          size: 10,
+          modifiedMs: 20,
+        },
+      ]),
+    ).toEqual({ changed: 0, unchanged: 1 });
+    database.close();
+  });
+
   it("publishes album visibility after missing and restored file transitions", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-visibility-"));
     temporary.push(directory);

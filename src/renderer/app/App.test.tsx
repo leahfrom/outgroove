@@ -1758,6 +1758,98 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("browses genre findings and routes keyboard actions to exact track filters", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            genres:
+              request.view === "genres"
+                ? [
+                    { name: "Ambient", trackCount: 2, missing: false },
+                    { name: "No genre tag", trackCount: 1, missing: true },
+                  ]
+                : [],
+            formats: [],
+            folders: [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "genres" ? 2 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "genres");
+    expect(await screen.findByText("Status: 2 tracks")).toBeVisible();
+    expect(screen.getByText("Status: 1 track")).toBeVisible();
+    const ambientAction = screen.getByRole("button", {
+      name: "Browse Ambient tracks",
+    });
+    ambientAction.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        genre: "Ambient",
+      }),
+    );
+    expect(screen.getByText(firstTrack.path)).toBeVisible();
+    expect(screen.getByText("1 track with genre “Ambient”")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Show all genres" }));
+    await user.selectOptions(screen.getByLabelText("View"), "genres");
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Browse tracks with no genre tag",
+      }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        missingGenre: true,
+      }),
+    );
+  });
+
   it("browses folders and opens an exact removable track filter", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
