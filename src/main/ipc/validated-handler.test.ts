@@ -4,6 +4,8 @@ import {
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
+  createSavedLibraryFilterRequestSchema,
+  deleteSavedLibraryFilterRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
@@ -360,6 +362,56 @@ describe("validated IPC handlers", () => {
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+  });
+
+  it("validates saved Library filter definitions and deletion identities", async () => {
+    const create = vi.fn();
+    const createHandler = createValidatedHandler(
+      createSavedLibraryFilterRequestSchema,
+      create,
+    );
+    const valid = {
+      name: "Ambient without genre",
+      definition: {
+        query: "live",
+        view: "tracks",
+        genre: { name: "No genre tag", missing: true },
+      },
+    };
+    await expect(createHandler({}, valid)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(create).toHaveBeenCalledWith(valid);
+    for (const definition of [
+      { query: "", view: "albums", format: "FLAC" },
+      {
+        query: "",
+        view: "tracks",
+        format: "FLAC",
+        genre: { name: "Rock", missing: false },
+      },
+      { query: "", view: "albums", arbitrarySql: "DROP TABLE albums" },
+    ])
+      await expect(
+        createHandler({}, { name: "Rejected", definition }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const remove = vi.fn();
+    const removeHandler = createValidatedHandler(
+      deleteSavedLibraryFilterRequestSchema,
+      remove,
+    );
+    await expect(
+      removeHandler({}, { id: "not-a-uuid", path: "/fixture" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("rejects malformed database restore confirmations", async () => {

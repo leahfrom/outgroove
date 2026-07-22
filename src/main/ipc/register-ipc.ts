@@ -9,6 +9,8 @@ import {
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
+  createSavedLibraryFilterRequestSchema,
+  deleteSavedLibraryFilterRequestSchema,
   emptyRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
@@ -209,6 +211,26 @@ export function registerIpc(
         ...(request.missingGenre ? { missingGenre: request.missingGenre } : {}),
       });
     }),
+  );
+  ipcMain.handle(
+    channels.listSavedLibraryFilters,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.database.listSavedLibraryFilters(),
+    ),
+  );
+  ipcMain.handle(
+    channels.createSavedLibraryFilter,
+    createValidatedHandler(
+      createSavedLibraryFilterRequestSchema,
+      ({ name, definition }) =>
+        dependencies.database.createSavedLibraryFilter(name, definition),
+    ),
+  );
+  ipcMain.handle(
+    channels.deleteSavedLibraryFilter,
+    createValidatedHandler(deleteSavedLibraryFilterRequestSchema, ({ id }) =>
+      dependencies.database.deleteSavedLibraryFilter(id),
+    ),
   );
   ipcMain.handle(
     channels.previewAlbumTitleEdit,

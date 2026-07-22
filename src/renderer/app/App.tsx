@@ -9,6 +9,8 @@ import type {
   LibraryRootDto,
   LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
+  SavedLibraryFilterDefinition,
+  SavedLibraryFilterDto,
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
@@ -63,6 +65,36 @@ const diagnosticFilterLabels: Record<AlbumDiagnosticFilter, string> = {
   "missing-tags": "Missing/placeholder tags",
 };
 
+const libraryViewLabels: Record<SavedLibraryFilterDefinition["view"], string> =
+  {
+    albums: "Albums",
+    artists: "Album artists",
+    genres: "Genres",
+    formats: "Formats",
+    folders: "Folders",
+    tracks: "Tracks",
+    "data-quality": "Albums needing review",
+    "scan-errors": "Scan problems",
+  };
+
+function describeSavedFilter(definition: SavedLibraryFilterDefinition): string {
+  const parts = [libraryViewLabels[definition.view]];
+  if (definition.query) parts.push(`search “${definition.query}”`);
+  if (definition.qualityFilter)
+    parts.push(diagnosticFilterLabels[definition.qualityFilter]);
+  if (definition.albumArtist)
+    parts.push(`album artist “${definition.albumArtist}”`);
+  if (definition.format) parts.push(`format “${definition.format}”`);
+  if (definition.folder) parts.push(`folder “${definition.folder.path}”`);
+  if (definition.genre)
+    parts.push(
+      definition.genre.missing
+        ? "no genre tag"
+        : `genre “${definition.genre.name}”`,
+    );
+  return parts.join(" · ");
+}
+
 function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
   switch (workflow) {
     case "track-editor":
@@ -92,6 +124,11 @@ export function App(): React.JSX.Element {
   const [folders, setFolders] = useState<readonly LibraryFolderDto[]>([]);
   const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
+  const [savedFilters, setSavedFilters] = useState<
+    readonly SavedLibraryFilterDto[]
+  >([]);
+  const [savedFilterName, setSavedFilterName] = useState("");
+  const [savedFilterBusy, setSavedFilterBusy] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
@@ -315,6 +352,16 @@ export function App(): React.JSX.Element {
     } else setNotice(result.error.message);
   }, []);
 
+  const refreshSavedFilters = useCallback(async (): Promise<boolean> => {
+    const result = await window.outgroove.listSavedLibraryFilters();
+    if (result.ok) {
+      setSavedFilters(result.value);
+      return true;
+    }
+    setNotice(result.error.message);
+    return false;
+  }, []);
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -357,6 +404,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
+  useEffect(() => {
+    void refreshSavedFilters();
+  }, [refreshSavedFilters]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -923,6 +973,82 @@ export function App(): React.JSX.Element {
     } else if (!result.ok) setNotice(result.error.message);
   };
 
+  const saveCurrentLibraryFilter = async (): Promise<void> => {
+    if (albumIdFilter) {
+      setNotice(
+        "Exact Workbench album routes cannot be saved as Library filters.",
+      );
+      return;
+    }
+    const name = savedFilterName.trim();
+    if (!name) return;
+    const definition: SavedLibraryFilterDefinition = {
+      query,
+      view: libraryView,
+      ...(libraryView === "data-quality" ? { qualityFilter } : {}),
+      ...(libraryView === "albums" && albumArtistFilter
+        ? { albumArtist: albumArtistFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackFormatFilter
+        ? { format: trackFormatFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackFolderFilter
+        ? { folder: trackFolderFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackGenreFilter
+        ? { genre: trackGenreFilter }
+        : {}),
+    };
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.createSavedLibraryFilter({
+        name,
+        definition,
+      });
+      if (result.ok) {
+        setSavedFilterName("");
+        if (await refreshSavedFilters())
+          setNotice(`Saved Library filter “${result.value.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
+  };
+
+  const openSavedLibraryFilter = (saved: SavedLibraryFilterDto): void => {
+    const definition = saved.definition;
+    setLibraryView(definition.view);
+    setSearchText(definition.query);
+    setQuery(definition.query);
+    setQualityFilter(definition.qualityFilter ?? "all");
+    setAlbumArtistFilter(definition.albumArtist);
+    setAlbumIdFilter(undefined);
+    setTrackRouteLabel(undefined);
+    setPendingTrackId(undefined);
+    setTrackFormatFilter(definition.format);
+    setTrackFolderFilter(definition.folder);
+    setTrackGenreFilter(definition.genre);
+    setPageOffset(0);
+    setNotice(`Opened saved Library filter “${saved.name}”.`);
+  };
+
+  const deleteSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+  ): Promise<void> => {
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.deleteSavedLibraryFilter({
+        id: saved.id,
+      });
+      if (result.ok) {
+        if (await refreshSavedFilters())
+          setNotice(`Deleted saved Library filter “${saved.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
+  };
+
   const planSync = async (): Promise<void> => {
     if (!profile) return;
     const result = await window.outgroove.planSync({ profileId: profile.id });
@@ -1168,6 +1294,74 @@ export function App(): React.JSX.Element {
           </button>
         )}
       </form>
+      <section className="saved-filters" aria-labelledby="saved-filters-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Local shortcuts</p>
+            <h2 id="saved-filters-title">Saved Library filters</h2>
+          </div>
+          <form
+            className="inline"
+            aria-label="Save current Library filter"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveCurrentLibraryFilter();
+            }}
+          >
+            <label htmlFor="saved-filter-name">Filter name</label>
+            <input
+              id="saved-filter-name"
+              value={savedFilterName}
+              maxLength={100}
+              placeholder="For example, Ambient FLAC"
+              onChange={(event) => setSavedFilterName(event.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={
+                savedFilterBusy ||
+                !savedFilterName.trim() ||
+                Boolean(albumIdFilter)
+              }
+            >
+              Save current filter
+            </button>
+          </form>
+        </div>
+        <p>
+          Saves the active search and view. Page position and exact Workbench
+          album routes remain temporary.
+        </p>
+        {albumIdFilter && (
+          <p>Status: Return to a normal Library view before saving.</p>
+        )}
+        {savedFilters.length === 0 ? (
+          <p>No saved Library filters yet.</p>
+        ) : (
+          <ul>
+            {savedFilters.map((saved) => (
+              <li key={saved.id}>
+                <div>
+                  <strong>{saved.name}</strong>
+                  <span>{describeSavedFilter(saved.definition)}</span>
+                </div>
+                <button
+                  disabled={savedFilterBusy}
+                  onClick={() => openSavedLibraryFilter(saved)}
+                >
+                  Open {saved.name}
+                </button>
+                <button
+                  disabled={savedFilterBusy}
+                  onClick={() => void deleteSavedLibraryFilter(saved)}
+                >
+                  Delete {saved.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
         {libraryView === "scan-errors"
@@ -2814,6 +3008,8 @@ export function App(): React.JSX.Element {
               <dd>{restorePreview.summary.tracks}</dd>
               <dt>DAP profiles</dt>
               <dd>{restorePreview.summary.syncProfiles}</dd>
+              <dt>Saved Library filters</dt>
+              <dd>{restorePreview.summary.savedLibraryFilters}</dd>
               <dt>Schema</dt>
               <dd>Version {restorePreview.schemaVersion}</dd>
             </dl>
