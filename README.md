@@ -8,6 +8,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
 - Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
+- Review deterministic, local album data-quality findings for missing or duplicate track numbers, internal sequence gaps, inconsistent album artists or partial release dates, missing dates, and exact scanner placeholders. Findings show affected files and only select the existing safe Workbench workflow; they never infer or apply a correction.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
 - Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
@@ -122,12 +123,22 @@ artist, disc number, and partial release date, requires an explicit opt-in for
 each field, and does not mass-edit titles. Track numbers use a separate sequence
 preview whose order is explicitly controlled by the user.
 
+Album data-quality findings are derived on demand from the catalog DTO already
+loaded for the selected album; they add no durable finding table, IPC method,
+filesystem access, or network dependency. Sequence diagnostics treat a missing
+disc number as disc 1, report only gaps between the lowest and highest observed
+number, and do not assume a missing starting number. Placeholder diagnostics
+recognize only the scanner's exact `Unknown title`, `Unknown artist`, and
+`Unknown album` fallbacks. Diagnostic actions select affected tracks and focus
+the relevant editor with proposal fields left blank and no preview started.
+
 The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
 ## Safety status and limitations
 
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
 - Library queries are capped at 50 items per request, treat wildcard input literally, and return complete track details only for the selected album page. Track-field searches of three or more Unicode code points use a rebuildable FTS5 trigram projection; shorter terms retain escaped substring matching.
+- Album diagnostics use normalized catalog tags and cannot determine the correct metadata, distinguish intentional numbering gaps from mistakes, or inspect unsupported/private frames. They are review prompts, not corrections.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
 - Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
