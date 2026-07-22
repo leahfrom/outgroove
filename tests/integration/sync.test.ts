@@ -69,6 +69,44 @@ async function setup(): Promise<{
 }
 
 describe("deterministic manifest-based sync", () => {
+  it("invalidates old previews after a profile revision and refuses revisions during apply", async () => {
+    const { database, profileId, albumId } = await setup();
+    let releaseCopy: () => void = () => undefined;
+    let markCopyStarted: () => void = () => undefined;
+    const copyStarted = new Promise<void>((resolve) => {
+      markCopyStarted = resolve;
+    });
+    const copyGate = new Promise<void>((resolve) => {
+      releaseCopy = resolve;
+    });
+    const sync = new DeviceSync(database, {
+      beforeCopy: async () => {
+        markCopyStarted();
+        await copyGate;
+      },
+    });
+    const stale = await sync.plan(profileId);
+    expect(sync.updateProfileAlbums(profileId, [albumId]).albumIds).toEqual([
+      albumId,
+    ]);
+    await expect(sync.apply(stale.id, stale.confirmationToken)).rejects.toThrow(
+      "current preview",
+    );
+
+    const fresh = await sync.plan(profileId);
+    const applying = sync.apply(fresh.id, fresh.confirmationToken);
+    await copyStarted;
+    expect(() => sync.updateProfileAlbums(profileId, [albumId])).toThrow(
+      "active sync",
+    );
+    releaseCopy();
+    await expect(applying).resolves.toMatchObject({
+      copied: 2,
+      unchanged: 0,
+      errors: [],
+    });
+  });
+
   it("matches the golden plan, applies verified copies, leaves unknown files, and repeats as a no-op", async () => {
     const { database, target, profileId } = await setup();
     const unknown = join(target, "user-note.txt");

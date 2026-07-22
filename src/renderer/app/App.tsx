@@ -212,6 +212,7 @@ export function App(): React.JSX.Element {
   const [syncProfiles, setSyncProfiles] = useState<readonly SyncProfileDto[]>(
     [],
   );
+  const [editingSyncProfileId, setEditingSyncProfileId] = useState<string>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -245,6 +246,11 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const editingSyncProfile = useMemo(
+    () =>
+      syncProfiles.find((candidate) => candidate.id === editingSyncProfileId),
+    [editingSyncProfileId, syncProfiles],
   );
   const diagnosticsByAlbum = useMemo(
     () =>
@@ -1033,7 +1039,9 @@ export function App(): React.JSX.Element {
     setNotice(
       selected
         ? `Removed ${album.title} from the DAP selection.`
-        : `Added ${album.title} to the DAP selection. Choose a target only after the selection is complete.`,
+        : editingSyncProfile
+          ? `Added ${album.title} to the ${editingSyncProfile.name} selection draft.`
+          : `Added ${album.title} to the DAP selection. Choose a target only after the selection is complete.`,
     );
   };
 
@@ -1162,11 +1170,59 @@ export function App(): React.JSX.Element {
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
+    setEditingSyncProfileId(undefined);
+    setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
     setNotice(
       `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
     );
+  };
+
+  const editSyncProfileAlbums = (saved: SyncProfileDto): void => {
+    setProfile(saved);
+    setSyncPlan(undefined);
+    setEditingSyncProfileId(saved.id);
+    setSyncAlbums(saved.albums);
+    setNotice(
+      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in the Workbench, then save the selection.`,
+    );
+  };
+
+  const cancelSyncProfileAlbumEdit = (): void => {
+    const name = editingSyncProfile?.name ?? "DAP profile";
+    setEditingSyncProfileId(undefined);
+    setSyncAlbums([]);
+    setNotice(`Discarded unsaved album-selection changes for “${name}”.`);
+  };
+
+  const saveSyncProfileAlbums = async (): Promise<void> => {
+    if (!editingSyncProfile || syncAlbums.length === 0) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.updateSyncProfileAlbums({
+        id: editingSyncProfile.id,
+        albumIds: syncAlbums.map((album) => album.id),
+      });
+      if (result.ok) {
+        setProfile(result.value);
+        setSyncPlan(undefined);
+        setEditingSyncProfileId(undefined);
+        setSyncAlbums([]);
+        const refreshed = await refreshSyncProfiles();
+        if (refreshed) {
+          const saved = refreshed.find(
+            (candidate) => candidate.id === result.value.id,
+          );
+          if (saved) setProfile(saved);
+          setNotice(
+            `Saved ${result.value.albumIds.length} albums in “${result.value.name}”. Its previous sync preview is invalid; create a fresh preview before applying.`,
+          );
+        }
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const applySync = async (): Promise<void> => {
@@ -2981,8 +3037,10 @@ export function App(): React.JSX.Element {
                       : `Add ${selectedAlbum.title} to DAP selection`}
                   </button>
                   <p aria-live="polite">
-                    {syncAlbums.length} of 100 albums selected for the next DAP
-                    profile.
+                    {syncAlbums.length} of 100 albums selected for{" "}
+                    {editingSyncProfile
+                      ? `the ${editingSyncProfile.name} revision.`
+                      : "the next DAP profile."}
                   </p>
                   {syncAlbums.length > 0 && (
                     <ul aria-label="Albums selected for DAP sync">
@@ -2994,21 +3052,40 @@ export function App(): React.JSX.Element {
                     </ul>
                   )}
                   <div className="actions">
-                    <button
-                      disabled={busy || syncAlbums.length === 0}
-                      onClick={() => void chooseTarget()}
-                    >
-                      Choose DAP target for selected albums
-                    </button>
-                    <button
-                      disabled={busy || syncAlbums.length === 0}
-                      onClick={() => {
-                        setSyncAlbums([]);
-                        setNotice("Cleared the DAP album selection.");
-                      }}
-                    >
-                      Clear DAP album selection
-                    </button>
+                    {editingSyncProfile ? (
+                      <>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => void saveSyncProfileAlbums()}
+                        >
+                          Save album selection for {editingSyncProfile.name}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={cancelSyncProfileAlbumEdit}
+                        >
+                          Cancel album selection changes
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => void chooseTarget()}
+                        >
+                          Choose DAP target for selected albums
+                        </button>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => {
+                            setSyncAlbums([]);
+                            setNotice("Cleared the DAP album selection.");
+                          }}
+                        >
+                          Clear DAP album selection
+                        </button>
+                      </>
+                    )}
                   </div>
                 </section>
               </>
@@ -3067,6 +3144,9 @@ export function App(): React.JSX.Element {
                   >
                     Open DAP profile {saved.name}
                   </button>
+                  <button onClick={() => editSyncProfileAlbums(saved)}>
+                    Edit albums in DAP profile {saved.name}
+                  </button>
                 </div>
               </li>
             ))}
@@ -3084,7 +3164,13 @@ export function App(): React.JSX.Element {
               {profile.albumIds.length === 1 ? "album" : "albums"} saved in this
               profile.
             </p>
-            <button disabled={busy} onClick={() => void planSync()}>
+            {editingSyncProfile?.id === profile.id && (
+              <p>Status: Album-selection changes are not saved yet.</p>
+            )}
+            <button
+              disabled={busy || editingSyncProfile?.id === profile.id}
+              onClick={() => void planSync()}
+            >
               Preview sync plan
             </button>
           </div>

@@ -23,6 +23,7 @@ import {
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSyncProfileAlbumsRequestSchema,
   updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
@@ -393,6 +394,13 @@ export function registerIpc(
     channels.listSyncProfiles,
     createValidatedHandler(emptyRequestSchema, () =>
       dependencies.database.listSyncProfiles(),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateSyncProfileAlbums,
+    createValidatedHandler(
+      updateSyncProfileAlbumsRequestSchema,
+      ({ id, albumIds }) => dependencies.sync.updateProfileAlbums(id, albumIds),
     ),
   );
   ipcMain.handle(

@@ -30,6 +30,7 @@ export const channels = {
   previewTrackNumberSequence: "tagging:preview-track-number-sequence",
   applyTrackNumberSequence: "tagging:apply-track-number-sequence",
   listSyncProfiles: "sync:list-profiles",
+  updateSyncProfileAlbums: "sync:update-profile-albums",
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",
   applySync: "sync:apply",

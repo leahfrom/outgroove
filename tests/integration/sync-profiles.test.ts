@@ -87,6 +87,25 @@ describe("saved DAP profiles", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
       },
     ]);
+    database.saveManifest(older.id, "/targets/older", { entries: [] });
+    const previousManifest = database.getLatestManifest(older.id);
+    expect(() =>
+      database.updateSyncProfileAlbums(older.id, [zetaId, zetaId]),
+    ).toThrow("distinct albums");
+    expect(
+      database.listSyncProfiles().find((profile) => profile.id === older.id)
+        ?.albumIds,
+    ).toEqual([zetaId]);
+    expect(
+      database.updateSyncProfileAlbums(older.id, [zetaId, alphaId]),
+    ).toMatchObject({
+      id: older.id,
+      name: "Older DAP",
+      targetPath: "/targets/older",
+      albumIds: [alphaId, zetaId],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
     database.close();
 
     const reopened = new CatalogDatabase(databasePath);
@@ -95,6 +114,10 @@ describe("saved DAP profiles", () => {
       "Older DAP",
     ]);
     expect(reopened.listSyncProfiles()[0]?.albums).toHaveLength(2);
+    expect(
+      reopened.listSyncProfiles().find((profile) => profile.id === older.id)
+        ?.albumIds,
+    ).toEqual([alphaId, zetaId]);
     reopened.close();
   });
 });

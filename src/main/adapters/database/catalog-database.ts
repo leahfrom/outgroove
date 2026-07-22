@@ -2100,22 +2100,7 @@ export class CatalogDatabase {
     targetPath: string,
     albumIds: readonly string[],
   ): { id: string; name: string; targetPath: string; albumIds: string[] } {
-    const selectedAlbumIds = [...new Set(albumIds)].sort();
-    if (
-      selectedAlbumIds.length < 1 ||
-      selectedAlbumIds.length > 100 ||
-      selectedAlbumIds.length !== albumIds.length
-    )
-      throw new Error("Choose between 1 and 100 distinct albums.");
-    const existingAlbums = this.connection
-      .prepare(
-        `SELECT COUNT(*) FROM albums
-         WHERE id IN (${selectedAlbumIds.map(() => "?").join(",")})`,
-      )
-      .pluck()
-      .get(...selectedAlbumIds) as number;
-    if (existingAlbums !== selectedAlbumIds.length)
-      throw new Error("One or more selected albums no longer exist.");
+    const selectedAlbumIds = this.validateSyncProfileAlbumIds(albumIds);
     const id = randomUUID();
     this.connection.transaction(() => {
       this.connection
@@ -2135,6 +2120,52 @@ export class CatalogDatabase {
       for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
     })();
     return { id, name, targetPath, albumIds: selectedAlbumIds };
+  }
+
+  private validateSyncProfileAlbumIds(albumIds: readonly string[]): string[] {
+    const selectedAlbumIds = [...new Set(albumIds)].sort();
+    if (
+      selectedAlbumIds.length < 1 ||
+      selectedAlbumIds.length > 100 ||
+      selectedAlbumIds.length !== albumIds.length
+    )
+      throw new Error("Choose between 1 and 100 distinct albums.");
+    const existingAlbums = this.connection
+      .prepare(
+        `SELECT COUNT(*) FROM albums
+         WHERE id IN (${selectedAlbumIds.map(() => "?").join(",")})`,
+      )
+      .pluck()
+      .get(...selectedAlbumIds) as number;
+    if (existingAlbums !== selectedAlbumIds.length)
+      throw new Error("One or more selected albums no longer exist.");
+    return selectedAlbumIds;
+  }
+
+  updateSyncProfileAlbums(
+    id: string,
+    albumIds: readonly string[],
+  ): SyncProfileDto {
+    const selectedAlbumIds = this.validateSyncProfileAlbumIds(albumIds);
+    this.connection.transaction(() => {
+      const updated = this.connection
+        .prepare("UPDATE sync_profiles SET album_id=? WHERE id=?")
+        .run(selectedAlbumIds[0], id);
+      if (updated.changes === 0)
+        throw new Error("Sync profile no longer exists.");
+      this.connection
+        .prepare("DELETE FROM sync_profile_albums WHERE profile_id=?")
+        .run(id);
+      const insertSelection = this.connection.prepare(
+        "INSERT INTO sync_profile_albums (profile_id, album_id) VALUES (?, ?)",
+      );
+      for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
+    })();
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile) throw new Error("Updated sync profile could not be loaded.");
+    return profile;
   }
 
   listSyncProfiles(): readonly SyncProfileDto[] {

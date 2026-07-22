@@ -181,6 +181,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     applyTrackNumberSequence: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    updateSyncProfileAlbums: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
@@ -2822,6 +2823,147 @@ describe("tag edit UI safety states", () => {
       "Fixture Album",
     );
     expect(applySync).not.toHaveBeenCalled();
+  });
+
+  it("revises a saved profile selection without reselecting its target and requires a fresh preview", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, secondAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const initialProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    const updatedProfile = {
+      ...initialProfile,
+      albumIds: [album.id, secondAlbum.id],
+      albums: [
+        ...initialProfile.albums,
+        {
+          id: secondAlbum.id,
+          title: secondAlbum.title,
+          albumArtist: secondAlbum.albumArtist,
+        },
+      ],
+    };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [initialProfile] })
+      .mockResolvedValue({ ok: true, value: [updatedProfile] });
+    const updateSyncProfileAlbums = vi
+      .spyOn(mockApi, "updateSyncProfileAlbums")
+      .mockResolvedValue({ ok: true, value: updatedProfile });
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 0,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const open = await screen.findByRole("button", {
+      name: "Open DAP profile Road DAP",
+    });
+    await user.click(open);
+    await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
+    expect(await screen.findByLabelText("Sync confirmation")).toBeVisible();
+    const edit = screen.getByRole("button", {
+      name: "Edit albums in DAP profile Road DAP",
+    });
+    edit.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.queryByLabelText("Sync confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Status: Album-selection changes are not saved yet."),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /^Second Album/u }));
+    const addSecond = screen.getByRole("button", {
+      name: "Add Second Album to DAP selection",
+    });
+    addSecond.focus();
+    await user.keyboard("{Enter}");
+    const save = screen.getByRole("button", {
+      name: "Save album selection for Road DAP",
+    });
+    save.focus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(updateSyncProfileAlbums).toHaveBeenCalledWith({
+        id: profileId,
+        albumIds: [album.id, secondAlbum.id],
+      }),
+    );
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+    expect(
+      screen.queryByLabelText("Sync confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Preview sync plan" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("list", { name: "Saved DAP profiles" }),
+    ).toHaveTextContent("Other Artist — Second Album");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit albums in DAP profile Road DAP",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Remove Second Album from DAP selection",
+      }),
+    );
+    const cancel = screen.getByRole("button", {
+      name: "Cancel album selection changes",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(updateSyncProfileAlbums).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("list", { name: "Saved DAP profiles" }),
+    ).toHaveTextContent("Other Artist — Second Album");
   });
 
   it("shows a database restore preview before explicit confirmation", async () => {
