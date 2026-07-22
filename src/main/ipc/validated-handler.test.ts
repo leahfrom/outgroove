@@ -15,6 +15,7 @@ import {
   scanRequestSchema,
   syncProfileRequestSchema,
   syncHistoryRequestSchema,
+  syncCancelRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
@@ -207,6 +208,26 @@ describe("validated IPC handlers", () => {
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("accepts only a sync preview identity for cancellation", async () => {
+    const useCase = vi.fn(() => ({ accepted: true }));
+    const handler = createValidatedHandler(syncCancelRequestSchema, useCase);
+    const planId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { planId })).resolves.toMatchObject({
+      ok: true,
+      value: { accepted: true },
+    });
+    expect(useCase).toHaveBeenCalledWith({ planId });
+    for (const request of [
+      { planId: "not-a-uuid" },
+      { planId, targetPath: "/Volumes/DAP" },
+      { planId, deletePartialFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
   });
 
   it("validates bounded Library views and rejects undeclared filters", async () => {

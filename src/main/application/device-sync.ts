@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 
 import type {
   SyncApplyResultDto,
+  SyncCancelResultDto,
   SyncPlanDto,
   SyncPlanItemDto,
   SyncProfileDto,
@@ -36,6 +37,15 @@ interface Manifest {
 interface ApplyHooks {
   beforeCopy?: (item: SyncPlanItemDto) => Promise<void>;
   beforeManifest?: () => Promise<void>;
+}
+interface ActiveApply {
+  readonly controller: AbortController;
+  phase: "copying" | "finalizing";
+}
+interface InstalledCopy {
+  readonly destination: string;
+  readonly expectedHash: string;
+  readonly rollback?: string;
 }
 
 async function flushFile(path: string): Promise<void> {
@@ -84,10 +94,15 @@ function deterministicUuid(value: string): string {
   return `${versioned.slice(0, 8)}-${versioned.slice(8, 12)}-${versioned.slice(12, 16)}-${versioned.slice(16, 20)}-${versioned.slice(20)}`;
 }
 
+function cancellationRequested(signal: AbortSignal): boolean {
+  return signal.aborted;
+}
+
 export class DeviceSync {
   private readonly plans = new Map<string, SyncPlanDto>();
   private readonly profileRevisions = new Map<string, number>();
   private readonly applyingProfiles = new Set<string>();
+  private readonly activeApplies = new Map<string, ActiveApply>();
 
   constructor(
     private readonly database: CatalogDatabase,
@@ -230,6 +245,66 @@ export class DeviceSync {
     return plan;
   }
 
+  cancel(planId: string): SyncCancelResultDto {
+    if (!this.plans.has(planId))
+      throw new Error("Sync preview does not exist.");
+    const active = this.activeApplies.get(planId);
+    if (!active) return { planId, accepted: false, state: "not-running" };
+    if (active.phase === "finalizing")
+      return { planId, accepted: false, state: "finalizing" };
+    active.controller.abort();
+    return { planId, accepted: true, state: "cancelling" };
+  }
+
+  private async rollbackInstalled(
+    installed: readonly InstalledCopy[],
+  ): Promise<{ rolledBack: number; errors: string[] }> {
+    let rolledBack = 0;
+    const errors: string[] = [];
+    for (const change of [...installed].reverse()) {
+      const quarantine = `${change.destination}.outgroove-${randomUUID()}.cancelled`;
+      let quarantineHoldsInstalledCopy = false;
+      try {
+        await rename(change.destination, quarantine);
+        quarantineHoldsInstalledCopy = true;
+        if ((await streamingFileHash(quarantine)) !== change.expectedHash) {
+          await rename(quarantine, change.destination);
+          quarantineHoldsInstalledCopy = false;
+          errors.push(
+            `${change.destination}: rollback refused because the completed target changed externally.${change.rollback ? ` The previous owned file remains recoverable at ${change.rollback}.` : ""}`,
+          );
+          continue;
+        }
+        if (change.rollback) {
+          await rename(change.rollback, change.destination);
+          quarantineHoldsInstalledCopy = false;
+        }
+        try {
+          await unlinkIfExists(quarantine);
+        } catch (error) {
+          errors.push(
+            `${quarantine}: completed-copy cleanup failed after rollback: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        rolledBack++;
+      } catch (error) {
+        if (quarantineHoldsInstalledCopy)
+          try {
+            await rename(quarantine, change.destination);
+            quarantineHoldsInstalledCopy = false;
+          } catch (restoreError) {
+            errors.push(
+              `${change.destination}: rollback recovery also failed: ${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+            );
+          }
+        errors.push(
+          `${change.destination}: rollback failed: ${error instanceof Error ? error.message : String(error)}${change.rollback ? ` The previous owned file may remain recoverable at ${change.rollback}.` : ""}`,
+        );
+      }
+    }
+    return { rolledBack, errors };
+  }
+
   async apply(
     planId: string,
     confirmationToken: string,
@@ -244,8 +319,14 @@ export class DeviceSync {
     if (this.applyingProfiles.has(plan.profileId))
       throw new Error("A sync is already applying for this profile.");
     this.applyingProfiles.add(plan.profileId);
+    const active: ActiveApply = {
+      controller: new AbortController(),
+      phase: "copying",
+    };
+    this.activeApplies.set(planId, active);
     try {
       const errors: string[] = [];
+      const installed: InstalledCopy[] = [];
       const previous = this.database.getLatestManifest(plan.profileId);
       const ownedDestinations = new Set(
         previous
@@ -258,10 +339,19 @@ export class DeviceSync {
           : [],
       );
       let copied = 0;
+      let cancelled = false;
       for (const item of plan.copies) {
+        if (cancellationRequested(active.controller.signal)) {
+          cancelled = true;
+          break;
+        }
         let temporary: string | undefined;
         try {
           await this.hooks.beforeCopy?.(item);
+          if (cancellationRequested(active.controller.signal)) {
+            cancelled = true;
+            break;
+          }
           const sourceInfo = await stat(item.sourcePath);
           if (
             `${sourceInfo.size}:${Math.trunc(sourceInfo.mtimeMs)}` !==
@@ -277,10 +367,9 @@ export class DeviceSync {
           const rollback = `${destination.absolute}.outgroove-${randomUUID()}.rollback`;
           await copyFile(item.sourcePath, temporary);
           await flushFile(temporary);
-          if (
-            (await streamingFileHash(item.sourcePath)) !==
-            (await streamingFileHash(temporary))
-          )
+          const sourceHash = await streamingFileHash(item.sourcePath);
+          const temporaryHash = await streamingFileHash(temporary);
+          if (sourceHash !== temporaryHash)
             throw new Error("Copied file verification failed.");
           const sourceAfterCopy = await stat(item.sourcePath);
           if (
@@ -288,6 +377,18 @@ export class DeviceSync {
             item.signature
           )
             throw new Error("Source changed during copy; create a new plan.");
+          if (cancellationRequested(active.controller.signal)) {
+            try {
+              await unlinkIfExists(temporary);
+            } catch (error) {
+              errors.push(
+                `${item.relativeDestination}: temporary-copy cleanup after cancellation failed: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            }
+            temporary = undefined;
+            cancelled = true;
+            break;
+          }
           const comparisonKey = item.relativeDestination
             .normalize("NFC")
             .toLocaleLowerCase("en-US");
@@ -300,9 +401,14 @@ export class DeviceSync {
               await rename(rollback, destination.absolute);
               throw error;
             }
-            await unlinkIfExists(rollback);
+            installed.push({
+              destination: destination.absolute,
+              expectedHash: temporaryHash,
+              rollback,
+            });
           } else {
             // Atomically refuse to clobber a file created after the preview.
+            let recordedInstalledCopy = false;
             try {
               await link(temporary, destination.absolute);
             } catch (error) {
@@ -322,27 +428,59 @@ export class DeviceSync {
                 destination.absolute,
                 constants.COPYFILE_EXCL,
               );
+              installed.push({
+                destination: destination.absolute,
+                expectedHash: temporaryHash,
+              });
+              recordedInstalledCopy = true;
               if (
                 (await streamingFileHash(destination.absolute)) !==
-                (await streamingFileHash(temporary))
+                temporaryHash
               )
                 throw new Error("Exclusive target copy verification failed.");
             }
+            if (!recordedInstalledCopy)
+              installed.push({
+                destination: destination.absolute,
+                expectedHash: temporaryHash,
+              });
             await unlinkIfExists(temporary);
             temporary = undefined;
           }
           copied++;
           onProgress(copied, plan.copies.length, item.relativeDestination);
         } catch (error) {
-          if (temporary) await unlinkIfExists(temporary);
+          let cleanupFailure = "";
+          if (temporary)
+            try {
+              await unlinkIfExists(temporary);
+            } catch (cleanupError) {
+              cleanupFailure = ` Temporary-copy cleanup also failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`;
+            }
           errors.push(
-            `${item.relativeDestination}: ${error instanceof Error ? error.message : String(error)}`,
+            `${item.relativeDestination}: ${error instanceof Error ? error.message : String(error)}${cleanupFailure}`,
           );
           break;
         }
       }
       const playlistPath = join(plan.targetPath, "Outgroove.m3u8");
       const manifestPath = join(plan.targetPath, ".outgroove", "manifest.json");
+      if (cancelled || errors.length > 0) {
+        const rollback = await this.rollbackInstalled(installed);
+        errors.push(...rollback.errors);
+        return {
+          outcome: cancelled ? "cancelled" : "failed",
+          copied,
+          rolledBack: rollback.rolledBack,
+          unchanged: plan.unchanged.length,
+          playlistPath,
+          manifestPath,
+          errors,
+        };
+      }
+      active.phase = "finalizing";
+      for (const change of installed)
+        if (change.rollback) await unlinkIfExists(change.rollback);
       if (errors.length === 0) {
         const allItems = [...plan.copies, ...plan.unchanged].sort(
           (left, right) =>
@@ -371,13 +509,16 @@ export class DeviceSync {
         this.plans.delete(planId);
       }
       return {
+        outcome: "completed",
         copied,
+        rolledBack: 0,
         unchanged: plan.unchanged.length,
         playlistPath,
         manifestPath,
         errors,
       };
     } finally {
+      this.activeApplies.delete(planId);
       this.applyingProfiles.delete(plan.profileId);
     }
   }

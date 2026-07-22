@@ -228,6 +228,9 @@ export function App(): React.JSX.Element {
     albumIds: readonly string[];
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
+  const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
+  const [syncCancellationRequested, setSyncCancellationRequested] =
+    useState(false);
   const [progress, setProgress] = useState<Progress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
@@ -1298,26 +1301,62 @@ export function App(): React.JSX.Element {
 
   const applySync = async (): Promise<void> => {
     if (!syncPlan) return;
+    const applyingPlan = syncPlan;
+    setSyncApplyingPlanId(applyingPlan.id);
+    setSyncCancellationRequested(false);
     setBusy(true);
     try {
       const result = await window.outgroove.applySync({
-        planId: syncPlan.id,
-        confirmationToken: syncPlan.confirmationToken,
+        planId: applyingPlan.id,
+        confirmationToken: applyingPlan.confirmationToken,
       });
       if (result.ok) {
-        setNotice(
-          result.value.errors.length === 0
-            ? `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.`
-            : `Sync stopped: ${result.value.errors.join(" ")}`,
-        );
-        if (result.value.errors.length === 0) {
+        if (result.value.outcome === "completed")
+          setNotice(
+            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.`,
+          );
+        else if (result.value.outcome === "cancelled")
+          setNotice(
+            result.value.errors.length === 0
+              ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
+              : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
+          );
+        else
+          setNotice(
+            `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
+          );
+        if (result.value.outcome === "completed") {
           await planSync();
-          await refreshSyncHistory(syncPlan.profileId);
+          await refreshSyncHistory(applyingPlan.profileId);
         }
       } else setNotice(result.error.message);
     } finally {
+      setProgress((current) => (current?.job === "sync" ? undefined : current));
+      setSyncApplyingPlanId(undefined);
+      setSyncCancellationRequested(false);
       setBusy(false);
     }
+  };
+
+  const cancelSync = async (): Promise<void> => {
+    if (!syncApplyingPlanId || syncCancellationRequested) return;
+    const result = await window.outgroove.cancelSync({
+      planId: syncApplyingPlanId,
+    });
+    if (!result.ok) {
+      setNotice(result.error.message);
+      return;
+    }
+    if (result.value.accepted) {
+      setSyncCancellationRequested(true);
+      setNotice(
+        "Sync cancellation requested. Outgroove will finish or discard the current temporary copy, then restore files completed by this run.",
+      );
+    } else if (result.value.state === "finalizing")
+      setNotice(
+        "The sync is committing its playlist and manifest and can no longer be cancelled safely.",
+      );
+    else setNotice("The sync is no longer running.");
   };
 
   return (
@@ -3356,6 +3395,22 @@ export function App(): React.JSX.Element {
             >
               Confirm and apply copy plan
             </button>
+            {syncApplyingPlanId === syncPlan.id && (
+              <div aria-live="polite">
+                <p>
+                  Status:{" "}
+                  {syncCancellationRequested
+                    ? "Cancelling safely"
+                    : "Sync in progress"}
+                </p>
+                <button
+                  disabled={syncCancellationRequested}
+                  onClick={() => void cancelSync()}
+                >
+                  Cancel active sync
+                </button>
+              </div>
+            )}
           </div>
         )}
       </section>

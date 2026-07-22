@@ -36,6 +36,7 @@ export const channels = {
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",
   applySync: "sync:apply",
+  cancelSync: "sync:cancel",
   jobProgress: "jobs:progress",
   scanJobUpdated: "jobs:scan-updated",
 } as const;
