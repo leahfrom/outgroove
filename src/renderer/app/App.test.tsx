@@ -182,6 +182,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     chooseSyncTargetAndCreateProfile: vi.fn(),
     listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     updateSyncProfileAlbums: vi.fn(),
+    renameSyncProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
@@ -2823,6 +2824,112 @@ describe("tag edit UI safety states", () => {
       "Fixture Album",
     );
     expect(applySync).not.toHaveBeenCalled();
+  });
+
+  it("renames a saved DAP profile with the keyboard without changing its current preview", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const initialProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    const renamedProfile = { ...initialProfile, name: "Pocket DAP" };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [initialProfile] })
+      .mockResolvedValue({ ok: true, value: [renamedProfile] });
+    const renameSyncProfile = vi
+      .spyOn(mockApi, "renameSyncProfile")
+      .mockResolvedValue({ ok: true, value: renamedProfile });
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 0,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const updateAlbums = vi.spyOn(mockApi, "updateSyncProfileAlbums");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open DAP profile Road DAP",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
+    const preview = await screen.findByLabelText("Sync confirmation");
+    const rename = screen.getByRole("button", {
+      name: "Rename DAP profile Road DAP",
+    });
+    rename.focus();
+    await user.keyboard("{Enter}");
+    const input = screen.getByRole("textbox", {
+      name: "New name for Road DAP",
+    });
+    expect(input).toHaveFocus();
+    await user.clear(input);
+    await user.type(input, "Pocket DAP{Enter}");
+
+    await waitFor(() =>
+      expect(renameSyncProfile).toHaveBeenCalledWith({
+        id: profileId,
+        name: "Pocket DAP",
+      }),
+    );
+    expect(preview).toBeVisible();
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(updateAlbums).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+    const profiles = screen.getByRole("list", { name: "Saved DAP profiles" });
+    expect(profiles).toHaveTextContent("Pocket DAP");
+    expect(profiles).toHaveTextContent("/fixture/dap");
+    expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
+      "Pocket DAP",
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Rename DAP profile Pocket DAP",
+      }),
+    );
+    await user.clear(
+      screen.getByRole("textbox", { name: "New name for Pocket DAP" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "New name for Pocket DAP" }),
+      "Discarded name",
+    );
+    const cancel = screen.getByRole("button", {
+      name: "Cancel DAP profile rename",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(renameSyncProfile).toHaveBeenCalledTimes(1);
+    expect(profiles).toHaveTextContent("Pocket DAP");
+    expect(profiles).not.toHaveTextContent("Discarded name");
   });
 
   it("revises a saved profile selection without reselecting its target and requires a fresh preview", async () => {

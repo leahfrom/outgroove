@@ -115,6 +115,9 @@ describe("deterministic manifest-based sync", () => {
     const first = await sync.plan(profileId);
     const repeatedPlan = await sync.plan(profileId);
     expect(repeatedPlan).toEqual(first);
+    expect(database.renameSyncProfile(profileId, "Pocket DAP").name).toBe(
+      "Pocket DAP",
+    );
     expect(first).toMatchObject({
       copies: [
         {

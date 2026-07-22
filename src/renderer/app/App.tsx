@@ -213,6 +213,8 @@ export function App(): React.JSX.Element {
     [],
   );
   const [editingSyncProfileId, setEditingSyncProfileId] = useState<string>();
+  const [renamingSyncProfileId, setRenamingSyncProfileId] = useState<string>();
+  const [syncProfileNameDraft, setSyncProfileNameDraft] = useState("");
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -1219,6 +1221,46 @@ export function App(): React.JSX.Element {
             `Saved ${result.value.albumIds.length} albums in “${result.value.name}”. Its previous sync preview is invalid; create a fresh preview before applying.`,
           );
         }
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startSyncProfileRename = (saved: SyncProfileDto): void => {
+    setRenamingSyncProfileId(saved.id);
+    setSyncProfileNameDraft(saved.name);
+    setNotice(`Renaming DAP profile “${saved.name}”.`);
+  };
+
+  const cancelSyncProfileRename = (): void => {
+    setRenamingSyncProfileId(undefined);
+    setSyncProfileNameDraft("");
+    setNotice("Discarded the unsaved DAP profile name.");
+  };
+
+  const renameSyncProfile = async (saved: SyncProfileDto): Promise<void> => {
+    const name = syncProfileNameDraft.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.renameSyncProfile({
+        id: saved.id,
+        name,
+      });
+      if (result.ok) {
+        setSyncProfiles((current) =>
+          current.map((candidate) =>
+            candidate.id === result.value.id ? result.value : candidate,
+          ),
+        );
+        if (profile?.id === result.value.id) setProfile(result.value);
+        setRenamingSyncProfileId(undefined);
+        setSyncProfileNameDraft("");
+        if (await refreshSyncProfiles())
+          setNotice(
+            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+          );
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -3139,14 +3181,66 @@ export function App(): React.JSX.Element {
                 </div>
                 <div className="library-root-actions">
                   <button
+                    disabled={busy || Boolean(renamingSyncProfileId)}
                     aria-pressed={profile?.id === saved.id}
                     onClick={() => openSyncProfile(saved)}
                   >
                     Open DAP profile {saved.name}
                   </button>
-                  <button onClick={() => editSyncProfileAlbums(saved)}>
+                  <button
+                    disabled={busy || Boolean(renamingSyncProfileId)}
+                    onClick={() => editSyncProfileAlbums(saved)}
+                  >
                     Edit albums in DAP profile {saved.name}
                   </button>
+                  {renamingSyncProfileId === saved.id ? (
+                    <form
+                      aria-label={`Rename DAP profile ${saved.name}`}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void renameSyncProfile(saved);
+                      }}
+                    >
+                      <label htmlFor={`sync-profile-name-${saved.id}`}>
+                        New name for {saved.name}
+                      </label>
+                      <input
+                        autoFocus
+                        id={`sync-profile-name-${saved.id}`}
+                        maxLength={100}
+                        value={syncProfileNameDraft}
+                        onChange={(event) =>
+                          setSyncProfileNameDraft(event.target.value)
+                        }
+                      />
+                      <button
+                        disabled={
+                          busy || syncProfileNameDraft.trim().length === 0
+                        }
+                        type="submit"
+                      >
+                        Save DAP profile name
+                      </button>
+                      <button
+                        disabled={busy}
+                        type="button"
+                        onClick={cancelSyncProfileRename}
+                      >
+                        Cancel DAP profile rename
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      disabled={
+                        busy ||
+                        Boolean(editingSyncProfileId) ||
+                        Boolean(renamingSyncProfileId)
+                      }
+                      onClick={() => startSyncProfileRename(saved)}
+                    >
+                      Rename DAP profile {saved.name}
+                    </button>
+                  )}
                 </div>
               </li>
             ))}

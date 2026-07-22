@@ -64,6 +64,8 @@ export const api: OutgrooveApi = {
   listSyncProfiles: () => ipcRenderer.invoke(channels.listSyncProfiles, {}),
   updateSyncProfileAlbums: (request) =>
     ipcRenderer.invoke(channels.updateSyncProfileAlbums, request),
+  renameSyncProfile: (request) =>
+    ipcRenderer.invoke(channels.renameSyncProfile, request),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),
   applySync: (request) => ipcRenderer.invoke(channels.applySync, request),
   onJobProgress: (listener) => {

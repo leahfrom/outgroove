@@ -11,6 +11,7 @@ import {
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  renameSyncProfileRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
@@ -107,6 +108,30 @@ describe("validated IPC handlers", () => {
       { id, albumIds: [] },
       { id, albumIds: [albumIds[0], albumIds[0]] },
       { id, albumIds, targetPath: "/Volumes/DAP" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("validates bounded DAP profile names without accepting other changes", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      renameSyncProfileRequestSchema,
+      useCase,
+    );
+    const id = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { id, name: "  Pocket DAP  " })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ id, name: "Pocket DAP" });
+    for (const request of [
+      { id, name: "   " },
+      { id, name: "x".repeat(101) },
+      { id, name: "Pocket DAP", targetPath: "/Volumes/DAP" },
+      { id, name: "Pocket DAP", albumIds: [id] },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,

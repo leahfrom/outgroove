@@ -15,6 +15,7 @@ import {
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  renameSyncProfileRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
@@ -401,6 +402,12 @@ export function registerIpc(
     createValidatedHandler(
       updateSyncProfileAlbumsRequestSchema,
       ({ id, albumIds }) => dependencies.sync.updateProfileAlbums(id, albumIds),
+    ),
+  );
+  ipcMain.handle(
+    channels.renameSyncProfile,
+    createValidatedHandler(renameSyncProfileRequestSchema, ({ id, name }) =>
+      dependencies.database.renameSyncProfile(id, name),
     ),
   );
   ipcMain.handle(
