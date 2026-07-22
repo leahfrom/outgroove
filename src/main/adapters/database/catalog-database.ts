@@ -4,20 +4,24 @@ import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 
-import type {
-  LibraryFormatDto,
-  LibraryFolderDto,
-  LibraryGenreDto,
-  LibraryPageDto,
-  LibraryTrackDto,
-  LibraryRootDto,
-  LibraryRootRemovalPreviewDto,
-  LibraryRootRemovalResultDto,
-  ScanErrorDto,
-  ScanJobDto,
-  ScanJobState,
-  ScanResultDto,
-  TagEditHistoryItemDto,
+import {
+  createSavedLibraryFilterRequestSchema,
+  savedLibraryFilterDefinitionSchema,
+  type SavedLibraryFilterDefinition,
+  type SavedLibraryFilterDto,
+  type LibraryFormatDto,
+  type LibraryFolderDto,
+  type LibraryGenreDto,
+  type LibraryPageDto,
+  type LibraryTrackDto,
+  type LibraryRootDto,
+  type LibraryRootRemovalPreviewDto,
+  type LibraryRootRemovalResultDto,
+  type ScanErrorDto,
+  type ScanJobDto,
+  type ScanJobState,
+  type ScanResultDto,
+  type TagEditHistoryItemDto,
 } from "../../../shared/contracts/api";
 import type {
   CatalogAlbum,
@@ -508,6 +512,90 @@ export class CatalogDatabase {
          WHERE removed_at IS NULL ORDER BY created_at`,
       )
       .all() as LibraryRootDto[];
+  }
+
+  listSavedLibraryFilters(): readonly SavedLibraryFilterDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT id, name, definition_version, definition_json, created_at
+         FROM saved_library_filters
+         ORDER BY name COLLATE NOCASE, name, id
+         LIMIT 100`,
+      )
+      .all() as {
+      id: string;
+      name: string;
+      definition_version: number;
+      definition_json: string;
+      created_at: string;
+    }[];
+    return rows.map((row) => {
+      if (row.definition_version !== 1)
+        throw new Error(
+          `Saved Library filter “${row.name}” uses an unsupported definition version.`,
+        );
+      return {
+        id: row.id,
+        name: row.name,
+        definition: savedLibraryFilterDefinitionSchema.parse(
+          JSON.parse(row.definition_json),
+        ),
+        createdAt: row.created_at,
+      };
+    });
+  }
+
+  createSavedLibraryFilter(
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+  ): SavedLibraryFilterDto {
+    const parsed = createSavedLibraryFilterRequestSchema.parse({
+      name,
+      definition,
+    });
+    const duplicate = this.connection
+      .prepare(
+        "SELECT 1 FROM saved_library_filters WHERE name=? COLLATE NOCASE",
+      )
+      .get(parsed.name);
+    if (duplicate)
+      throw new Error(
+        `A saved Library filter named “${parsed.name}” already exists.`,
+      );
+    const count = this.connection
+      .prepare("SELECT COUNT(*) FROM saved_library_filters")
+      .pluck()
+      .get() as number;
+    if (count >= 100)
+      throw new Error("Outgroove supports up to 100 saved Library filters.");
+    const saved: SavedLibraryFilterDto = {
+      id: randomUUID(),
+      name: parsed.name,
+      definition: parsed.definition,
+      createdAt: new Date().toISOString(),
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO saved_library_filters
+         (id, name, definition_version, definition_json, created_at)
+         VALUES (?, ?, 1, ?, ?)`,
+      )
+      .run(
+        saved.id,
+        saved.name,
+        JSON.stringify(saved.definition),
+        saved.createdAt,
+      );
+    return saved;
+  }
+
+  deleteSavedLibraryFilter(id: string): { id: string } {
+    const result = this.connection
+      .prepare("DELETE FROM saved_library_filters WHERE id=?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error("The saved Library filter no longer exists.");
+    return { id };
   }
 
   getLibraryRootRemovalImpact(

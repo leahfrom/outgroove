@@ -15,19 +15,20 @@ export const libraryRootRemovalPreviewRequestSchema = z
 export const libraryRootRemovalApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const libraryViews = [
+  "albums",
+  "artists",
+  "genres",
+  "formats",
+  "folders",
+  "tracks",
+  "data-quality",
+  "scan-errors",
+] as const;
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum([
-      "albums",
-      "artists",
-      "genres",
-      "formats",
-      "folders",
-      "tracks",
-      "data-quality",
-      "scan-errors",
-    ]),
+    view: z.enum(libraryViews),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
     qualityFilter: z.enum(albumDiagnosticFilters).optional(),
@@ -62,6 +63,59 @@ export const libraryQueryRequestSchema = z
       genre === undefined || missingGenre === undefined,
     { message: "Choose either a genre or missing genre, not both." },
   );
+export const savedLibraryFilterDefinitionSchema = z
+  .object({
+    query: z.string().trim().max(200),
+    view: z.enum(libraryViews),
+    qualityFilter: z.enum(albumDiagnosticFilters).optional(),
+    albumArtist: z.string().trim().min(1).max(400).optional(),
+    format: z.string().trim().min(1).max(100).optional(),
+    folder: z
+      .object({
+        id: z.string().min(1).max(32_768),
+        path: z.string().min(1).max(32_768),
+      })
+      .strict()
+      .optional(),
+    genre: z
+      .object({
+        name: z.string().trim().min(1).max(400),
+        missing: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    ({ view, qualityFilter }) =>
+      qualityFilter === undefined || view === "data-quality",
+    { message: "Quality filters require Albums needing review." },
+  )
+  .refine(
+    ({ view, albumArtist }) => albumArtist === undefined || view === "albums",
+    { message: "Album-artist filters require Albums." },
+  )
+  .refine(
+    ({ view, format, folder, genre }) =>
+      (format === undefined && folder === undefined && genre === undefined) ||
+      view === "tracks",
+    { message: "Track filters require Tracks." },
+  )
+  .refine(
+    ({ format, folder, genre }) =>
+      [format, folder, genre].filter((value) => value !== undefined).length <=
+      1,
+    { message: "A saved view can contain only one exact Track filter." },
+  );
+export const createSavedLibraryFilterRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    definition: savedLibraryFilterDefinitionSchema,
+  })
+  .strict();
+export const deleteSavedLibraryFilterRequestSchema = z
+  .object({ id: z.uuid() })
+  .strict();
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -254,6 +308,15 @@ export interface LibraryPageDto {
   readonly offset: number;
   readonly limit: number;
 }
+export type SavedLibraryFilterDefinition = z.infer<
+  typeof savedLibraryFilterDefinitionSchema
+>;
+export interface SavedLibraryFilterDto {
+  readonly id: string;
+  readonly name: string;
+  readonly definition: SavedLibraryFilterDefinition;
+  readonly createdAt: string;
+}
 export interface DatabaseBackupResultDto {
   readonly path: string;
 }
@@ -267,6 +330,7 @@ export interface DatabaseRestorePreviewDto {
     readonly albums: number;
     readonly tracks: number;
     readonly syncProfiles: number;
+    readonly savedLibraryFilters: number;
   };
 }
 export interface TagEditFilePreviewDto {
@@ -381,6 +445,13 @@ export interface OutgrooveApi {
   queryLibrary(
     request: z.infer<typeof libraryQueryRequestSchema>,
   ): Promise<Result<LibraryPageDto>>;
+  listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
+  createSavedLibraryFilter(
+    request: z.infer<typeof createSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<SavedLibraryFilterDto>>;
+  deleteSavedLibraryFilter(
+    request: z.infer<typeof deleteSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<{ id: string }>>;
   previewAlbumTitleEdit(
     request: z.infer<typeof albumEditPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;

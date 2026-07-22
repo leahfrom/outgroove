@@ -1,0 +1,44 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const electron = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  on: vi.fn(),
+  removeListener: vi.fn(),
+}));
+
+vi.mock("electron", () => ({ ipcRenderer: electron }));
+
+import { channels } from "../shared/contracts/channels";
+import { api } from "./api";
+
+describe("preload saved-filter allowlist", () => {
+  beforeEach(() => electron.invoke.mockReset());
+
+  it("maps each saved-filter method to one fixed IPC channel", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    await api.listSavedLibraryFilters();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listSavedLibraryFilters,
+      {},
+    );
+
+    const create = {
+      name: "FLAC",
+      definition: { query: "", view: "tracks", format: "FLAC" } as const,
+    };
+    await api.createSavedLibraryFilter(create);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.createSavedLibraryFilter,
+      create,
+    );
+
+    const remove = { id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf" };
+    await api.deleteSavedLibraryFilter(remove);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.deleteSavedLibraryFilter,
+      remove,
+    );
+    expect(api).not.toHaveProperty("invoke");
+    expect(api).not.toHaveProperty("ipcRenderer");
+  });
+});

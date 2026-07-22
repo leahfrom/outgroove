@@ -140,6 +140,10 @@ export class DatabaseBackupService {
           .prepare("SELECT COUNT(*) FROM sync_profiles")
           .pluck()
           .get() as number,
+        savedLibraryFilters: staged.connection
+          .prepare("SELECT COUNT(*) FROM saved_library_filters")
+          .pluck()
+          .get() as number,
       };
       staged.close();
       staged = undefined;

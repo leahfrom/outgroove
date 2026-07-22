@@ -44,6 +44,10 @@ describe("database backup and restore", () => {
     live.addLibraryRoot("/current/library", "/current/library");
     const donor = new CatalogDatabase(join(directory, "donor.sqlite3"));
     donor.addLibraryRoot("/restored/library", "/restored/library");
+    donor.createSavedLibraryFilter("Restored albums", {
+      query: "restored",
+      view: "albums",
+    });
     donor.createSyncProfile(
       "Fixture DAP",
       "/fixture/target",
@@ -56,8 +60,14 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 14,
-      summary: { libraryRoots: 1, albums: 1, tracks: 1, syncProfiles: 1 },
+      schemaVersion: 15,
+      summary: {
+        libraryRoots: 1,
+        albums: 1,
+        tracks: 1,
+        syncProfiles: 1,
+        savedLibraryFilters: 1,
+      },
     });
     const result = await service.applyRestore(
       preview.operationId,
@@ -66,6 +76,7 @@ describe("database backup and restore", () => {
     expect(result.restarting).toBe(true);
     const restored = new CatalogDatabase(livePath);
     expect(restored.listLibraryRoots()[0]?.path).toBe("/restored/library");
+    expect(restored.listSavedLibraryFilters()[0]?.name).toBe("Restored albums");
     restored.close();
     const rollback = new CatalogDatabase(result.rollbackBackupPath);
     expect(rollback.listLibraryRoots()[0]?.path).toBe("/current/library");

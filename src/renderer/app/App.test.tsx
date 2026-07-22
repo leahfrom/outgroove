@@ -3,7 +3,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OutgrooveApi, ScanJobDto } from "../../shared/contracts/api";
+import type {
+  OutgrooveApi,
+  SavedLibraryFilterDto,
+  ScanJobDto,
+} from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import { App } from "./App";
 
@@ -53,6 +57,11 @@ function api(applyVerified: boolean): OutgrooveApi {
     createDatabaseBackup: vi.fn(),
     chooseDatabaseRestore: vi.fn(),
     applyDatabaseRestore: vi.fn(),
+    listSavedLibraryFilters: vi.fn(() =>
+      Promise.resolve({ ok: true, value: [] }),
+    ),
+    createSavedLibraryFilter: vi.fn(),
+    deleteSavedLibraryFilter: vi.fn(),
     queryLibrary: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -1794,6 +1803,125 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("saves, keyboard-opens, and deletes local Library filters", async () => {
+    const mockApi = api(true);
+    const missingId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const createdId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    let saved: SavedLibraryFilterDto[] = [
+      {
+        id: missingId,
+        name: "Missing genres",
+        definition: {
+          query: "",
+          view: "tracks",
+          genre: { name: "No genre tag", missing: true },
+        },
+        createdAt: "2026-07-22T00:00:00.000Z",
+      },
+    ];
+    vi.spyOn(mockApi, "listSavedLibraryFilters").mockImplementation(() =>
+      Promise.resolve({ ok: true, value: saved }),
+    );
+    const create = vi
+      .spyOn(mockApi, "createSavedLibraryFilter")
+      .mockImplementation((request) => {
+        const created = {
+          id: createdId,
+          name: request.name,
+          definition: request.definition,
+          createdAt: "2026-07-22T00:01:00.000Z",
+        };
+        saved = [...saved, created];
+        return Promise.resolve({ ok: true, value: created });
+      });
+    const remove = vi
+      .spyOn(mockApi, "deleteSavedLibraryFilter")
+      .mockImplementation(({ id }) => {
+        saved = saved.filter((filter) => filter.id !== id);
+        return Promise.resolve({ ok: true, value: { id } });
+      });
+    const queryLibrary = vi.spyOn(mockApi, "queryLibrary");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const open = await screen.findByRole("button", {
+      name: "Open Missing genres",
+    });
+    open.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        missingGenre: true,
+      }),
+    );
+    expect(
+      screen.getByText("Opened saved Library filter “Missing genres”."),
+    ).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText("View"), "formats");
+    await user.type(screen.getByLabelText("Search Library"), "FLAC");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(screen.getByLabelText("Filter name"), "Codec view");
+    await user.click(
+      screen.getByRole("button", { name: "Save current filter" }),
+    );
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        name: "Codec view",
+        definition: { query: "FLAC", view: "formats" },
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Open Codec view" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Delete Codec view" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith({ id: createdId }));
+    expect(
+      screen.queryByRole("button", { name: "Open Codec view" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a saved-filter name editable after a recoverable create failure", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "createSavedLibraryFilter").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "A saved Library filter named “Existing” already exists.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const name = screen.getByLabelText("Filter name");
+    await user.type(name, "Existing");
+    await user.click(
+      screen.getByRole("button", { name: "Save current filter" }),
+    );
+    expect(
+      await screen.findByText(
+        "A saved Library filter named “Existing” already exists.",
+      ),
+    ).toBeVisible();
+    expect(name).toHaveValue("Existing");
+    expect(
+      screen.getByRole("button", { name: "Save current filter" }),
+    ).toBeEnabled();
+  });
+
   it("browses genre findings and routes keyboard actions to exact track filters", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -2398,6 +2526,7 @@ describe("tag edit UI safety states", () => {
             albums: 30,
             tracks: 300,
             syncProfiles: 1,
+            savedLibraryFilters: 2,
           },
         },
       }),
@@ -2426,6 +2555,9 @@ describe("tag edit UI safety states", () => {
     );
     expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
     expect(preview).toHaveTextContent("300");
+    expect(
+      within(preview).getByText("Saved Library filters").nextElementSibling,
+    ).toHaveTextContent("2");
     await user.click(
       screen.getByRole("button", { name: "Confirm restore and restart" }),
     );
