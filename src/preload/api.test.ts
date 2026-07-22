@@ -90,5 +90,12 @@ describe("preload saved-filter allowlist", () => {
       channels.renameSyncProfile,
       rename,
     );
+
+    const history = { profileId: update.id };
+    await api.listSyncHistory(history);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listSyncHistory,
+      history,
+    );
   });
 });

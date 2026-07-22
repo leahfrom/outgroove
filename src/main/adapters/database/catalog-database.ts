@@ -22,6 +22,7 @@ import {
   type ScanJobDto,
   type ScanJobState,
   type ScanResultDto,
+  type SyncHistoryItemDto,
   type SyncProfileDto,
   type TagEditHistoryItemDto,
 } from "../../../shared/contracts/api";
@@ -2281,9 +2282,43 @@ export class CatalogDatabase {
   getLatestManifest(profileId: string): { manifest_json: string } | undefined {
     return this.connection
       .prepare(
-        "SELECT manifest_json FROM sync_manifests WHERE profile_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT manifest_json FROM sync_manifests WHERE profile_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
       )
       .get(profileId) as { manifest_json: string } | undefined;
+  }
+
+  listSyncHistory(profileId: string): readonly SyncHistoryItemDto[] {
+    const profileExists = this.connection
+      .prepare("SELECT 1 FROM sync_profiles WHERE id=?")
+      .pluck()
+      .get(profileId);
+    if (!profileExists) throw new Error("Sync profile no longer exists.");
+    const rows = this.connection
+      .prepare(
+        `SELECT manifest.id, manifest.profile_id, manifest.target_path,
+           manifest.created_at, COUNT(entry.id) AS entry_count
+         FROM sync_manifests manifest
+         LEFT JOIN sync_entries entry ON entry.manifest_id=manifest.id
+         WHERE manifest.profile_id=?
+         GROUP BY manifest.id, manifest.profile_id, manifest.target_path,
+           manifest.created_at
+         ORDER BY manifest.created_at DESC, manifest.id DESC
+         LIMIT 20`,
+      )
+      .all(profileId) as {
+      id: string;
+      profile_id: string;
+      target_path: string;
+      created_at: string;
+      entry_count: number;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      profileId: row.profile_id,
+      targetPath: row.target_path,
+      completedAt: row.created_at,
+      entryCount: row.entry_count,
+    }));
   }
 
   saveManifest(

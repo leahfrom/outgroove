@@ -26,8 +26,8 @@ describe("saved DAP profiles", () => {
       fileName: string,
       title: string,
       albumArtist: string,
-    ): string => {
-      database.upsertScannedFile(root.id, fileName, {
+    ): { albumId: string; fileId: string } => {
+      const fileId = database.upsertScannedFile(root.id, fileName, {
         path: join(directory, fileName),
         size: 100,
         modifiedMs: 1,
@@ -48,10 +48,12 @@ describe("saved DAP profiles", () => {
         .listAlbums()
         .find((candidate) => candidate.title === title);
       if (!album) throw new Error("DAP profile album fixture missing.");
-      return album.id;
+      return { albumId: album.id, fileId };
     };
-    const zetaId = addAlbum("zeta.flac", "Zeta", "Second Artist");
-    const alphaId = addAlbum("alpha.flac", "Alpha", "First Artist");
+    const zeta = addAlbum("zeta.flac", "Zeta", "Second Artist");
+    const alpha = addAlbum("alpha.flac", "Alpha", "First Artist");
+    const zetaId = zeta.albumId;
+    const alphaId = alpha.albumId;
     const older = database.createSyncProfile("Older DAP", "/targets/older", [
       zetaId,
     ]);
@@ -87,7 +89,16 @@ describe("saved DAP profiles", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
       },
     ]);
-    database.saveManifest(older.id, "/targets/older", { entries: [] });
+    database.saveManifest(older.id, "/targets/older", {
+      entries: [
+        {
+          sourceFileId: zeta.fileId,
+          relativeDestination: "Second Artist/Zeta/01.flac",
+          signature: "100:1",
+          size: 100,
+        },
+      ],
+    });
     const previousManifest = database.getLatestManifest(older.id);
     expect(() =>
       database.updateSyncProfileAlbums(older.id, [zetaId, zetaId]),
@@ -125,6 +136,54 @@ describe("saved DAP profiles", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
+    database.saveManifest(older.id, "/targets/second", {
+      entries: [
+        {
+          sourceFileId: alpha.fileId,
+          relativeDestination: "First Artist/Alpha/01.flac",
+          signature: "100:1",
+          size: 100,
+        },
+        {
+          sourceFileId: zeta.fileId,
+          relativeDestination: "Second Artist/Zeta/01.flac",
+          signature: "100:1",
+          size: 100,
+        },
+      ],
+    });
+    const manifestIds = database.connection
+      .prepare(
+        "SELECT id FROM sync_manifests WHERE profile_id=? ORDER BY rowid",
+      )
+      .pluck()
+      .all(older.id) as string[];
+    const firstManifestId = manifestIds[0];
+    const secondManifestId = manifestIds[1];
+    if (!firstManifestId || !secondManifestId)
+      throw new Error("Sync history fixtures missing.");
+    database.connection
+      .prepare("UPDATE sync_manifests SET created_at=? WHERE id=?")
+      .run("2026-03-01T00:00:00.000Z", firstManifestId);
+    database.connection
+      .prepare("UPDATE sync_manifests SET created_at=? WHERE id=?")
+      .run("2026-04-01T00:00:00.000Z", secondManifestId);
+    expect(database.listSyncHistory(older.id)).toEqual([
+      {
+        id: secondManifestId,
+        profileId: older.id,
+        targetPath: "/targets/second",
+        completedAt: "2026-04-01T00:00:00.000Z",
+        entryCount: 2,
+      },
+      {
+        id: firstManifestId,
+        profileId: older.id,
+        targetPath: "/targets/older",
+        completedAt: "2026-03-01T00:00:00.000Z",
+        entryCount: 1,
+      },
+    ]);
     database.close();
 
     const reopened = new CatalogDatabase(databasePath);
@@ -137,6 +196,13 @@ describe("saved DAP profiles", () => {
       reopened.listSyncProfiles().find((profile) => profile.id === older.id)
         ?.albumIds,
     ).toEqual([alphaId, zetaId]);
+    expect(reopened.listSyncHistory(older.id)).toHaveLength(2);
+    expect(() =>
+      reopened.listSyncHistory("6fdf7677-0e73-4f9a-85fd-6612ef381bdf"),
+    ).toThrow("no longer exists");
+    for (let index = 0; index < 25; index++)
+      reopened.saveManifest(older.id, "/targets/older", { entries: [] });
+    expect(reopened.listSyncHistory(older.id)).toHaveLength(20);
     reopened.close();
   });
 });
