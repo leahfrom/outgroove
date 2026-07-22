@@ -14,6 +14,7 @@ import type {
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
+  SyncProfileDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
@@ -208,6 +209,9 @@ export function App(): React.JSX.Element {
   const [syncAlbums, setSyncAlbums] = useState<
     readonly Pick<CatalogAlbum, "id" | "title" | "albumArtist">[]
   >([]);
+  const [syncProfiles, setSyncProfiles] = useState<readonly SyncProfileDto[]>(
+    [],
+  );
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -372,6 +376,18 @@ export function App(): React.JSX.Element {
     return false;
   }, []);
 
+  const refreshSyncProfiles = useCallback(async (): Promise<
+    readonly SyncProfileDto[] | undefined
+  > => {
+    const result = await window.outgroove.listSyncProfiles();
+    if (result.ok) {
+      setSyncProfiles(result.value);
+      return result.value;
+    }
+    setNotice(result.error.message);
+    return undefined;
+  }, []);
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -417,6 +433,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSavedFilters();
   }, [refreshSavedFilters]);
+  useEffect(() => {
+    void refreshSyncProfiles();
+  }, [refreshSyncProfiles]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -982,7 +1001,14 @@ export function App(): React.JSX.Element {
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
-      setNotice(`DAP target selected: ${result.value.targetPath}`);
+      const refreshed = await refreshSyncProfiles();
+      if (refreshed) {
+        const saved = refreshed.find(
+          (candidate) => candidate.id === result.value?.id,
+        );
+        if (saved) setProfile(saved);
+        setNotice(`DAP target selected: ${result.value.targetPath}`);
+      }
     } else if (!result.ok) setNotice(result.error.message);
   };
 
@@ -1004,8 +1030,6 @@ export function App(): React.JSX.Element {
                 left.id.localeCompare(right.id),
             ),
     );
-    setProfile(undefined);
-    setSyncPlan(undefined);
     setNotice(
       selected
         ? `Removed ${album.title} from the DAP selection.`
@@ -1135,6 +1159,14 @@ export function App(): React.JSX.Element {
     const result = await window.outgroove.planSync({ profileId: profile.id });
     if (result.ok) setSyncPlan(result.value);
     else setNotice(result.error.message);
+  };
+
+  const openSyncProfile = (saved: SyncProfileDto): void => {
+    setProfile(saved);
+    setSyncPlan(undefined);
+    setNotice(
+      `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
+    );
   };
 
   const applySync = async (): Promise<void> => {
@@ -2972,62 +3004,12 @@ export function App(): React.JSX.Element {
                       disabled={busy || syncAlbums.length === 0}
                       onClick={() => {
                         setSyncAlbums([]);
-                        setProfile(undefined);
-                        setSyncPlan(undefined);
                         setNotice("Cleared the DAP album selection.");
                       }}
                     >
                       Clear DAP album selection
                     </button>
                   </div>
-                  {profile && (
-                    <div>
-                      <p>
-                        <strong>{profile.name}</strong>
-                        <br />
-                        {profile.targetPath}
-                      </p>
-                      <p>
-                        Status: {profile.albumIds.length} selected{" "}
-                        {profile.albumIds.length === 1 ? "album" : "albums"}{" "}
-                        saved in this profile.
-                      </p>
-                      <button onClick={() => void planSync()}>
-                        Preview sync plan
-                      </button>
-                    </div>
-                  )}
-                  {syncPlan && (
-                    <div className="preview" aria-label="Sync confirmation">
-                      <h4>Sync preview</h4>
-                      <PlanGroup
-                        title="Copies"
-                        items={syncPlan.copies.map(
-                          (item) => item.relativeDestination,
-                        )}
-                      />
-                      <PlanGroup
-                        title="Unchanged / skipped"
-                        items={syncPlan.unchanged.map(
-                          (item) => item.relativeDestination,
-                        )}
-                      />
-                      <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-                      <PlanGroup title="Errors" items={syncPlan.errors} />
-                      <p>{syncPlan.requiredBytes} bytes required.</p>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          syncPlan.conflicts.length > 0 ||
-                          syncPlan.errors.length > 0
-                        }
-                        onClick={() => void applySync()}
-                      >
-                        Confirm and apply copy plan
-                      </button>
-                    </div>
-                  )}
                 </section>
               </>
             )}
@@ -3054,6 +3036,87 @@ export function App(): React.JSX.Element {
           </button>
         </nav>
       )}
+      <section className="card settings" aria-labelledby="dap-profiles">
+        <h2 id="dap-profiles">DAP profiles</h2>
+        <p>
+          Saved profiles can be reopened after restarting Outgroove. Opening a
+          profile only restores its selection; it does not read or change the
+          target until you request a preview.
+        </p>
+        {syncProfiles.length === 0 ? (
+          <p>No DAP profiles have been saved yet.</p>
+        ) : (
+          <ul className="library-root-list" aria-label="Saved DAP profiles">
+            {syncProfiles.map((saved) => (
+              <li key={saved.id}>
+                <div>
+                  <strong>{saved.name}</strong>
+                  <span>{saved.targetPath}</span>
+                  <span>
+                    {saved.albums.length} saved{" "}
+                    {saved.albums.length === 1 ? "album" : "albums"}:{" "}
+                    {saved.albums
+                      .map((album) => `${album.albumArtist} — ${album.title}`)
+                      .join("; ")}
+                  </span>
+                </div>
+                <div className="library-root-actions">
+                  <button
+                    aria-pressed={profile?.id === saved.id}
+                    onClick={() => openSyncProfile(saved)}
+                  >
+                    Open DAP profile {saved.name}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {profile && (
+          <div aria-label="Active DAP profile">
+            <p>
+              <strong>{profile.name}</strong>
+              <br />
+              {profile.targetPath}
+            </p>
+            <p>
+              Status: {profile.albumIds.length} selected{" "}
+              {profile.albumIds.length === 1 ? "album" : "albums"} saved in this
+              profile.
+            </p>
+            <button disabled={busy} onClick={() => void planSync()}>
+              Preview sync plan
+            </button>
+          </div>
+        )}
+        {syncPlan && (
+          <div className="preview" aria-label="Sync confirmation">
+            <h3>Sync preview</h3>
+            <PlanGroup
+              title="Copies"
+              items={syncPlan.copies.map((item) => item.relativeDestination)}
+            />
+            <PlanGroup
+              title="Unchanged / skipped"
+              items={syncPlan.unchanged.map((item) => item.relativeDestination)}
+            />
+            <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
+            <PlanGroup title="Errors" items={syncPlan.errors} />
+            <p>{syncPlan.requiredBytes} bytes required.</p>
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                syncPlan.conflicts.length > 0 ||
+                syncPlan.errors.length > 0
+              }
+              onClick={() => void applySync()}
+            >
+              Confirm and apply copy plan
+            </button>
+          </div>
+        )}
+      </section>
       <section
         className="card settings"
         aria-labelledby="watched-library-folders"

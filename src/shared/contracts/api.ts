@@ -418,6 +418,18 @@ export interface SyncPlanItemDto {
   readonly size: number;
   readonly signature: string;
 }
+export interface SyncProfileDto {
+  readonly id: string;
+  readonly name: string;
+  readonly targetPath: string;
+  readonly albumIds: readonly string[];
+  readonly albums: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly albumArtist: string;
+  }[];
+  readonly createdAt: string;
+}
 export interface SyncPlanDto {
   readonly id: string;
   readonly profileId: string;
@@ -526,6 +538,7 @@ export interface OutgrooveApi {
       albumIds: readonly string[];
     } | null>
   >;
+  listSyncProfiles(): Promise<Result<readonly SyncProfileDto[]>>;
   planSync(
     request: z.infer<typeof syncPlanRequestSchema>,
   ): Promise<Result<SyncPlanDto>>;

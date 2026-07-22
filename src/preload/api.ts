@@ -61,6 +61,7 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.applyTrackNumberSequence, request),
   chooseSyncTargetAndCreateProfile: (request) =>
     ipcRenderer.invoke(channels.createSyncProfile, request),
+  listSyncProfiles: () => ipcRenderer.invoke(channels.listSyncProfiles, {}),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),
   applySync: (request) => ipcRenderer.invoke(channels.applySync, request),
   onJobProgress: (listener) => {

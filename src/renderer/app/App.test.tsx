@@ -180,6 +180,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     previewTrackNumberSequence: vi.fn(),
     applyTrackNumberSequence: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
+    listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
@@ -2735,6 +2736,92 @@ describe("tag edit UI safety states", () => {
       planId: plan.id,
       confirmationToken: plan.confirmationToken,
     });
+  });
+
+  it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    vi.spyOn(mockApi, "listSyncProfiles").mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: profileId,
+          name: "Road DAP",
+          targetPath: "/fixture/dap",
+          albumIds: [album.id, secondAlbum.id],
+          albums: [
+            {
+              id: album.id,
+              title: album.title,
+              albumArtist: album.albumArtist,
+            },
+            {
+              id: secondAlbum.id,
+              title: secondAlbum.title,
+              albumArtist: secondAlbum.albumArtist,
+            },
+          ],
+          createdAt: "2026-07-22T10:00:00.000Z",
+        },
+      ],
+    });
+    const planSync = vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [
+          {
+            sourceFileId: album.tracks[0]?.id ?? album.id,
+            sourcePath: album.tracks[0]?.path ?? "/fixture/track.mp3",
+            relativeDestination: "Fixture Artist/Fixture Album/01-01 Track.mp3",
+            size: 100,
+            signature: "100:1",
+          },
+        ],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 100,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const profiles = await screen.findByRole("list", {
+      name: "Saved DAP profiles",
+    });
+    expect(profiles).toHaveTextContent("/fixture/dap");
+    expect(profiles).toHaveTextContent("Fixture Artist — Fixture Album");
+    expect(profiles).toHaveTextContent("Other Artist — Second Album");
+    const open = within(profiles).getByRole("button", {
+      name: "Open DAP profile Road DAP",
+    });
+    open.focus();
+    await user.keyboard("{Enter}");
+    expect(open).toHaveAttribute("aria-pressed", "true");
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(planSync).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+
+    const preview = screen.getByRole("button", {
+      name: "Preview sync plan",
+    });
+    preview.focus();
+    await user.keyboard("{Enter}");
+    expect(planSync).toHaveBeenCalledWith({ profileId });
+    expect(await screen.findByLabelText("Sync confirmation")).toHaveTextContent(
+      "Fixture Album",
+    );
+    expect(applySync).not.toHaveBeenCalled();
   });
 
   it("shows a database restore preview before explicit confirmation", async () => {

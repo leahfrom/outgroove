@@ -22,6 +22,7 @@ import {
   type ScanJobDto,
   type ScanJobState,
   type ScanResultDto,
+  type SyncProfileDto,
   type TagEditHistoryItemDto,
 } from "../../../shared/contracts/api";
 import type {
@@ -2134,6 +2135,63 @@ export class CatalogDatabase {
       for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
     })();
     return { id, name, targetPath, albumIds: selectedAlbumIds };
+  }
+
+  listSyncProfiles(): readonly SyncProfileDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT profile.id, profile.name, profile.target_path,
+           profile.created_at, album.id AS album_id,
+           album.title AS album_title, album.album_artist
+         FROM sync_profiles profile
+         LEFT JOIN sync_profile_albums selection
+           ON selection.profile_id=profile.id
+         LEFT JOIN albums album ON album.id=selection.album_id
+         ORDER BY profile.created_at DESC, profile.id,
+           album.album_artist COLLATE NOCASE, album.title COLLATE NOCASE,
+           album.id`,
+      )
+      .all() as {
+      id: string;
+      name: string;
+      target_path: string;
+      created_at: string;
+      album_id: string | null;
+      album_title: string | null;
+      album_artist: string | null;
+    }[];
+    const profiles = new Map<string, SyncProfileDto>();
+    for (const row of rows) {
+      if (
+        row.album_id === null ||
+        row.album_title === null ||
+        row.album_artist === null
+      )
+        throw new Error(`Sync profile “${row.name}” has no selected albums.`);
+      const existing = profiles.get(row.id);
+      const album = {
+        id: row.album_id,
+        title: row.album_title,
+        albumArtist: row.album_artist,
+      };
+      if (existing) {
+        profiles.set(row.id, {
+          ...existing,
+          albumIds: [...existing.albumIds, album.id],
+          albums: [...existing.albums, album],
+        });
+      } else {
+        profiles.set(row.id, {
+          id: row.id,
+          name: row.name,
+          targetPath: row.target_path,
+          albumIds: [album.id],
+          albums: [album],
+          createdAt: row.created_at,
+        });
+      }
+    }
+    return [...profiles.values()];
   }
 
   getSyncProfile(id: string):

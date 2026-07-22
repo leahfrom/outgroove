@@ -390,6 +390,12 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.listSyncProfiles,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.database.listSyncProfiles(),
+    ),
+  );
+  ipcMain.handle(
     channels.createSyncProfile,
     createValidatedHandler(
       syncProfileRequestSchema,

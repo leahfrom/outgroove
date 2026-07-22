@@ -67,5 +67,11 @@ describe("preload saved-filter allowlist", () => {
       channels.createSyncProfile,
       request,
     );
+
+    await api.listSyncProfiles();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listSyncProfiles,
+      {},
+    );
   });
 });

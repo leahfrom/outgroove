@@ -6,6 +6,7 @@ import {
   databaseRestoreApplyRequestSchema,
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
+  emptyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
@@ -50,6 +51,19 @@ describe("validated IPC handlers", () => {
       ok: true,
       value: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
     });
+  });
+
+  it("rejects injected fields on read-only list requests", async () => {
+    const useCase = vi.fn(() => []);
+    const handler = createValidatedHandler(emptyRequestSchema, useCase);
+    await expect(handler({}, {})).resolves.toEqual({ ok: true, value: [] });
+    await expect(
+      handler({}, { targetPath: "/Volumes/untrusted" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(useCase).toHaveBeenCalledTimes(1);
   });
 
   it("validates bounded, distinct multi-album DAP selections without accepting target paths", async () => {
