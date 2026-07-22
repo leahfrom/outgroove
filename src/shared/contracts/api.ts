@@ -87,6 +87,7 @@ export const trackNumberSequencePreviewRequestSchema = z
         message: "Choose each track only once.",
       }),
     startNumber: z.number().int().min(1).max(9999),
+    discNumber: z.number().int().min(1).max(999).optional(),
   })
   .strict()
   .refine(

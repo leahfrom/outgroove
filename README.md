@@ -12,7 +12,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
 - Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
 - Preview a field-scoped batch undo from edit history. Only verified writes participate; already restored files are skipped and stale files are refused without stopping safe restores.
-- Explicitly order selected tracks, preview sequential track numbers from a chosen starting value, safely apply them, and undo verified sequence writes from history.
+- Explicitly order selected tracks, preview sequential track numbers from a chosen starting value, optionally assign one disc number to the sequence, safely apply both fields, and undo verified sequence writes from history.
 - Preview a field-scoped track metadata undo from edit history. It restores only fields changed by that verified operation and refuses targeted fields changed afterward.
 - Review confirmed album-title edit history and preview an honest per-file undo. Undo reuses the same safe writer and refuses to overwrite a title changed after the original edit.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.

@@ -472,14 +472,20 @@ describe("tag edit UI safety states", () => {
           {
             fileId: secondTrack.id,
             path: secondTrack.path,
-            changes: [{ field: "trackNumber", before: 2, after: 7 }],
+            changes: [
+              { field: "trackNumber", before: 2, after: 7 },
+              { field: "discNumber", before: 1, after: 3 },
+            ],
             warnings: [],
             willWrite: true,
           },
           {
             fileId: firstTrack.id,
             path: firstTrack.path,
-            changes: [{ field: "trackNumber", before: 1, after: 8 }],
+            changes: [
+              { field: "trackNumber", before: 1, after: 8 },
+              { field: "discNumber", before: 1, after: 3 },
+            ],
             warnings: [],
             willWrite: true,
           },
@@ -513,17 +519,27 @@ describe("tag edit UI safety states", () => {
     await user.clear(start);
     await user.type(start, "7");
     await user.click(
+      screen.getByRole("checkbox", {
+        name: "Set one disc number for this sequence",
+      }),
+    );
+    const discNumber = screen.getByLabelText("Sequence disc number");
+    await user.clear(discNumber);
+    await user.type(discNumber, "3");
+    await user.click(
       screen.getByRole("button", { name: "Preview track-number sequence" }),
     );
     expect(preview).toHaveBeenCalledWith({
       fileIds: [secondTrack.id, firstTrack.id],
       startNumber: 7,
+      discNumber: 3,
     });
     const confirmation = await screen.findByLabelText(
       "Track number sequence confirmation",
     );
     expect(within(confirmation).getByText(/2 → 7/u)).toBeInTheDocument();
     expect(within(confirmation).getByText(/1 → 8/u)).toBeInTheDocument();
+    expect(within(confirmation).getAllByText(/1 → 3/u)).toHaveLength(2);
     await user.click(
       within(confirmation).getByRole("button", {
         name: "Confirm track-number sequence",

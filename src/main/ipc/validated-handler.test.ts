@@ -199,6 +199,9 @@ describe("validated IPC handlers", () => {
       handler({}, { fileIds: [first, second], startNumber: 9999 }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
+      handler({}, { fileIds: [first, second], startNumber: 1, discNumber: 0 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
       handler(
         {},
         {
