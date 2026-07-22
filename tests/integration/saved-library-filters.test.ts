@@ -50,6 +50,36 @@ describe("saved Library filters", () => {
         view: "albums",
       }),
     ).toThrow("already exists");
+    const ambient = reopened.listSavedLibraryFilters()[0];
+    if (!ambient) throw new Error("Saved filter fixture missing.");
+    const updated = reopened.updateSavedLibraryFilter(
+      ambient.id,
+      "Ambient albums",
+      { query: "ambient", view: "albums" },
+    );
+    expect(updated).toEqual({
+      ...ambient,
+      name: "Ambient albums",
+      definition: { query: "ambient", view: "albums" },
+    });
+    expect(
+      reopened
+        .listSavedLibraryFilters()
+        .find((saved) => saved.id === ambient.id),
+    ).toEqual(updated);
+    expect(() =>
+      reopened.updateSavedLibraryFilter(ambient.id, "zeta flac", {
+        query: "",
+        view: "albums",
+      }),
+    ).toThrow("already exists");
+    expect(() =>
+      reopened.updateSavedLibraryFilter(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "Missing",
+        { query: "", view: "albums" },
+      ),
+    ).toThrow("no longer exists");
     expect(reopened.deleteSavedLibraryFilter(format.id)).toEqual({
       id: format.id,
     });

@@ -32,6 +32,17 @@ describe("preload saved-filter allowlist", () => {
       create,
     );
 
+    const update = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      name: "Lossless",
+      definition: { query: "", view: "tracks", format: "FLAC" } as const,
+    };
+    await api.updateSavedLibraryFilter(update);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.updateSavedLibraryFilter,
+      update,
+    );
+
     const remove = { id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf" };
     await api.deleteSavedLibraryFilter(remove);
     expect(electron.invoke).toHaveBeenLastCalledWith(

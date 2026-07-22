@@ -23,6 +23,7 @@ import {
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
@@ -224,6 +225,14 @@ export function registerIpc(
       createSavedLibraryFilterRequestSchema,
       ({ name, definition }) =>
         dependencies.database.createSavedLibraryFilter(name, definition),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateSavedLibraryFilter,
+    createValidatedHandler(
+      updateSavedLibraryFilterRequestSchema,
+      ({ id, name, definition }) =>
+        dependencies.database.updateSavedLibraryFilter(id, name, definition),
     ),
   );
   ipcMain.handle(

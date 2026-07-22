@@ -113,6 +113,13 @@ export const createSavedLibraryFilterRequestSchema = z
     definition: savedLibraryFilterDefinitionSchema,
   })
   .strict();
+export const updateSavedLibraryFilterRequestSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string().trim().min(1).max(100),
+    definition: savedLibraryFilterDefinitionSchema,
+  })
+  .strict();
 export const deleteSavedLibraryFilterRequestSchema = z
   .object({ id: z.uuid() })
   .strict();
@@ -448,6 +455,9 @@ export interface OutgrooveApi {
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<SavedLibraryFilterDto>>;
+  updateSavedLibraryFilter(
+    request: z.infer<typeof updateSavedLibraryFilterRequestSchema>,
   ): Promise<Result<SavedLibraryFilterDto>>;
   deleteSavedLibraryFilter(
     request: z.infer<typeof deleteSavedLibraryFilterRequestSchema>,

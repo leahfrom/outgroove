@@ -14,6 +14,7 @@ import {
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
 
@@ -399,6 +400,27 @@ describe("validated IPC handlers", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+
+    const update = vi.fn();
+    const updateHandler = createValidatedHandler(
+      updateSavedLibraryFilterRequestSchema,
+      update,
+    );
+    const updateRequest = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      ...valid,
+    };
+    await expect(updateHandler({}, updateRequest)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(update).toHaveBeenCalledWith(updateRequest);
+    await expect(
+      updateHandler({}, { ...updateRequest, id: "not-a-uuid", path: "/tmp" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
 
     const remove = vi.fn();
     const removeHandler = createValidatedHandler(

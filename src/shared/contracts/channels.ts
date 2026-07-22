@@ -12,6 +12,7 @@ export const channels = {
   queryLibrary: "library:query",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
+  updateSavedLibraryFilter: "library:update-saved-filter",
   deleteSavedLibraryFilter: "library:delete-saved-filter",
   previewAlbumTitleEdit: "tagging:preview-album-title",
   applyAlbumTitleEdit: "tagging:apply-album-title",

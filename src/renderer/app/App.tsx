@@ -128,6 +128,9 @@ export function App(): React.JSX.Element {
     readonly SavedLibraryFilterDto[]
   >([]);
   const [savedFilterName, setSavedFilterName] = useState("");
+  const [savedFilterNames, setSavedFilterNames] = useState<
+    Record<string, string>
+  >({});
   const [savedFilterBusy, setSavedFilterBusy] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
@@ -356,6 +359,9 @@ export function App(): React.JSX.Element {
     const result = await window.outgroove.listSavedLibraryFilters();
     if (result.ok) {
       setSavedFilters(result.value);
+      setSavedFilterNames(
+        Object.fromEntries(result.value.map((saved) => [saved.id, saved.name])),
+      );
       return true;
     }
     setNotice(result.error.message);
@@ -973,16 +979,10 @@ export function App(): React.JSX.Element {
     } else if (!result.ok) setNotice(result.error.message);
   };
 
-  const saveCurrentLibraryFilter = async (): Promise<void> => {
-    if (albumIdFilter) {
-      setNotice(
-        "Exact Workbench album routes cannot be saved as Library filters.",
-      );
-      return;
-    }
-    const name = savedFilterName.trim();
-    if (!name) return;
-    const definition: SavedLibraryFilterDefinition = {
+  const currentLibraryFilterDefinition = ():
+    SavedLibraryFilterDefinition | undefined => {
+    if (albumIdFilter) return undefined;
+    return {
       query,
       view: libraryView,
       ...(libraryView === "data-quality" ? { qualityFilter } : {}),
@@ -999,6 +999,18 @@ export function App(): React.JSX.Element {
         ? { genre: trackGenreFilter }
         : {}),
     };
+  };
+
+  const saveCurrentLibraryFilter = async (): Promise<void> => {
+    const definition = currentLibraryFilterDefinition();
+    if (!definition) {
+      setNotice(
+        "Exact Workbench album routes cannot be saved as Library filters.",
+      );
+      return;
+    }
+    const name = savedFilterName.trim();
+    if (!name) return;
     setSavedFilterBusy(true);
     try {
       const result = await window.outgroove.createSavedLibraryFilter({
@@ -1013,6 +1025,41 @@ export function App(): React.JSX.Element {
     } finally {
       setSavedFilterBusy(false);
     }
+  };
+
+  const updateSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+    action: "Renamed" | "Updated",
+  ): Promise<void> => {
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.updateSavedLibraryFilter({
+        id: saved.id,
+        name,
+        definition,
+      });
+      if (result.ok) {
+        if (await refreshSavedFilters())
+          setNotice(`${action} saved Library filter “${result.value.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
+  };
+
+  const replaceSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+  ): Promise<void> => {
+    const definition = currentLibraryFilterDefinition();
+    if (!definition) {
+      setNotice(
+        "Exact Workbench album routes cannot replace a saved Library filter.",
+      );
+      return;
+    }
+    await updateSavedLibraryFilter(saved, saved.name, definition, "Updated");
   };
 
   const openSavedLibraryFilter = (saved: SavedLibraryFilterDto): void => {
@@ -1345,11 +1392,56 @@ export function App(): React.JSX.Element {
                   <strong>{saved.name}</strong>
                   <span>{describeSavedFilter(saved.definition)}</span>
                 </div>
+                <form
+                  className="inline"
+                  aria-label={`Rename ${saved.name}`}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = (savedFilterNames[saved.id] ?? "").trim();
+                    if (name)
+                      void updateSavedLibraryFilter(
+                        saved,
+                        name,
+                        saved.definition,
+                        "Renamed",
+                      );
+                  }}
+                >
+                  <label htmlFor={`saved-filter-name-${saved.id}`}>Name</label>
+                  <input
+                    id={`saved-filter-name-${saved.id}`}
+                    aria-label={`Name for ${saved.name}`}
+                    value={savedFilterNames[saved.id] ?? saved.name}
+                    maxLength={100}
+                    onChange={(event) =>
+                      setSavedFilterNames((names) => ({
+                        ...names,
+                        [saved.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      savedFilterBusy ||
+                      !(savedFilterNames[saved.id] ?? "").trim() ||
+                      (savedFilterNames[saved.id] ?? "").trim() === saved.name
+                    }
+                  >
+                    Rename {saved.name}
+                  </button>
+                </form>
                 <button
                   disabled={savedFilterBusy}
                   onClick={() => openSavedLibraryFilter(saved)}
                 >
                   Open {saved.name}
+                </button>
+                <button
+                  disabled={savedFilterBusy || Boolean(albumIdFilter)}
+                  onClick={() => void replaceSavedLibraryFilter(saved)}
+                >
+                  Update {saved.name} to current filter
                 </button>
                 <button
                   disabled={savedFilterBusy}

@@ -61,6 +61,7 @@ function api(applyVerified: boolean): OutgrooveApi {
       Promise.resolve({ ok: true, value: [] }),
     ),
     createSavedLibraryFilter: vi.fn(),
+    updateSavedLibraryFilter: vi.fn(),
     deleteSavedLibraryFilter: vi.fn(),
     queryLibrary: vi.fn(() =>
       Promise.resolve({
@@ -1834,6 +1835,21 @@ describe("tag edit UI safety states", () => {
         saved = [...saved, created];
         return Promise.resolve({ ok: true, value: created });
       });
+    const update = vi
+      .spyOn(mockApi, "updateSavedLibraryFilter")
+      .mockImplementation((request) => {
+        const current = saved.find((filter) => filter.id === request.id);
+        if (!current) throw new Error("Saved filter fixture missing");
+        const updated = {
+          ...current,
+          name: request.name,
+          definition: request.definition,
+        };
+        saved = saved.map((filter) =>
+          filter.id === request.id ? updated : filter,
+        );
+        return Promise.resolve({ ok: true, value: updated });
+      });
     const remove = vi
       .spyOn(mockApi, "deleteSavedLibraryFilter")
       .mockImplementation(({ id }) => {
@@ -1866,6 +1882,24 @@ describe("tag edit UI safety states", () => {
       screen.getByText("Opened saved Library filter “Missing genres”."),
     ).toBeVisible();
 
+    const rename = screen.getByLabelText("Name for Missing genres");
+    await user.clear(rename);
+    await user.type(rename, "Needs genres{Enter}");
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        id: missingId,
+        name: "Needs genres",
+        definition: {
+          query: "",
+          view: "tracks",
+          genre: { name: "No genre tag", missing: true },
+        },
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Open Needs genres" }),
+    ).toBeVisible();
+
     await user.selectOptions(screen.getByLabelText("View"), "formats");
     await user.type(screen.getByLabelText("Search Library"), "FLAC");
     await user.click(screen.getByRole("button", { name: "Search" }));
@@ -1881,6 +1915,25 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       await screen.findByRole("button", { name: "Open Codec view" }),
+    ).toBeVisible();
+
+    await user.clear(screen.getByLabelText("Search Library"));
+    await user.type(screen.getByLabelText("Search Library"), "lossless");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Update Needs genres to current filter",
+      }),
+    );
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({
+        id: missingId,
+        name: "Needs genres",
+        definition: { query: "lossless", view: "formats" },
+      }),
+    );
+    expect(
+      screen.getByText("Updated saved Library filter “Needs genres”."),
     ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Delete Codec view" }));
@@ -1919,6 +1972,46 @@ describe("tag edit UI safety states", () => {
     expect(name).toHaveValue("Existing");
     expect(
       screen.getByRole("button", { name: "Save current filter" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps a saved-filter rename editable after a recoverable update failure", async () => {
+    const mockApi = api(true);
+    const saved: SavedLibraryFilterDto = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      name: "Existing",
+      definition: { query: "", view: "albums" },
+      createdAt: "2026-07-22T00:00:00.000Z",
+    };
+    vi.spyOn(mockApi, "listSavedLibraryFilters").mockResolvedValue({
+      ok: true,
+      value: [saved],
+    });
+    vi.spyOn(mockApi, "updateSavedLibraryFilter").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "A saved Library filter named “Taken” already exists.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const name = await screen.findByLabelText("Name for Existing");
+    await user.clear(name);
+    await user.type(name, "Taken{Enter}");
+    expect(
+      await screen.findByText(
+        "A saved Library filter named “Taken” already exists.",
+      ),
+    ).toBeVisible();
+    expect(name).toHaveValue("Taken");
+    expect(
+      screen.getByRole("button", { name: "Rename Existing" }),
     ).toBeEnabled();
   });
 
