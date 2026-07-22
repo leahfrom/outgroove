@@ -133,9 +133,22 @@ export function App(): React.JSX.Element {
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
   );
+  const diagnosticsByAlbum = useMemo(
+    () =>
+      new Map(albums.map((album) => [album.id, diagnoseAlbum(album)] as const)),
+    [albums],
+  );
   const albumDiagnostics = useMemo(
-    () => (selectedAlbum ? diagnoseAlbum(selectedAlbum) : []),
-    [selectedAlbum],
+    () =>
+      selectedAlbum ? (diagnosticsByAlbum.get(selectedAlbum.id) ?? []) : [],
+    [diagnosticsByAlbum, selectedAlbum],
+  );
+  const albumsWithDiagnostics = useMemo(
+    () =>
+      albums.filter((album) =>
+        Boolean(diagnosticsByAlbum.get(album.id)?.length),
+      ).length,
+    [albums, diagnosticsByAlbum],
   );
 
   useEffect(() => {
@@ -919,24 +932,47 @@ export function App(): React.JSX.Element {
         <main className="workspace">
           <aside aria-label="Albums">
             <h2>Albums</h2>
-            {albums.map((album) => (
-              <button
-                className={
-                  album.id === selectedAlbumId ? "album selected" : "album"
-                }
-                key={album.id}
-                onClick={() => {
-                  setSelectedAlbumId(album.id);
-                  setEditPreview(undefined);
-                  setSyncPlan(undefined);
-                }}
-              >
-                {album.title}
-                <small>
-                  {album.albumArtist} · {album.tracks.length} tracks
-                </small>
-              </button>
-            ))}
+            <p className="album-quality-summary" aria-live="polite">
+              Albums needing review on this page: {albumsWithDiagnostics} of{" "}
+              {albums.length}.
+            </p>
+            {albums.map((album) => {
+              const findings = diagnosticsByAlbum.get(album.id) ?? [];
+              const needsAttention = findings.some(
+                (finding) => finding.severity === "needs-attention",
+              );
+              return (
+                <button
+                  className={
+                    album.id === selectedAlbumId ? "album selected" : "album"
+                  }
+                  key={album.id}
+                  onClick={() => {
+                    setSelectedAlbumId(album.id);
+                    setEditPreview(undefined);
+                    setSyncPlan(undefined);
+                  }}
+                >
+                  {album.title}
+                  <small>
+                    {album.albumArtist} · {album.tracks.length} tracks
+                  </small>
+                  <small
+                    className={`album-quality-status ${
+                      findings.length === 0 ? "clean" : "review"
+                    }`}
+                  >
+                    {findings.length === 0
+                      ? "Status: No data-quality findings"
+                      : `Status: ${findings.length} data-quality ${findings.length === 1 ? "finding" : "findings"} — ${
+                          needsAttention
+                            ? "needs attention"
+                            : "review recommended"
+                        }`}
+                  </small>
+                </button>
+              );
+            })}
           </aside>
           <section className="detail">
             {selectedAlbum && (
