@@ -35,6 +35,11 @@ function addAlbum(
     modifiedMs: index,
     format: index === 17 ? "SpecialCodec" : "FLAC",
     durationSeconds: 10,
+    codec: index === 0 ? "FLAC lossless" : null,
+    bitrate: index === 0 ? 900_000 : null,
+    sampleRate: index === 0 ? 96_000 : null,
+    bitDepth: index === 0 ? 24 : null,
+    channels: index === 0 ? 2 : null,
     tags: {
       title: index === 9 ? "Needle Track" : `Track ${index}`,
       album,
@@ -232,6 +237,12 @@ describe("paginated library query", () => {
       trackNumber: 1,
       discNumber: 1,
       format: "FLAC",
+      codec: "FLAC lossless",
+      bitrate: 900_000,
+      sampleRate: 96_000,
+      bitDepth: 24,
+      channels: 2,
+      size: 100,
     });
     const needleTrack = database.queryLibrary({
       query: "Needle",
@@ -543,7 +554,7 @@ describe("paginated library query", () => {
     database.close();
   });
 
-  it("re-reads unchanged legacy catalog rows once to hydrate genres", async () => {
+  it("re-reads unchanged legacy catalog rows once to hydrate rebuildable fields", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-genres-legacy-"));
     temporary.push(directory);
     const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
@@ -558,6 +569,11 @@ describe("paginated library query", () => {
       modifiedMs: 20,
       format: "FLAC",
       durationSeconds: 30,
+      codec: "FLAC",
+      bitrate: 800_000,
+      sampleRate: 48_000,
+      bitDepth: 24,
+      channels: 2,
       tags: {
         title: "Legacy",
         album: "Legacy",
@@ -573,7 +589,9 @@ describe("paginated library query", () => {
     database.connection
       .prepare(
         `UPDATE audio_files
-         SET normalized_tags_json=json_remove(normalized_tags_json, '$.genres')`,
+         SET normalized_tags_json=json_remove(normalized_tags_json, '$.genres'),
+           codec=NULL, bitrate=NULL, sample_rate=NULL, bit_depth=NULL,
+           channels=NULL, technical_properties_version=0`,
       )
       .run();
     database.beginScan(root.id);
@@ -602,6 +620,20 @@ describe("paginated library query", () => {
         },
       ]),
     ).toEqual({ changed: 0, unchanged: 1 });
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 10,
+      }).tracks[0],
+    ).toMatchObject({
+      codec: "FLAC",
+      bitrate: 800_000,
+      sampleRate: 48_000,
+      bitDepth: 24,
+      channels: 2,
+    });
     database.close();
   });
 

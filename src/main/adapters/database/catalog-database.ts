@@ -42,6 +42,12 @@ interface AudioFileRow {
   signature: string;
   format: string | null;
   duration_seconds: number | null;
+  codec: string | null;
+  bitrate: number | null;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  channels: number | null;
+  technical_properties_version: number;
   normalized_tags_json: string | null;
   native_tags_json: string | null;
   scan_state: "ok" | "error" | "missing";
@@ -249,10 +255,17 @@ export class CatalogDatabase {
       ),
       upsertAudioFile: this.connection.prepare(
         `INSERT INTO audio_files
-         (id, root_id, path, path_key, size, modified_ms, signature, format, duration_seconds, normalized_tags_json, native_tags_json, scan_state, scan_error, scanned_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NULL, ?)
+         (id, root_id, path, path_key, size, modified_ms, signature, format,
+          duration_seconds, codec, bitrate, sample_rate, bit_depth, channels,
+          technical_properties_version, normalized_tags_json, native_tags_json,
+          scan_state, scan_error, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'ok', NULL, ?)
          ON CONFLICT(id) DO UPDATE SET path=excluded.path, path_key=excluded.path_key, size=excluded.size, modified_ms=excluded.modified_ms,
-           signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds, normalized_tags_json=excluded.normalized_tags_json,
+           signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds,
+           codec=excluded.codec, bitrate=excluded.bitrate, sample_rate=excluded.sample_rate,
+           bit_depth=excluded.bit_depth, channels=excluded.channels,
+           technical_properties_version=excluded.technical_properties_version,
+           normalized_tags_json=excluded.normalized_tags_json,
            native_tags_json=excluded.native_tags_json, scan_state='ok', scan_error=NULL, scanned_at=excluded.scanned_at`,
       ),
       upsertTrack: this.connection.prepare(
@@ -730,6 +743,11 @@ export class CatalogDatabase {
       signature,
       file.format,
       file.durationSeconds,
+      file.codec ?? null,
+      file.bitrate ?? null,
+      file.sampleRate ?? null,
+      file.bitDepth ?? null,
+      file.channels ?? null,
       JSON.stringify({ ...file.tags, genres: file.tags.genres ?? [] }),
       JSON.stringify(file.nativeTags),
       now,
@@ -848,7 +866,9 @@ export class CatalogDatabase {
         if (
           existing?.size === entry.size &&
           Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs) &&
-          (existing.scan_state === "error" || existing.genres_type === "array")
+          (existing.scan_state === "error" ||
+            (existing.genres_type === "array" &&
+              existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
             new Date().toISOString(),
@@ -1193,7 +1213,9 @@ export class CatalogDatabase {
             a.title AS albumTitle, a.album_artist AS albumArtist,
             t.track_number AS trackNumber, t.disc_number AS discNumber,
             COALESCE(NULLIF(TRIM(f.format), ''), 'unknown') AS format,
-            f.duration_seconds AS durationSeconds, f.path
+            f.duration_seconds AS durationSeconds, f.codec,
+            f.bitrate, f.sample_rate AS sampleRate, f.bit_depth AS bitDepth,
+            f.channels, f.size, f.path
            ${visibleTracks}
            ORDER BY a.album_artist, a.title, a.id,
              COALESCE(t.disc_number, 0), COALESCE(t.track_number, 0), f.path
@@ -1430,6 +1452,11 @@ export class CatalogDatabase {
         modifiedMs: row.modified_ms,
         format: row.format ?? "unknown",
         durationSeconds: row.duration_seconds,
+        codec: row.codec,
+        bitrate: row.bitrate,
+        sampleRate: row.sample_rate,
+        bitDepth: row.bit_depth,
+        channels: row.channels,
         tags,
         nativeTags: JSON.parse(
           row.native_tags_json ?? "[]",

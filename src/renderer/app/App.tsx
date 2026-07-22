@@ -20,6 +20,14 @@ import type {
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
+  formatBitDepth,
+  formatBitrate,
+  formatChannels,
+  formatDuration,
+  formatFileSize,
+  formatSampleRate,
+} from "../../shared/domain/audio-technical";
+import {
   albumDiagnosticFilters,
   diagnoseAlbum,
   isAlbumDiagnosticFilter,
@@ -1436,7 +1444,7 @@ export function App(): React.JSX.Element {
                     <th scope="col">Artist</th>
                     <th scope="col">Album</th>
                     <th scope="col">Number</th>
-                    <th scope="col">Format</th>
+                    <th scope="col">Technical details</th>
                     <th scope="col">File</th>
                     <th scope="col">Action</th>
                   </tr>
@@ -1455,8 +1463,15 @@ export function App(): React.JSX.Element {
                         {track.trackNumber ?? "missing"}
                       </td>
                       <td>
-                        {track.format} ·{" "}
-                        {track.durationSeconds?.toFixed(1) ?? "—"}s
+                        {track.format} · {track.codec ?? "Unknown codec"}
+                        <small>
+                          Duration {formatDuration(track.durationSeconds)} ·{" "}
+                          {formatBitrate(track.bitrate)} ·{" "}
+                          {formatSampleRate(track.sampleRate)} ·{" "}
+                          {formatBitDepth(track.bitDepth)} ·{" "}
+                          {formatChannels(track.channels)} ·{" "}
+                          {formatFileSize(track.size)}
+                        </small>
                       </td>
                       <td>{track.path}</td>
                       <td>
@@ -1648,11 +1663,27 @@ export function App(): React.JSX.Element {
                           {track.tags.trackNumber ?? "—"} {track.tags.title}
                         </span>
                         <span>
-                          {track.format} ·{" "}
-                          {track.durationSeconds?.toFixed(1) ?? "—"}s
+                          {track.format} · {track.codec ?? "Unknown codec"} ·{" "}
+                          {formatDuration(track.durationSeconds)}
                         </span>
                       </summary>
                       <dl>
+                        <dt>Container/format</dt>
+                        <dd>{track.format}</dd>
+                        <dt>Codec</dt>
+                        <dd>{track.codec ?? "Unknown"}</dd>
+                        <dt>Duration</dt>
+                        <dd>{formatDuration(track.durationSeconds)}</dd>
+                        <dt>Bitrate</dt>
+                        <dd>{formatBitrate(track.bitrate)}</dd>
+                        <dt>Sample rate</dt>
+                        <dd>{formatSampleRate(track.sampleRate)}</dd>
+                        <dt>Bit depth</dt>
+                        <dd>{formatBitDepth(track.bitDepth)}</dd>
+                        <dt>Channels</dt>
+                        <dd>{formatChannels(track.channels)}</dd>
+                        <dt>File size</dt>
+                        <dd>{formatFileSize(track.size)}</dd>
                         <dt>Path</dt>
                         <dd>{track.path}</dd>
                         <dt>Normalized tags</dt>
