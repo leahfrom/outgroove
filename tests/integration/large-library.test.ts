@@ -19,6 +19,8 @@ describe("synthetic large-library pipeline", () => {
       cancellationState: "cancelled",
       catalogItemsAfterCancellation: 525,
       firstPageItems: 20,
+      folderItems: 20,
+      folderTrackItems: 10,
       searchItems: 1,
     });
     for (const timing of Object.values(report.timingsMs))

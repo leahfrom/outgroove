@@ -16,6 +16,7 @@ export const libraryQueryRequestSchema = z
       "albums",
       "artists",
       "formats",
+      "folders",
       "tracks",
       "data-quality",
       "scan-errors",
@@ -26,6 +27,7 @@ export const libraryQueryRequestSchema = z
     albumArtist: z.string().trim().min(1).max(400).optional(),
     albumId: z.uuid().optional(),
     format: z.string().trim().min(1).max(100).optional(),
+    folderId: z.string().min(1).max(32_768).optional(),
   })
   .strict()
   .refine(
@@ -36,6 +38,10 @@ export const libraryQueryRequestSchema = z
   .refine(({ view, format }) => format === undefined || view === "tracks", {
     path: ["format"],
     message: "Format filters require Tracks.",
+  })
+  .refine(({ view, folderId }) => folderId === undefined || view === "tracks", {
+    path: ["folderId"],
+    message: "Folder filters require Tracks.",
   });
 export const albumEditPreviewRequestSchema = z
   .object({
@@ -171,6 +177,12 @@ export interface LibraryFormatDto {
   readonly name: string;
   readonly trackCount: number;
 }
+export interface LibraryFolderDto {
+  readonly id: string;
+  readonly path: string;
+  readonly albumCount: number;
+  readonly trackCount: number;
+}
 export interface LibraryTrackDto {
   readonly id: string;
   readonly albumId: string;
@@ -188,6 +200,7 @@ export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
   readonly artists: readonly LibraryArtistDto[];
   readonly formats: readonly LibraryFormatDto[];
+  readonly folders: readonly LibraryFolderDto[];
   readonly tracks: readonly LibraryTrackDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;

@@ -53,6 +53,7 @@ function api(applyVerified: boolean): OutgrooveApi {
           albums: [album],
           artists: [],
           formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 1,
@@ -272,6 +273,7 @@ describe("tag edit UI safety states", () => {
         albums: [batchAlbum],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -464,6 +466,7 @@ describe("tag edit UI safety states", () => {
         albums: [sequenceAlbum],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -585,6 +588,7 @@ describe("tag edit UI safety states", () => {
         albums: [diagnosticAlbum],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -660,6 +664,7 @@ describe("tag edit UI safety states", () => {
         albums: [diagnosticAlbum],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 1,
@@ -745,6 +750,7 @@ describe("tag edit UI safety states", () => {
         albums: [album, flaggedAlbum],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems: 2,
@@ -1263,6 +1269,7 @@ describe("tag edit UI safety states", () => {
                 albums: [],
                 artists: [],
                 formats: [],
+                folders: [],
                 tracks: [],
                 scanErrors: [
                   {
@@ -1284,6 +1291,7 @@ describe("tag edit UI safety states", () => {
                 albums: [album],
                 artists: [],
                 formats: [],
+                folders: [],
                 tracks: [],
                 scanErrors: [],
                 totalItems: 1,
@@ -1340,6 +1348,7 @@ describe("tag edit UI safety states", () => {
                   ]
                 : [],
             formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: request.view === "artists" ? 21 : 1,
@@ -1423,6 +1432,7 @@ describe("tag edit UI safety states", () => {
               request.view === "formats"
                 ? [{ name: "FLAC", trackCount: 7 }]
                 : [],
+            folders: [],
             tracks:
               request.view === "tracks"
                 ? [
@@ -1502,6 +1512,116 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("browses folders and opens an exact removable track filter", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const folderPath = "/fixture";
+    const mockApi = api(true);
+    const previewTrackTagEdit = vi.spyOn(mockApi, "previewTrackTagEdit");
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            formats: [],
+            folders:
+              request.view === "folders"
+                ? [
+                    {
+                      id: folderPath,
+                      path: folderPath,
+                      albumCount: 2,
+                      trackCount: 7,
+                    },
+                  ]
+                : [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "folders" ? 21 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "folders");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "folders",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(await screen.findByText(folderPath)).toBeVisible();
+    expect(screen.getByText("Status: 2 albums · 7 tracks")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "folders",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: `Browse tracks in ${folderPath}`,
+      }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        folderId: folderPath,
+      }),
+    );
+    expect(screen.getByText(`1 track in folder “${folderPath}”`)).toBeVisible();
+    expect(screen.getByText(firstTrack.path)).toBeVisible();
+    expect(previewTrackTagEdit).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Show all folders" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+  });
+
   it("browses tracks with file context and opens the existing preview-only editor", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1516,6 +1636,7 @@ describe("tag edit UI safety states", () => {
             albums: request.view === "albums" ? [album] : [],
             artists: [],
             formats: [],
+            folders: [],
             tracks:
               request.view === "tracks"
                 ? [
@@ -1616,6 +1737,7 @@ describe("tag edit UI safety states", () => {
             albums: request.view === "data-quality" ? [flaggedAlbum] : [album],
             artists: [],
             formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 1,
@@ -1716,6 +1838,7 @@ describe("tag edit UI safety states", () => {
             albums: albumQueries === 1 ? [album] : [freshAlbum],
             artists: [],
             formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 1,
@@ -1753,6 +1876,7 @@ describe("tag edit UI safety states", () => {
           albums: [],
           artists: [],
           formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 0,
@@ -1776,6 +1900,7 @@ describe("tag edit UI safety states", () => {
           albums: [album],
           artists: [],
           formats: [],
+          folders: [],
           tracks: [],
           scanErrors: [],
           totalItems: 21,
@@ -1832,6 +1957,7 @@ describe("tag edit UI safety states", () => {
             albums: request.offset === 0 ? [album] : [flaggedAlbum],
             artists: [],
             formats: [],
+            folders: [],
             tracks: [],
             scanErrors: [],
             totalItems: 21,

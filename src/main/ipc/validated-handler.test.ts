@@ -85,6 +85,48 @@ describe("validated IPC handlers", () => {
         {},
         {
           query: "fixture",
+          view: "folders",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          folderId: "/library/album",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+      folderId: "/library/album",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "folders",
+          offset: 0,
+          limit: 20,
+          folderId: "/library/album",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
           view: "data-quality",
           offset: 20,
           limit: 20,

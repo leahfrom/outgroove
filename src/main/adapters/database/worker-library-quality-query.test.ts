@@ -29,6 +29,7 @@ const emptyPage: LibraryPageDto = {
   albums: [],
   artists: [],
   formats: [],
+  folders: [],
   tracks: [],
   scanErrors: [],
   totalItems: 0,

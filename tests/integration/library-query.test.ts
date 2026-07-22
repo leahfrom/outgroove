@@ -131,7 +131,8 @@ describe("paginated library query", () => {
   it("returns stable bounded pages and searches track, path, and format", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-query-"));
     temporary.push(directory);
-    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const databasePath = join(directory, "catalog.sqlite3");
+    const database = new CatalogDatabase(databasePath);
     const root = database.addLibraryRoot(
       directory,
       pathComparisonKey(directory),
@@ -260,6 +261,64 @@ describe("paginated library query", () => {
         limit: 10,
       }).tracks[0]?.albumTitle,
     ).toBe("Album 17");
+    const firstFolders = database.queryLibrary({
+      query: "",
+      view: "folders",
+      offset: 0,
+      limit: 10,
+    });
+    const lastFolders = database.queryLibrary({
+      query: "",
+      view: "folders",
+      offset: 20,
+      limit: 10,
+    });
+    expect(firstFolders.totalItems).toBe(25);
+    expect(firstFolders.folders).toHaveLength(10);
+    expect(firstFolders.folders[0]).toMatchObject({
+      path: join(directory, "Album 00"),
+      albumCount: 1,
+      trackCount: 1,
+    });
+    expect(lastFolders.folders.map((folder) => folder.path)).toEqual([
+      join(directory, "Album 20"),
+      join(directory, "Album 21"),
+      join(directory, "Album 22"),
+      join(directory, "Album 23"),
+      join(directory, "Album 24"),
+    ]);
+    const folder = database.queryLibrary({
+      query: "Album 09",
+      view: "folders",
+      offset: 0,
+      limit: 10,
+    }).folders[0];
+    expect(folder).toMatchObject({
+      path: join(directory, "Album 09"),
+      albumCount: 1,
+      trackCount: 2,
+    });
+    if (!folder) throw new Error("Folder result missing");
+    const folderTracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+      folderId: folder.id,
+    });
+    expect(folderTracks.totalItems).toBe(2);
+    expect(folderTracks.tracks.map((track) => track.albumTitle)).toEqual([
+      "Album 09",
+      "Album 09",
+    ]);
+    expect(
+      database.queryLibrary({
+        query: "%",
+        view: "folders",
+        offset: 0,
+        limit: 10,
+      }).folders,
+    ).toEqual([]);
     const formats = database.queryLibrary({
       query: "",
       view: "formats",
@@ -299,6 +358,20 @@ describe("paginated library query", () => {
       }).tracks[0],
     ).toMatchObject({ title: "Unknown Format Track", format: "unknown" });
     database.close();
+    const reopened = new CatalogDatabase(databasePath);
+    expect(
+      reopened.queryLibrary({
+        query: "Album 09",
+        view: "folders",
+        offset: 0,
+        limit: 10,
+      }).folders[0],
+    ).toMatchObject({
+      path: join(directory, "Album 09"),
+      albumCount: 1,
+      trackCount: 2,
+    });
+    reopened.close();
   });
 
   it("keeps exact Unicode, wildcard, short, and edited search values synchronized", async () => {

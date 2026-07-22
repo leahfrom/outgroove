@@ -199,6 +199,27 @@ query latency. The in-process version of the same post-change profile measured
 a 5.24 ms first page and 9.23 ms exact search. These local synthetic results are
 regression evidence, not universal latency guarantees.
 
+## Folder browsing projection
+
+The first folder-browsing query grouped 100,000 authoritative file paths by a
+privileged Node `dirname` function inside SQLite. It returned only 20 rows but
+still scanned the complete catalog synchronously, taking 753.25 ms on the
+macOS arm64 development machine. An exact folder-to-track route initially took
+566.06 ms for the same reason.
+
+Folder browsing now uses two connection-local, rebuildable SQLite projections:
+one maps visible file IDs to normalized parent-folder tokens and display paths;
+the other stores folder-level album and track counts. They are reconstructed
+from authoritative catalog rows when a database connection opens and whenever
+the existing catalog search projections refresh after a scan or edit. They are
+temporary tables, do not enter backups, and require no durable schema change.
+
+Two subsequent 100,000-file runs measured the first 20-folder page at
+15.24–19.15 ms. After forcing exact track filtering to begin from the indexed
+folder mapping, the 10 matching tracks loaded in 0.44 ms. These figures are
+local regression evidence; folder projection rebuild cost is included in scan
+or database-open work rather than the interactive query.
+
 ## Real metadata parsing profile
 
 `npm run benchmark:metadata` copies the redistributable preservation MP3 1,000

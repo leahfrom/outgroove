@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 
 import type {
   LibraryFormatDto,
+  LibraryFolderDto,
   LibraryPageDto,
   LibraryTrackDto,
   LibraryRootDto,
@@ -83,7 +84,8 @@ interface ScanStatements {
 }
 
 function parentFolderKey(pathKey: string): string {
-  return pathKey.replace(/[\\/][^\\/]+$/u, "");
+  const parent = pathKey.replace(/[\\/][^\\/]+$/u, "");
+  return parent === "" && pathKey.startsWith("/") ? "/" : parent;
 }
 
 export type ScanDiscoveryEntry =
@@ -163,6 +165,16 @@ export class CatalogDatabase {
   ) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.connection = new Database(path);
+    this.connection.function(
+      "outgroove_parent_folder_key",
+      { deterministic: true },
+      (value) => parentFolderKey(String(value)),
+    );
+    this.connection.function(
+      "outgroove_parent_folder_path",
+      { deterministic: true },
+      (value) => dirname(String(value)),
+    );
     this.connection.pragma("foreign_keys = ON");
     this.connection.pragma("journal_mode = WAL");
     this.migrate();
@@ -185,6 +197,21 @@ export class CatalogDatabase {
         message TEXT NOT NULL,
         PRIMARY KEY (root_id, path_key)
       ) WITHOUT ROWID;
+      CREATE TEMP TABLE catalog_file_folders (
+        file_id TEXT PRIMARY KEY,
+        folder_id TEXT NOT NULL,
+        path TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE INDEX catalog_file_folders_by_folder
+        ON catalog_file_folders(folder_id, file_id);
+      CREATE TEMP TABLE catalog_folders (
+        id TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        album_count INTEGER NOT NULL,
+        track_count INTEGER NOT NULL
+      ) WITHOUT ROWID;
+      CREATE INDEX catalog_folders_by_path
+        ON catalog_folders(path COLLATE NOCASE, path);
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
@@ -274,6 +301,7 @@ export class CatalogDatabase {
       ),
     };
     this.reconcileAlbumGroupingAliases();
+    this.rebuildFolderCatalog();
     if (options.interruptOrphanedJobs !== false) this.interruptOrphanedJobs();
   }
 
@@ -819,12 +847,14 @@ export class CatalogDatabase {
 
   queryLibrary(request: {
     query: string;
-    view: "albums" | "artists" | "formats" | "tracks" | "scan-errors";
+    view:
+      "albums" | "artists" | "formats" | "folders" | "tracks" | "scan-errors";
     offset: number;
     limit: number;
     albumArtist?: string;
     albumId?: string;
     format?: string;
+    folderId?: string;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -853,8 +883,44 @@ export class CatalogDatabase {
         albums: [],
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors,
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    if (request.view === "folders") {
+      this.refreshCatalogSearchIfNeeded();
+      const search = request.query
+        ? ` WHERE path LIKE ? ESCAPE '\\' COLLATE NOCASE`
+        : "";
+      const searchParameters = request.query ? [pattern] : [];
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM catalog_folders${search}`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const folders = this.connection
+        .prepare(
+          `SELECT id, path, album_count AS albumCount,
+            track_count AS trackCount
+           FROM catalog_folders${search}
+           ORDER BY path COLLATE NOCASE, path, id LIMIT ? OFFSET ?`,
+        )
+        .all(
+          ...searchParameters,
+          request.limit,
+          request.offset,
+        ) as LibraryFolderDto[];
+      return {
+        albums: [],
+        artists: [],
+        formats: [],
+        folders,
+        tracks: [],
+        scanErrors: [],
         totalItems,
         offset: request.offset,
         limit: request.limit,
@@ -892,6 +958,7 @@ export class CatalogDatabase {
         albums: [],
         artists: [],
         formats,
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -901,10 +968,13 @@ export class CatalogDatabase {
     }
 
     if (request.view === "tracks") {
+      if (request.folderId) this.refreshCatalogSearchIfNeeded();
       const formatFilter = request.format
         ? ` AND COALESCE(NULLIF(TRIM(f.format), ''), 'unknown') = ? COLLATE NOCASE`
         : "";
       const formatParameters = request.format ? [request.format] : [];
+      const folderFilter = request.folderId ? ` AND folder.folder_id = ?` : "";
+      const folderParameters = request.folderId ? [request.folderId] : [];
       const search = request.query
         ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
@@ -916,14 +986,24 @@ export class CatalogDatabase {
       const searchParameters = request.query
         ? [pattern, pattern, pattern, pattern, pattern, pattern]
         : [];
-      const visibleTracks = ` FROM tracks t
-        JOIN audio_files f ON f.id=t.file_id
-        JOIN albums a ON a.id=t.album_id
-        WHERE f.scan_state='ok'${formatFilter}${search}`;
+      const trackTables = request.folderId
+        ? ` FROM catalog_file_folders folder INDEXED BY catalog_file_folders_by_folder
+          JOIN audio_files f ON f.id=folder.file_id
+          JOIN tracks t ON t.file_id=f.id
+          JOIN albums a ON a.id=t.album_id`
+        : ` FROM tracks t
+          JOIN audio_files f ON f.id=t.file_id
+          JOIN albums a ON a.id=t.album_id`;
+      const visibleTracks = `${trackTables}
+        WHERE f.scan_state='ok'${formatFilter}${folderFilter}${search}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleTracks}`)
         .pluck()
-        .get(...formatParameters, ...searchParameters) as number;
+        .get(
+          ...formatParameters,
+          ...folderParameters,
+          ...searchParameters,
+        ) as number;
       const tracks = this.connection
         .prepare(
           `SELECT f.id, a.id AS albumId, t.title,
@@ -939,6 +1019,7 @@ export class CatalogDatabase {
         )
         .all(
           ...formatParameters,
+          ...folderParameters,
           ...searchParameters,
           request.limit,
           request.offset,
@@ -947,6 +1028,7 @@ export class CatalogDatabase {
         albums: [],
         artists: [],
         formats: [],
+        folders: [],
         tracks,
         scanErrors: [],
         totalItems,
@@ -987,6 +1069,7 @@ export class CatalogDatabase {
         albums: [],
         artists,
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -1026,6 +1109,7 @@ export class CatalogDatabase {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -1072,6 +1156,7 @@ export class CatalogDatabase {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
         formats: [],
+        folders: [],
         tracks: [],
         scanErrors: [],
         totalItems,
@@ -1109,6 +1194,7 @@ export class CatalogDatabase {
       albums: this.listAlbumsByIds(albumIds),
       artists: [],
       formats: [],
+      folders: [],
       tracks: [],
       scanErrors: [],
       totalItems,
@@ -1636,6 +1722,25 @@ export class CatalogDatabase {
       SELECT DISTINCT t.album_id FROM tracks t
       JOIN audio_files f ON f.id=t.file_id
       WHERE f.scan_state='ok';
+    `);
+    this.rebuildFolderCatalog();
+  }
+
+  private rebuildFolderCatalog(): void {
+    this.connection.exec(`
+      DELETE FROM catalog_file_folders;
+      INSERT INTO catalog_file_folders(file_id, folder_id, path)
+      SELECT id, outgroove_parent_folder_key(path_key),
+        outgroove_parent_folder_path(path)
+      FROM audio_files
+      WHERE scan_state='ok';
+      DELETE FROM catalog_folders;
+      INSERT INTO catalog_folders(id, path, album_count, track_count)
+      SELECT folder.folder_id, MIN(folder.path),
+        COUNT(DISTINCT track.album_id), COUNT(DISTINCT folder.file_id)
+      FROM catalog_file_folders folder
+      JOIN tracks track ON track.file_id=folder.file_id
+      GROUP BY folder.folder_id;
     `);
   }
 
