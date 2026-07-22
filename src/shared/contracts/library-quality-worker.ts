@@ -1,9 +1,11 @@
 import type { LibraryPageDto } from "./api";
+import type { AlbumDiagnosticFilter } from "../domain/album-diagnostics";
 
 export interface LibraryQualityWorkerRequest {
   readonly query: string;
   readonly offset: number;
   readonly limit: number;
+  readonly qualityFilter: AlbumDiagnosticFilter;
 }
 
 export type LibraryQualityWorkerMessage =

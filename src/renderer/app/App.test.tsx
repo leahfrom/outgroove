@@ -1352,12 +1352,16 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(screen.getByText("5/10: Checked 5 of 10 albums.")).toBeVisible();
     await user.selectOptions(screen.getByLabelText("View"), "data-quality");
+    const issueType = screen.getByLabelText("Issue type");
+    expect(issueType).toBeVisible();
+    expect(issueType).toHaveValue("all");
     await waitFor(() =>
       expect(queryLibrary).toHaveBeenLastCalledWith({
         query: "",
         view: "data-quality",
         offset: 0,
         limit: 20,
+        qualityFilter: "all",
       }),
     );
     expect(await screen.findByText("1 album needing review")).toBeVisible();
@@ -1366,6 +1370,20 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(
       screen.getByRole("heading", { name: "Missing track titles" }),
+    ).toBeVisible();
+
+    await user.selectOptions(issueType, "missing-tags");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "data-quality",
+        offset: 0,
+        limit: 20,
+        qualityFilter: "missing-tags",
+      }),
+    );
+    expect(
+      screen.getByText("1 album needing review with missing/placeholder tags"),
     ).toBeVisible();
   });
 
@@ -1425,6 +1443,7 @@ describe("tag edit UI safety states", () => {
         view: "data-quality",
         offset: 0,
         limit: 20,
+        qualityFilter: "all",
       }),
     );
     await user.selectOptions(screen.getByLabelText("View"), "albums");

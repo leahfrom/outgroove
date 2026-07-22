@@ -13,8 +13,11 @@ import type {
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
+  albumDiagnosticFilters,
   diagnoseAlbum,
+  isAlbumDiagnosticFilter,
   type AlbumDiagnostic,
+  type AlbumDiagnosticFilter,
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
 
@@ -26,6 +29,13 @@ interface Progress {
 }
 
 const PAGE_SIZE = 20;
+
+const diagnosticFilterLabels: Record<AlbumDiagnosticFilter, string> = {
+  all: "All findings",
+  numbering: "Numbering",
+  consistency: "Artist/date consistency",
+  "missing-tags": "Missing/placeholder tags",
+};
 
 function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
   switch (workflow) {
@@ -53,6 +63,8 @@ export function App(): React.JSX.Element {
   const [libraryView, setLibraryView] = useState<
     "albums" | "data-quality" | "scan-errors"
   >("albums");
+  const [qualityFilter, setQualityFilter] =
+    useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [restorePreview, setRestorePreview] =
@@ -175,6 +187,7 @@ export function App(): React.JSX.Element {
       view: libraryView,
       offset: pageOffset,
       limit: PAGE_SIZE,
+      ...(libraryView === "data-quality" ? { qualityFilter } : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -195,7 +208,7 @@ export function App(): React.JSX.Element {
           : result.value.albums[0]?.id,
       );
     } else setNotice(result.error.message);
-  }, [libraryView, pageOffset, query]);
+  }, [libraryView, pageOffset, qualityFilter, query]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -880,6 +893,30 @@ export function App(): React.JSX.Element {
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
         </select>
+        {libraryView === "data-quality" && (
+          <>
+            <label htmlFor="quality-filter">Issue type</label>
+            <select
+              id="quality-filter"
+              value={qualityFilter}
+              onChange={(event) => {
+                const filter = event.target.value;
+                if (!isAlbumDiagnosticFilter(filter)) return;
+                setQualityFilter(filter);
+                setPageOffset(0);
+                setNotice(
+                  `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                );
+              }}
+            >
+              {albumDiagnosticFilters.map((filter) => (
+                <option key={filter} value={filter}>
+                  {diagnosticFilterLabels[filter]}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <button type="submit">Search</button>
         {(query || searchText) && (
           <button
@@ -908,6 +945,9 @@ export function App(): React.JSX.Element {
               ? "album"
               : "albums"}
         {query ? ` matching “${query}”` : ""}
+        {libraryView === "data-quality" && qualityFilter !== "all"
+          ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
+          : ""}
       </p>
       {libraryView === "scan-errors" ? (
         <main className="errors" aria-labelledby="scan-errors">
@@ -943,7 +983,9 @@ export function App(): React.JSX.Element {
             {query
               ? "Try a different album, artist, track, format, or path."
               : libraryView === "data-quality"
-                ? "The current catalog has no album data-quality findings."
+                ? qualityFilter === "all"
+                  ? "The current catalog has no album data-quality findings."
+                  : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
                 : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
           </p>
           {!query && libraryView !== "data-quality" && (
