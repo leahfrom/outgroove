@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import type {
   LibraryFormatDto,
   LibraryFolderDto,
+  LibraryGenreDto,
   LibraryPageDto,
   LibraryTrackDto,
   LibraryRootDto,
@@ -45,6 +46,7 @@ interface AudioFileRow {
   native_tags_json: string | null;
   scan_state: "ok" | "error" | "missing";
   scan_error: string | null;
+  genres_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -218,7 +220,8 @@ export class CatalogDatabase {
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
-        "SELECT * FROM audio_files WHERE path_key = ?",
+        `SELECT *, json_type(normalized_tags_json, '$.genres') AS genres_type
+         FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
         `UPDATE audio_files SET scan_state='ok', scan_error=NULL, scanned_at=?
@@ -727,7 +730,7 @@ export class CatalogDatabase {
       signature,
       file.format,
       file.durationSeconds,
-      JSON.stringify(file.tags),
+      JSON.stringify({ ...file.tags, genres: file.tags.genres ?? [] }),
       JSON.stringify(file.nativeTags),
       now,
     );
@@ -844,7 +847,8 @@ export class CatalogDatabase {
         const existing = this.getFileByPathKey(entry.pathKey);
         if (
           existing?.size === entry.size &&
-          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs)
+          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs) &&
+          (existing.scan_state === "error" || existing.genres_type === "array")
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
             new Date().toISOString(),
@@ -950,13 +954,21 @@ export class CatalogDatabase {
   queryLibrary(request: {
     query: string;
     view:
-      "albums" | "artists" | "formats" | "folders" | "tracks" | "scan-errors";
+      | "albums"
+      | "artists"
+      | "genres"
+      | "formats"
+      | "folders"
+      | "tracks"
+      | "scan-errors";
     offset: number;
     limit: number;
     albumArtist?: string;
     albumId?: string;
     format?: string;
     folderId?: string;
+    genre?: string;
+    missingGenre?: true;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -1069,6 +1081,54 @@ export class CatalogDatabase {
       };
     }
 
+    if (request.view === "genres") {
+      const genreArray =
+        "CASE WHEN json_type(f.normalized_tags_json, '$.genres') = 'array' THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END";
+      const normalizedGenre = "NULLIF(TRIM(CAST(genre.value AS TEXT)), '')";
+      const search = request.query
+        ? ` AND COALESCE(${normalizedGenre}, 'No genre tag') LIKE ? ESCAPE '\\' COLLATE NOCASE`
+        : "";
+      const searchParameters = request.query ? [pattern] : [];
+      const visibleGenres = ` FROM audio_files f
+        JOIN tracks t ON t.file_id=f.id
+        LEFT JOIN json_each(${genreArray}) genre ON TRUE
+        WHERE f.scan_state='ok'${search}
+        GROUP BY (${normalizedGenre} IS NULL), ${normalizedGenre} COLLATE NOCASE`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM (SELECT 1${visibleGenres})`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const rows = this.connection
+        .prepare(
+          `SELECT COALESCE(MIN(${normalizedGenre}), 'No genre tag') AS name,
+            COUNT(DISTINCT f.id) AS trackCount,
+            (${normalizedGenre} IS NULL) AS missing
+           ${visibleGenres}
+           ORDER BY missing, name COLLATE NOCASE, name LIMIT ? OFFSET ?`,
+        )
+        .all(...searchParameters, request.limit, request.offset) as {
+        name: string;
+        trackCount: number;
+        missing: number;
+      }[];
+      const genres: LibraryGenreDto[] = rows.map((row) => ({
+        ...row,
+        missing: row.missing === 1,
+      }));
+      return {
+        albums: [],
+        artists: [],
+        genres,
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
     if (request.view === "tracks") {
       if (request.folderId) this.refreshCatalogSearchIfNeeded();
       const formatFilter = request.format
@@ -1077,16 +1137,35 @@ export class CatalogDatabase {
       const formatParameters = request.format ? [request.format] : [];
       const folderFilter = request.folderId ? ` AND folder.folder_id = ?` : "";
       const folderParameters = request.folderId ? [request.folderId] : [];
+      const genreFilter = request.genre
+        ? ` AND EXISTS (
+          SELECT 1 FROM json_each(CASE
+            WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+            THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) selected_genre
+          WHERE NULLIF(TRIM(CAST(selected_genre.value AS TEXT)), '') = ? COLLATE NOCASE)`
+        : request.missingGenre
+          ? ` AND NOT EXISTS (
+            SELECT 1 FROM json_each(CASE
+              WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+              THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) selected_genre
+            WHERE NULLIF(TRIM(CAST(selected_genre.value AS TEXT)), '') IS NOT NULL)`
+          : "";
+      const genreParameters = request.genre ? [request.genre] : [];
       const search = request.query
         ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR a.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR EXISTS (
+            SELECT 1 FROM json_each(CASE
+              WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+              THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) searched_genre
+            WHERE CAST(searched_genre.value AS TEXT) LIKE ? ESCAPE '\\' COLLATE NOCASE)
           OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE)`
         : "";
       const searchParameters = request.query
-        ? [pattern, pattern, pattern, pattern, pattern, pattern]
+        ? [pattern, pattern, pattern, pattern, pattern, pattern, pattern]
         : [];
       const trackTables = request.folderId
         ? ` FROM catalog_file_folders folder INDEXED BY catalog_file_folders_by_folder
@@ -1097,13 +1176,14 @@ export class CatalogDatabase {
           JOIN audio_files f ON f.id=t.file_id
           JOIN albums a ON a.id=t.album_id`;
       const visibleTracks = `${trackTables}
-        WHERE f.scan_state='ok'${formatFilter}${folderFilter}${search}`;
+        WHERE f.scan_state='ok'${formatFilter}${folderFilter}${genreFilter}${search}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleTracks}`)
         .pluck()
         .get(
           ...formatParameters,
           ...folderParameters,
+          ...genreParameters,
           ...searchParameters,
         ) as number;
       const tracks = this.connection
@@ -1122,6 +1202,7 @@ export class CatalogDatabase {
         .all(
           ...formatParameters,
           ...folderParameters,
+          ...genreParameters,
           ...searchParameters,
           request.limit,
           request.offset,

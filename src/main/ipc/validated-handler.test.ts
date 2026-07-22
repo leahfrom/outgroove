@@ -147,6 +147,46 @@ describe("validated IPC handlers", () => {
       folderId: "/library/album",
     });
     await expect(
+      handler({}, { query: "", view: "genres", offset: 0, limit: 20 }),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "genres",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+          missingGenre: true,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
       handler(
         {},
         {

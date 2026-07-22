@@ -8,6 +8,7 @@ import type {
   ScannedAudioFile,
 } from "../../../shared/domain/catalog";
 import {
+  normalizeGenres,
   normalizeNumber,
   normalizeTagText,
 } from "../../../shared/domain/catalog";
@@ -56,6 +57,7 @@ export class MusicMetadataReader implements MetadataReader {
         : common.year
           ? String(common.year)
           : null,
+      genres: normalizeGenres(common.genre),
     };
     const nativeTags: NativeTagValue[] = Object.entries(
       metadata.native,

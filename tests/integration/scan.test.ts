@@ -56,6 +56,7 @@ describe("incremental library scan", () => {
     });
     expect(database.listAlbums()).toHaveLength(1);
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
     expect(database.listScanErrors()).toHaveLength(1);
     expect(database.listScanErrors()[0]?.path).toContain("corrupt.mp3");
     await expect(scanner.execute(root.id)).resolves.toEqual({

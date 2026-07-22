@@ -190,19 +190,23 @@ export function registerIpc(
             ? "scan-errors"
             : request.view === "artists"
               ? "artists"
-              : request.view === "formats"
-                ? "formats"
-                : request.view === "folders"
-                  ? "folders"
-                  : request.view === "tracks"
-                    ? "tracks"
-                    : "albums",
+              : request.view === "genres"
+                ? "genres"
+                : request.view === "formats"
+                  ? "formats"
+                  : request.view === "folders"
+                    ? "folders"
+                    : request.view === "tracks"
+                      ? "tracks"
+                      : "albums",
         offset: request.offset,
         limit: request.limit,
         ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
         ...(request.albumId ? { albumId: request.albumId } : {}),
         ...(request.format ? { format: request.format } : {}),
         ...(request.folderId ? { folderId: request.folderId } : {}),
+        ...(request.genre ? { genre: request.genre } : {}),
+        ...(request.missingGenre ? { missingGenre: request.missingGenre } : {}),
       });
     }),
   );
