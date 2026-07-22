@@ -12,6 +12,22 @@ export const albumDiagnosticKinds = [
 ] as const;
 
 export type AlbumDiagnosticKind = (typeof albumDiagnosticKinds)[number];
+export const albumDiagnosticFilters = [
+  "all",
+  "numbering",
+  "consistency",
+  "missing-tags",
+] as const;
+export type AlbumDiagnosticFilter = (typeof albumDiagnosticFilters)[number];
+
+export function isAlbumDiagnosticFilter(
+  value: unknown,
+): value is AlbumDiagnosticFilter {
+  return (
+    typeof value === "string" &&
+    (albumDiagnosticFilters as readonly string[]).includes(value)
+  );
+}
 export type AlbumDiagnosticSeverity = "needs-attention" | "review";
 export type AlbumDiagnosticWorkflow =
   | "track-editor"
@@ -29,6 +45,31 @@ export interface AlbumDiagnostic {
   readonly explanation: string;
   readonly affectedTrackIds: readonly string[];
   readonly workflow: AlbumDiagnosticWorkflow;
+}
+
+const diagnosticKindsByFilter = {
+  numbering: [
+    "missing-track-number",
+    "duplicate-track-number",
+    "track-number-gap",
+  ],
+  consistency: ["inconsistent-album-artist", "inconsistent-release-date"],
+  "missing-tags": ["missing-title", "placeholder-tags", "missing-release-date"],
+} as const satisfies Record<
+  Exclude<AlbumDiagnosticFilter, "all">,
+  readonly AlbumDiagnosticKind[]
+>;
+
+export function diagnosticMatchesFilter(
+  diagnostic: AlbumDiagnostic,
+  filter: AlbumDiagnosticFilter,
+): boolean {
+  return (
+    filter === "all" ||
+    (
+      diagnosticKindsByFilter[filter] as readonly AlbumDiagnosticKind[]
+    ).includes(diagnostic.kind)
+  );
 }
 
 function compareText(left: string, right: string): number {

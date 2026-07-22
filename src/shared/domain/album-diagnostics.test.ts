@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogAlbum, CatalogTrack } from "./catalog";
-import { diagnoseAlbum } from "./album-diagnostics";
+import {
+  diagnoseAlbum,
+  diagnosticMatchesFilter,
+  type AlbumDiagnosticFilter,
+} from "./album-diagnostics";
 
 const baseTrack: CatalogTrack = {
   id: "track-1",
@@ -45,6 +49,48 @@ function album(tracks: readonly CatalogTrack[]): CatalogAlbum {
 }
 
 describe("album data-quality diagnostics", () => {
+  it("groups every diagnostic kind into deterministic issue filters", () => {
+    const findings = diagnoseAlbum(
+      album([
+        track("unknown", {
+          title: "Unknown title",
+          album: "Unknown album",
+          artist: "Unknown artist",
+          trackNumber: null,
+          year: null,
+        }),
+        track("duplicate-a", {
+          trackNumber: 2,
+          albumArtist: "Other Artist",
+          year: "2025",
+        }),
+        track("duplicate-b", { trackNumber: 2, year: "2026" }),
+        track("four", { trackNumber: 4, year: "2026" }),
+      ]),
+    );
+    const kinds = (filter: AlbumDiagnosticFilter): string[] =>
+      findings
+        .filter((finding) => diagnosticMatchesFilter(finding, filter))
+        .map((finding) => finding.kind);
+
+    expect(kinds("numbering")).toEqual([
+      "missing-track-number",
+      "duplicate-track-number",
+      "track-number-gap",
+    ]);
+    expect(kinds("consistency")).toEqual([
+      "inconsistent-album-artist",
+      "inconsistent-release-date",
+    ]);
+    expect(kinds("missing-tags")).toEqual([
+      "missing-title",
+      "placeholder-tags",
+      "placeholder-tags",
+      "missing-release-date",
+    ]);
+    expect(kinds("all")).toEqual(findings.map((finding) => finding.kind));
+  });
+
   it("orders findings and affected tracks deterministically", () => {
     const input = album([
       track("z", {

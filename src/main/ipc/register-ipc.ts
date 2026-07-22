@@ -159,6 +159,7 @@ export function registerIpc(
             query: request.query,
             offset: request.offset,
             limit: request.limit,
+            qualityFilter: request.qualityFilter ?? "all",
           },
           progress("library-quality"),
         );

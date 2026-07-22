@@ -99,6 +99,7 @@ async function createWindow(): Promise<void> {
       query: "",
       offset: 0,
       limit: 20,
+      qualityFilter: "all",
     });
     if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
       throw new Error(

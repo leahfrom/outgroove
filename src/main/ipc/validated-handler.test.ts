@@ -88,6 +88,7 @@ describe("validated IPC handlers", () => {
           view: "data-quality",
           offset: 20,
           limit: 20,
+          qualityFilter: "consistency",
         },
       ),
     ).resolves.toEqual({ ok: true, value: undefined });
@@ -96,7 +97,20 @@ describe("validated IPC handlers", () => {
       view: "data-quality",
       offset: 20,
       limit: 20,
+      qualityFilter: "consistency",
     });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "data-quality",
+          offset: 0,
+          limit: 20,
+          qualityFilter: "guess-for-me",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
   });
 
   it("rejects malformed database restore confirmations", async () => {

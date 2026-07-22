@@ -5,7 +5,11 @@ import type {
   LibraryQualityWorkerRequest,
 } from "../shared/contracts/library-quality-worker";
 import type { CatalogAlbum } from "../shared/domain/catalog";
-import { diagnoseAlbum } from "../shared/domain/album-diagnostics";
+import {
+  diagnoseAlbum,
+  diagnosticMatchesFilter,
+  isAlbumDiagnosticFilter,
+} from "../shared/domain/album-diagnostics";
 import { CatalogDatabase } from "../main/adapters/database/catalog-database";
 
 const port = parentPort;
@@ -29,13 +33,15 @@ if (
   typeof rawRequest.limit !== "number" ||
   !Number.isInteger(rawRequest.limit) ||
   rawRequest.limit < 1 ||
-  rawRequest.limit > 50
+  rawRequest.limit > 50 ||
+  !isAlbumDiagnosticFilter(rawRequest.qualityFilter)
 )
   throw new Error("Library data-quality worker received an invalid request.");
 const request: LibraryQualityWorkerRequest = {
   query: rawRequest.query,
   offset: rawRequest.offset,
   limit: rawRequest.limit,
+  qualityFilter: rawRequest.qualityFilter,
 };
 
 const database = new CatalogDatabase(data.databasePath, {
@@ -60,7 +66,12 @@ function runQuery(): LibraryQualityWorkerMessage {
     });
     sourceTotal = sourcePage.totalItems;
     for (const album of sourcePage.albums) {
-      if (diagnoseAlbum(album).length === 0) continue;
+      if (
+        !diagnoseAlbum(album).some((finding) =>
+          diagnosticMatchesFilter(finding, request.qualityFilter),
+        )
+      )
+        continue;
       if (matchingAlbums >= request.offset && albums.length < request.limit)
         albums.push(album);
       matchingAlbums++;

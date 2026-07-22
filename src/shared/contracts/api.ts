@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CatalogAlbum } from "../domain/catalog";
+import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
@@ -14,6 +15,7 @@ export const libraryQueryRequestSchema = z
     view: z.enum(["albums", "data-quality", "scan-errors"]),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
+    qualityFilter: z.enum(albumDiagnosticFilters).optional(),
   })
   .strict();
 export const albumEditPreviewRequestSchema = z

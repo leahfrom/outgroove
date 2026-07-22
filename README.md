@@ -8,7 +8,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
 - Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
-- Choose the searchable **Albums needing review** Library view to analyze the matching catalog in bounded pages on a cancellable SQLite worker. Results are exact, paginated, and use the same deterministic local rules shown in each album for missing or duplicate track numbers, internal sequence gaps, inconsistent album artists or partial release dates, missing dates, and exact scanner placeholders. Findings show affected files and only select the existing safe Workbench workflow; they never infer or apply a correction.
+- Choose the searchable **Albums needing review** Library view to analyze the matching catalog in bounded pages on a cancellable SQLite worker. Narrow results to numbering, artist/date consistency, or missing/placeholder tag findings. Results are exact, paginated, and use the same deterministic local rules shown in each album for missing or duplicate track numbers, internal sequence gaps, inconsistent album artists or partial release dates, missing dates, and exact scanner placeholders. Findings show affected files and only select the existing safe Workbench workflow; they never infer or apply a correction.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
 - Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
@@ -127,7 +127,9 @@ Album data-quality findings are derived on demand from catalog DTOs and add no
 durable finding table, filesystem access, or network dependency. The
 whole-library view reads ordinary 50-album query pages in a short-lived worker,
 retains only the requested finding page, reports progress, and terminates a
-superseded query. Sequence diagnostics treat a missing disc number as disc 1,
+superseded query. Issue-type filters only decide which albums appear; the
+selected album continues to show every applicable finding so no relevant
+context is hidden. Sequence diagnostics treat a missing disc number as disc 1,
 report only gaps between the lowest and highest observed number, and do not
 assume a missing starting number. Placeholder diagnostics recognize only the
 scanner's exact `Unknown title`, `Unknown artist`, and `Unknown album`
