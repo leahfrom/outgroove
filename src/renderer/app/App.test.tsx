@@ -691,6 +691,84 @@ describe("tag edit UI safety states", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("summarizes flagged albums on the bounded page and opens their findings", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const flaggedAlbum: CatalogAlbum = {
+      id: "8c196850-bca9-48b7-ae7f-dc760fbf8f2b",
+      title: "Flagged Album",
+      albumArtist: "Fixture Artist",
+      tracks: [
+        {
+          ...firstTrack,
+          id: "dbb54a30-a8ce-45e1-9354-d6ae9a432afc",
+          path: "/fixture/flagged-a.flac",
+          tags: {
+            ...firstTrack.tags,
+            album: "Flagged Album",
+            title: "Flagged A",
+            trackNumber: 2,
+          },
+        },
+        {
+          ...firstTrack,
+          id: "e97b14d0-60fa-4b01-b2a7-33dfa51bc2c3",
+          path: "/fixture/flagged-b.flac",
+          tags: {
+            ...firstTrack.tags,
+            album: "Flagged Album",
+            title: "Flagged B",
+            trackNumber: 2,
+          },
+        },
+      ],
+    };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, flaggedAlbum],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const albumList = await screen.findByLabelText("Albums");
+    expect(
+      within(albumList).getByText(
+        "Albums needing review on this page: 1 of 2.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(albumList).getByText("Status: No data-quality findings"),
+    ).toBeVisible();
+    expect(
+      within(albumList).getByText(
+        "Status: 1 data-quality finding — needs attention",
+      ),
+    ).toBeVisible();
+
+    await user.click(
+      within(albumList).getByRole("button", { name: /Flagged Album/u }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "Duplicate number on disc 1",
+      }),
+    ).toBeVisible();
+    const details = screen.getByLabelText("Album data quality");
+    expect(within(details).getByText("/fixture/flagged-a.flac")).toBeVisible();
+    expect(within(details).getByText("/fixture/flagged-b.flac")).toBeVisible();
+  });
+
   it("reports verification failure without claiming success", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,
@@ -1248,6 +1326,66 @@ describe("tag edit UI safety states", () => {
         limit: 20,
       }),
     );
+  });
+
+  it("updates quality summaries per page without claiming a library-wide count", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const flaggedAlbum: CatalogAlbum = {
+      ...album,
+      id: "8c196850-bca9-48b7-ae7f-dc760fbf8f2b",
+      title: "Page Two Album",
+      tracks: [
+        {
+          ...firstTrack,
+          id: "dbb54a30-a8ce-45e1-9354-d6ae9a432afc",
+          path: "/fixture/page-two.flac",
+          tags: {
+            ...firstTrack.tags,
+            album: "Page Two Album",
+            title: "Unknown title",
+          },
+        },
+      ],
+    };
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.offset === 0 ? [album] : [flaggedAlbum],
+            scanErrors: [],
+            totalItems: 21,
+            offset: request.offset,
+            limit: 20,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByText("Albums needing review on this page: 0 of 1."),
+    ).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(
+      await screen.findByText("Albums needing review on this page: 1 of 1."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/review on this page: 1 of 21/u),
+    ).not.toBeInTheDocument();
+    expect(queryLibrary).toHaveBeenLastCalledWith({
+      query: "",
+      view: "albums",
+      offset: 20,
+      limit: 20,
+    });
   });
 
   it("shows a database restore preview before explicit confirmation", async () => {

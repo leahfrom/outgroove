@@ -163,6 +163,16 @@ aside {
   color: #526159;
   margin-top: 0.2rem;
 }
+.album .album-quality-status {
+  font-weight: 700;
+}
+.album .album-quality-status.review {
+  color: #71352f;
+}
+.album-quality-summary {
+  color: #526159;
+  font-size: 0.9rem;
+}
 .album.selected {
   border: 2px solid #245c39;
   background: #eef8f1;
