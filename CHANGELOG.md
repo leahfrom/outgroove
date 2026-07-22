@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0 — 2026-07-22
+
+- Add searchable, paginated format and folder browsing with visible track and
+  album counts. Format and folder rows open exact filtered track results with
+  file, album, numbering, duration, and format context.
+- Derive folder identities and display paths only in the privileged Node path
+  adapter. Rebuild connection-local folder projections from catalog state,
+  keeping the sandboxed renderer free of path construction and filesystem APIs.
+- Show every explicitly selected Library root with its last completed scan and
+  keyboard-accessible, per-root incremental rescan action. Active scans prevent
+  competing root actions and completed scans refresh status automatically.
+- Add an explicit preview and confirmation before stopping a watched root. The
+  preview reports tracks, albums, and scan problems that will be hidden; no
+  audio or DAP files are deleted, and catalog identities, edit history, DAP
+  profiles, sync manifests, and scan jobs remain intact.
+- Migrate schema version 12 catalogs to version 13 with a retained unwatched-root
+  marker. Choosing the same path reactivates its existing identity, while only
+  files rediscovered by the incremental scanner return to the visible Library.
+
 ## 0.6.0 — 2026-07-22
 
 - Add explicit track-number sequencing with manual ordering, a chosen starting
