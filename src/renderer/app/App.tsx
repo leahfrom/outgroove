@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
+  LibraryFormatDto,
   LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
@@ -71,17 +72,19 @@ export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
+  const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
   const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
-    "albums" | "artists" | "tracks" | "data-quality" | "scan-errors"
+    "albums" | "artists" | "formats" | "tracks" | "data-quality" | "scan-errors"
   >("albums");
   const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
   const [albumIdFilter, setAlbumIdFilter] = useState<string>();
   const [trackRouteLabel, setTrackRouteLabel] = useState<string>();
   const [pendingTrackId, setPendingTrackId] = useState<string>();
+  const [trackFormatFilter, setTrackFormatFilter] = useState<string>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
@@ -213,6 +216,9 @@ export function App(): React.JSX.Element {
       ...(libraryView === "albums" && albumIdFilter
         ? { albumId: albumIdFilter }
         : {}),
+      ...(libraryView === "tracks" && trackFormatFilter
+        ? { format: trackFormatFilter }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -226,6 +232,7 @@ export function App(): React.JSX.Element {
       }
       setAlbums(result.value.albums);
       setArtists(result.value.artists);
+      setFormats(result.value.formats);
       setTracks(result.value.tracks);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
@@ -242,6 +249,7 @@ export function App(): React.JSX.Element {
     pageOffset,
     qualityFilter,
     query,
+    trackFormatFilter,
   ]);
 
   const refreshEditHistory = useCallback(
@@ -926,12 +934,18 @@ export function App(): React.JSX.Element {
           value={libraryView}
           onChange={(event) => {
             const view = event.target.value as
-              "albums" | "artists" | "tracks" | "data-quality" | "scan-errors";
+              | "albums"
+              | "artists"
+              | "formats"
+              | "tracks"
+              | "data-quality"
+              | "scan-errors";
             setLibraryView(view);
             setAlbumArtistFilter(undefined);
             setAlbumIdFilter(undefined);
             setTrackRouteLabel(undefined);
             setPendingTrackId(undefined);
+            setTrackFormatFilter(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
@@ -939,6 +953,7 @@ export function App(): React.JSX.Element {
         >
           <option value="albums">Albums</option>
           <option value="artists">Album artists</option>
+          <option value="formats">Formats</option>
           <option value="tracks">Tracks</option>
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
@@ -1004,6 +1019,17 @@ export function App(): React.JSX.Element {
             Show all albums
           </button>
         )}
+        {libraryView === "tracks" && trackFormatFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setTrackFormatFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all formats
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
@@ -1015,17 +1041,21 @@ export function App(): React.JSX.Element {
             ? totalItems === 1
               ? "album artist"
               : "album artists"
-            : libraryView === "tracks"
+            : libraryView === "formats"
               ? totalItems === 1
-                ? "track"
-                : "tracks"
-              : libraryView === "data-quality"
+                ? "format"
+                : "formats"
+              : libraryView === "tracks"
                 ? totalItems === 1
-                  ? "album needing review"
-                  : "albums needing review"
-                : totalItems === 1
-                  ? "album"
-                  : "albums"}
+                  ? "track"
+                  : "tracks"
+                : libraryView === "data-quality"
+                  ? totalItems === 1
+                    ? "album needing review"
+                    : "albums needing review"
+                  : totalItems === 1
+                    ? "album"
+                    : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
@@ -1035,6 +1065,9 @@ export function App(): React.JSX.Element {
           : ""}
         {libraryView === "albums" && trackRouteLabel
           ? ` containing “${trackRouteLabel}”`
+          : ""}
+        {libraryView === "tracks" && trackFormatFilter
+          ? ` in “${trackFormatFilter}” format`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -1097,6 +1130,45 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "formats" ? (
+        <main className="formats" aria-labelledby="library-formats">
+          <h2 id="library-formats">Formats</h2>
+          {formats.length === 0 ? (
+            <p>
+              {query
+                ? "No formats match this search."
+                : "The current catalog has no formats."}
+            </p>
+          ) : (
+            <ul>
+              {formats.map((format) => (
+                <li key={format.name}>
+                  <article>
+                    <h3>{format.name}</h3>
+                    <p>
+                      Status: {format.trackCount}{" "}
+                      {format.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTrackFormatFilter(format.name);
+                        setLibraryView("tracks");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(
+                          `Showing tracks in ${format.name} format from the local catalog.`,
+                        );
+                      }}
+                    >
+                      Browse {format.name} tracks
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
       ) : libraryView === "tracks" ? (
         <main className="tracks" aria-labelledby="library-tracks">
           <h2 id="library-tracks">Tracks</h2>
@@ -1104,7 +1176,9 @@ export function App(): React.JSX.Element {
             <p>
               {query
                 ? "No tracks match this search."
-                : "The current catalog has no tracks."}
+                : trackFormatFilter
+                  ? `No tracks use ${trackFormatFilter} format.`
+                  : "The current catalog has no tracks."}
             </p>
           ) : (
             <div className="track-table-scroll">
@@ -1144,6 +1218,7 @@ export function App(): React.JSX.Element {
                             setAlbumIdFilter(track.albumId);
                             setTrackRouteLabel(track.title);
                             setPendingTrackId(track.id);
+                            setTrackFormatFilter(undefined);
                             setAlbumArtistFilter(undefined);
                             setLibraryView("albums");
                             setSearchText("");

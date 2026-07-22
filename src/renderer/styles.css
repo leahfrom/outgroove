@@ -144,6 +144,7 @@ aside,
 .detail,
 .errors,
 .artists,
+.formats,
 .tracks {
   background: white;
   border: 1px solid #d8ddd8;
@@ -161,7 +162,8 @@ aside,
 .tracks td:nth-child(6) {
   max-width: 320px;
 }
-.artists ul {
+.artists ul,
+.formats ul {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 0.75rem;
@@ -169,12 +171,14 @@ aside,
   margin: 0;
   padding: 0;
 }
-.artists article {
+.artists article,
+.formats article {
   border: 1px solid #c5cec7;
   border-radius: 10px;
   padding: 1rem;
 }
-.artists article p {
+.artists article p,
+.formats article p {
   color: #526159;
 }
 aside {
