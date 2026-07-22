@@ -227,6 +227,7 @@ export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const syncCancelRequestSchema = z.object({ planId: z.uuid() }).strict();
 export const databaseRestoreApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
@@ -459,11 +460,18 @@ export interface SyncPlanDto {
   readonly requiredBytes: number;
 }
 export interface SyncApplyResultDto {
+  readonly outcome: "completed" | "cancelled" | "failed";
   readonly copied: number;
+  readonly rolledBack: number;
   readonly unchanged: number;
   readonly playlistPath: string;
   readonly manifestPath: string;
   readonly errors: readonly string[];
+}
+export interface SyncCancelResultDto {
+  readonly planId: string;
+  readonly accepted: boolean;
+  readonly state: "cancelling" | "finalizing" | "not-running";
 }
 
 export interface OutgrooveApi {
@@ -571,6 +579,9 @@ export interface OutgrooveApi {
   applySync(
     request: z.infer<typeof syncApplyRequestSchema>,
   ): Promise<Result<SyncApplyResultDto>>;
+  cancelSync(
+    request: z.infer<typeof syncCancelRequestSchema>,
+  ): Promise<Result<SyncCancelResultDto>>;
   onJobProgress(
     listener: (progress: {
       job: "scan" | "tag-edit" | "sync" | "library-quality";

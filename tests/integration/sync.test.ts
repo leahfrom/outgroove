@@ -7,6 +7,7 @@ import {
   readFile,
   rm,
   stat,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -69,6 +70,206 @@ async function setup(): Promise<{
 }
 
 describe("deterministic manifest-based sync", () => {
+  it("cancels between copies, rolls back this run, and retries the same preview", async () => {
+    const { database, target, profileId } = await setup();
+    let hookCalls = 0;
+    let releaseSecondCopy: () => void = () => undefined;
+    let markSecondCopyStarted: () => void = () => undefined;
+    const secondCopyStarted = new Promise<void>((resolve) => {
+      markSecondCopyStarted = resolve;
+    });
+    const secondCopyGate = new Promise<void>((resolve) => {
+      releaseSecondCopy = resolve;
+    });
+    const sync = new DeviceSync(database, {
+      beforeCopy: async () => {
+        hookCalls++;
+        if (hookCalls === 2) {
+          markSecondCopyStarted();
+          await secondCopyGate;
+        }
+      },
+    });
+    const plan = await sync.plan(profileId);
+    const applying = sync.apply(plan.id, plan.confirmationToken);
+    await secondCopyStarted;
+    expect(sync.cancel(plan.id)).toEqual({
+      planId: plan.id,
+      accepted: true,
+      state: "cancelling",
+    });
+    releaseSecondCopy();
+    await expect(applying).resolves.toMatchObject({
+      outcome: "cancelled",
+      copied: 1,
+      rolledBack: 1,
+      errors: [],
+    });
+    for (const item of plan.copies)
+      await expect(
+        access(join(target, item.relativeDestination)),
+      ).rejects.toThrow();
+    await expect(access(join(target, "Outgroove.m3u8"))).rejects.toThrow();
+    await expect(
+      access(join(target, ".outgroove", "manifest.json")),
+    ).rejects.toThrow();
+    expect(database.listSyncHistory(profileId)).toEqual([]);
+    expect(sync.cancel(plan.id)).toEqual({
+      planId: plan.id,
+      accepted: false,
+      state: "not-running",
+    });
+    await expect(
+      sync.apply(plan.id, plan.confirmationToken),
+    ).resolves.toMatchObject({
+      outcome: "completed",
+      copied: 2,
+      rolledBack: 0,
+      errors: [],
+    });
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("refuses cancellation after manifest finalization begins", async () => {
+    const { database, profileId } = await setup();
+    let releaseManifest: () => void = () => undefined;
+    let markManifestStarted: () => void = () => undefined;
+    const manifestStarted = new Promise<void>((resolve) => {
+      markManifestStarted = resolve;
+    });
+    const manifestGate = new Promise<void>((resolve) => {
+      releaseManifest = resolve;
+    });
+    const sync = new DeviceSync(database, {
+      beforeManifest: async () => {
+        markManifestStarted();
+        await manifestGate;
+      },
+    });
+    const plan = await sync.plan(profileId);
+    const applying = sync.apply(plan.id, plan.confirmationToken);
+    await manifestStarted;
+    expect(sync.cancel(plan.id)).toEqual({
+      planId: plan.id,
+      accepted: false,
+      state: "finalizing",
+    });
+    releaseManifest();
+    await expect(applying).resolves.toMatchObject({ outcome: "completed" });
+  });
+
+  it("restores earlier manifest-owned copies when a replacement run is cancelled", async () => {
+    const { database, target, profileId } = await setup();
+    const initialSync = new DeviceSync(database);
+    const initialPlan = await initialSync.plan(profileId);
+    await initialSync.apply(initialPlan.id, initialPlan.confirmationToken);
+    const manifestPath = join(target, ".outgroove", "manifest.json");
+    const playlistPath = join(target, "Outgroove.m3u8");
+    const manifestBefore = await readFile(manifestPath);
+    const playlistBefore = await readFile(playlistPath);
+    const targetBefore = new Map<string, Buffer>();
+    for (const item of initialPlan.copies) {
+      targetBefore.set(
+        item.relativeDestination,
+        await readFile(join(target, item.relativeDestination)),
+      );
+      const sourceInfo = await stat(item.sourcePath);
+      await writeFile(
+        item.sourcePath,
+        Buffer.concat([
+          await readFile(item.sourcePath),
+          Buffer.from("changed"),
+        ]),
+      );
+      const changedTime = new Date(sourceInfo.mtimeMs + 2_000);
+      await utimes(item.sourcePath, changedTime, changedTime);
+    }
+
+    let copyNumber = 0;
+    let releaseSecondCopy: () => void = () => undefined;
+    let markSecondCopyStarted: () => void = () => undefined;
+    const secondCopyStarted = new Promise<void>((resolve) => {
+      markSecondCopyStarted = resolve;
+    });
+    const secondCopyGate = new Promise<void>((resolve) => {
+      releaseSecondCopy = resolve;
+    });
+    const cancellingSync = new DeviceSync(database, {
+      beforeCopy: async () => {
+        copyNumber++;
+        if (copyNumber === 2) {
+          markSecondCopyStarted();
+          await secondCopyGate;
+        }
+      },
+    });
+    const replacementPlan = await cancellingSync.plan(profileId);
+    expect(replacementPlan.copies).toHaveLength(2);
+    const applying = cancellingSync.apply(
+      replacementPlan.id,
+      replacementPlan.confirmationToken,
+    );
+    await secondCopyStarted;
+    expect(cancellingSync.cancel(replacementPlan.id).accepted).toBe(true);
+    releaseSecondCopy();
+    await expect(applying).resolves.toMatchObject({
+      outcome: "cancelled",
+      copied: 1,
+      rolledBack: 1,
+      errors: [],
+    });
+    for (const item of replacementPlan.copies)
+      expect(await readFile(join(target, item.relativeDestination))).toEqual(
+        targetBefore.get(item.relativeDestination),
+      );
+    expect(await readFile(manifestPath)).toEqual(manifestBefore);
+    expect(await readFile(playlistPath)).toEqual(playlistBefore);
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("does not remove a completed destination changed externally before rollback", async () => {
+    const { database, target, profileId } = await setup();
+    let firstDestination: string | undefined;
+    let copyNumber = 0;
+    let releaseSecondCopy: () => void = () => undefined;
+    let markSecondCopyStarted: () => void = () => undefined;
+    const secondCopyStarted = new Promise<void>((resolve) => {
+      markSecondCopyStarted = resolve;
+    });
+    const secondCopyGate = new Promise<void>((resolve) => {
+      releaseSecondCopy = resolve;
+    });
+    const sync = new DeviceSync(database, {
+      beforeCopy: async (item) => {
+        copyNumber++;
+        if (copyNumber === 1)
+          firstDestination = join(target, item.relativeDestination);
+        if (copyNumber === 2) {
+          if (!firstDestination) throw new Error("First destination missing.");
+          await writeFile(firstDestination, "external replacement");
+          markSecondCopyStarted();
+          await secondCopyGate;
+        }
+      },
+    });
+    const plan = await sync.plan(profileId);
+    const applying = sync.apply(plan.id, plan.confirmationToken);
+    await secondCopyStarted;
+    sync.cancel(plan.id);
+    releaseSecondCopy();
+    await expect(applying).resolves.toMatchObject({
+      outcome: "cancelled",
+      copied: 1,
+      rolledBack: 0,
+      errors: [expect.stringContaining("changed externally")],
+    });
+    if (!firstDestination) throw new Error("First destination missing.");
+    expect(await readFile(firstDestination, "utf8")).toBe(
+      "external replacement",
+    );
+    expect(database.listSyncHistory(profileId)).toEqual([]);
+  });
+
   it("invalidates old previews after a profile revision and refuses revisions during apply", async () => {
     const { database, profileId, albumId } = await setup();
     let releaseCopy: () => void = () => undefined;
@@ -357,6 +558,7 @@ describe("deterministic manifest-based sync", () => {
     expect(result.errors).toEqual([
       expect.stringContaining("simulated disconnect"),
     ]);
+    expect(result).toMatchObject({ outcome: "failed", rolledBack: 0 });
     await expect(access(join(target, "Outgroove.m3u8"))).rejects.toThrow();
     await expect(
       access(join(target, ".outgroove", "manifest.json")),

@@ -19,6 +19,7 @@ import {
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
+  syncCancelRequestSchema,
   syncHistoryRequestSchema,
   syncPlanRequestSchema,
   syncProfileRequestSchema,
@@ -449,6 +450,12 @@ export function registerIpc(
       syncApplyRequestSchema,
       ({ planId, confirmationToken }) =>
         dependencies.sync.apply(planId, confirmationToken, progress("sync")),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelSync,
+    createValidatedHandler(syncCancelRequestSchema, ({ planId }) =>
+      dependencies.sync.cancel(planId),
     ),
   );
 }

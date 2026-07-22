@@ -97,5 +97,12 @@ describe("preload saved-filter allowlist", () => {
       channels.listSyncHistory,
       history,
     );
+
+    const cancellation = { planId: update.id };
+    await api.cancelSync(cancellation);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelSync,
+      cancellation,
+    );
   });
 });

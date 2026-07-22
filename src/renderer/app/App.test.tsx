@@ -186,6 +186,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     listSyncHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
+    cancelSync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
@@ -2679,12 +2680,18 @@ describe("tag edit UI safety states", () => {
     const applySync = vi.spyOn(mockApi, "applySync").mockResolvedValue({
       ok: true,
       value: {
+        outcome: "completed",
         copied: 2,
+        rolledBack: 0,
         unchanged: 0,
         playlistPath: "/fixture/dap/Outgroove.m3u8",
         manifestPath: "/fixture/dap/.outgroove/manifest.json",
         errors: [],
       },
+    });
+    const cancelSync = vi.spyOn(mockApi, "cancelSync").mockResolvedValue({
+      ok: true,
+      value: { planId: plan.id, accepted: true, state: "cancelling" },
     });
     Object.defineProperty(window, "outgroove", {
       configurable: true,
@@ -2750,6 +2757,47 @@ describe("tag edit UI safety states", () => {
     await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
     expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
     expect(listSyncHistory).toHaveBeenNthCalledWith(2, { profileId });
+
+    let resolveCancelledApply: (
+      result: Awaited<ReturnType<OutgrooveApi["applySync"]>>,
+    ) => void = () => undefined;
+    applySync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCancelledApply = resolve;
+        }),
+    );
+    const retryConfirm = within(
+      screen.getByLabelText("Sync confirmation"),
+    ).getByRole("button", { name: "Confirm and apply copy plan" });
+    await waitFor(() => expect(retryConfirm).toBeEnabled());
+    retryConfirm.focus();
+    await user.keyboard("{Enter}");
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel active sync",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(cancelSync).toHaveBeenCalledWith({ planId: plan.id });
+    expect(cancel).toBeDisabled();
+    expect(screen.getByText("Status: Cancelling safely")).toBeVisible();
+    resolveCancelledApply({
+      ok: true,
+      value: {
+        outcome: "cancelled",
+        copied: 1,
+        rolledBack: 1,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: [],
+      },
+    });
+    expect(
+      await screen.findByText(/Sync cancelled safely after 1 completed copy/u),
+    ).toHaveTextContent("No new manifest was committed");
+    expect(listSyncHistory).toHaveBeenCalledTimes(2);
+    expect(retryConfirm).toBeEnabled();
   });
 
   it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {
