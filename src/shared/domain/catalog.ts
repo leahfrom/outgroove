@@ -65,6 +65,15 @@ export function albumGroupingKey(
     : textual;
 }
 
+export function folderAlbumGroupingKey(
+  albumTitle: string,
+  parentFolderKey: string,
+): string {
+  return `${parentFolderKey}\u0000${albumTitle}`
+    .normalize("NFC")
+    .toLocaleLowerCase("en-US");
+}
+
 export function sortTracks<T extends { tags: NormalizedTags; path: string }>(
   tracks: readonly T[],
 ): T[] {

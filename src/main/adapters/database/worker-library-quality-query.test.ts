@@ -180,7 +180,7 @@ describe("worker-backed Library data-quality query", () => {
     addTrack("Needle Flagged", "Needle Track", null);
     addTrack("Mixed Credits", "First", 1);
     addTrack("Mixed Credits", "Second", 2, {
-      year: "2025",
+      albumArtist: "Other Artist",
     });
     database.queryLibrary({ query: "", view: "albums", offset: 0, limit: 20 });
 

@@ -136,6 +136,13 @@ scanner's exact `Unknown title`, `Unknown artist`, and `Unknown album`
 fallbacks. Diagnostic actions select affected tracks and focus the relevant
 editor with proposal fields left blank and no preview started.
 
+Catalog album identity keeps the normalized album-artist/title rule and adds a
+merge-only same-folder alias rule. This makes inconsistent album-artist tags
+within one exact comparison-key folder visible without splitting established
+multi-folder albums. Schema v12 transactionally preserves edit history and DAP
+profiles when already-split same-folder groups merge; it never guesses across
+folders. See [ADR 0005](docs/decisions/0005-stable-album-grouping.md).
+
 The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
 ## Safety status and limitations
@@ -143,6 +150,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
 - Library queries are capped at 50 items per request, treat wildcard input literally, and return complete track details only for the selected album page. Track-field searches of three or more Unicode code points use a rebuildable FTS5 trigram projection; shorter terms retain escaped substring matching.
 - Album diagnostics use normalized catalog tags and cannot determine the correct metadata, distinguish intentional numbering gaps from mistakes, or inspect unsupported/private frames. They are review prompts, not corrections. Each data-quality result page currently rescans the matching catalog instead of using a durable or in-memory findings cache; very large libraries may therefore take time, but the work stays outside Electron main and a newer Library query cancels it.
+- Same-folder album grouping compares the exact stored parent-folder comparison key. Differently tagged tracks spread across distinct folders are not merged by this secondary rule; Outgroove will not guess that separate folders represent one release.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
 - Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.

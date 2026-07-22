@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   albumGroupingKey,
+  folderAlbumGroupingKey,
   normalizeNumber,
   normalizeTagText,
   sortTracks,
@@ -42,6 +43,15 @@ describe("catalog normalization and grouping", () => {
     const unknown = { ...tags, album: "Unknown album" };
     expect(albumGroupingKey(unknown, "/one")).not.toBe(
       albumGroupingKey(unknown, "/two"),
+    );
+  });
+
+  it("matches album titles within one comparison-key folder independently of artist", () => {
+    expect(folderAlbumGroupingKey("ALBUM", "/music/artist/album")).toBe(
+      folderAlbumGroupingKey("Album", "/music/artist/album"),
+    );
+    expect(folderAlbumGroupingKey("Album", "/music/artist/album")).not.toBe(
+      folderAlbumGroupingKey("Album", "/music/other/album"),
     );
   });
 });

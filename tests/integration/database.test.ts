@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
 import { migrations } from "../../src/main/adapters/database/migrations";
+import { diagnoseAlbum } from "../../src/shared/domain/album-diagnostics";
 
 const temporary: string[] = [];
 afterEach(async () =>
@@ -103,11 +104,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the shipped stable album grouping migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "012_stable_album_grouping.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 12);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(11);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(12);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -166,7 +179,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -208,7 +221,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -239,7 +252,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -292,7 +305,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(
       migrated.queryLibrary({
@@ -368,7 +381,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -423,7 +436,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      11,
+      12,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",
@@ -435,6 +448,143 @@ describe("database migration and backup", () => {
     ]);
     expect(migrated.connection.pragma("foreign_key_check")).toEqual([]);
     migrated.close();
+  });
+
+  it("merges only same-folder v11 album-artist splits and preserves durable references", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v11-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 11))
+      legacy.exec(migration.sql);
+    legacy.pragma("user_version = 11");
+    legacy.exec(`
+      INSERT INTO library_roots (id, path, path_key, created_at)
+        VALUES ('root', '/fixture/library', '/fixture/library', '2026-01-01');
+      INSERT INTO albums (id, grouping_key, title, album_artist) VALUES
+        ('album-a', 'artist-a-album', 'Shared Album', 'Artist A'),
+        ('album-b', 'artist-b-album', 'Shared Album', 'Artist B'),
+        ('album-c', 'artist-c-album', 'Shared Album', 'Artist C');
+      INSERT INTO audio_files
+        (id, root_id, path, path_key, size, modified_ms, signature, format,
+         normalized_tags_json, scan_state, scanned_at) VALUES
+        ('file-a', 'root', '/fixture/library/shared/01.flac', '/fixture/library/shared/01.flac', 1, 1, '1:1', 'FLAC',
+         '{"title":"First","album":"Shared Album","artist":"Artist A","albumArtist":"Artist A","trackNumber":1,"discNumber":1,"year":"2026"}', 'ok', '2026-01-01'),
+        ('file-b', 'root', '/fixture/library/shared/02.flac', '/fixture/library/shared/02.flac', 1, 1, '1:1', 'FLAC',
+         '{"title":"Second","album":"Shared Album","artist":"Artist B","albumArtist":"Artist B","trackNumber":2,"discNumber":1,"year":"2026"}', 'ok', '2026-01-01'),
+        ('file-c', 'root', '/fixture/library/other/01.flac', '/fixture/library/other/01.flac', 1, 1, '1:1', 'FLAC',
+         '{"title":"Other","album":"Shared Album","artist":"Artist C","albumArtist":"Artist C","trackNumber":1,"discNumber":1,"year":"2026"}', 'ok', '2026-01-01');
+      INSERT INTO tracks (id, file_id, album_id, title, track_number, disc_number) VALUES
+        ('track-a', 'file-a', 'album-a', 'First', 1, 1),
+        ('track-b', 'file-b', 'album-b', 'Second', 2, 1),
+        ('track-c', 'file-c', 'album-c', 'Other', 1, 1);
+      INSERT INTO edit_operations
+        (id, album_id, proposed_title, confirmation_hash, state, created_at,
+         completed_at, kind)
+        VALUES ('operation', 'album-b', 'Batch metadata: albumArtist', 'hash',
+          'completed', '2026-01-01', '2026-01-01', 'track-tags-batch-edit');
+      INSERT INTO sync_profiles (id, name, target_path, album_id, created_at)
+        VALUES ('profile', 'Fixture DAP', '/fixture/dap', 'album-b', '2026-01-01');
+    `);
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      12,
+    );
+    const albums = migrated.listAlbums();
+    expect(albums).toHaveLength(2);
+    const merged = albums.find((album) => album.id === "album-a");
+    expect(merged?.tracks.map((track) => track.id)).toEqual([
+      "file-a",
+      "file-b",
+    ]);
+    expect(
+      merged &&
+        diagnoseAlbum(merged).some(
+          (finding) => finding.kind === "inconsistent-album-artist",
+        ),
+    ).toBe(true);
+    expect(migrated.getSyncProfile("profile")?.album_id).toBe("album-a");
+    expect(migrated.getEditOperation("operation")?.album_id).toBe("album-a");
+    expect(
+      migrated.connection
+        .prepare(
+          "SELECT album_id FROM album_grouping_aliases ORDER BY grouping_key",
+        )
+        .pluck()
+        .all(),
+    ).toEqual(["album-a", "album-a", "album-c"]);
+    expect(
+      migrated.connection
+        .prepare("SELECT album_id FROM album_folder_aliases")
+        .pluck()
+        .all()
+        .sort(),
+    ).toEqual(["album-a", "album-c"]);
+    expect(
+      migrated.connection
+        .prepare(
+          "SELECT value FROM catalog_metadata WHERE key='album-grouping-reconciliation'",
+        )
+        .pluck()
+        .get(),
+    ).toBe("complete");
+    expect(migrated.connection.pragma("foreign_key_check")).toEqual([]);
+    migrated.close();
+  });
+
+  it("keeps a verified partial album-artist edit in its established album", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-grouping-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(directory, directory);
+    const scannedFile = (title: string, trackNumber: number) => ({
+      path: join(directory, "Album", `${trackNumber}.flac`),
+      size: 100,
+      modifiedMs: 1,
+      format: "FLAC",
+      durationSeconds: 60,
+      tags: {
+        title,
+        album: "Album",
+        artist: "Artist",
+        albumArtist: "Artist",
+        trackNumber,
+        discNumber: 1,
+        year: "2026",
+      },
+      nativeTags: [],
+    });
+    const first = scannedFile("First", 1);
+    const second = scannedFile("Second", 2);
+    const firstId = database.upsertScannedFile(root.id, first.path, first);
+    database.upsertScannedFile(root.id, second.path, second);
+    const albumId = database.listAlbums()[0]?.id;
+    if (!albumId) throw new Error("Fixture album missing");
+    const profile = database.createSyncProfile(
+      "Fixture DAP",
+      join(directory, "dap"),
+      albumId,
+    );
+
+    database.updateFileAfterEdit(firstId, {
+      ...first,
+      modifiedMs: 2,
+      tags: { ...first.tags, albumArtist: "Corrected Artist" },
+    });
+
+    const albums = database.listAlbums();
+    expect(albums).toHaveLength(1);
+    const album = albums[0];
+    if (!album) throw new Error("Edited fixture album missing");
+    expect(album.id).toBe(albumId);
+    const finding = diagnoseAlbum(album).find(
+      (candidate) => candidate.kind === "inconsistent-album-artist",
+    );
+    expect(finding?.affectedTrackIds).toContain(firstId);
+    expect(database.getSyncProfile(profile.id)?.album_id).toBe(albumId);
+    database.close();
   });
 
   it("publishes directory errors atomically and preserves them across an abandoned scan", async () => {
