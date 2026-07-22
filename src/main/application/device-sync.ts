@@ -17,6 +17,7 @@ import type {
   SyncApplyResultDto,
   SyncPlanDto,
   SyncPlanItemDto,
+  SyncProfileDto,
 } from "../../shared/contracts/api";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import { streamingFileHash } from "../adapters/filesystem/streaming-hash";
@@ -85,13 +86,32 @@ function deterministicUuid(value: string): string {
 
 export class DeviceSync {
   private readonly plans = new Map<string, SyncPlanDto>();
+  private readonly profileRevisions = new Map<string, number>();
+  private readonly applyingProfiles = new Set<string>();
 
   constructor(
     private readonly database: CatalogDatabase,
     private readonly hooks: ApplyHooks = {},
   ) {}
 
+  updateProfileAlbums(
+    profileId: string,
+    albumIds: readonly string[],
+  ): SyncProfileDto {
+    if (this.applyingProfiles.has(profileId))
+      throw new Error("Wait for the active sync before changing this profile.");
+    const profile = this.database.updateSyncProfileAlbums(profileId, albumIds);
+    this.profileRevisions.set(
+      profileId,
+      (this.profileRevisions.get(profileId) ?? 0) + 1,
+    );
+    for (const [planId, plan] of this.plans)
+      if (plan.profileId === profileId) this.plans.delete(planId);
+    return profile;
+  }
+
   async plan(profileId: string): Promise<SyncPlanDto> {
+    const profileRevision = this.profileRevisions.get(profileId) ?? 0;
     const profile = this.database.getSyncProfile(profileId);
     if (!profile) throw new Error("Sync profile does not exist.");
     const previous = this.database.getLatestManifest(profileId);
@@ -202,6 +222,10 @@ export class DeviceSync {
       errors,
       requiredBytes,
     };
+    if ((this.profileRevisions.get(profileId) ?? 0) !== profileRevision)
+      throw new Error(
+        "The DAP profile changed while its preview was being prepared. Preview it again.",
+      );
     this.plans.set(id, plan);
     return plan;
   }
@@ -217,129 +241,144 @@ export class DeviceSync {
       throw new Error("Sync must be applied from its current preview.");
     if (plan.conflicts.length > 0 || plan.errors.length > 0)
       throw new Error("Resolve sync conflicts and errors before applying.");
-    const errors: string[] = [];
-    const previous = this.database.getLatestManifest(plan.profileId);
-    const ownedDestinations = new Set(
-      previous
-        ? (JSON.parse(previous.manifest_json) as Manifest).entries.map(
-            (entry) =>
-              entry.relativeDestination
-                .normalize("NFC")
-                .toLocaleLowerCase("en-US"),
-          )
-        : [],
-    );
-    let copied = 0;
-    for (const item of plan.copies) {
-      let temporary: string | undefined;
-      try {
-        await this.hooks.beforeCopy?.(item);
-        const sourceInfo = await stat(item.sourcePath);
-        if (
-          `${sourceInfo.size}:${Math.trunc(sourceInfo.mtimeMs)}` !==
-          item.signature
-        )
-          throw new Error("Source changed after preview; create a new plan.");
-        const destination = containedDestination(
-          plan.targetPath,
-          item.relativeDestination.split(/[\\/]/u),
-        );
-        await mkdir(dirname(destination.absolute), { recursive: true });
-        temporary = `${destination.absolute}.outgroove-${randomUUID()}.tmp`;
-        const rollback = `${destination.absolute}.outgroove-${randomUUID()}.rollback`;
-        await copyFile(item.sourcePath, temporary);
-        await flushFile(temporary);
-        if (
-          (await streamingFileHash(item.sourcePath)) !==
-          (await streamingFileHash(temporary))
-        )
-          throw new Error("Copied file verification failed.");
-        const sourceAfterCopy = await stat(item.sourcePath);
-        if (
-          `${sourceAfterCopy.size}:${Math.trunc(sourceAfterCopy.mtimeMs)}` !==
-          item.signature
-        )
-          throw new Error("Source changed during copy; create a new plan.");
-        const comparisonKey = item.relativeDestination
-          .normalize("NFC")
-          .toLocaleLowerCase("en-US");
-        if (ownedDestinations.has(comparisonKey)) {
-          await rename(destination.absolute, rollback);
-          try {
-            await rename(temporary, destination.absolute);
-            temporary = undefined;
-          } catch (error) {
-            await rename(rollback, destination.absolute);
-            throw error;
-          }
-          await unlinkIfExists(rollback);
-        } else {
-          // Atomically refuse to clobber a file created after the preview.
-          try {
-            await link(temporary, destination.absolute);
-          } catch (error) {
-            const code = (error as NodeJS.ErrnoException).code;
-            if (code === "EEXIST")
-              throw new Error(
-                "An unknown target file appeared after preview; nothing was replaced.",
-              );
-            if (code !== "EPERM" && code !== "ENOTSUP" && code !== "EOPNOTSUPP")
-              throw error;
-            await copyFile(
-              temporary,
-              destination.absolute,
-              constants.COPYFILE_EXCL,
-            );
-            if (
-              (await streamingFileHash(destination.absolute)) !==
-              (await streamingFileHash(temporary))
+    if (this.applyingProfiles.has(plan.profileId))
+      throw new Error("A sync is already applying for this profile.");
+    this.applyingProfiles.add(plan.profileId);
+    try {
+      const errors: string[] = [];
+      const previous = this.database.getLatestManifest(plan.profileId);
+      const ownedDestinations = new Set(
+        previous
+          ? (JSON.parse(previous.manifest_json) as Manifest).entries.map(
+              (entry) =>
+                entry.relativeDestination
+                  .normalize("NFC")
+                  .toLocaleLowerCase("en-US"),
             )
-              throw new Error("Exclusive target copy verification failed.");
+          : [],
+      );
+      let copied = 0;
+      for (const item of plan.copies) {
+        let temporary: string | undefined;
+        try {
+          await this.hooks.beforeCopy?.(item);
+          const sourceInfo = await stat(item.sourcePath);
+          if (
+            `${sourceInfo.size}:${Math.trunc(sourceInfo.mtimeMs)}` !==
+            item.signature
+          )
+            throw new Error("Source changed after preview; create a new plan.");
+          const destination = containedDestination(
+            plan.targetPath,
+            item.relativeDestination.split(/[\\/]/u),
+          );
+          await mkdir(dirname(destination.absolute), { recursive: true });
+          temporary = `${destination.absolute}.outgroove-${randomUUID()}.tmp`;
+          const rollback = `${destination.absolute}.outgroove-${randomUUID()}.rollback`;
+          await copyFile(item.sourcePath, temporary);
+          await flushFile(temporary);
+          if (
+            (await streamingFileHash(item.sourcePath)) !==
+            (await streamingFileHash(temporary))
+          )
+            throw new Error("Copied file verification failed.");
+          const sourceAfterCopy = await stat(item.sourcePath);
+          if (
+            `${sourceAfterCopy.size}:${Math.trunc(sourceAfterCopy.mtimeMs)}` !==
+            item.signature
+          )
+            throw new Error("Source changed during copy; create a new plan.");
+          const comparisonKey = item.relativeDestination
+            .normalize("NFC")
+            .toLocaleLowerCase("en-US");
+          if (ownedDestinations.has(comparisonKey)) {
+            await rename(destination.absolute, rollback);
+            try {
+              await rename(temporary, destination.absolute);
+              temporary = undefined;
+            } catch (error) {
+              await rename(rollback, destination.absolute);
+              throw error;
+            }
+            await unlinkIfExists(rollback);
+          } else {
+            // Atomically refuse to clobber a file created after the preview.
+            try {
+              await link(temporary, destination.absolute);
+            } catch (error) {
+              const code = (error as NodeJS.ErrnoException).code;
+              if (code === "EEXIST")
+                throw new Error(
+                  "An unknown target file appeared after preview; nothing was replaced.",
+                );
+              if (
+                code !== "EPERM" &&
+                code !== "ENOTSUP" &&
+                code !== "EOPNOTSUPP"
+              )
+                throw error;
+              await copyFile(
+                temporary,
+                destination.absolute,
+                constants.COPYFILE_EXCL,
+              );
+              if (
+                (await streamingFileHash(destination.absolute)) !==
+                (await streamingFileHash(temporary))
+              )
+                throw new Error("Exclusive target copy verification failed.");
+            }
+            await unlinkIfExists(temporary);
+            temporary = undefined;
           }
-          await unlinkIfExists(temporary);
-          temporary = undefined;
+          copied++;
+          onProgress(copied, plan.copies.length, item.relativeDestination);
+        } catch (error) {
+          if (temporary) await unlinkIfExists(temporary);
+          errors.push(
+            `${item.relativeDestination}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          break;
         }
-        copied++;
-        onProgress(copied, plan.copies.length, item.relativeDestination);
-      } catch (error) {
-        if (temporary) await unlinkIfExists(temporary);
-        errors.push(
-          `${item.relativeDestination}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        break;
       }
-    }
-    const playlistPath = join(plan.targetPath, "Outgroove.m3u8");
-    const manifestPath = join(plan.targetPath, ".outgroove", "manifest.json");
-    if (errors.length === 0) {
-      const allItems = [...plan.copies, ...plan.unchanged].sort((left, right) =>
-        left.relativeDestination.localeCompare(right.relativeDestination),
-      );
-      await atomicWrite(
+      const playlistPath = join(plan.targetPath, "Outgroove.m3u8");
+      const manifestPath = join(plan.targetPath, ".outgroove", "manifest.json");
+      if (errors.length === 0) {
+        const allItems = [...plan.copies, ...plan.unchanged].sort(
+          (left, right) =>
+            left.relativeDestination.localeCompare(right.relativeDestination),
+        );
+        await atomicWrite(
+          playlistPath,
+          `#EXTM3U\n${allItems.map((item) => item.relativeDestination.split("\\").join("/")).join("\n")}\n`,
+        );
+        await this.hooks.beforeManifest?.();
+        const manifest: Manifest = {
+          version: 1,
+          profileId: plan.profileId,
+          entries: allItems.map((item) => ({
+            sourceFileId: item.sourceFileId,
+            relativeDestination: item.relativeDestination,
+            signature: item.signature,
+            size: item.size,
+          })),
+        };
+        await atomicWrite(
+          manifestPath,
+          `${JSON.stringify(manifest, null, 2)}\n`,
+        );
+        this.database.saveManifest(plan.profileId, plan.targetPath, manifest);
+        this.plans.delete(planId);
+      }
+      return {
+        copied,
+        unchanged: plan.unchanged.length,
         playlistPath,
-        `#EXTM3U\n${allItems.map((item) => item.relativeDestination.split("\\").join("/")).join("\n")}\n`,
-      );
-      await this.hooks.beforeManifest?.();
-      const manifest: Manifest = {
-        version: 1,
-        profileId: plan.profileId,
-        entries: allItems.map((item) => ({
-          sourceFileId: item.sourceFileId,
-          relativeDestination: item.relativeDestination,
-          signature: item.signature,
-          size: item.size,
-        })),
+        manifestPath,
+        errors,
       };
-      await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-      this.database.saveManifest(plan.profileId, plan.targetPath, manifest);
-      this.plans.delete(planId);
+    } finally {
+      this.applyingProfiles.delete(plan.profileId);
     }
-    return {
-      copied,
-      unchanged: plan.unchanged.length,
-      playlistPath,
-      manifestPath,
-      errors,
-    };
   }
 }

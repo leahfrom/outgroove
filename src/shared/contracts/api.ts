@@ -201,17 +201,21 @@ export const trackNumberSequencePreviewRequestSchema = z
     ({ fileIds, startNumber }) => startNumber + fileIds.length - 1 <= 9999,
     { message: "The resulting track number exceeds 9999." },
   );
+const syncProfileAlbumIdsSchema = z
+  .array(z.uuid())
+  .min(1)
+  .max(100)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Choose each album only once.",
+  });
 export const syncProfileRequestSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
-    albumIds: z
-      .array(z.uuid())
-      .min(1)
-      .max(100)
-      .refine((ids) => new Set(ids).size === ids.length, {
-        message: "Choose each album only once.",
-      }),
+    albumIds: syncProfileAlbumIdsSchema,
   })
+  .strict();
+export const updateSyncProfileAlbumsRequestSchema = z
+  .object({ id: z.uuid(), albumIds: syncProfileAlbumIdsSchema })
   .strict();
 export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
@@ -539,6 +543,9 @@ export interface OutgrooveApi {
     } | null>
   >;
   listSyncProfiles(): Promise<Result<readonly SyncProfileDto[]>>;
+  updateSyncProfileAlbums(
+    request: z.infer<typeof updateSyncProfileAlbumsRequestSchema>,
+  ): Promise<Result<SyncProfileDto>>;
   planSync(
     request: z.infer<typeof syncPlanRequestSchema>,
   ): Promise<Result<SyncPlanDto>>;

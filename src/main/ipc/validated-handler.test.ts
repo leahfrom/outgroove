@@ -16,6 +16,7 @@ import {
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSyncProfileAlbumsRequestSchema,
   updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
@@ -82,6 +83,30 @@ describe("validated IPC handlers", () => {
       { name: "Empty", albumIds: [] },
       { name: "Duplicate", albumIds: [albumIds[0], albumIds[0]] },
       { name: "Path injection", albumIds, targetPath: "/Volumes/DAP" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("validates DAP profile album revisions without accepting target changes", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      updateSyncProfileAlbumsRequestSchema,
+      useCase,
+    );
+    const id = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const albumIds = ["86fb71a8-9faf-49f9-ad60-39e5bb28c02d"];
+    await expect(handler({}, { id, albumIds })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ id, albumIds });
+    for (const request of [
+      { id, albumIds: [] },
+      { id, albumIds: [albumIds[0], albumIds[0]] },
+      { id, albumIds, targetPath: "/Volumes/DAP" },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,

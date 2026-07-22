@@ -73,5 +73,15 @@ describe("preload saved-filter allowlist", () => {
       channels.listSyncProfiles,
       {},
     );
+
+    const update = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      albumIds: request.albumIds,
+    };
+    await api.updateSyncProfileAlbums(update);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.updateSyncProfileAlbums,
+      update,
+    );
   });
 });
