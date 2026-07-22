@@ -12,16 +12,24 @@ export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum(["albums", "artists", "data-quality", "scan-errors"]),
+    view: z.enum([
+      "albums",
+      "artists",
+      "tracks",
+      "data-quality",
+      "scan-errors",
+    ]),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
     qualityFilter: z.enum(albumDiagnosticFilters).optional(),
     albumArtist: z.string().trim().min(1).max(400).optional(),
+    albumId: z.uuid().optional(),
   })
   .strict()
   .refine(
-    ({ view, albumArtist }) => albumArtist === undefined || view === "albums",
-    { path: ["albumArtist"], message: "Album artist filters require Albums." },
+    ({ view, albumArtist, albumId }) =>
+      (albumArtist === undefined && albumId === undefined) || view === "albums",
+    { message: "Album filters require Albums." },
   );
 export const albumEditPreviewRequestSchema = z
   .object({
@@ -153,9 +161,23 @@ export interface LibraryArtistDto {
   readonly albumCount: number;
   readonly trackCount: number;
 }
+export interface LibraryTrackDto {
+  readonly id: string;
+  readonly albumId: string;
+  readonly title: string;
+  readonly artist: string;
+  readonly albumTitle: string;
+  readonly albumArtist: string;
+  readonly trackNumber: number | null;
+  readonly discNumber: number | null;
+  readonly format: string;
+  readonly durationSeconds: number | null;
+  readonly path: string;
+}
 export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
   readonly artists: readonly LibraryArtistDto[];
+  readonly tracks: readonly LibraryTrackDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;
   readonly offset: number;

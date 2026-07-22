@@ -52,6 +52,7 @@ function api(applyVerified: boolean): OutgrooveApi {
         value: {
           albums: [album],
           artists: [],
+          tracks: [],
           scanErrors: [],
           totalItems: 1,
           offset: 0,
@@ -269,6 +270,7 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [batchAlbum],
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -459,6 +461,7 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [sequenceAlbum],
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -578,6 +581,7 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [diagnosticAlbum],
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -651,6 +655,7 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [diagnosticAlbum],
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -734,6 +739,7 @@ describe("tag edit UI safety states", () => {
       value: {
         albums: [album, flaggedAlbum],
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems: 2,
         offset: 0,
@@ -1250,6 +1256,7 @@ describe("tag edit UI safety states", () => {
             ? {
                 albums: [],
                 artists: [],
+                tracks: [],
                 scanErrors: [
                   {
                     kind: "file" as const,
@@ -1269,6 +1276,7 @@ describe("tag edit UI safety states", () => {
             : {
                 albums: [album],
                 artists: [],
+                tracks: [],
                 scanErrors: [],
                 totalItems: 1,
                 offset: 0,
@@ -1323,6 +1331,7 @@ describe("tag edit UI safety states", () => {
                     },
                   ]
                 : [],
+            tracks: [],
             scanErrors: [],
             totalItems: request.view === "artists" ? 21 : 1,
             offset: request.offset,
@@ -1389,6 +1398,89 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("browses tracks with file context and opens the existing preview-only editor", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const mockApi = api(true);
+    const previewTrackTagEdit = vi.spyOn(mockApi, "previewTrackTagEdit");
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "tracks");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText(firstTrack.path)).toBeVisible();
+    expect(within(table).getByText(album.title)).toBeVisible();
+
+    await user.click(
+      within(table).getByRole("button", {
+        name: `Open ${firstTrack.tags.title} in Workbench`,
+      }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+        albumId: album.id,
+      }),
+    );
+    expect(await screen.findByLabelText("Track metadata editor")).toHaveFocus();
+    expect(screen.getByLabelText("Track title")).toHaveValue(
+      firstTrack.tags.title,
+    );
+    expect(previewTrackTagEdit).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Show all albums" }),
+    ).toBeVisible();
+  });
+
   it("queries the worker-backed data-quality view and shows its progress", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1418,6 +1510,7 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: request.view === "data-quality" ? [flaggedAlbum] : [album],
             artists: [],
+            tracks: [],
             scanErrors: [],
             totalItems: 1,
             offset: request.offset,
@@ -1516,6 +1609,7 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: albumQueries === 1 ? [album] : [freshAlbum],
             artists: [],
+            tracks: [],
             scanErrors: [],
             totalItems: 1,
             offset: request.offset,
@@ -1551,6 +1645,7 @@ describe("tag edit UI safety states", () => {
         value: {
           albums: [],
           artists: [],
+          tracks: [],
           scanErrors: [],
           totalItems: 0,
           offset: 0,
@@ -1572,6 +1667,7 @@ describe("tag edit UI safety states", () => {
         value: {
           albums: [album],
           artists: [],
+          tracks: [],
           scanErrors: [],
           totalItems: 21,
           offset: 0,
@@ -1626,6 +1722,7 @@ describe("tag edit UI safety states", () => {
           value: {
             albums: request.offset === 0 ? [album] : [flaggedAlbum],
             artists: [],
+            tracks: [],
             scanErrors: [],
             totalItems: 21,
             offset: request.offset,

@@ -143,11 +143,23 @@ h1 {
 aside,
 .detail,
 .errors,
-.artists {
+.artists,
+.tracks {
   background: white;
   border: 1px solid #d8ddd8;
   border-radius: 14px;
   padding: 1rem;
+}
+.track-table-scroll {
+  overflow-x: auto;
+}
+.tracks td small {
+  color: #526159;
+  display: block;
+  margin-top: 0.2rem;
+}
+.tracks td:nth-child(6) {
+  max-width: 320px;
 }
 .artists ul {
   display: grid;
