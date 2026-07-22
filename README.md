@@ -7,11 +7,13 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Choose one library folder with a native dialog and scan supported audio extensions through bounded discovery, metadata, and SQLite workers.
 - Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, and incremental scan signatures in migrated SQLite.
-- Browse albums and tracks in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search; search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
+- Browse albums in a sandboxed React renderer using bounded SQLite pages and a rebuildable FTS-backed catalog search. Searchable, paginated album-artist and track views show useful catalog context: artist counts, or each track's album, number, format, duration, and file path. Artist rows open an exact artist-filtered Albums view; track rows open the exact album and existing preview-only track editor without proposing or applying a change. Search album, artist, track, format, and path fields, or switch to a searchable scan-problem view.
+- Choose the searchable **Albums needing review** Library view to analyze the matching catalog in bounded pages on a cancellable SQLite worker. Narrow results to numbering, artist/date consistency, or missing/placeholder tag findings. Results are exact, paginated, and use the same deterministic local rules shown in each album for missing or duplicate track numbers, internal sequence gaps, inconsistent album artists or partial release dates, missing dates, and exact scanner placeholders. Findings show affected files and only select the existing safe Workbench workflow; they never infer or apply a correction.
 - Preview an album-title change per file, explicitly confirm it, snapshot the before-state, write through a same-volume temporary file, verify the audio payload and tags, replace, re-read, and report per-file results.
 - Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
 - Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
 - Preview a field-scoped batch undo from edit history. Only verified writes participate; already restored files are skipped and stale files are refused without stopping safe restores.
+- Explicitly order selected tracks, preview sequential track numbers from a chosen starting value, optionally assign one disc number to the sequence, safely apply both fields, and undo verified sequence writes from history.
 - Preview a field-scoped track metadata undo from edit history. It restores only fields changed by that verified operation and refuses targeted fields changed afterward.
 - Review confirmed album-title edit history and preview an honest per-file undo. Undo reuses the same safe writer and refuses to overwrite a title changed after the original edit.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
@@ -118,7 +120,28 @@ The currently editable common fields are album title plus a selected track's
 title, track artist, album artist, track/disc number, and partial release date.
 Batch editing is deliberately narrower: it supports only track artist, album
 artist, disc number, and partial release date, requires an explicit opt-in for
-each field, and does not mass-edit titles or track numbers.
+each field, and does not mass-edit titles. Track numbers use a separate sequence
+preview whose order is explicitly controlled by the user.
+
+Album data-quality findings are derived on demand from catalog DTOs and add no
+durable finding table, filesystem access, or network dependency. The
+whole-library view reads ordinary 50-album query pages in a short-lived worker,
+retains only the requested finding page, reports progress, and terminates a
+superseded query. Issue-type filters only decide which albums appear; the
+selected album continues to show every applicable finding so no relevant
+context is hidden. Sequence diagnostics treat a missing disc number as disc 1,
+report only gaps between the lowest and highest observed number, and do not
+assume a missing starting number. Placeholder diagnostics recognize only the
+scanner's exact `Unknown title`, `Unknown artist`, and `Unknown album`
+fallbacks. Diagnostic actions select affected tracks and focus the relevant
+editor with proposal fields left blank and no preview started.
+
+Catalog album identity keeps the normalized album-artist/title rule and adds a
+merge-only same-folder alias rule. This makes inconsistent album-artist tags
+within one exact comparison-key folder visible without splitting established
+multi-folder albums. Schema v12 transactionally preserves edit history and DAP
+profiles when already-split same-folder groups merge; it never guesses across
+folders. See [ADR 0005](docs/decisions/0005-stable-album-grouping.md).
 
 The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
@@ -126,6 +149,10 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 
 - The renderer has no Node, Electron, SQL, path, or generic IPC access. Requests are a fixed `contextBridge` allowlist and are runtime-validated again in main.
 - Library queries are capped at 50 items per request, treat wildcard input literally, and return complete track details only for the selected album page. Track-field searches of three or more Unicode code points use a rebuildable FTS5 trigram projection; shorter terms retain escaped substring matching.
+- Album-artist browsing uses the catalog album artist, not every distinct per-track artist credit. Counts include only currently visible files, and selecting an artist applies an exact removable album-artist filter before any text search.
+- Track browsing reads only the current catalog and is capped by the same 50-row page limit as other Library views. Opening a track selects its exact catalog album and fills the existing editor, but intentionally does not create a preview or write metadata.
+- Album diagnostics use normalized catalog tags and cannot determine the correct metadata, distinguish intentional numbering gaps from mistakes, or inspect unsupported/private frames. They are review prompts, not corrections. Each data-quality result page currently rescans the matching catalog instead of using a durable or in-memory findings cache; very large libraries may therefore take time, but the work stays outside Electron main and a newer Library query cancels it.
+- Same-folder album grouping compares the exact stored parent-folder comparison key. Differently tagged tracks spread across distinct folders are not merged by this secondary rule; Outgroove will not guess that separate folders represent one release.
 - Folder selection is explicit. For development, choose only `fixtures/audio/` or another disposable test folder unless you intentionally authorize an exact real path.
 - Unreadable files and folders appear separately in Scan problems. If any folder cannot be traversed, readable files still scan, but that run does not mark unseen catalog files missing.
 - Tag writes retain a rollback copy until the replacement is re-read and verified. Recovery across sudden power loss and exFAT behavior still require manual matrix testing.
@@ -146,7 +173,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - `src/preload`: fixed typed bridge
 - `src/main`: Electron orchestration, validated IPC, SQLite, filesystem, metadata, edit, and sync services
 - `src/shared`: serializable contracts and pure domain rules
-- `src/workers`: bounded filesystem-discovery, metadata, and scan-database worker entry points
+- `src/workers`: bounded filesystem-discovery, metadata, scan-database, and Library data-quality worker entry points
 - `migrations`: append-only schema history
 - `tests`: architecture, temporary-filesystem integration, and packaged smoke tests
 

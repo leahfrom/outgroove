@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CatalogAlbum } from "../domain/catalog";
+import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
@@ -11,11 +12,25 @@ export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum(["albums", "scan-errors"]),
+    view: z.enum([
+      "albums",
+      "artists",
+      "tracks",
+      "data-quality",
+      "scan-errors",
+    ]),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
+    qualityFilter: z.enum(albumDiagnosticFilters).optional(),
+    albumArtist: z.string().trim().min(1).max(400).optional(),
+    albumId: z.uuid().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ view, albumArtist, albumId }) =>
+      (albumArtist === undefined && albumId === undefined) || view === "albums",
+    { message: "Album filters require Albums." },
+  );
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -77,6 +92,23 @@ export const trackBatchEditPreviewRequestSchema = z
       .refine((changes) => Object.keys(changes).length > 0),
   })
   .strict();
+export const trackNumberSequencePreviewRequestSchema = z
+  .object({
+    fileIds: z
+      .array(z.uuid())
+      .min(2)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Choose each track only once.",
+      }),
+    startNumber: z.number().int().min(1).max(9999),
+    discNumber: z.number().int().min(1).max(999).optional(),
+  })
+  .strict()
+  .refine(
+    ({ fileIds, startNumber }) => startNumber + fileIds.length - 1 <= 9999,
+    { message: "The resulting track number exceeds 9999." },
+  );
 export const syncProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
   .strict();
@@ -124,8 +156,28 @@ export interface ScanErrorDto {
   readonly path: string;
   readonly message: string;
 }
+export interface LibraryArtistDto {
+  readonly name: string;
+  readonly albumCount: number;
+  readonly trackCount: number;
+}
+export interface LibraryTrackDto {
+  readonly id: string;
+  readonly albumId: string;
+  readonly title: string;
+  readonly artist: string;
+  readonly albumTitle: string;
+  readonly albumArtist: string;
+  readonly trackNumber: number | null;
+  readonly discNumber: number | null;
+  readonly format: string;
+  readonly durationSeconds: number | null;
+  readonly path: string;
+}
 export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
+  readonly artists: readonly LibraryArtistDto[];
+  readonly tracks: readonly LibraryTrackDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;
   readonly offset: number;
@@ -197,7 +249,8 @@ export interface TagEditHistoryItemDto {
     | "track-tags-edit"
     | "track-tags-undo"
     | "track-tags-batch-edit"
-    | "track-tags-batch-undo";
+    | "track-tags-batch-undo"
+    | "track-number-sequence-edit";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -290,6 +343,12 @@ export interface OutgrooveApi {
   applyTrackBatchUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
+  previewTrackNumberSequence(
+    request: z.infer<typeof trackNumberSequencePreviewRequestSchema>,
+  ): Promise<Result<TrackBatchEditPreviewDto>>;
+  applyTrackNumberSequence(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(
     request: z.infer<typeof syncProfileRequestSchema>,
   ): Promise<Result<{ id: string; name: string; targetPath: string } | null>>;
@@ -301,7 +360,7 @@ export interface OutgrooveApi {
   ): Promise<Result<SyncApplyResultDto>>;
   onJobProgress(
     listener: (progress: {
-      job: "scan" | "tag-edit" | "sync";
+      job: "scan" | "tag-edit" | "sync" | "library-quality";
       completed: number;
       total: number;
       detail: string;

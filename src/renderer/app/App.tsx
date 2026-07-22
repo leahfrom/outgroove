@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DatabaseRestorePreviewDto,
+  LibraryArtistDto,
+  LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
@@ -12,9 +14,17 @@ import type {
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  albumDiagnosticFilters,
+  diagnoseAlbum,
+  isAlbumDiagnosticFilter,
+  type AlbumDiagnostic,
+  type AlbumDiagnosticFilter,
+  type AlbumDiagnosticWorkflow,
+} from "../../shared/domain/album-diagnostics";
 
 interface Progress {
-  job: "scan" | "tag-edit" | "sync";
+  job: "scan" | "tag-edit" | "sync" | "library-quality";
   completed: number;
   total: number;
   detail: string;
@@ -22,15 +32,58 @@ interface Progress {
 
 const PAGE_SIZE = 20;
 
+function draftForTrack(track: CatalogAlbum["tracks"][number]) {
+  return {
+    title: track.tags.title,
+    artist: track.tags.artist,
+    albumArtist: track.tags.albumArtist,
+    trackNumber: track.tags.trackNumber?.toString() ?? "",
+    discNumber: track.tags.discNumber?.toString() ?? "",
+    year: track.tags.year ?? "",
+  };
+}
+
+const diagnosticFilterLabels: Record<AlbumDiagnosticFilter, string> = {
+  all: "All findings",
+  numbering: "Numbering",
+  consistency: "Artist/date consistency",
+  "missing-tags": "Missing/placeholder tags",
+};
+
+function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
+  switch (workflow) {
+    case "track-editor":
+      return "Open affected track in the single-track editor";
+    case "sequence":
+      return "Select affected tracks for sequencing";
+    case "batch-track-artist":
+      return "Select affected tracks for track artist review";
+    case "batch-album-artist":
+      return "Select affected tracks for album artist review";
+    case "batch-release-date":
+      return "Select affected tracks for release date review";
+    case "album-title":
+      return "Open the album title editor";
+  }
+}
+
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
+  const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
+  const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
-  const [libraryView, setLibraryView] = useState<"albums" | "scan-errors">(
-    "albums",
-  );
+  const [libraryView, setLibraryView] = useState<
+    "albums" | "artists" | "tracks" | "data-quality" | "scan-errors"
+  >("albums");
+  const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
+  const [albumIdFilter, setAlbumIdFilter] = useState<string>();
+  const [trackRouteLabel, setTrackRouteLabel] = useState<string>();
+  const [pendingTrackId, setPendingTrackId] = useState<string>();
+  const [qualityFilter, setQualityFilter] =
+    useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [restorePreview, setRestorePreview] =
@@ -70,6 +123,12 @@ export function App(): React.JSX.Element {
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
+  const [sequenceStart, setSequenceStart] = useState("1");
+  const [sequenceDiscEnabled, setSequenceDiscEnabled] = useState(false);
+  const [sequenceDiscNumber, setSequenceDiscNumber] = useState("1");
+  const [sequencePreview, setSequencePreview] =
+    useState<TrackBatchEditPreviewDto>();
+  const [sequenceResult, setSequenceResult] = useState<TagEditResultDto>();
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
@@ -85,6 +144,15 @@ export function App(): React.JSX.Element {
     "Choose a fixture or test library folder to begin.",
   );
   const [busy, setBusy] = useState(false);
+  const [diagnosticDestination, setDiagnosticDestination] = useState<{
+    target: "track" | "batch" | "sequence" | "album-title";
+    request: number;
+  }>();
+  const trackEditorRef = useRef<HTMLElement>(null);
+  const batchEditorRef = useRef<HTMLElement>(null);
+  const sequenceEditorRef = useRef<HTMLDivElement>(null);
+  const albumTitleEditorRef = useRef<HTMLElement>(null);
+  const libraryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
     scanJob?.state === "running" ||
@@ -97,6 +165,34 @@ export function App(): React.JSX.Element {
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
   );
+  const diagnosticsByAlbum = useMemo(
+    () =>
+      new Map(albums.map((album) => [album.id, diagnoseAlbum(album)] as const)),
+    [albums],
+  );
+  const albumDiagnostics = useMemo(
+    () =>
+      selectedAlbum ? (diagnosticsByAlbum.get(selectedAlbum.id) ?? []) : [],
+    [diagnosticsByAlbum, selectedAlbum],
+  );
+  const albumsWithDiagnostics = useMemo(
+    () =>
+      albums.filter((album) =>
+        Boolean(diagnosticsByAlbum.get(album.id)?.length),
+      ).length,
+    [albums, diagnosticsByAlbum],
+  );
+
+  useEffect(() => {
+    if (!diagnosticDestination) return;
+    const target = {
+      track: trackEditorRef.current,
+      batch: batchEditorRef.current,
+      sequence: sequenceEditorRef.current,
+      "album-title": albumTitleEditorRef.current,
+    }[diagnosticDestination.target];
+    target?.focus();
+  }, [diagnosticDestination]);
 
   useEffect(() => {
     setBatchTrackIds([]);
@@ -104,12 +200,21 @@ export function App(): React.JSX.Element {
   }, [selectedAlbumId]);
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
+    const requestId = ++libraryRequestId.current;
     const result = await window.outgroove.queryLibrary({
       query,
       view: libraryView,
       offset: pageOffset,
       limit: PAGE_SIZE,
+      ...(libraryView === "data-quality" ? { qualityFilter } : {}),
+      ...(libraryView === "albums" && albumArtistFilter
+        ? { albumArtist: albumArtistFilter }
+        : {}),
+      ...(libraryView === "albums" && albumIdFilter
+        ? { albumId: albumIdFilter }
+        : {}),
     });
+    if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
       if (result.value.totalItems <= pageOffset && pageOffset > 0) {
         setPageOffset(
@@ -120,6 +225,8 @@ export function App(): React.JSX.Element {
         return;
       }
       setAlbums(result.value.albums);
+      setArtists(result.value.artists);
+      setTracks(result.value.tracks);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
       setSelectedAlbumId((current) =>
@@ -128,7 +235,14 @@ export function App(): React.JSX.Element {
           : result.value.albums[0]?.id,
       );
     } else setNotice(result.error.message);
-  }, [libraryView, pageOffset, query]);
+  }, [
+    albumArtistFilter,
+    albumIdFilter,
+    libraryView,
+    pageOffset,
+    qualityFilter,
+    query,
+  ]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -196,6 +310,23 @@ export function App(): React.JSX.Element {
       current = false;
     };
   }, [selectedAlbumId]);
+
+  useEffect(() => {
+    if (!pendingTrackId || !selectedAlbum) return;
+    const track = selectedAlbum.tracks.find(
+      (candidate) => candidate.id === pendingTrackId,
+    );
+    if (!track) return;
+    setSelectedTrackId(track.id);
+    setTrackEditPreview(undefined);
+    setTrackUndoPreview(undefined);
+    setTrackDraft(draftForTrack(track));
+    setPendingTrackId(undefined);
+    setDiagnosticDestination((current) => ({
+      target: "track",
+      request: (current?.request ?? 0) + 1,
+    }));
+  }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
     const started = await window.outgroove.scanLibrary({
@@ -360,14 +491,71 @@ export function App(): React.JSX.Element {
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
     setTrackUndoPreview(undefined);
-    setTrackDraft({
-      title: track.tags.title,
-      artist: track.tags.artist,
-      albumArtist: track.tags.albumArtist,
-      trackNumber: track.tags.trackNumber?.toString() ?? "",
-      discNumber: track.tags.discNumber?.toString() ?? "",
-      year: track.tags.year ?? "",
-    });
+    setTrackDraft(draftForTrack(track));
+  };
+
+  const routeDiagnostic = (finding: AlbumDiagnostic): void => {
+    if (!selectedAlbum) return;
+    const affectedIds = [...finding.affectedTrackIds];
+    setBatchTrackIds(affectedIds);
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+    let target: "track" | "batch" | "sequence" | "album-title";
+    switch (finding.workflow) {
+      case "track-editor": {
+        const firstTrack = selectedAlbum.tracks.find((track) =>
+          affectedIds.includes(track.id),
+        );
+        if (firstTrack) editTrack(firstTrack);
+        target = "track";
+        break;
+      }
+      case "sequence":
+        target = "sequence";
+        break;
+      case "batch-track-artist":
+        setBatchEnabled({
+          artist: true,
+          albumArtist: false,
+          discNumber: false,
+          year: false,
+        });
+        setBatchDraft((draft) => ({ ...draft, artist: "" }));
+        target = "batch";
+        break;
+      case "batch-album-artist":
+        setBatchEnabled({
+          artist: false,
+          albumArtist: true,
+          discNumber: false,
+          year: false,
+        });
+        setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
+        target = "batch";
+        break;
+      case "batch-release-date":
+        setBatchEnabled({
+          artist: false,
+          albumArtist: false,
+          discNumber: false,
+          year: true,
+        });
+        setBatchDraft((draft) => ({ ...draft, year: "" }));
+        target = "batch";
+        break;
+      case "album-title":
+        target = "album-title";
+        break;
+    }
+    setNotice(
+      "Affected tracks selected. Review and propose a change in the Workbench; no preview or write has started.",
+    );
+    setDiagnosticDestination((current) => ({
+      target,
+      request: (current?.request ?? 0) + 1,
+    }));
   };
 
   const previewTrackEdit = async (): Promise<void> => {
@@ -462,6 +650,24 @@ export function App(): React.JSX.Element {
     );
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const moveBatchTrack = (fileId: string, offset: -1 | 1): void => {
+    setBatchTrackIds((selected) => {
+      const index = selected.indexOf(fileId);
+      const destination = index + offset;
+      if (index < 0 || destination < 0 || destination >= selected.length)
+        return selected;
+      const reordered = [...selected];
+      const [track] = reordered.splice(index, 1);
+      if (!track) return selected;
+      reordered.splice(destination, 0, track);
+      return reordered;
+    });
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
   };
 
   const previewBatchEdit = async (): Promise<void> => {
@@ -505,6 +711,45 @@ export function App(): React.JSX.Element {
             : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
         );
         setBatchPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewTrackNumberSequence = async (): Promise<void> => {
+    const result = await window.outgroove.previewTrackNumberSequence({
+      fileIds: batchTrackIds,
+      startNumber: Number(sequenceStart),
+      ...(sequenceDiscEnabled
+        ? { discNumber: Number(sequenceDiscNumber) }
+        : {}),
+    });
+    if (result.ok) {
+      setSequencePreview(result.value);
+      setSequenceResult(undefined);
+    } else setNotice(result.error.message);
+  };
+
+  const applyTrackNumberSequence = async (): Promise<void> => {
+    if (!sequencePreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackNumberSequence({
+        operationId: sequencePreview.operationId,
+        confirmationToken: sequencePreview.confirmationToken,
+      });
+      if (result.ok) {
+        setSequenceResult(result.value);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Re-read and verified ${result.value.results.length} track-number writes.`
+            : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
+        );
+        setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else setNotice(result.error.message);
@@ -680,13 +925,48 @@ export function App(): React.JSX.Element {
           id="library-view"
           value={libraryView}
           onChange={(event) => {
-            setLibraryView(event.target.value as "albums" | "scan-errors");
+            const view = event.target.value as
+              "albums" | "artists" | "tracks" | "data-quality" | "scan-errors";
+            setLibraryView(view);
+            setAlbumArtistFilter(undefined);
+            setAlbumIdFilter(undefined);
+            setTrackRouteLabel(undefined);
+            setPendingTrackId(undefined);
             setPageOffset(0);
+            if (view === "data-quality")
+              setNotice("Checking album data quality in a background worker…");
           }}
         >
           <option value="albums">Albums</option>
+          <option value="artists">Album artists</option>
+          <option value="tracks">Tracks</option>
+          <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
         </select>
+        {libraryView === "data-quality" && (
+          <>
+            <label htmlFor="quality-filter">Issue type</label>
+            <select
+              id="quality-filter"
+              value={qualityFilter}
+              onChange={(event) => {
+                const filter = event.target.value;
+                if (!isAlbumDiagnosticFilter(filter)) return;
+                setQualityFilter(filter);
+                setPageOffset(0);
+                setNotice(
+                  `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                );
+              }}
+            >
+              {albumDiagnosticFilters.map((filter) => (
+                <option key={filter} value={filter}>
+                  {diagnosticFilterLabels[filter]}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <button type="submit">Search</button>
         {(query || searchText) && (
           <button
@@ -700,10 +980,62 @@ export function App(): React.JSX.Element {
             Clear search
           </button>
         )}
+        {libraryView === "albums" && albumArtistFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setAlbumArtistFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all album artists
+          </button>
+        )}
+        {libraryView === "albums" && albumIdFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setAlbumIdFilter(undefined);
+              setTrackRouteLabel(undefined);
+              setPendingTrackId(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all albums
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
-        {totalItems} {libraryView === "albums" ? "albums" : "scan problems"}
+        {totalItems}{" "}
+        {libraryView === "scan-errors"
+          ? totalItems === 1
+            ? "scan problem"
+            : "scan problems"
+          : libraryView === "artists"
+            ? totalItems === 1
+              ? "album artist"
+              : "album artists"
+            : libraryView === "tracks"
+              ? totalItems === 1
+                ? "track"
+                : "tracks"
+              : libraryView === "data-quality"
+                ? totalItems === 1
+                  ? "album needing review"
+                  : "albums needing review"
+                : totalItems === 1
+                  ? "album"
+                  : "albums"}
         {query ? ` matching “${query}”` : ""}
+        {libraryView === "data-quality" && qualityFilter !== "all"
+          ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
+          : ""}
+        {libraryView === "albums" && albumArtistFilter
+          ? ` by “${albumArtistFilter}”`
+          : ""}
+        {libraryView === "albums" && trackRouteLabel
+          ? ` containing “${trackRouteLabel}”`
+          : ""}
       </p>
       {libraryView === "scan-errors" ? (
         <main className="errors" aria-labelledby="scan-errors">
@@ -726,45 +1058,195 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "artists" ? (
+        <main className="artists" aria-labelledby="album-artists">
+          <h2 id="album-artists">Album artists</h2>
+          {artists.length === 0 ? (
+            <p>
+              {query
+                ? "No album artists match this search."
+                : "The current catalog has no album artists."}
+            </p>
+          ) : (
+            <ul>
+              {artists.map((artist) => (
+                <li key={artist.name}>
+                  <article>
+                    <h3>{artist.name}</h3>
+                    <p>
+                      Status: {artist.albumCount}{" "}
+                      {artist.albumCount === 1 ? "album" : "albums"} ·{" "}
+                      {artist.trackCount}{" "}
+                      {artist.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setAlbumArtistFilter(artist.name);
+                        setLibraryView("albums");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(`Showing albums by ${artist.name}.`);
+                      }}
+                    >
+                      Browse albums by {artist.name}
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
+      ) : libraryView === "tracks" ? (
+        <main className="tracks" aria-labelledby="library-tracks">
+          <h2 id="library-tracks">Tracks</h2>
+          {tracks.length === 0 ? (
+            <p>
+              {query
+                ? "No tracks match this search."
+                : "The current catalog has no tracks."}
+            </p>
+          ) : (
+            <div className="track-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Track</th>
+                    <th scope="col">Artist</th>
+                    <th scope="col">Album</th>
+                    <th scope="col">Number</th>
+                    <th scope="col">Format</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tracks.map((track) => (
+                    <tr key={track.id}>
+                      <td>{track.title}</td>
+                      <td>{track.artist}</td>
+                      <td>
+                        {track.albumTitle}
+                        <small>{track.albumArtist}</small>
+                      </td>
+                      <td>
+                        Disc {track.discNumber ?? 1}, track{" "}
+                        {track.trackNumber ?? "missing"}
+                      </td>
+                      <td>
+                        {track.format} ·{" "}
+                        {track.durationSeconds?.toFixed(1) ?? "—"}s
+                      </td>
+                      <td>{track.path}</td>
+                      <td>
+                        <button
+                          onClick={() => {
+                            setAlbumIdFilter(track.albumId);
+                            setTrackRouteLabel(track.title);
+                            setPendingTrackId(track.id);
+                            setAlbumArtistFilter(undefined);
+                            setLibraryView("albums");
+                            setSearchText("");
+                            setQuery("");
+                            setPageOffset(0);
+                            setNotice(
+                              `Opening ${track.title} in the existing preview-only track editor.`,
+                            );
+                          }}
+                        >
+                          Open {track.title} in Workbench
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </main>
       ) : albums.length === 0 ? (
         <main className="empty">
-          <h2>{query ? "No matching albums" : "Your Library is empty"}</h2>
+          <h2>
+            {query
+              ? "No matching albums"
+              : albumArtistFilter
+                ? `No albums by ${albumArtistFilter}`
+                : albumIdFilter
+                  ? "The selected track’s album is unavailable"
+                  : libraryView === "data-quality"
+                    ? "No albums need review"
+                    : "Your Library is empty"}
+          </h2>
           <p>
             {query
               ? "Try a different album, artist, track, format, or path."
-              : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+              : albumArtistFilter
+                ? "Clear the album-artist filter to return to the full Library."
+                : albumIdFilter
+                  ? "The track may have been removed or rescanned. Show all albums to continue browsing."
+                  : libraryView === "data-quality"
+                    ? qualityFilter === "all"
+                      ? "The current catalog has no album data-quality findings."
+                      : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                    : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
           </p>
-          {!query && (
-            <button
-              disabled={busy || scanActive}
-              onClick={() => void chooseAndScan()}
-            >
-              Choose a library folder
-            </button>
-          )}
+          {!query &&
+            !albumArtistFilter &&
+            !albumIdFilter &&
+            libraryView !== "data-quality" && (
+              <button
+                disabled={busy || scanActive}
+                onClick={() => void chooseAndScan()}
+              >
+                Choose a library folder
+              </button>
+            )}
         </main>
       ) : (
         <main className="workspace">
           <aside aria-label="Albums">
             <h2>Albums</h2>
-            {albums.map((album) => (
-              <button
-                className={
-                  album.id === selectedAlbumId ? "album selected" : "album"
-                }
-                key={album.id}
-                onClick={() => {
-                  setSelectedAlbumId(album.id);
-                  setEditPreview(undefined);
-                  setSyncPlan(undefined);
-                }}
-              >
-                {album.title}
-                <small>
-                  {album.albumArtist} · {album.tracks.length} tracks
-                </small>
-              </button>
-            ))}
+            <p className="album-quality-summary" aria-live="polite">
+              Albums needing review on this page: {albumsWithDiagnostics} of{" "}
+              {albums.length}.
+            </p>
+            {albums.map((album) => {
+              const findings = diagnosticsByAlbum.get(album.id) ?? [];
+              const needsAttention = findings.some(
+                (finding) => finding.severity === "needs-attention",
+              );
+              return (
+                <button
+                  className={
+                    album.id === selectedAlbumId ? "album selected" : "album"
+                  }
+                  key={album.id}
+                  onClick={() => {
+                    setSelectedAlbumId(album.id);
+                    setEditPreview(undefined);
+                    setSyncPlan(undefined);
+                  }}
+                >
+                  {album.title}
+                  <small>
+                    {album.albumArtist} · {album.tracks.length} tracks
+                  </small>
+                  <small
+                    className={`album-quality-status ${
+                      findings.length === 0 ? "clean" : "review"
+                    }`}
+                  >
+                    {findings.length === 0
+                      ? "Status: No data-quality findings"
+                      : `Status: ${findings.length} data-quality ${findings.length === 1 ? "finding" : "findings"} — ${
+                          needsAttention
+                            ? "needs attention"
+                            : "review recommended"
+                        }`}
+                  </small>
+                </button>
+              );
+            })}
           </aside>
           <section className="detail">
             {selectedAlbum && (
@@ -776,6 +1258,63 @@ export function App(): React.JSX.Element {
                     <p>{selectedAlbum.albumArtist}</p>
                   </div>
                 </div>
+                <section
+                  className="card diagnostics"
+                  aria-label="Album data quality"
+                >
+                  <h3>Workbench · album data quality</h3>
+                  <p>
+                    Findings come from the current local catalog. They select a
+                    review workflow but never infer, preview, or write a
+                    correction.
+                  </p>
+                  {albumDiagnostics.length === 0 ? (
+                    <p>Status: No data-quality findings for this album.</p>
+                  ) : (
+                    <ol className="diagnostic-list">
+                      {albumDiagnostics.map((finding) => {
+                        const affectedTracks = finding.affectedTrackIds.flatMap(
+                          (fileId) => {
+                            const track = selectedAlbum.tracks.find(
+                              (candidate) => candidate.id === fileId,
+                            );
+                            return track ? [track] : [];
+                          },
+                        );
+                        return (
+                          <li key={finding.id}>
+                            <article
+                              aria-labelledby={`diagnostic-${finding.id}`}
+                            >
+                              <p className="diagnostic-status">
+                                Status:{" "}
+                                {finding.severity === "needs-attention"
+                                  ? "Needs attention"
+                                  : "Review recommended"}
+                              </p>
+                              <h4 id={`diagnostic-${finding.id}`}>
+                                {finding.title}
+                              </h4>
+                              <p>{finding.explanation}</p>
+                              <h5>Affected files</h5>
+                              <ul>
+                                {affectedTracks.map((track) => (
+                                  <li key={track.id}>{track.path}</li>
+                                ))}
+                              </ul>
+                              <button
+                                disabled={busy}
+                                onClick={() => routeDiagnostic(finding)}
+                              >
+                                {diagnosticActionLabel(finding.workflow)}
+                              </button>
+                            </article>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+                </section>
                 <div className="track-list">
                   {selectedAlbum.tracks.map((track) => (
                     <details key={track.id}>
@@ -815,7 +1354,12 @@ export function App(): React.JSX.Element {
                     </details>
                   ))}
                 </div>
-                <section className="card" aria-label="Batch metadata editor">
+                <section
+                  className="card"
+                  aria-label="Batch metadata editor"
+                  ref={batchEditorRef}
+                  tabIndex={-1}
+                >
                   <h3>Workbench · batch metadata</h3>
                   <p>
                     {batchTrackIds.length} tracks selected. Enable only the
@@ -830,6 +1374,8 @@ export function App(): React.JSX.Element {
                           selectedAlbum.tracks.map((track) => track.id),
                         );
                         setBatchPreview(undefined);
+                        setSequencePreview(undefined);
+                        setSequenceResult(undefined);
                       }}
                     >
                       Select all tracks
@@ -839,6 +1385,8 @@ export function App(): React.JSX.Element {
                       onClick={() => {
                         setBatchTrackIds([]);
                         setBatchPreview(undefined);
+                        setSequencePreview(undefined);
+                        setSequenceResult(undefined);
                       }}
                     >
                       Clear selection
@@ -1044,9 +1592,181 @@ export function App(): React.JSX.Element {
                       </ul>
                     </div>
                   )}
+                  <div
+                    className="preview"
+                    aria-label="Track number sequencing"
+                    ref={sequenceEditorRef}
+                    tabIndex={-1}
+                  >
+                    <h4>Sequence track numbers</h4>
+                    <p>
+                      Outgroove uses exactly the order below. Reorder it
+                      explicitly before previewing; file names and existing
+                      numbers are never used to guess a different order.
+                    </p>
+                    {batchTrackIds.length === 0 ? (
+                      <p>Select at least two tracks above.</p>
+                    ) : (
+                      <ol>
+                        {batchTrackIds.map((fileId, index) => {
+                          const track = selectedAlbum.tracks.find(
+                            (candidate) => candidate.id === fileId,
+                          );
+                          return (
+                            <li key={fileId}>
+                              <span>{track?.tags.title ?? fileId}</span>
+                              <button
+                                aria-label={`Move ${track?.tags.title ?? "track"} up`}
+                                disabled={busy || index === 0}
+                                onClick={() => moveBatchTrack(fileId, -1)}
+                              >
+                                Move up
+                              </button>
+                              <button
+                                aria-label={`Move ${track?.tags.title ?? "track"} down`}
+                                disabled={
+                                  busy || index === batchTrackIds.length - 1
+                                }
+                                onClick={() => moveBatchTrack(fileId, 1)}
+                              >
+                                Move down
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                    <label>
+                      Starting track number
+                      <input
+                        type="number"
+                        min="1"
+                        max="9999"
+                        value={sequenceStart}
+                        onChange={(event) => {
+                          setSequenceStart(event.target.value);
+                          setSequencePreview(undefined);
+                        }}
+                      />
+                    </label>
+                    <div>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={sequenceDiscEnabled}
+                          onChange={(event) => {
+                            setSequenceDiscEnabled(event.target.checked);
+                            setSequencePreview(undefined);
+                          }}
+                        />
+                        Set one disc number for this sequence
+                      </label>
+                      <label>
+                        Sequence disc number
+                        <input
+                          type="number"
+                          min="1"
+                          max="999"
+                          disabled={!sequenceDiscEnabled}
+                          value={sequenceDiscNumber}
+                          onChange={(event) => {
+                            setSequenceDiscNumber(event.target.value);
+                            setSequencePreview(undefined);
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      disabled={
+                        busy ||
+                        batchTrackIds.length < 2 ||
+                        !Number.isInteger(Number(sequenceStart)) ||
+                        Number(sequenceStart) < 1 ||
+                        Number(sequenceStart) + batchTrackIds.length - 1 >
+                          9999 ||
+                        (sequenceDiscEnabled &&
+                          (!Number.isInteger(Number(sequenceDiscNumber)) ||
+                            Number(sequenceDiscNumber) < 1 ||
+                            Number(sequenceDiscNumber) > 999))
+                      }
+                      onClick={() => void previewTrackNumberSequence()}
+                    >
+                      Preview track-number sequence
+                    </button>
+                    {sequencePreview && (
+                      <div
+                        className="preview"
+                        aria-label="Track number sequence confirmation"
+                      >
+                        <h5>Review exact sequence</h5>
+                        <ol>
+                          {sequencePreview.files.map((file) => (
+                            <li key={file.fileId}>
+                              <strong>{file.path}</strong>:{" "}
+                              {file.willWrite ? (
+                                <ul>
+                                  {file.changes.map((change) => (
+                                    <li key={change.field}>
+                                      {change.field}:{" "}
+                                      {change.before ?? "Not set"} →{" "}
+                                      {change.after ?? "Not set"}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                "unchanged — skipped"
+                              )}
+                              {file.warnings.map((warning) => (
+                                <p key={warning} role="alert">
+                                  {warning}
+                                </p>
+                              ))}
+                            </li>
+                          ))}
+                        </ol>
+                        <div className="actions">
+                          <button
+                            className="primary"
+                            disabled={
+                              busy ||
+                              sequencePreview.files.some(
+                                (file) =>
+                                  file.willWrite && file.warnings.length > 0,
+                              )
+                            }
+                            onClick={() => void applyTrackNumberSequence()}
+                          >
+                            Confirm track-number sequence
+                          </button>
+                          <button onClick={() => setSequencePreview(undefined)}>
+                            Cancel sequence
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {sequenceResult && (
+                      <div className="preview" aria-live="polite">
+                        <h5>Track-number results</h5>
+                        <ul>
+                          {sequenceResult.results.map((result) => (
+                            <li key={result.fileId}>
+                              {result.path}:{" "}
+                              {result.verified ? "verified" : "failed"}
+                              {result.error ? ` — ${result.error}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </section>
                 {selectedTrack && (
-                  <section className="card" aria-label="Track metadata editor">
+                  <section
+                    className="card"
+                    aria-label="Track metadata editor"
+                    ref={trackEditorRef}
+                    tabIndex={-1}
+                  >
                     <h3>Workbench · track metadata</h3>
                     <p>
                       Editing {selectedTrack.tags.title}. Only fields that
@@ -1203,7 +1923,12 @@ export function App(): React.JSX.Element {
                     )}
                   </section>
                 )}
-                <section className="card">
+                <section
+                  className="card"
+                  aria-label="Album title editor"
+                  ref={albumTitleEditorRef}
+                  tabIndex={-1}
+                >
                   <h3>Workbench · album title</h3>
                   <label htmlFor="album-title">Proposed title</label>
                   <div className="inline">
@@ -1328,6 +2053,17 @@ export function App(): React.JSX.Element {
                                   }
                                 >
                                   Preview batch undo
+                                </button>
+                              )}
+                            {item.kind === "track-number-sequence-edit" &&
+                              item.verifiedFiles > 0 && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void previewBatchUndo(item.operationId)
+                                  }
+                                >
+                                  Preview sequence undo
                                 </button>
                               )}
                           </li>

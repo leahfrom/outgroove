@@ -17,10 +17,12 @@ import {
   syncPlanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
+  trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
+import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-library-quality-query";
 import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
@@ -31,6 +33,7 @@ import { createValidatedHandler } from "./validated-handler";
 
 interface Dependencies {
   database: CatalogDatabase;
+  qualityQuery: WorkerLibraryQualityQuery;
   backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
   editor: EditAlbumTitle;
@@ -45,7 +48,7 @@ export function registerIpc(
   dependencies: Dependencies,
 ): void {
   const progress =
-    (job: "scan" | "tag-edit" | "sync") =>
+    (job: "scan" | "tag-edit" | "sync" | "library-quality") =>
     (completed: number, total: number, detail: string): void => {
       if (!dependencies.window.isDestroyed())
         dependencies.window.webContents.send(channels.jobProgress, {
@@ -149,9 +152,34 @@ export function registerIpc(
   );
   ipcMain.handle(
     channels.queryLibrary,
-    createValidatedHandler(libraryQueryRequestSchema, (request) =>
-      dependencies.database.queryLibrary(request),
-    ),
+    createValidatedHandler(libraryQueryRequestSchema, async (request) => {
+      if (request.view === "data-quality")
+        return dependencies.qualityQuery.query(
+          {
+            query: request.query,
+            offset: request.offset,
+            limit: request.limit,
+            qualityFilter: request.qualityFilter ?? "all",
+          },
+          progress("library-quality"),
+        );
+      await dependencies.qualityQuery.cancel();
+      return dependencies.database.queryLibrary({
+        query: request.query,
+        view:
+          request.view === "scan-errors"
+            ? "scan-errors"
+            : request.view === "artists"
+              ? "artists"
+              : request.view === "tracks"
+                ? "tracks"
+                : "albums",
+        offset: request.offset,
+        limit: request.limit,
+        ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
+        ...(request.albumId ? { albumId: request.albumId } : {}),
+      });
+    }),
   );
   ipcMain.handle(
     channels.previewAlbumTitleEdit,
@@ -271,6 +299,30 @@ export function registerIpc(
       albumEditApplyRequestSchema,
       ({ operationId, confirmationToken }) =>
         dependencies.trackEditor.applyBatchUndo(
+          operationId,
+          confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewTrackNumberSequence,
+    createValidatedHandler(
+      trackNumberSequencePreviewRequestSchema,
+      ({ fileIds, startNumber, discNumber }) =>
+        dependencies.trackEditor.previewTrackNumberSequence(
+          fileIds,
+          startNumber,
+          discNumber,
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyTrackNumberSequence,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.trackEditor.applyTrackNumberSequence(
           operationId,
           confirmationToken,
           progress("tag-edit"),

@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, session } from "electron";
 
 import { CatalogDatabase } from "./adapters/database/catalog-database";
 import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
+import { WorkerLibraryQualityQuery } from "./adapters/database/worker-library-quality-query";
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
@@ -28,6 +29,7 @@ if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
 
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
+let qualityQuery: WorkerLibraryQualityQuery | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -50,6 +52,7 @@ async function createWindow(): Promise<void> {
   const databasePath = join(app.getPath("userData"), "outgroove.sqlite3");
   database = new CatalogDatabase(databasePath);
   scanCatalog = new WorkerScanCatalog(databasePath);
+  qualityQuery = new WorkerLibraryQualityQuery(databasePath);
   const reader = new MusicMetadataReader();
   const writer = new SafeMetadataWriter(reader);
   const metadataRunner = new WorkerMetadataJobRunner();
@@ -62,6 +65,7 @@ async function createWindow(): Promise<void> {
   const backup = new DatabaseBackupService(database, databasePath);
   registerIpc(ipcMain, {
     database,
+    qualityQuery,
     backup,
     scanJobs: new ScanJobCoordinator(database, scanner),
     editor: new EditAlbumTitle(database, writer),
@@ -91,6 +95,16 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged discovery, metadata, and SQLite workers could not scan their fixtures.",
       );
+    const qualityPage = await qualityQuery.query({
+      query: "",
+      offset: 0,
+      limit: 20,
+      qualityFilter: "all",
+    });
+    if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
+      throw new Error(
+        "Packaged library data-quality worker returned an invalid page.",
+      );
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
     const verifiedBackup = new CatalogDatabase(backupPath);
@@ -102,6 +116,7 @@ async function createWindow(): Promise<void> {
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
     await scanCatalog.close();
+    await qualityQuery.close();
     app.exit(0);
   }
 }
@@ -134,5 +149,6 @@ app.on("window-all-closed", () => {
 });
 app.on("before-quit", () => {
   void scanCatalog?.close();
+  void qualityQuery?.close();
   database?.close();
 });

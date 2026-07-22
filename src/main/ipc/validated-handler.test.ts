@@ -8,6 +8,7 @@ import {
   libraryQueryRequestSchema,
   scanRequestSchema,
   trackBatchEditPreviewRequestSchema,
+  trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
@@ -60,7 +61,7 @@ describe("validated IPC handlers", () => {
     expect(useCase).not.toHaveBeenCalled();
   });
 
-  it("caps library query pages and rejects undeclared filters", async () => {
+  it("validates bounded Library views and rejects undeclared filters", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(libraryQueryRequestSchema, useCase);
     await expect(
@@ -79,6 +80,126 @@ describe("validated IPC handlers", () => {
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "data-quality",
+          offset: 20,
+          limit: 20,
+          qualityFilter: "consistency",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenCalledWith({
+      query: "fixture",
+      view: "data-quality",
+      offset: 20,
+      limit: 20,
+      qualityFilter: "consistency",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "data-quality",
+          offset: 0,
+          limit: 20,
+          qualityFilter: "guess-for-me",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "artists",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "fixture",
+      view: "artists",
+      offset: 0,
+      limit: 20,
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          albumArtist: "Fixture Artist",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "fixture",
+      view: "albums",
+      offset: 0,
+      limit: 20,
+      albumArtist: "Fixture Artist",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          albumArtist: " ",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "Needle",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "Needle",
+      view: "tracks",
+      offset: 0,
+      limit: 20,
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          albumId: "8c196850-bca9-48b7-ae7f-dc760fbf8f2b",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          albumId: "8c196850-bca9-48b7-ae7f-dc760fbf8f2b",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
   });
 
   it("rejects malformed database restore confirmations", async () => {
@@ -177,6 +298,36 @@ describe("validated IPC handlers", () => {
           fileIds: [first, second],
           changes: { artist: "Artist" },
           directory: "/arbitrary/path",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit bounded order for track-number sequencing", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      trackNumberSequencePreviewRequestSchema,
+      useCase,
+    );
+    const first = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const second = "e709f458-a288-4f90-a016-9c42347670bb";
+    await expect(
+      handler({}, { fileIds: [first, first], startNumber: 1 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileIds: [first, second], startNumber: 9999 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileIds: [first, second], startNumber: 1, discNumber: 0 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          startNumber: 1,
+          inferredPathOrder: ["/arbitrary/file.mp3"],
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });

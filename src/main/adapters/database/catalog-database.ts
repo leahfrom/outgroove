@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 
 import type {
   LibraryPageDto,
+  LibraryTrackDto,
   LibraryRootDto,
   ScanErrorDto,
   ScanJobDto,
@@ -19,7 +20,11 @@ import type {
   NormalizedTags,
   ScannedAudioFile,
 } from "../../../shared/domain/catalog";
-import { albumGroupingKey, sortTracks } from "../../../shared/domain/catalog";
+import {
+  albumGroupingKey,
+  folderAlbumGroupingKey,
+  sortTracks,
+} from "../../../shared/domain/catalog";
 import type { TrackTagChanges } from "../../../shared/domain/tag-edit";
 import { migrations } from "./migrations";
 
@@ -55,7 +60,10 @@ interface ScanJobRow {
 interface ScanStatements {
   readonly getFileByPathKey: Database.Statement;
   readonly getAlbumByGroupingKey: Database.Statement;
-  readonly upsertAlbum: Database.Statement;
+  readonly getAlbumByFolderKey: Database.Statement;
+  readonly insertAlbum: Database.Statement;
+  readonly insertAlbumGroupingAlias: Database.Statement;
+  readonly insertAlbumFolderAlias: Database.Statement;
   readonly upsertAudioFile: Database.Statement;
   readonly upsertTrack: Database.Statement;
   readonly upsertScanError: Database.Statement;
@@ -71,6 +79,10 @@ interface ScanStatements {
   readonly publishDirectoryErrors: Database.Statement;
   readonly markMissingFiles: Database.Statement;
   readonly finishLibraryRoot: Database.Statement;
+}
+
+function parentFolderKey(pathKey: string): string {
+  return pathKey.replace(/[\\/][^\\/]+$/u, "");
 }
 
 export type ScanDiscoveryEntry =
@@ -178,12 +190,24 @@ export class CatalogDatabase {
         "SELECT * FROM audio_files WHERE path_key = ?",
       ),
       getAlbumByGroupingKey: this.connection.prepare(
-        "SELECT id FROM albums WHERE grouping_key = ?",
+        `SELECT album_id AS id FROM album_grouping_aliases
+         WHERE grouping_key = ?`,
       ),
-      upsertAlbum: this.connection.prepare(
-        `INSERT INTO albums (id, grouping_key, title, album_artist) VALUES (?, ?, ?, ?)
-         ON CONFLICT(grouping_key) DO UPDATE SET title = excluded.title, album_artist = excluded.album_artist
-         WHERE title IS NOT excluded.title OR album_artist IS NOT excluded.album_artist`,
+      getAlbumByFolderKey: this.connection.prepare(
+        `SELECT album_id AS id FROM album_folder_aliases
+         WHERE folder_album_key = ?`,
+      ),
+      insertAlbum: this.connection.prepare(
+        `INSERT INTO albums (id, grouping_key, title, album_artist)
+         VALUES (?, ?, ?, ?)`,
+      ),
+      insertAlbumGroupingAlias: this.connection.prepare(
+        `INSERT OR IGNORE INTO album_grouping_aliases
+         (grouping_key, album_id) VALUES (?, ?)`,
+      ),
+      insertAlbumFolderAlias: this.connection.prepare(
+        `INSERT OR IGNORE INTO album_folder_aliases
+         (folder_album_key, album_id) VALUES (?, ?)`,
       ),
       upsertAudioFile: this.connection.prepare(
         `INSERT INTO audio_files
@@ -248,6 +272,7 @@ export class CatalogDatabase {
         "UPDATE library_roots SET last_scan_at = ? WHERE id = ?",
       ),
     };
+    this.reconcileAlbumGroupingAliases();
     if (options.interruptOrphanedJobs !== false) this.interruptOrphanedJobs();
   }
 
@@ -266,6 +291,110 @@ export class CatalogDatabase {
         this.connection.pragma(`user_version = ${migration.version}`);
       })();
     }
+  }
+
+  private reconcileAlbumGroupingAliases(): void {
+    const state = this.connection
+      .prepare(
+        `SELECT value FROM catalog_metadata
+         WHERE key='album-grouping-reconciliation'`,
+      )
+      .pluck()
+      .get() as string | undefined;
+    if (state !== "pending") return;
+
+    const rows = this.connection
+      .prepare(
+        `SELECT a.id AS album_id, a.title, f.path_key
+         FROM albums a
+         JOIN tracks t ON t.album_id=a.id
+         JOIN audio_files f ON f.id=t.file_id
+         ORDER BY a.id, f.path_key`,
+      )
+      .all() as { album_id: string; title: string; path_key: string }[];
+    const parent = new Map<string, string>();
+    const find = (id: string): string => {
+      const current = parent.get(id) ?? id;
+      if (current === id) return id;
+      const root = find(current);
+      parent.set(id, root);
+      return root;
+    };
+    const union = (left: string, right: string): void => {
+      const leftRoot = find(left);
+      const rightRoot = find(right);
+      if (leftRoot === rightRoot) return;
+      if (leftRoot < rightRoot) parent.set(rightRoot, leftRoot);
+      else parent.set(leftRoot, rightRoot);
+    };
+    const albumByFolder = new Map<string, string>();
+    for (const row of rows) {
+      parent.set(row.album_id, parent.get(row.album_id) ?? row.album_id);
+      const folderKey = folderAlbumGroupingKey(
+        row.title,
+        parentFolderKey(row.path_key),
+      );
+      const existing = albumByFolder.get(folderKey);
+      if (existing) union(existing, row.album_id);
+      else albumByFolder.set(folderKey, row.album_id);
+    }
+    const components = new Map<string, string[]>();
+    for (const id of parent.keys()) {
+      const root = find(id);
+      const component = components.get(root) ?? [];
+      component.push(id);
+      components.set(root, component);
+    }
+
+    this.connection.transaction(() => {
+      for (const component of components.values()) {
+        if (component.length < 2) continue;
+        const [canonical, ...duplicates] = component.sort();
+        if (!canonical) continue;
+        for (const duplicate of duplicates) {
+          this.connection
+            .prepare("UPDATE tracks SET album_id=? WHERE album_id=?")
+            .run(canonical, duplicate);
+          this.connection
+            .prepare("UPDATE edit_operations SET album_id=? WHERE album_id=?")
+            .run(canonical, duplicate);
+          this.connection
+            .prepare("UPDATE sync_profiles SET album_id=? WHERE album_id=?")
+            .run(canonical, duplicate);
+          this.connection
+            .prepare(
+              "UPDATE album_grouping_aliases SET album_id=? WHERE album_id=?",
+            )
+            .run(canonical, duplicate);
+          this.connection
+            .prepare(
+              "UPDATE album_folder_aliases SET album_id=? WHERE album_id=?",
+            )
+            .run(canonical, duplicate);
+          this.connection
+            .prepare("DELETE FROM albums WHERE id=?")
+            .run(duplicate);
+        }
+      }
+      for (const row of rows)
+        this.connection
+          .prepare(
+            `INSERT OR IGNORE INTO album_folder_aliases
+             (folder_album_key, album_id) VALUES (?, ?)`,
+          )
+          .run(
+            folderAlbumGroupingKey(row.title, parentFolderKey(row.path_key)),
+            find(row.album_id),
+          );
+      this.rebuildCatalogSearch();
+      this.connection
+        .prepare(
+          `UPDATE catalog_metadata SET value='complete'
+           WHERE key='album-grouping-reconciliation'`,
+        )
+        .run();
+    })();
+    this.catalogSearchDirty = false;
   }
 
   private interruptOrphanedJobs(): void {
@@ -431,22 +560,38 @@ export class CatalogDatabase {
     rootId: string,
     pathKey: string,
     file: ScannedAudioFile,
+    preferredAlbumId?: string,
   ): string {
     const existing = this.getFileByPathKey(pathKey);
     const fileId = existing?.id ?? randomUUID();
     const signature = `${file.size}:${Math.trunc(file.modifiedMs)}`;
     const parentFolder = file.path.replace(/[\\/][^\\/]+$/u, "");
     const groupingKey = albumGroupingKey(file.tags, parentFolder);
-    const album = this.scanStatements.getAlbumByGroupingKey.get(groupingKey) as
-      { id: string } | undefined;
-    const albumId = album?.id ?? randomUUID();
-    const now = new Date().toISOString();
-    this.scanStatements.upsertAlbum.run(
-      albumId,
-      groupingKey,
+    const folderKey = folderAlbumGroupingKey(
       file.tags.album,
-      file.tags.albumArtist || file.tags.artist,
+      parentFolderKey(pathKey),
     );
+    const folderAlbum = this.scanStatements.getAlbumByFolderKey.get(
+      folderKey,
+    ) as { id: string } | undefined;
+    const groupedAlbum = this.scanStatements.getAlbumByGroupingKey.get(
+      groupingKey,
+    ) as { id: string } | undefined;
+    const albumId = preferredAlbumId ?? folderAlbum?.id ?? groupedAlbum?.id;
+    const targetAlbumId = albumId ?? randomUUID();
+    const now = new Date().toISOString();
+    if (!albumId)
+      this.scanStatements.insertAlbum.run(
+        targetAlbumId,
+        groupingKey,
+        file.tags.album,
+        file.tags.albumArtist || file.tags.artist,
+      );
+    this.scanStatements.insertAlbumGroupingAlias.run(
+      groupingKey,
+      targetAlbumId,
+    );
+    this.scanStatements.insertAlbumFolderAlias.run(folderKey, targetAlbumId);
     this.scanStatements.upsertAudioFile.run(
       fileId,
       rootId,
@@ -464,11 +609,27 @@ export class CatalogDatabase {
     this.scanStatements.upsertTrack.run(
       randomUUID(),
       fileId,
-      albumId,
+      targetAlbumId,
       file.tags.title,
       file.tags.trackNumber,
       file.tags.discNumber,
     );
+    this.connection
+      .prepare("UPDATE albums SET title=? WHERE id=?")
+      .run(file.tags.album, targetAlbumId);
+    const albumArtists = this.connection
+      .prepare(
+        `SELECT DISTINCT json_extract(f.normalized_tags_json, '$.albumArtist') AS album_artist
+         FROM tracks t JOIN audio_files f ON f.id=t.file_id
+         WHERE t.album_id=? AND f.scan_state='ok'
+         ORDER BY album_artist`,
+      )
+      .pluck()
+      .all(targetAlbumId) as string[];
+    if (albumArtists.length === 1 && albumArtists[0])
+      this.connection
+        .prepare("UPDATE albums SET album_artist=? WHERE id=?")
+        .run(albumArtists[0], targetAlbumId);
     return fileId;
   }
 
@@ -657,9 +818,11 @@ export class CatalogDatabase {
 
   queryLibrary(request: {
     query: string;
-    view: "albums" | "scan-errors";
+    view: "albums" | "artists" | "tracks" | "scan-errors";
     offset: number;
     limit: number;
+    albumArtist?: string;
+    albumId?: string;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -686,6 +849,8 @@ export class CatalogDatabase {
         ) as ScanErrorDto[];
       return {
         albums: [],
+        artists: [],
+        tracks: [],
         scanErrors,
         totalItems,
         offset: request.offset,
@@ -693,23 +858,125 @@ export class CatalogDatabase {
       };
     }
 
+    if (request.view === "tracks") {
+      const search = request.query
+        ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR a.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE)`
+        : "";
+      const searchParameters = request.query
+        ? [pattern, pattern, pattern, pattern, pattern, pattern]
+        : [];
+      const visibleTracks = ` FROM tracks t
+        JOIN audio_files f ON f.id=t.file_id
+        JOIN albums a ON a.id=t.album_id
+        WHERE f.scan_state='ok'${search}`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*)${visibleTracks}`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const tracks = this.connection
+        .prepare(
+          `SELECT f.id, a.id AS albumId, t.title,
+            COALESCE(json_extract(f.normalized_tags_json, '$.artist'), '') AS artist,
+            a.title AS albumTitle, a.album_artist AS albumArtist,
+            t.track_number AS trackNumber, t.disc_number AS discNumber,
+            COALESCE(f.format, 'unknown') AS format,
+            f.duration_seconds AS durationSeconds, f.path
+           ${visibleTracks}
+           ORDER BY a.album_artist, a.title, a.id,
+             COALESCE(t.disc_number, 0), COALESCE(t.track_number, 0), f.path
+           LIMIT ? OFFSET ?`,
+        )
+        .all(
+          ...searchParameters,
+          request.limit,
+          request.offset,
+        ) as LibraryTrackDto[];
+      return {
+        albums: [],
+        artists: [],
+        tracks,
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    if (request.view === "artists") {
+      this.refreshCatalogSearchIfNeeded();
+      const search = request.query
+        ? ` AND a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE`
+        : "";
+      const searchParameters = request.query ? [pattern] : [];
+      const visibleArtists = ` FROM albums a
+        JOIN tracks t ON t.album_id=a.id
+        JOIN audio_files f ON f.id=t.file_id
+        WHERE f.scan_state='ok'${search}
+        GROUP BY a.album_artist COLLATE NOCASE`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM (SELECT 1${visibleArtists})`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const artists = this.connection
+        .prepare(
+          `SELECT MIN(a.album_artist) AS name,
+            COUNT(DISTINCT a.id) AS albumCount,
+            COUNT(DISTINCT f.id) AS trackCount
+           ${visibleArtists}
+           ORDER BY name COLLATE NOCASE, name LIMIT ? OFFSET ?`,
+        )
+        .all(...searchParameters, request.limit, request.offset) as {
+        name: string;
+        albumCount: number;
+        trackCount: number;
+      }[];
+      return {
+        albums: [],
+        artists,
+        tracks: [],
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    const albumFilters: string[] = [];
+    const albumParameters: string[] = [];
+    if (request.albumArtist) {
+      albumFilters.push("a.album_artist = ? COLLATE NOCASE");
+      albumParameters.push(request.albumArtist);
+    }
+    if (request.albumId) {
+      albumFilters.push("a.id = ?");
+      albumParameters.push(request.albumId);
+    }
+    const albumFilter = albumFilters.join(" AND ");
+
     if (!request.query) {
       this.refreshCatalogSearchIfNeeded();
       const visibleAlbums = ` FROM catalog_visible_albums visible
-        JOIN albums a ON a.id=visible.album_id`;
+        JOIN albums a ON a.id=visible.album_id${albumFilter ? ` WHERE ${albumFilter}` : ""}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleAlbums}`)
         .pluck()
-        .get() as number;
+        .get(...albumParameters) as number;
       const albumIds = this.connection
         .prepare(
           `SELECT a.id${visibleAlbums}
            ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
         )
-        .all(request.limit, request.offset)
+        .all(...albumParameters, request.limit, request.offset)
         .map((row) => (row as { id: string }).id);
       return {
         albums: this.listAlbumsByIds(albumIds),
+        artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems,
         offset: request.offset,
@@ -730,19 +997,31 @@ export class CatalogDatabase {
         JOIN audio_files f ON f.id=d.file_id
         WHERE catalog_search MATCH ? AND f.scan_state='ok'`;
       const totalItems = this.connection
-        .prepare(`SELECT COUNT(*) FROM (${matchingAlbums})`)
+        .prepare(
+          `SELECT COUNT(*) FROM (${matchingAlbums}) matched
+           JOIN albums a ON a.id=matched.album_id${albumFilter ? ` WHERE ${albumFilter}` : ""}`,
+        )
         .pluck()
-        .get(pattern, pattern, match) as number;
+        .get(pattern, pattern, match, ...albumParameters) as number;
       const albumIds = this.connection
         .prepare(
           `SELECT a.id FROM albums a
-           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id
+           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id${albumFilter ? ` WHERE ${albumFilter}` : ""}
            ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
         )
-        .all(pattern, pattern, match, request.limit, request.offset)
+        .all(
+          pattern,
+          pattern,
+          match,
+          ...albumParameters,
+          request.limit,
+          request.offset,
+        )
         .map((row) => (row as { id: string }).id);
       return {
         albums: this.listAlbumsByIds(albumIds),
+        artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems,
         offset: request.offset,
@@ -758,20 +1037,27 @@ export class CatalogDatabase {
       ? [pattern, pattern, pattern, pattern, pattern, pattern]
       : [];
     const from = ` FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
-      WHERE f.scan_state='ok'${search}`;
+      WHERE f.scan_state='ok'${albumFilter ? ` AND ${albumFilter}` : ""}${search}`;
     const totalItems = this.connection
       .prepare(`SELECT COUNT(DISTINCT a.id)${from}`)
       .pluck()
-      .get(...searchParameters) as number;
+      .get(...albumParameters, ...searchParameters) as number;
     const albumIds = this.connection
       .prepare(
         `SELECT DISTINCT a.id, a.album_artist, a.title${from}
          ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
       )
-      .all(...searchParameters, request.limit, request.offset)
+      .all(
+        ...albumParameters,
+        ...searchParameters,
+        request.limit,
+        request.offset,
+      )
       .map((row) => (row as { id: string }).id);
     return {
       albums: this.listAlbumsByIds(albumIds),
+      artists: [],
+      tracks: [],
       scanErrors: [],
       totalItems,
       offset: request.offset,
@@ -1049,6 +1335,36 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackNumberSequenceOperation(
+    albumId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    startNumber: number,
+    discNumber: number | undefined,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-number-sequence-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        discNumber === undefined
+          ? `Sequence track numbers from ${startNumber}`
+          : `Sequence disc ${discNumber} track numbers from ${startNumber}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1062,7 +1378,8 @@ export class CatalogDatabase {
           | "track-tags-edit"
           | "track-tags-undo"
           | "track-tags-batch-edit"
-          | "track-tags-batch-undo";
+          | "track-tags-batch-undo"
+          | "track-number-sequence-edit";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1088,7 +1405,8 @@ export class CatalogDatabase {
             | "track-tags-edit"
             | "track-tags-undo"
             | "track-tags-batch-edit"
-            | "track-tags-batch-undo";
+            | "track-tags-batch-undo"
+            | "track-number-sequence-edit";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -1125,7 +1443,8 @@ export class CatalogDatabase {
         | "track-tags-edit"
         | "track-tags-undo"
         | "track-tags-batch-edit"
-        | "track-tags-batch-undo";
+        | "track-tags-batch-undo"
+        | "track-number-sequence-edit";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";
@@ -1227,9 +1546,20 @@ export class CatalogDatabase {
 
   updateFileAfterEdit(fileId: string, file: ScannedAudioFile): void {
     const row = this.connection
-      .prepare("SELECT root_id, path_key FROM audio_files WHERE id=?")
-      .get(fileId) as { root_id: string; path_key: string };
-    this.upsertScannedFile(row.root_id, row.path_key, file);
+      .prepare(
+        `SELECT f.root_id, f.path_key, t.album_id
+         FROM audio_files f JOIN tracks t ON t.file_id=f.id WHERE f.id=?`,
+      )
+      .get(fileId) as { root_id: string; path_key: string; album_id: string };
+    this.connection.transaction(() =>
+      this.upsertScannedFileInTransaction(
+        row.root_id,
+        row.path_key,
+        file,
+        row.album_id,
+      ),
+    )();
+    this.catalogSearchDirty = true;
   }
 
   private refreshCatalogSearchIfNeeded(): void {

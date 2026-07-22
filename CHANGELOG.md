@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 — 2026-07-22
+
+- Add explicit track-number sequencing with manual ordering, a chosen starting
+  number, optional disc-number assignment, unchanged-file skipping, verified
+  per-file writes, partial-failure reporting, and field-scoped undo.
+- Add deterministic local album data-quality diagnostics for missing or
+  duplicate numbering, sequence gaps, inconsistent album artists and partial
+  dates, missing dates, and exact scanner placeholders. Findings identify the
+  affected files and route only into existing preview-first Workbench flows.
+- Add a cancellable, paginated whole-Library review view with visible album
+  summaries and filters for numbering, artist/date consistency, and missing or
+  placeholder tags. Findings remain rebuildable catalog-derived state.
+- Preserve one same-folder album across inconsistent album-artist tags through
+  schema versions 11–12 without merging ambiguous albums across folders or
+  losing edit history and DAP profiles.
+- Add searchable, paginated album-artist and track browsing. Artist rows open
+  exact filtered album results; track rows show album, numbering, format,
+  duration, and file context before opening the existing preview-only editor.
+
 ## 0.5.0 — 2026-07-22
 
 - Add safe single-track editing for title, track artist, album artist,
