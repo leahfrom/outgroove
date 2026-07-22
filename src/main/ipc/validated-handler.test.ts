@@ -6,6 +6,8 @@ import {
   databaseRestoreApplyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
+  libraryRootRemovalApplyRequestSchema,
+  libraryRootRemovalPreviewRequestSchema,
   scanRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
@@ -44,6 +46,40 @@ describe("validated IPC handlers", () => {
       ok: true,
       value: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
     });
+  });
+
+  it("validates both stages of watched-root removal without accepting paths", async () => {
+    const preview = vi.fn();
+    const previewHandler = createValidatedHandler(
+      libraryRootRemovalPreviewRequestSchema,
+      preview,
+    );
+    await expect(
+      previewHandler(
+        {},
+        {
+          rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+          path: "/fixture",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(preview).not.toHaveBeenCalled();
+
+    const apply = vi.fn();
+    const applyHandler = createValidatedHandler(
+      libraryRootRemovalApplyRequestSchema,
+      apply,
+    );
+    await expect(
+      applyHandler(
+        {},
+        {
+          operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+          confirmationToken: "too-short",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("rejects unknown fields on cancellation requests", async () => {

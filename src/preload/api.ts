@@ -7,6 +7,10 @@ export const api: OutgrooveApi = {
   chooseLibraryFolder: () =>
     ipcRenderer.invoke(channels.chooseLibraryFolder, {}),
   listLibraryRoots: () => ipcRenderer.invoke(channels.listLibraryRoots, {}),
+  previewLibraryRootRemoval: (request) =>
+    ipcRenderer.invoke(channels.previewLibraryRootRemoval, request),
+  applyLibraryRootRemoval: (request) =>
+    ipcRenderer.invoke(channels.applyLibraryRootRemoval, request),
   scanLibrary: (request) => ipcRenderer.invoke(channels.scanLibrary, request),
   cancelScan: (request) => ipcRenderer.invoke(channels.cancelScan, request),
   getLatestScanJob: () => ipcRenderer.invoke(channels.getLatestScanJob, {}),

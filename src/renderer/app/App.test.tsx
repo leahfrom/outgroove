@@ -40,6 +40,8 @@ function api(applyVerified: boolean): OutgrooveApi {
   return {
     chooseLibraryFolder: vi.fn(),
     listLibraryRoots: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    previewLibraryRootRemoval: vi.fn(),
+    applyLibraryRootRemoval: vi.fn(),
     scanLibrary: vi.fn(),
     cancelScan: vi.fn(),
     getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
@@ -1237,6 +1239,11 @@ describe("tag edit UI safety states", () => {
         name: "Scan folder /fixture/never-scanned",
       }),
     ).toBeDisabled();
+    expect(
+      within(roots).getByRole("button", {
+        name: "Stop watching /fixture/never-scanned",
+      }),
+    ).toBeDisabled();
   });
 
   it("refreshes the watched-folder status after a completed scan", async () => {
@@ -1287,6 +1294,130 @@ describe("tag edit UI safety states", () => {
       screen.getByText(new Date(scannedAt).toLocaleString()),
     );
     expect(listLibraryRoots).toHaveBeenCalledTimes(2);
+  });
+
+  it("previews and keyboard-confirms stopping a watched folder without claiming file deletion", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const root = { id: rootId, path: "/fixture", lastScanAt: null };
+    const listLibraryRoots = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: [root] })
+      .mockResolvedValue({ ok: true, value: [] });
+    const previewLibraryRootRemoval = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        confirmationToken: "root-removal-confirmation-token",
+        rootId,
+        path: "/fixture",
+        visibleTracks: 12,
+        albumsHidden: 2,
+        scanProblemsHidden: 1,
+      },
+    });
+    const applyLibraryRootRemoval = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        rootId,
+        visibleTracksHidden: 12,
+        albumsHidden: 2,
+        scanProblemsHidden: 1,
+        audioFilesDeleted: 0,
+      },
+    });
+    Object.assign(mockApi, {
+      listLibraryRoots,
+      previewLibraryRootRemoval,
+      applyLibraryRootRemoval,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const stop = await screen.findByRole("button", {
+      name: "Stop watching /fixture",
+    });
+    stop.focus();
+    await user.keyboard("{Enter}");
+    const preview = await screen.findByLabelText(
+      "Library folder removal preview",
+    );
+    expect(preview).toHaveTextContent("/fixture");
+    expect(within(preview).getByText("Visible tracks hidden")).toBeVisible();
+    expect(within(preview).getByText("12")).toBeVisible();
+    expect(within(preview).getByText("Albums no longer visible")).toBeVisible();
+    expect(within(preview).getByText("2")).toBeVisible();
+    expect(within(preview).getByText("Scan problems hidden")).toBeVisible();
+    expect(within(preview).getByText("1")).toBeVisible();
+    expect(preview).toHaveTextContent("No audio or DAP files will be deleted");
+    expect(applyLibraryRootRemoval).not.toHaveBeenCalled();
+
+    const confirm = within(preview).getByRole("button", {
+      name: "Confirm stop watching",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applyLibraryRootRemoval).toHaveBeenCalledWith({
+      operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      confirmationToken: "root-removal-confirmation-token",
+    });
+    expect(
+      await screen.findByText("No Library folders have been chosen yet."),
+    ).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "12 visible tracks hidden; no audio files deleted",
+    );
+  });
+
+  it("keeps a root-removal preview open after a recoverable apply failure", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    vi.spyOn(mockApi, "listLibraryRoots").mockResolvedValue({
+      ok: true,
+      value: [{ id: rootId, path: "/fixture", lastScanAt: null }],
+    });
+    vi.spyOn(mockApi, "previewLibraryRootRemoval").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        confirmationToken: "root-removal-confirmation-token",
+        rootId,
+        path: "/fixture",
+        visibleTracks: 1,
+        albumsHidden: 1,
+        scanProblemsHidden: 0,
+      },
+    });
+    vi.spyOn(mockApi, "applyLibraryRootRemoval").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "The Library folder changed after preview.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Stop watching /fixture" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Confirm stop watching" }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "The Library folder changed after preview.",
+    );
+    expect(
+      screen.getByLabelText("Library folder removal preview"),
+    ).toBeVisible();
   });
 
   it("exposes cancellation only for an active scan", async () => {
