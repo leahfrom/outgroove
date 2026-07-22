@@ -70,6 +70,10 @@ export function App(): React.JSX.Element {
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
+  const [sequenceStart, setSequenceStart] = useState("1");
+  const [sequencePreview, setSequencePreview] =
+    useState<TrackBatchEditPreviewDto>();
+  const [sequenceResult, setSequenceResult] = useState<TagEditResultDto>();
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
@@ -462,6 +466,24 @@ export function App(): React.JSX.Element {
     );
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const moveBatchTrack = (fileId: string, offset: -1 | 1): void => {
+    setBatchTrackIds((selected) => {
+      const index = selected.indexOf(fileId);
+      const destination = index + offset;
+      if (index < 0 || destination < 0 || destination >= selected.length)
+        return selected;
+      const reordered = [...selected];
+      const [track] = reordered.splice(index, 1);
+      if (!track) return selected;
+      reordered.splice(destination, 0, track);
+      return reordered;
+    });
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
   };
 
   const previewBatchEdit = async (): Promise<void> => {
@@ -505,6 +527,42 @@ export function App(): React.JSX.Element {
             : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
         );
         setBatchPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewTrackNumberSequence = async (): Promise<void> => {
+    const result = await window.outgroove.previewTrackNumberSequence({
+      fileIds: batchTrackIds,
+      startNumber: Number(sequenceStart),
+    });
+    if (result.ok) {
+      setSequencePreview(result.value);
+      setSequenceResult(undefined);
+    } else setNotice(result.error.message);
+  };
+
+  const applyTrackNumberSequence = async (): Promise<void> => {
+    if (!sequencePreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackNumberSequence({
+        operationId: sequencePreview.operationId,
+        confirmationToken: sequencePreview.confirmationToken,
+      });
+      if (result.ok) {
+        setSequenceResult(result.value);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Re-read and verified ${result.value.results.length} track-number writes.`
+            : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
+        );
+        setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else setNotice(result.error.message);
@@ -830,6 +888,8 @@ export function App(): React.JSX.Element {
                           selectedAlbum.tracks.map((track) => track.id),
                         );
                         setBatchPreview(undefined);
+                        setSequencePreview(undefined);
+                        setSequenceResult(undefined);
                       }}
                     >
                       Select all tracks
@@ -839,6 +899,8 @@ export function App(): React.JSX.Element {
                       onClick={() => {
                         setBatchTrackIds([]);
                         setBatchPreview(undefined);
+                        setSequencePreview(undefined);
+                        setSequenceResult(undefined);
                       }}
                     >
                       Clear selection
@@ -1044,6 +1106,131 @@ export function App(): React.JSX.Element {
                       </ul>
                     </div>
                   )}
+                  <div className="preview" aria-label="Track number sequencing">
+                    <h4>Sequence track numbers</h4>
+                    <p>
+                      Outgroove uses exactly the order below. Reorder it
+                      explicitly before previewing; file names and existing
+                      numbers are never used to guess a different order.
+                    </p>
+                    {batchTrackIds.length === 0 ? (
+                      <p>Select at least two tracks above.</p>
+                    ) : (
+                      <ol>
+                        {batchTrackIds.map((fileId, index) => {
+                          const track = selectedAlbum.tracks.find(
+                            (candidate) => candidate.id === fileId,
+                          );
+                          return (
+                            <li key={fileId}>
+                              <span>{track?.tags.title ?? fileId}</span>
+                              <button
+                                aria-label={`Move ${track?.tags.title ?? "track"} up`}
+                                disabled={busy || index === 0}
+                                onClick={() => moveBatchTrack(fileId, -1)}
+                              >
+                                Move up
+                              </button>
+                              <button
+                                aria-label={`Move ${track?.tags.title ?? "track"} down`}
+                                disabled={
+                                  busy || index === batchTrackIds.length - 1
+                                }
+                                onClick={() => moveBatchTrack(fileId, 1)}
+                              >
+                                Move down
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                    <label>
+                      Starting track number
+                      <input
+                        type="number"
+                        min="1"
+                        max="9999"
+                        value={sequenceStart}
+                        onChange={(event) => {
+                          setSequenceStart(event.target.value);
+                          setSequencePreview(undefined);
+                        }}
+                      />
+                    </label>
+                    <button
+                      disabled={
+                        busy ||
+                        batchTrackIds.length < 2 ||
+                        !Number.isInteger(Number(sequenceStart)) ||
+                        Number(sequenceStart) < 1 ||
+                        Number(sequenceStart) + batchTrackIds.length - 1 > 9999
+                      }
+                      onClick={() => void previewTrackNumberSequence()}
+                    >
+                      Preview track-number sequence
+                    </button>
+                    {sequencePreview && (
+                      <div
+                        className="preview"
+                        aria-label="Track number sequence confirmation"
+                      >
+                        <h5>Review exact sequence</h5>
+                        <ol>
+                          {sequencePreview.files.map((file) => (
+                            <li key={file.fileId}>
+                              <strong>{file.path}</strong>:{" "}
+                              {file.willWrite ? (
+                                <>
+                                  {file.changes[0]?.before ?? "Not set"} →{" "}
+                                  {file.changes[0]?.after}
+                                </>
+                              ) : (
+                                "unchanged — skipped"
+                              )}
+                              {file.warnings.map((warning) => (
+                                <p key={warning} role="alert">
+                                  {warning}
+                                </p>
+                              ))}
+                            </li>
+                          ))}
+                        </ol>
+                        <div className="actions">
+                          <button
+                            className="primary"
+                            disabled={
+                              busy ||
+                              sequencePreview.files.some(
+                                (file) =>
+                                  file.willWrite && file.warnings.length > 0,
+                              )
+                            }
+                            onClick={() => void applyTrackNumberSequence()}
+                          >
+                            Confirm track-number sequence
+                          </button>
+                          <button onClick={() => setSequencePreview(undefined)}>
+                            Cancel sequence
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {sequenceResult && (
+                      <div className="preview" aria-live="polite">
+                        <h5>Track-number results</h5>
+                        <ul>
+                          {sequenceResult.results.map((result) => (
+                            <li key={result.fileId}>
+                              {result.path}:{" "}
+                              {result.verified ? "verified" : "failed"}
+                              {result.error ? ` — ${result.error}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </section>
                 {selectedTrack && (
                   <section className="card" aria-label="Track metadata editor">
@@ -1328,6 +1515,17 @@ export function App(): React.JSX.Element {
                                   }
                                 >
                                   Preview batch undo
+                                </button>
+                              )}
+                            {item.kind === "track-number-sequence-edit" &&
+                              item.verifiedFiles > 0 && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void previewBatchUndo(item.operationId)
+                                  }
+                                >
+                                  Preview sequence undo
                                 </button>
                               )}
                           </li>

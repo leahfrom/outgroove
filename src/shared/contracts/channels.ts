@@ -21,6 +21,8 @@ export const channels = {
   applyTrackBatchEdit: "tagging:apply-track-batch",
   previewTrackBatchUndo: "tagging:preview-track-batch-undo",
   applyTrackBatchUndo: "tagging:apply-track-batch-undo",
+  previewTrackNumberSequence: "tagging:preview-track-number-sequence",
+  applyTrackNumberSequence: "tagging:apply-track-number-sequence",
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",
   applySync: "sync:apply",

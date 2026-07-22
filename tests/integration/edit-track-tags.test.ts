@@ -161,6 +161,114 @@ describe.each(["01-first.mp3", "02-second.flac"])(
   },
 );
 
+it("applies and undoes track numbers in the exact confirmed order", async () => {
+  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Sequence fixtures missing.");
+  const original = await Promise.all(
+    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
+  );
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const preview = editor.previewTrackNumberSequence(
+    [second.fileId, first.fileId],
+    7,
+  );
+  expect(preview.files.map((file) => file.fileId)).toEqual([
+    second.fileId,
+    first.fileId,
+  ]);
+  expect(preview.files.map((file) => file.changes[0]?.after)).toEqual([7, 8]);
+
+  const applied = await editor.applyTrackNumberSequence(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results.every((result) => result.verified)).toBe(true);
+  expect((await reader.read(second.path)).tags).toMatchObject({
+    title: original[1]?.title,
+    trackNumber: 7,
+  });
+  expect((await reader.read(first.path)).tags).toMatchObject({
+    title: original[0]?.title,
+    trackNumber: 8,
+  });
+  expect(database.getEditOperation(preview.operationId)).toMatchObject({
+    kind: "track-number-sequence-edit",
+    state: "completed",
+  });
+
+  const undoPreview = editor.previewBatchUndo(preview.operationId);
+  expect(undoPreview.files.map((file) => file.changes[0]?.after)).toEqual([
+    original[1]?.trackNumber,
+    original[0]?.trackNumber,
+  ]);
+  const undone = await editor.applyBatchUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results.every((result) => result.verified)).toBe(true);
+  expect((await reader.read(second.path)).tags).toEqual(original[1]);
+  expect((await reader.read(first.path)).tags).toEqual(original[0]);
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  database.close();
+});
+
+it("refuses a stale track number without aborting the remaining sequence", async () => {
+  const { database, writer, editor, files } = await createBatchTrackEditor();
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Sequence fixtures missing.");
+  const preview = editor.previewTrackNumberSequence(
+    [first.fileId, second.fileId],
+    9,
+  );
+  const external = await writer.writeTags(first.path, { trackNumber: 55 });
+  database.updateFileAfterEdit(first.fileId, external.file);
+
+  const applied = await editor.applyTrackNumberSequence(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([
+    {
+      fileId: first.fileId,
+      verified: false,
+      error:
+        "The track number changed after this preview; sequencing did not overwrite it.",
+    },
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect(database.getEditOperation(preview.operationId)?.state).toBe("failed");
+  database.close();
+});
+
+it("shows but does not rewrite a track number already matching the sequence", async () => {
+  const { database, writer, editor, files } = await createBatchTrackEditor();
+  const first = files[0];
+  const second = files[1];
+  if (!first || !second) throw new Error("Sequence fixtures missing.");
+  const changed = await writer.writeTags(second.path, { trackNumber: 5 });
+  database.updateFileAfterEdit(second.fileId, changed.file);
+  const preview = editor.previewTrackNumberSequence(
+    [first.fileId, second.fileId],
+    1,
+  );
+  expect(preview.files.map((file) => file.willWrite)).toEqual([false, true]);
+  const applied = await editor.applyTrackNumberSequence(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect(database.listSnapshots(preview.operationId)).toHaveLength(1);
+  database.close();
+});
+
 it("previews and independently verifies a persisted multi-track batch edit", async () => {
   const { database, reader, writer, editor, files } =
     await createBatchTrackEditor();

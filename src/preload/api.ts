@@ -43,6 +43,10 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.previewTrackBatchUndo, request),
   applyTrackBatchUndo: (request) =>
     ipcRenderer.invoke(channels.applyTrackBatchUndo, request),
+  previewTrackNumberSequence: (request) =>
+    ipcRenderer.invoke(channels.previewTrackNumberSequence, request),
+  applyTrackNumberSequence: (request) =>
+    ipcRenderer.invoke(channels.applyTrackNumberSequence, request),
   chooseSyncTargetAndCreateProfile: (request) =>
     ipcRenderer.invoke(channels.createSyncProfile, request),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),

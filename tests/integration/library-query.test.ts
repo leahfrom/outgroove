@@ -249,7 +249,7 @@ describe("paginated library query", () => {
         root.id,
         path,
         pathComparisonKey(path),
-        10,
+        11,
         1,
         message ?? "Unknown error",
       );

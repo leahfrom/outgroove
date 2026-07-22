@@ -77,6 +77,22 @@ export const trackBatchEditPreviewRequestSchema = z
       .refine((changes) => Object.keys(changes).length > 0),
   })
   .strict();
+export const trackNumberSequencePreviewRequestSchema = z
+  .object({
+    fileIds: z
+      .array(z.uuid())
+      .min(2)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Choose each track only once.",
+      }),
+    startNumber: z.number().int().min(1).max(9999),
+  })
+  .strict()
+  .refine(
+    ({ fileIds, startNumber }) => startNumber + fileIds.length - 1 <= 9999,
+    { message: "The resulting track number exceeds 9999." },
+  );
 export const syncProfileRequestSchema = z
   .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
   .strict();
@@ -197,7 +213,8 @@ export interface TagEditHistoryItemDto {
     | "track-tags-edit"
     | "track-tags-undo"
     | "track-tags-batch-edit"
-    | "track-tags-batch-undo";
+    | "track-tags-batch-undo"
+    | "track-number-sequence-edit";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -288,6 +305,12 @@ export interface OutgrooveApi {
     request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
   ): Promise<Result<TrackBatchEditPreviewDto>>;
   applyTrackBatchUndo(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewTrackNumberSequence(
+    request: z.infer<typeof trackNumberSequencePreviewRequestSchema>,
+  ): Promise<Result<TrackBatchEditPreviewDto>>;
+  applyTrackNumberSequence(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(

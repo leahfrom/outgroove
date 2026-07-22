@@ -137,6 +137,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     applyTrackBatchEdit: vi.fn(),
     previewTrackBatchUndo: vi.fn(),
     applyTrackBatchUndo: vi.fn(),
+    previewTrackNumberSequence: vi.fn(),
+    applyTrackNumberSequence: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -436,6 +438,100 @@ describe("tag edit UI safety states", () => {
     expect(previewUndo).toHaveBeenCalledWith({
       operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
     });
+  });
+
+  it("previews track numbers in the explicit reordered selection", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      format: "FLAC",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const sequenceAlbum = { ...album, tracks: [firstTrack, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [sequenceAlbum],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const preview = vi.spyOn(mockApi, "previewTrackNumberSequence");
+    preview.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "d827fc36-9d73-4149-914b-ef7a3915692c",
+        confirmationToken: "sequence-confirmation-token-long-enough",
+        files: [
+          {
+            fileId: secondTrack.id,
+            path: secondTrack.path,
+            changes: [{ field: "trackNumber", before: 2, after: 7 }],
+            warnings: [],
+            willWrite: true,
+          },
+          {
+            fileId: firstTrack.id,
+            path: firstTrack.path,
+            changes: [{ field: "trackNumber", before: 1, after: 8 }],
+            warnings: [],
+            willWrite: true,
+          },
+        ],
+      },
+    });
+    vi.spyOn(mockApi, "applyTrackNumberSequence").mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "d827fc36-9d73-4149-914b-ef7a3915692c",
+        results: [secondTrack, firstTrack].map((track) => ({
+          fileId: track.id,
+          path: track.path,
+          verified: true,
+          error: null,
+        })),
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await user.click(screen.getByRole("button", { name: "Select all tracks" }));
+    await user.click(
+      screen.getByRole("button", { name: "Move Second Track up" }),
+    );
+    const start = screen.getByLabelText("Starting track number");
+    await user.clear(start);
+    await user.type(start, "7");
+    await user.click(
+      screen.getByRole("button", { name: "Preview track-number sequence" }),
+    );
+    expect(preview).toHaveBeenCalledWith({
+      fileIds: [secondTrack.id, firstTrack.id],
+      startNumber: 7,
+    });
+    const confirmation = await screen.findByLabelText(
+      "Track number sequence confirmation",
+    );
+    expect(within(confirmation).getByText(/2 → 7/u)).toBeInTheDocument();
+    expect(within(confirmation).getByText(/1 → 8/u)).toBeInTheDocument();
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "Confirm track-number sequence",
+      }),
+    );
+    expect(
+      await screen.findByText("Re-read and verified 2 track-number writes."),
+    ).toBeInTheDocument();
   });
 
   it("reports verification failure without claiming success", async () => {
@@ -1006,7 +1102,7 @@ describe("tag edit UI safety states", () => {
           operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
           confirmationToken: "database-confirmation-token-long-enough",
           sourceName: "outgroove-backup.sqlite3",
-          schemaVersion: 10,
+          schemaVersion: 11,
           summary: {
             libraryRoots: 2,
             albums: 30,
