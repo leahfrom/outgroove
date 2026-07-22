@@ -6,6 +6,7 @@ import Database from "better-sqlite3";
 
 import type {
   LibraryPageDto,
+  LibraryTrackDto,
   LibraryRootDto,
   ScanErrorDto,
   ScanJobDto,
@@ -817,10 +818,11 @@ export class CatalogDatabase {
 
   queryLibrary(request: {
     query: string;
-    view: "albums" | "artists" | "scan-errors";
+    view: "albums" | "artists" | "tracks" | "scan-errors";
     offset: number;
     limit: number;
     albumArtist?: string;
+    albumId?: string;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -848,7 +850,57 @@ export class CatalogDatabase {
       return {
         albums: [],
         artists: [],
+        tracks: [],
         scanErrors,
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
+    if (request.view === "tracks") {
+      const search = request.query
+        ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR a.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE)`
+        : "";
+      const searchParameters = request.query
+        ? [pattern, pattern, pattern, pattern, pattern, pattern]
+        : [];
+      const visibleTracks = ` FROM tracks t
+        JOIN audio_files f ON f.id=t.file_id
+        JOIN albums a ON a.id=t.album_id
+        WHERE f.scan_state='ok'${search}`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*)${visibleTracks}`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const tracks = this.connection
+        .prepare(
+          `SELECT f.id, a.id AS albumId, t.title,
+            COALESCE(json_extract(f.normalized_tags_json, '$.artist'), '') AS artist,
+            a.title AS albumTitle, a.album_artist AS albumArtist,
+            t.track_number AS trackNumber, t.disc_number AS discNumber,
+            COALESCE(f.format, 'unknown') AS format,
+            f.duration_seconds AS durationSeconds, f.path
+           ${visibleTracks}
+           ORDER BY a.album_artist, a.title, a.id,
+             COALESCE(t.disc_number, 0), COALESCE(t.track_number, 0), f.path
+           LIMIT ? OFFSET ?`,
+        )
+        .all(
+          ...searchParameters,
+          request.limit,
+          request.offset,
+        ) as LibraryTrackDto[];
+      return {
+        albums: [],
+        artists: [],
+        tracks,
+        scanErrors: [],
         totalItems,
         offset: request.offset,
         limit: request.limit,
@@ -886,6 +938,7 @@ export class CatalogDatabase {
       return {
         albums: [],
         artists,
+        tracks: [],
         scanErrors: [],
         totalItems,
         offset: request.offset,
@@ -893,29 +946,37 @@ export class CatalogDatabase {
       };
     }
 
-    const artistFilter = request.albumArtist
-      ? `a.album_artist = ? COLLATE NOCASE`
-      : "";
-    const artistParameters = request.albumArtist ? [request.albumArtist] : [];
+    const albumFilters: string[] = [];
+    const albumParameters: string[] = [];
+    if (request.albumArtist) {
+      albumFilters.push("a.album_artist = ? COLLATE NOCASE");
+      albumParameters.push(request.albumArtist);
+    }
+    if (request.albumId) {
+      albumFilters.push("a.id = ?");
+      albumParameters.push(request.albumId);
+    }
+    const albumFilter = albumFilters.join(" AND ");
 
     if (!request.query) {
       this.refreshCatalogSearchIfNeeded();
       const visibleAlbums = ` FROM catalog_visible_albums visible
-        JOIN albums a ON a.id=visible.album_id${artistFilter ? ` WHERE ${artistFilter}` : ""}`;
+        JOIN albums a ON a.id=visible.album_id${albumFilter ? ` WHERE ${albumFilter}` : ""}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleAlbums}`)
         .pluck()
-        .get(...artistParameters) as number;
+        .get(...albumParameters) as number;
       const albumIds = this.connection
         .prepare(
           `SELECT a.id${visibleAlbums}
            ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
         )
-        .all(...artistParameters, request.limit, request.offset)
+        .all(...albumParameters, request.limit, request.offset)
         .map((row) => (row as { id: string }).id);
       return {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems,
         offset: request.offset,
@@ -938,21 +999,21 @@ export class CatalogDatabase {
       const totalItems = this.connection
         .prepare(
           `SELECT COUNT(*) FROM (${matchingAlbums}) matched
-           JOIN albums a ON a.id=matched.album_id${artistFilter ? ` WHERE ${artistFilter}` : ""}`,
+           JOIN albums a ON a.id=matched.album_id${albumFilter ? ` WHERE ${albumFilter}` : ""}`,
         )
         .pluck()
-        .get(pattern, pattern, match, ...artistParameters) as number;
+        .get(pattern, pattern, match, ...albumParameters) as number;
       const albumIds = this.connection
         .prepare(
           `SELECT a.id FROM albums a
-           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id${artistFilter ? ` WHERE ${artistFilter}` : ""}
+           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id${albumFilter ? ` WHERE ${albumFilter}` : ""}
            ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
         )
         .all(
           pattern,
           pattern,
           match,
-          ...artistParameters,
+          ...albumParameters,
           request.limit,
           request.offset,
         )
@@ -960,6 +1021,7 @@ export class CatalogDatabase {
       return {
         albums: this.listAlbumsByIds(albumIds),
         artists: [],
+        tracks: [],
         scanErrors: [],
         totalItems,
         offset: request.offset,
@@ -975,18 +1037,18 @@ export class CatalogDatabase {
       ? [pattern, pattern, pattern, pattern, pattern, pattern]
       : [];
     const from = ` FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
-      WHERE f.scan_state='ok'${artistFilter ? ` AND ${artistFilter}` : ""}${search}`;
+      WHERE f.scan_state='ok'${albumFilter ? ` AND ${albumFilter}` : ""}${search}`;
     const totalItems = this.connection
       .prepare(`SELECT COUNT(DISTINCT a.id)${from}`)
       .pluck()
-      .get(...artistParameters, ...searchParameters) as number;
+      .get(...albumParameters, ...searchParameters) as number;
     const albumIds = this.connection
       .prepare(
         `SELECT DISTINCT a.id, a.album_artist, a.title${from}
          ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
       )
       .all(
-        ...artistParameters,
+        ...albumParameters,
         ...searchParameters,
         request.limit,
         request.offset,
@@ -995,6 +1057,7 @@ export class CatalogDatabase {
     return {
       albums: this.listAlbumsByIds(albumIds),
       artists: [],
+      tracks: [],
       scanErrors: [],
       totalItems,
       offset: request.offset,

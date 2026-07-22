@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
+  LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
@@ -30,6 +31,17 @@ interface Progress {
 }
 
 const PAGE_SIZE = 20;
+
+function draftForTrack(track: CatalogAlbum["tracks"][number]) {
+  return {
+    title: track.tags.title,
+    artist: track.tags.artist,
+    albumArtist: track.tags.albumArtist,
+    trackNumber: track.tags.trackNumber?.toString() ?? "",
+    discNumber: track.tags.discNumber?.toString() ?? "",
+    year: track.tags.year ?? "",
+  };
+}
 
 const diagnosticFilterLabels: Record<AlbumDiagnosticFilter, string> = {
   all: "All findings",
@@ -59,13 +71,17 @@ export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
+  const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
-    "albums" | "artists" | "data-quality" | "scan-errors"
+    "albums" | "artists" | "tracks" | "data-quality" | "scan-errors"
   >("albums");
   const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
+  const [albumIdFilter, setAlbumIdFilter] = useState<string>();
+  const [trackRouteLabel, setTrackRouteLabel] = useState<string>();
+  const [pendingTrackId, setPendingTrackId] = useState<string>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
@@ -194,6 +210,9 @@ export function App(): React.JSX.Element {
       ...(libraryView === "albums" && albumArtistFilter
         ? { albumArtist: albumArtistFilter }
         : {}),
+      ...(libraryView === "albums" && albumIdFilter
+        ? { albumId: albumIdFilter }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -207,6 +226,7 @@ export function App(): React.JSX.Element {
       }
       setAlbums(result.value.albums);
       setArtists(result.value.artists);
+      setTracks(result.value.tracks);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
       setSelectedAlbumId((current) =>
@@ -215,7 +235,14 @@ export function App(): React.JSX.Element {
           : result.value.albums[0]?.id,
       );
     } else setNotice(result.error.message);
-  }, [albumArtistFilter, libraryView, pageOffset, qualityFilter, query]);
+  }, [
+    albumArtistFilter,
+    albumIdFilter,
+    libraryView,
+    pageOffset,
+    qualityFilter,
+    query,
+  ]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -283,6 +310,23 @@ export function App(): React.JSX.Element {
       current = false;
     };
   }, [selectedAlbumId]);
+
+  useEffect(() => {
+    if (!pendingTrackId || !selectedAlbum) return;
+    const track = selectedAlbum.tracks.find(
+      (candidate) => candidate.id === pendingTrackId,
+    );
+    if (!track) return;
+    setSelectedTrackId(track.id);
+    setTrackEditPreview(undefined);
+    setTrackUndoPreview(undefined);
+    setTrackDraft(draftForTrack(track));
+    setPendingTrackId(undefined);
+    setDiagnosticDestination((current) => ({
+      target: "track",
+      request: (current?.request ?? 0) + 1,
+    }));
+  }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
     const started = await window.outgroove.scanLibrary({
@@ -447,14 +491,7 @@ export function App(): React.JSX.Element {
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
     setTrackUndoPreview(undefined);
-    setTrackDraft({
-      title: track.tags.title,
-      artist: track.tags.artist,
-      albumArtist: track.tags.albumArtist,
-      trackNumber: track.tags.trackNumber?.toString() ?? "",
-      discNumber: track.tags.discNumber?.toString() ?? "",
-      year: track.tags.year ?? "",
-    });
+    setTrackDraft(draftForTrack(track));
   };
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
@@ -889,9 +926,12 @@ export function App(): React.JSX.Element {
           value={libraryView}
           onChange={(event) => {
             const view = event.target.value as
-              "albums" | "artists" | "data-quality" | "scan-errors";
+              "albums" | "artists" | "tracks" | "data-quality" | "scan-errors";
             setLibraryView(view);
             setAlbumArtistFilter(undefined);
+            setAlbumIdFilter(undefined);
+            setTrackRouteLabel(undefined);
+            setPendingTrackId(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
@@ -899,6 +939,7 @@ export function App(): React.JSX.Element {
         >
           <option value="albums">Albums</option>
           <option value="artists">Album artists</option>
+          <option value="tracks">Tracks</option>
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
         </select>
@@ -950,6 +991,19 @@ export function App(): React.JSX.Element {
             Show all album artists
           </button>
         )}
+        {libraryView === "albums" && albumIdFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setAlbumIdFilter(undefined);
+              setTrackRouteLabel(undefined);
+              setPendingTrackId(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all albums
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
@@ -961,19 +1015,26 @@ export function App(): React.JSX.Element {
             ? totalItems === 1
               ? "album artist"
               : "album artists"
-            : libraryView === "data-quality"
+            : libraryView === "tracks"
               ? totalItems === 1
-                ? "album needing review"
-                : "albums needing review"
-              : totalItems === 1
-                ? "album"
-                : "albums"}
+                ? "track"
+                : "tracks"
+              : libraryView === "data-quality"
+                ? totalItems === 1
+                  ? "album needing review"
+                  : "albums needing review"
+                : totalItems === 1
+                  ? "album"
+                  : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
           : ""}
         {libraryView === "albums" && albumArtistFilter
           ? ` by “${albumArtistFilter}”`
+          : ""}
+        {libraryView === "albums" && trackRouteLabel
+          ? ` containing “${trackRouteLabel}”`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -1036,6 +1097,73 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "tracks" ? (
+        <main className="tracks" aria-labelledby="library-tracks">
+          <h2 id="library-tracks">Tracks</h2>
+          {tracks.length === 0 ? (
+            <p>
+              {query
+                ? "No tracks match this search."
+                : "The current catalog has no tracks."}
+            </p>
+          ) : (
+            <div className="track-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Track</th>
+                    <th scope="col">Artist</th>
+                    <th scope="col">Album</th>
+                    <th scope="col">Number</th>
+                    <th scope="col">Format</th>
+                    <th scope="col">File</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tracks.map((track) => (
+                    <tr key={track.id}>
+                      <td>{track.title}</td>
+                      <td>{track.artist}</td>
+                      <td>
+                        {track.albumTitle}
+                        <small>{track.albumArtist}</small>
+                      </td>
+                      <td>
+                        Disc {track.discNumber ?? 1}, track{" "}
+                        {track.trackNumber ?? "missing"}
+                      </td>
+                      <td>
+                        {track.format} ·{" "}
+                        {track.durationSeconds?.toFixed(1) ?? "—"}s
+                      </td>
+                      <td>{track.path}</td>
+                      <td>
+                        <button
+                          onClick={() => {
+                            setAlbumIdFilter(track.albumId);
+                            setTrackRouteLabel(track.title);
+                            setPendingTrackId(track.id);
+                            setAlbumArtistFilter(undefined);
+                            setLibraryView("albums");
+                            setSearchText("");
+                            setQuery("");
+                            setPageOffset(0);
+                            setNotice(
+                              `Opening ${track.title} in the existing preview-only track editor.`,
+                            );
+                          }}
+                        >
+                          Open {track.title} in Workbench
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </main>
       ) : albums.length === 0 ? (
         <main className="empty">
           <h2>
@@ -1043,29 +1171,36 @@ export function App(): React.JSX.Element {
               ? "No matching albums"
               : albumArtistFilter
                 ? `No albums by ${albumArtistFilter}`
-                : libraryView === "data-quality"
-                  ? "No albums need review"
-                  : "Your Library is empty"}
+                : albumIdFilter
+                  ? "The selected track’s album is unavailable"
+                  : libraryView === "data-quality"
+                    ? "No albums need review"
+                    : "Your Library is empty"}
           </h2>
           <p>
             {query
               ? "Try a different album, artist, track, format, or path."
               : albumArtistFilter
                 ? "Clear the album-artist filter to return to the full Library."
-                : libraryView === "data-quality"
-                  ? qualityFilter === "all"
-                    ? "The current catalog has no album data-quality findings."
-                    : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
-                  : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+                : albumIdFilter
+                  ? "The track may have been removed or rescanned. Show all albums to continue browsing."
+                  : libraryView === "data-quality"
+                    ? qualityFilter === "all"
+                      ? "The current catalog has no album data-quality findings."
+                      : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                    : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
           </p>
-          {!query && !albumArtistFilter && libraryView !== "data-quality" && (
-            <button
-              disabled={busy || scanActive}
-              onClick={() => void chooseAndScan()}
-            >
-              Choose a library folder
-            </button>
-          )}
+          {!query &&
+            !albumArtistFilter &&
+            !albumIdFilter &&
+            libraryView !== "data-quality" && (
+              <button
+                disabled={busy || scanActive}
+                onClick={() => void chooseAndScan()}
+              >
+                Choose a library folder
+              </button>
+            )}
         </main>
       ) : (
         <main className="workspace">

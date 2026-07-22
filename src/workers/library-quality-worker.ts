@@ -90,6 +90,7 @@ function runQuery(): LibraryQualityWorkerMessage {
     page: {
       albums,
       artists: [],
+      tracks: [],
       scanErrors: [],
       totalItems: matchingAlbums,
       offset: request.offset,

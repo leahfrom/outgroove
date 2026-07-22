@@ -197,6 +197,51 @@ describe("paginated library query", () => {
         limit: 10,
       }).albums[0]?.tracks,
     ).toHaveLength(2);
+    const tracks = database.queryLibrary({
+      query: "",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+    });
+    expect(tracks.totalItems).toBe(26);
+    expect(tracks.tracks).toHaveLength(10);
+    expect(tracks.tracks[0]).toMatchObject({
+      title: "Track 0",
+      artist: "Fixture Artist",
+      albumTitle: "Album 00",
+      albumArtist: "Fixture Artist",
+      trackNumber: 1,
+      discNumber: 1,
+      format: "FLAC",
+    });
+    const needleTrack = database.queryLibrary({
+      query: "Needle",
+      view: "tracks",
+      offset: 0,
+      limit: 10,
+    }).tracks[0];
+    expect(needleTrack).toMatchObject({
+      title: "Needle Track",
+      albumTitle: "Album 09",
+    });
+    if (!needleTrack) throw new Error("Needle track missing");
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 10,
+        albumId: needleTrack.albumId,
+      }).albums[0]?.title,
+    ).toBe("Album 09");
+    expect(
+      database.queryLibrary({
+        query: "SpecialCodec",
+        view: "tracks",
+        offset: 0,
+        limit: 10,
+      }).tracks[0]?.albumTitle,
+    ).toBe("Album 17");
     database.close();
   });
 

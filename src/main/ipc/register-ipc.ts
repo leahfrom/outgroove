@@ -171,10 +171,13 @@ export function registerIpc(
             ? "scan-errors"
             : request.view === "artists"
               ? "artists"
-              : "albums",
+              : request.view === "tracks"
+                ? "tracks"
+                : "albums",
         offset: request.offset,
         limit: request.limit,
         ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
+        ...(request.albumId ? { albumId: request.albumId } : {}),
       });
     }),
   );
