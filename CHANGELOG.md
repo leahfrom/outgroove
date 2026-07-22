@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 — 2026-07-22
+
+- Add searchable genre browsing, complete scanned track technical details, and
+  durable named Library filters that can be reopened, renamed, updated, or
+  removed without changing audio or catalog data.
+- Expand folder-backed DAP profiles from one album to an explicit selection of
+  up to 100 albums. Saved profiles can be reopened, revised, and renamed while
+  retaining their selected target and requiring a fresh preview after changes.
+- Show the 20 newest successful syncs from committed manifests, including their
+  recorded target and file count, without treating failed or interrupted runs
+  as history.
+- Add cooperative cancellation during the copy stage. Outgroove finishes or
+  discards the current temporary copy, verifies installed output before
+  rollback, retains the earlier manifest, and leaves the plan ready to retry.
+- Add schema-v17 write-ahead recovery journals for process interruption,
+  target disconnection, and finalization failure. Restart recovery displays
+  exact restore/removal actions, requires separate confirmation, preserves
+  externally changed files, rejects symlink escapes, and never modifies source
+  audio.
+- Migrate schema versions 13–16 through versions 14–17 while preserving
+  watched-root state, technical catalog properties, saved Library filters, DAP
+  selections, manifests, and edit history.
+
 ## 0.7.0 — 2026-07-22
 
 - Add searchable, paginated format and folder browsing with visible track and

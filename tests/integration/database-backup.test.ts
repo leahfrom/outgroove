@@ -44,10 +44,18 @@ describe("database backup and restore", () => {
     live.addLibraryRoot("/current/library", "/current/library");
     const donor = new CatalogDatabase(join(directory, "donor.sqlite3"));
     donor.addLibraryRoot("/restored/library", "/restored/library");
-    donor.createSyncProfile(
+    donor.createSavedLibraryFilter("Restored albums", {
+      query: "restored",
+      view: "albums",
+    });
+    const restoredAlbumIds = [
+      createAlbum(donor, "restored-album"),
+      createAlbum(donor, "second-album"),
+    ];
+    const profile = donor.createSyncProfile(
       "Fixture DAP",
       "/fixture/target",
-      createAlbum(donor, "restored-album"),
+      restoredAlbumIds,
     );
     await donor.backup(selectedPath);
     donor.close();
@@ -56,8 +64,14 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 13,
-      summary: { libraryRoots: 1, albums: 1, tracks: 1, syncProfiles: 1 },
+      schemaVersion: 17,
+      summary: {
+        libraryRoots: 1,
+        albums: 2,
+        tracks: 2,
+        syncProfiles: 1,
+        savedLibraryFilters: 1,
+      },
     });
     const result = await service.applyRestore(
       preview.operationId,
@@ -66,6 +80,10 @@ describe("database backup and restore", () => {
     expect(result.restarting).toBe(true);
     const restored = new CatalogDatabase(livePath);
     expect(restored.listLibraryRoots()[0]?.path).toBe("/restored/library");
+    expect(restored.listSavedLibraryFilters()[0]?.name).toBe("Restored albums");
+    expect(restored.getSyncProfile(profile.id)?.album_ids).toEqual(
+      [...restoredAlbumIds].sort(),
+    );
     restored.close();
     const rollback = new CatalogDatabase(result.rollbackBackupPath);
     expect(rollback.listLibraryRoots()[0]?.path).toBe("/current/library");
@@ -96,6 +114,17 @@ describe("database backup and restore", () => {
     await expect(
       service.applyRestore(preview.operationId, preview.confirmationToken),
     ).rejects.toThrow("Cancel active scans");
+    live.updateScanJob(activeJob.id, { state: "cancelled", finished: true });
+    const albumId = createAlbum(live, "active-sync");
+    const profile = live.createSyncProfile("Active DAP", directory, [albumId]);
+    const run = live.createSyncRun("plan", profile.id, directory);
+    await expect(
+      service.applyRestore(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("pending DAP sync");
+    live.updateSyncRun(run.id, { state: "recovery-required" });
+    await expect(
+      service.applyRestore(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("pending DAP sync");
     expect(live.connection.open).toBe(true);
     expect(live.listLibraryRoots()).toHaveLength(1);
     live.close();
@@ -113,7 +142,7 @@ function createAlbum(database: CatalogDatabase, suffix: string): string {
     durationSeconds: 1,
     tags: {
       title: "Track",
-      album: "Album",
+      album: `Album ${suffix}`,
       artist: "Artist",
       albumArtist: "Artist",
       trackNumber: 1,
@@ -122,7 +151,9 @@ function createAlbum(database: CatalogDatabase, suffix: string): string {
     },
     nativeTags: [],
   });
-  const album = database.listAlbums()[0];
+  const album = database
+    .listAlbums()
+    .find((candidate) => candidate.title === `Album ${suffix}`);
   if (!album) throw new Error("Fixture album missing");
   return album.id;
 }

@@ -21,6 +21,14 @@ export const api: OutgrooveApi = {
   applyDatabaseRestore: (request) =>
     ipcRenderer.invoke(channels.applyDatabaseRestore, request),
   queryLibrary: (request) => ipcRenderer.invoke(channels.queryLibrary, request),
+  listSavedLibraryFilters: () =>
+    ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
+  createSavedLibraryFilter: (request) =>
+    ipcRenderer.invoke(channels.createSavedLibraryFilter, request),
+  updateSavedLibraryFilter: (request) =>
+    ipcRenderer.invoke(channels.updateSavedLibraryFilter, request),
+  deleteSavedLibraryFilter: (request) =>
+    ipcRenderer.invoke(channels.deleteSavedLibraryFilter, request),
   previewAlbumTitleEdit: (request) =>
     ipcRenderer.invoke(channels.previewAlbumTitleEdit, request),
   applyAlbumTitleEdit: (request) =>
@@ -53,8 +61,21 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.applyTrackNumberSequence, request),
   chooseSyncTargetAndCreateProfile: (request) =>
     ipcRenderer.invoke(channels.createSyncProfile, request),
+  listSyncProfiles: () => ipcRenderer.invoke(channels.listSyncProfiles, {}),
+  updateSyncProfileAlbums: (request) =>
+    ipcRenderer.invoke(channels.updateSyncProfileAlbums, request),
+  renameSyncProfile: (request) =>
+    ipcRenderer.invoke(channels.renameSyncProfile, request),
+  listSyncHistory: (request) =>
+    ipcRenderer.invoke(channels.listSyncHistory, request),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),
   applySync: (request) => ipcRenderer.invoke(channels.applySync, request),
+  cancelSync: (request) => ipcRenderer.invoke(channels.cancelSync, request),
+  listSyncRecoveries: () => ipcRenderer.invoke(channels.listSyncRecoveries, {}),
+  previewSyncRecovery: (request) =>
+    ipcRenderer.invoke(channels.previewSyncRecovery, request),
+  applySyncRecovery: (request) =>
+    ipcRenderer.invoke(channels.applySyncRecovery, request),
   onJobProgress: (listener) => {
     const wrapped = (
       _event: Electron.IpcRendererEvent,

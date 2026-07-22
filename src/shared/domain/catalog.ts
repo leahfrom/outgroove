@@ -11,6 +11,7 @@ export interface NormalizedTags {
   readonly trackNumber: number | null;
   readonly discNumber: number | null;
   readonly year: string | null;
+  readonly genres?: readonly string[];
 }
 
 export interface ScannedAudioFile {
@@ -19,6 +20,11 @@ export interface ScannedAudioFile {
   readonly modifiedMs: number;
   readonly format: string;
   readonly durationSeconds: number | null;
+  readonly codec?: string | null;
+  readonly bitrate?: number | null;
+  readonly sampleRate?: number | null;
+  readonly bitDepth?: number | null;
+  readonly channels?: number | null;
   readonly tags: NormalizedTags;
   readonly nativeTags: readonly NativeTagValue[];
 }
@@ -39,6 +45,22 @@ export function normalizeTagText(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const normalized = value.normalize("NFC").replace(/\s+/gu, " ").trim();
   return normalized.length > 0 ? normalized : fallback;
+}
+
+export function normalizeGenres(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+
+  const genres = new Map<string, string>();
+  for (const candidate of value) {
+    const genre = normalizeTagText(candidate, "");
+    if (!genre) continue;
+    const key = genre.toLocaleLowerCase("en-US");
+    if (!genres.has(key)) genres.set(key, genre);
+  }
+
+  return [...genres.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, genre]) => genre);
 }
 
 export function normalizeNumber(value: unknown): number | null {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   albumGroupingKey,
   folderAlbumGroupingKey,
+  normalizeGenres,
   normalizeNumber,
   normalizeTagText,
   sortTracks,
@@ -26,6 +27,14 @@ describe("catalog normalization and grouping", () => {
     );
     expect(normalizeNumber("03/12")).toBe(3);
     expect(normalizeNumber("none")).toBeNull();
+  });
+
+  it("normalizes, deduplicates, and deterministically orders multi-value genres", () => {
+    expect(
+      normalizeGenres(["  Rock ", "ambient", "ROCK", "Cafe\u0301", "", null]),
+    ).toEqual(["ambient", "Café", "Rock"]);
+    expect(normalizeGenres(undefined)).toEqual([]);
+    expect(normalizeGenres("Rock")).toEqual([]);
   });
 
   it("groups by normalized album artist and album, then orders disc and track", () => {

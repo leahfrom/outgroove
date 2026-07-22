@@ -387,4 +387,73 @@ export const migrations: readonly { version: number; sql: string }[] = [
         ON library_roots(created_at) WHERE removed_at IS NULL;
     `,
   },
+  {
+    version: 14,
+    sql: `
+      ALTER TABLE audio_files ADD COLUMN codec TEXT;
+      ALTER TABLE audio_files ADD COLUMN bitrate REAL;
+      ALTER TABLE audio_files ADD COLUMN sample_rate INTEGER;
+      ALTER TABLE audio_files ADD COLUMN bit_depth INTEGER;
+      ALTER TABLE audio_files ADD COLUMN channels INTEGER;
+      ALTER TABLE audio_files ADD COLUMN technical_properties_version INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 15,
+    sql: `
+      CREATE TABLE saved_library_filters (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK (length(trim(name)) BETWEEN 1 AND 100),
+        definition_version INTEGER NOT NULL CHECK (definition_version = 1),
+        definition_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `,
+  },
+  {
+    version: 16,
+    sql: `
+      CREATE TABLE sync_profile_albums (
+        profile_id TEXT NOT NULL REFERENCES sync_profiles(id) ON DELETE CASCADE,
+        album_id TEXT NOT NULL REFERENCES albums(id),
+        PRIMARY KEY (profile_id, album_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX sync_profile_albums_album_id
+        ON sync_profile_albums(album_id, profile_id);
+      INSERT INTO sync_profile_albums (profile_id, album_id)
+        SELECT id, album_id FROM sync_profiles;
+    `,
+  },
+  {
+    version: 17,
+    sql: `
+      CREATE TABLE sync_runs (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL UNIQUE REFERENCES sync_profiles(id) ON DELETE CASCADE,
+        target_path TEXT NOT NULL,
+        phase TEXT NOT NULL CHECK (phase IN ('copying', 'finalizing')),
+        state TEXT NOT NULL CHECK (state IN ('applying', 'recovery-required', 'committed-cleanup')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX sync_runs_state_updated ON sync_runs(state, updated_at DESC);
+
+      CREATE TABLE sync_run_changes (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('copy', 'playlist', 'manifest')),
+        relative_destination TEXT NOT NULL,
+        temporary_relative TEXT NOT NULL,
+        rollback_relative TEXT,
+        expected_hash TEXT NOT NULL,
+        installed INTEGER NOT NULL DEFAULT 0 CHECK (installed IN (0, 1)),
+        UNIQUE (run_id, sequence),
+        UNIQUE (run_id, relative_destination)
+      );
+      CREATE INDEX sync_run_changes_run_sequence
+        ON sync_run_changes(run_id, sequence);
+    `,
+  },
 ];

@@ -4,14 +4,25 @@ import {
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
+  createSavedLibraryFilterRequestSchema,
+  deleteSavedLibraryFilterRequestSchema,
+  emptyRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  renameSyncProfileRequestSchema,
   scanRequestSchema,
+  syncProfileRequestSchema,
+  syncHistoryRequestSchema,
+  syncRecoveryApplyRequestSchema,
+  syncRecoveryPreviewRequestSchema,
+  syncCancelRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSyncProfileAlbumsRequestSchema,
+  updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
 
@@ -46,6 +57,110 @@ describe("validated IPC handlers", () => {
       ok: true,
       value: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
     });
+  });
+
+  it("rejects injected fields on read-only list requests", async () => {
+    const useCase = vi.fn(() => []);
+    const handler = createValidatedHandler(emptyRequestSchema, useCase);
+    await expect(handler({}, {})).resolves.toEqual({ ok: true, value: [] });
+    await expect(
+      handler({}, { targetPath: "/Volumes/untrusted" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(useCase).toHaveBeenCalledTimes(1);
+  });
+
+  it("validates bounded, distinct multi-album DAP selections without accepting target paths", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(syncProfileRequestSchema, useCase);
+    const albumIds = [
+      "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+    ];
+    await expect(handler({}, { name: "Road DAP", albumIds })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ name: "Road DAP", albumIds });
+    for (const request of [
+      { name: "Empty", albumIds: [] },
+      { name: "Duplicate", albumIds: [albumIds[0], albumIds[0]] },
+      { name: "Path injection", albumIds, targetPath: "/Volumes/DAP" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("validates DAP profile album revisions without accepting target changes", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      updateSyncProfileAlbumsRequestSchema,
+      useCase,
+    );
+    const id = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const albumIds = ["86fb71a8-9faf-49f9-ad60-39e5bb28c02d"];
+    await expect(handler({}, { id, albumIds })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ id, albumIds });
+    for (const request of [
+      { id, albumIds: [] },
+      { id, albumIds: [albumIds[0], albumIds[0]] },
+      { id, albumIds, targetPath: "/Volumes/DAP" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("validates bounded DAP profile names without accepting other changes", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      renameSyncProfileRequestSchema,
+      useCase,
+    );
+    const id = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { id, name: "  Pocket DAP  " })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(useCase).toHaveBeenCalledWith({ id, name: "Pocket DAP" });
+    for (const request of [
+      { id, name: "   " },
+      { id, name: "x".repeat(101) },
+      { id, name: "Pocket DAP", targetPath: "/Volumes/DAP" },
+      { id, name: "Pocket DAP", albumIds: [id] },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only a profile identity for bounded sync history", async () => {
+    const useCase = vi.fn(() => []);
+    const handler = createValidatedHandler(syncHistoryRequestSchema, useCase);
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { profileId })).resolves.toEqual({
+      ok: true,
+      value: [],
+    });
+    expect(useCase).toHaveBeenCalledWith({ profileId });
+    for (const request of [
+      { profileId: "not-a-uuid" },
+      { profileId, targetPath: "/Volumes/DAP" },
+      { profileId, limit: 10 },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
   });
 
   it("validates both stages of watched-root removal without accepting paths", async () => {
@@ -97,6 +212,73 @@ describe("validated IPC handlers", () => {
     expect(useCase).not.toHaveBeenCalled();
   });
 
+  it("accepts only a sync preview identity for cancellation", async () => {
+    const useCase = vi.fn(() => ({ accepted: true }));
+    const handler = createValidatedHandler(syncCancelRequestSchema, useCase);
+    const planId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { planId })).resolves.toMatchObject({
+      ok: true,
+      value: { accepted: true },
+    });
+    expect(useCase).toHaveBeenCalledWith({ planId });
+    for (const request of [
+      { planId: "not-a-uuid" },
+      { planId, targetPath: "/Volumes/DAP" },
+      { planId, deletePartialFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("requires an exact interrupted-sync recovery confirmation", async () => {
+    const useCase = vi.fn(() => ({ complete: true }));
+    const handler = createValidatedHandler(
+      syncRecoveryApplyRequestSchema,
+      useCase,
+    );
+    const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const confirmationToken = "sync-recovery-confirmation-token-long-enough";
+    await expect(
+      handler({}, { runId, confirmationToken }),
+    ).resolves.toMatchObject({ ok: true, value: { complete: true } });
+    expect(useCase).toHaveBeenCalledWith({ runId, confirmationToken });
+    for (const request of [
+      { runId, confirmationToken: "short" },
+      { runId: "not-a-uuid", confirmationToken },
+      { runId, confirmationToken, targetPath: "/Volumes/DAP" },
+      { runId, confirmationToken, deleteUnknownFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only a recovery run identifier for read-only inspection", async () => {
+    const useCase = vi.fn(() => ({ actions: [] }));
+    const handler = createValidatedHandler(
+      syncRecoveryPreviewRequestSchema,
+      useCase,
+    );
+    const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { runId })).resolves.toMatchObject({
+      ok: true,
+      value: { actions: [] },
+    });
+    expect(useCase).toHaveBeenCalledWith({ runId });
+    for (const request of [
+      { runId: "not-a-uuid" },
+      { runId, targetPath: "/Volumes/DAP" },
+      { runId, deleteUnknownFiles: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
   it("validates bounded Library views and rejects undeclared filters", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(libraryQueryRequestSchema, useCase);
@@ -146,6 +328,46 @@ describe("validated IPC handlers", () => {
       limit: 20,
       folderId: "/library/album",
     });
+    await expect(
+      handler({}, { query: "", view: "genres", offset: 0, limit: 20 }),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "genres",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "tracks",
+          offset: 0,
+          limit: 20,
+          genre: "Ambient",
+          missingGenre: true,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
       handler(
         {},
@@ -320,6 +542,77 @@ describe("validated IPC handlers", () => {
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+  });
+
+  it("validates saved Library filter definitions and deletion identities", async () => {
+    const create = vi.fn();
+    const createHandler = createValidatedHandler(
+      createSavedLibraryFilterRequestSchema,
+      create,
+    );
+    const valid = {
+      name: "Ambient without genre",
+      definition: {
+        query: "live",
+        view: "tracks",
+        genre: { name: "No genre tag", missing: true },
+      },
+    };
+    await expect(createHandler({}, valid)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(create).toHaveBeenCalledWith(valid);
+    for (const definition of [
+      { query: "", view: "albums", format: "FLAC" },
+      {
+        query: "",
+        view: "tracks",
+        format: "FLAC",
+        genre: { name: "Rock", missing: false },
+      },
+      { query: "", view: "albums", arbitrarySql: "DROP TABLE albums" },
+    ])
+      await expect(
+        createHandler({}, { name: "Rejected", definition }),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const update = vi.fn();
+    const updateHandler = createValidatedHandler(
+      updateSavedLibraryFilterRequestSchema,
+      update,
+    );
+    const updateRequest = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      ...valid,
+    };
+    await expect(updateHandler({}, updateRequest)).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(update).toHaveBeenCalledWith(updateRequest);
+    await expect(
+      updateHandler({}, { ...updateRequest, id: "not-a-uuid", path: "/tmp" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+
+    const remove = vi.fn();
+    const removeHandler = createValidatedHandler(
+      deleteSavedLibraryFilterRequestSchema,
+      remove,
+    );
+    await expect(
+      removeHandler({}, { id: "not-a-uuid", path: "/fixture" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("rejects malformed database restore confirmations", async () => {

@@ -158,7 +158,7 @@ async function run(targetArgument: string): Promise<void> {
     const profile = database.createSyncProfile(
       "Disposable exFAT probe",
       syncTarget,
-      album.id,
+      [album.id],
     );
     const unknown = join(syncTarget, "user-owned-probe.txt");
     await writeFile(unknown, "must remain untouched", { flag: "wx" });

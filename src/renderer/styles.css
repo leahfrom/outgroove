@@ -121,6 +121,40 @@ h1 {
   color: #526159;
   overflow-wrap: anywhere;
 }
+.saved-filters {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #aab5ad;
+  border-radius: 9px;
+  background: white;
+}
+.saved-filters .section-heading {
+  align-items: end;
+}
+.saved-filters ul {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.saved-filters li {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid #d8ddd8;
+}
+.saved-filters li div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.saved-filters li span {
+  color: #526159;
+  overflow-wrap: anywhere;
+}
 .empty {
   background: white;
   border: 1px solid #d8ddd8;
@@ -144,6 +178,7 @@ aside,
 .detail,
 .errors,
 .artists,
+.genres,
 .formats,
 .folders,
 .tracks {
@@ -164,6 +199,7 @@ aside,
   max-width: 320px;
 }
 .artists ul,
+.genres ul,
 .formats ul,
 .folders ul {
   display: grid;
@@ -174,6 +210,7 @@ aside,
   padding: 0;
 }
 .artists article,
+.genres article,
 .formats article,
 .folders article {
   border: 1px solid #c5cec7;
@@ -181,6 +218,7 @@ aside,
   padding: 1rem;
 }
 .artists article p,
+.genres article p,
 .formats article p,
 .folders article p {
   color: #526159;

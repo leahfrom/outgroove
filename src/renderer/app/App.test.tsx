@@ -3,7 +3,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { OutgrooveApi, ScanJobDto } from "../../shared/contracts/api";
+import type {
+  OutgrooveApi,
+  SavedLibraryFilterDto,
+  ScanJobDto,
+} from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import { App } from "./App";
 
@@ -19,6 +23,11 @@ const album: CatalogAlbum = {
       modifiedMs: 1,
       format: "MPEG",
       durationSeconds: 1,
+      codec: "MPEG 1 Layer 3",
+      bitrate: 128_000,
+      sampleRate: 44_100,
+      bitDepth: null,
+      channels: 1,
       tags: {
         title: "Track",
         album: "Fixture Album",
@@ -32,6 +41,25 @@ const album: CatalogAlbum = {
       scanError: null,
     },
   ],
+};
+
+const secondAlbum: CatalogAlbum = {
+  ...album,
+  id: "adb9be31-d450-45f9-99de-c9c6143988ad",
+  title: "Second Album",
+  albumArtist: "Other Artist",
+  tracks: album.tracks.map((track) => ({
+    ...track,
+    id: "1f5053fe-7aab-4ca8-861b-4ed97bc69f91",
+    path: "/fixture/second.mp3",
+    tags: {
+      ...track.tags,
+      title: "Other Track",
+      album: "Second Album",
+      artist: "Other Artist",
+      albumArtist: "Other Artist",
+    },
+  })),
 };
 
 function api(applyVerified: boolean): OutgrooveApi {
@@ -48,6 +76,12 @@ function api(applyVerified: boolean): OutgrooveApi {
     createDatabaseBackup: vi.fn(),
     chooseDatabaseRestore: vi.fn(),
     applyDatabaseRestore: vi.fn(),
+    listSavedLibraryFilters: vi.fn(() =>
+      Promise.resolve({ ok: true, value: [] }),
+    ),
+    createSavedLibraryFilter: vi.fn(),
+    updateSavedLibraryFilter: vi.fn(),
+    deleteSavedLibraryFilter: vi.fn(),
     queryLibrary: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -146,8 +180,16 @@ function api(applyVerified: boolean): OutgrooveApi {
     previewTrackNumberSequence: vi.fn(),
     applyTrackNumberSequence: vi.fn(),
     chooseSyncTargetAndCreateProfile: vi.fn(),
+    listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    updateSyncProfileAlbums: vi.fn(),
+    renameSyncProfile: vi.fn(),
+    listSyncHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
+    cancelSync: vi.fn(),
+    listSyncRecoveries: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    previewSyncRecovery: vi.fn(),
+    applySyncRecovery: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
@@ -156,6 +198,31 @@ function api(applyVerified: boolean): OutgrooveApi {
 describe("tag edit UI safety states", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("shows complete technical details with keyboard-accessible disclosure", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    const trackLabel = screen.getByText("1.1 Track");
+    const details = trackLabel.closest("details");
+    const summary = trackLabel.closest("summary");
+    if (!details || !summary) throw new Error("Track disclosure missing");
+    summary.focus();
+    expect(summary).toHaveFocus();
+    await user.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(within(details).getByText("128 kbps")).toBeVisible();
+    expect(within(details).getByText("44.1 kHz")).toBeVisible();
+    expect(within(details).getByText("Mono (1 channel)")).toBeVisible();
+    expect(within(details).getByText("100 B")).toBeVisible();
+    expect(
+      within(details).getByText("Bit depth").nextElementSibling,
+    ).toHaveTextContent("Unknown");
   });
 
   it("shows per-file before/after preview before exposing explicit confirmation", async () => {
@@ -1693,6 +1760,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -1758,6 +1831,315 @@ describe("tag edit UI safety states", () => {
     );
   });
 
+  it("saves, keyboard-opens, and deletes local Library filters", async () => {
+    const mockApi = api(true);
+    const missingId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const createdId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    let saved: SavedLibraryFilterDto[] = [
+      {
+        id: missingId,
+        name: "Missing genres",
+        definition: {
+          query: "",
+          view: "tracks",
+          genre: { name: "No genre tag", missing: true },
+        },
+        createdAt: "2026-07-22T00:00:00.000Z",
+      },
+    ];
+    vi.spyOn(mockApi, "listSavedLibraryFilters").mockImplementation(() =>
+      Promise.resolve({ ok: true, value: saved }),
+    );
+    const create = vi
+      .spyOn(mockApi, "createSavedLibraryFilter")
+      .mockImplementation((request) => {
+        const created = {
+          id: createdId,
+          name: request.name,
+          definition: request.definition,
+          createdAt: "2026-07-22T00:01:00.000Z",
+        };
+        saved = [...saved, created];
+        return Promise.resolve({ ok: true, value: created });
+      });
+    const update = vi
+      .spyOn(mockApi, "updateSavedLibraryFilter")
+      .mockImplementation((request) => {
+        const current = saved.find((filter) => filter.id === request.id);
+        if (!current) throw new Error("Saved filter fixture missing");
+        const updated = {
+          ...current,
+          name: request.name,
+          definition: request.definition,
+        };
+        saved = saved.map((filter) =>
+          filter.id === request.id ? updated : filter,
+        );
+        return Promise.resolve({ ok: true, value: updated });
+      });
+    const remove = vi
+      .spyOn(mockApi, "deleteSavedLibraryFilter")
+      .mockImplementation(({ id }) => {
+        saved = saved.filter((filter) => filter.id !== id);
+        return Promise.resolve({ ok: true, value: { id } });
+      });
+    const queryLibrary = vi.spyOn(mockApi, "queryLibrary");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const open = await screen.findByRole("button", {
+      name: "Open Missing genres",
+    });
+    open.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        missingGenre: true,
+      }),
+    );
+    expect(
+      screen.getByText("Opened saved Library filter “Missing genres”."),
+    ).toBeVisible();
+
+    const rename = screen.getByLabelText("Name for Missing genres");
+    await user.clear(rename);
+    await user.type(rename, "Needs genres{Enter}");
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        id: missingId,
+        name: "Needs genres",
+        definition: {
+          query: "",
+          view: "tracks",
+          genre: { name: "No genre tag", missing: true },
+        },
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Open Needs genres" }),
+    ).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText("View"), "formats");
+    await user.type(screen.getByLabelText("Search Library"), "FLAC");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.type(screen.getByLabelText("Filter name"), "Codec view");
+    await user.click(
+      screen.getByRole("button", { name: "Save current filter" }),
+    );
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledWith({
+        name: "Codec view",
+        definition: { query: "FLAC", view: "formats" },
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Open Codec view" }),
+    ).toBeVisible();
+
+    await user.clear(screen.getByLabelText("Search Library"));
+    await user.type(screen.getByLabelText("Search Library"), "lossless");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Update Needs genres to current filter",
+      }),
+    );
+    await waitFor(() =>
+      expect(update).toHaveBeenLastCalledWith({
+        id: missingId,
+        name: "Needs genres",
+        definition: { query: "lossless", view: "formats" },
+      }),
+    );
+    expect(
+      screen.getByText("Updated saved Library filter “Needs genres”."),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Delete Codec view" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith({ id: createdId }));
+    expect(
+      screen.queryByRole("button", { name: "Open Codec view" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a saved-filter name editable after a recoverable create failure", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "createSavedLibraryFilter").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "A saved Library filter named “Existing” already exists.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const name = screen.getByLabelText("Filter name");
+    await user.type(name, "Existing");
+    await user.click(
+      screen.getByRole("button", { name: "Save current filter" }),
+    );
+    expect(
+      await screen.findByText(
+        "A saved Library filter named “Existing” already exists.",
+      ),
+    ).toBeVisible();
+    expect(name).toHaveValue("Existing");
+    expect(
+      screen.getByRole("button", { name: "Save current filter" }),
+    ).toBeEnabled();
+  });
+
+  it("keeps a saved-filter rename editable after a recoverable update failure", async () => {
+    const mockApi = api(true);
+    const saved: SavedLibraryFilterDto = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      name: "Existing",
+      definition: { query: "", view: "albums" },
+      createdAt: "2026-07-22T00:00:00.000Z",
+    };
+    vi.spyOn(mockApi, "listSavedLibraryFilters").mockResolvedValue({
+      ok: true,
+      value: [saved],
+    });
+    vi.spyOn(mockApi, "updateSavedLibraryFilter").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "A saved Library filter named “Taken” already exists.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const name = await screen.findByLabelText("Name for Existing");
+    await user.clear(name);
+    await user.type(name, "Taken{Enter}");
+    expect(
+      await screen.findByText(
+        "A saved Library filter named “Taken” already exists.",
+      ),
+    ).toBeVisible();
+    expect(name).toHaveValue("Taken");
+    expect(
+      screen.getByRole("button", { name: "Rename Existing" }),
+    ).toBeEnabled();
+  });
+
+  it("browses genre findings and routes keyboard actions to exact track filters", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists: [],
+            genres:
+              request.view === "genres"
+                ? [
+                    { name: "Ambient", trackCount: 2, missing: false },
+                    { name: "No genre tag", trackCount: 1, missing: true },
+                  ]
+                : [],
+            formats: [],
+            folders: [],
+            tracks:
+              request.view === "tracks"
+                ? [
+                    {
+                      id: firstTrack.id,
+                      albumId: album.id,
+                      title: firstTrack.tags.title,
+                      artist: firstTrack.tags.artist,
+                      albumTitle: album.title,
+                      albumArtist: album.albumArtist,
+                      trackNumber: firstTrack.tags.trackNumber,
+                      discNumber: firstTrack.tags.discNumber,
+                      format: firstTrack.format,
+                      durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
+                      path: firstTrack.path,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "genres" ? 2 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "genres");
+    expect(await screen.findByText("Status: 2 tracks")).toBeVisible();
+    expect(screen.getByText("Status: 1 track")).toBeVisible();
+    const ambientAction = screen.getByRole("button", {
+      name: "Browse Ambient tracks",
+    });
+    ambientAction.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        genre: "Ambient",
+      }),
+    );
+    expect(screen.getByText(firstTrack.path)).toBeVisible();
+    expect(screen.getByText("1 track with genre “Ambient”")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Show all genres" }));
+    await user.selectOptions(screen.getByLabelText("View"), "genres");
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Browse tracks with no genre tag",
+      }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "tracks",
+        offset: 0,
+        limit: 20,
+        missingGenre: true,
+      }),
+    );
+  });
+
   it("browses folders and opens an exact removable track filter", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1798,6 +2180,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -1897,6 +2285,12 @@ describe("tag edit UI safety states", () => {
                       discNumber: firstTrack.tags.discNumber,
                       format: firstTrack.format,
                       durationSeconds: firstTrack.durationSeconds,
+                      codec: firstTrack.codec ?? null,
+                      bitrate: firstTrack.bitrate ?? null,
+                      sampleRate: firstTrack.sampleRate ?? null,
+                      bitDepth: firstTrack.bitDepth ?? null,
+                      channels: firstTrack.channels ?? null,
+                      size: firstTrack.size,
                       path: firstTrack.path,
                     },
                   ]
@@ -2237,6 +2631,633 @@ describe("tag edit UI safety states", () => {
     });
   });
 
+  it("selects multiple albums with the keyboard and requires a sync preview before copying", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, secondAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const chooseSyncTargetAndCreateProfile = vi
+      .spyOn(mockApi, "chooseSyncTargetAndCreateProfile")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          id: profileId,
+          name: "Outgroove 2-album DAP",
+          targetPath: "/fixture/dap",
+          albumIds: [album.id, secondAlbum.id],
+        },
+      });
+    const listSyncHistory = vi
+      .spyOn(mockApi, "listSyncHistory")
+      .mockResolvedValue({ ok: true, value: [] });
+    const plan = {
+      id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+      profileId,
+      targetPath: "/fixture/dap",
+      confirmationToken: "sync-confirmation-token-long-enough",
+      copies: [album, secondAlbum].map((item) => ({
+        sourceFileId: item.tracks[0]?.id ?? item.id,
+        sourcePath: item.tracks[0]?.path ?? `/fixture/${item.id}.mp3`,
+        relativeDestination: `${item.albumArtist}/${item.title}/01-01 Track.mp3`,
+        size: 100,
+        signature: "100:1",
+      })),
+      unchanged: [],
+      conflicts: [],
+      errors: [],
+      requiredBytes: 200,
+    };
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({ ok: true, value: plan });
+    const applySync = vi.spyOn(mockApi, "applySync").mockResolvedValue({
+      ok: true,
+      value: {
+        outcome: "completed",
+        copied: 2,
+        rolledBack: 0,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: [],
+      },
+    });
+    const cancelSync = vi.spyOn(mockApi, "cancelSync").mockResolvedValue({
+      ok: true,
+      value: { planId: plan.id, accepted: true, state: "cancelling" },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const addFirst = await screen.findByRole("button", {
+      name: "Add Fixture Album to DAP selection",
+    });
+    addFirst.focus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: /^Second Album/u }));
+    const addSecond = screen.getByRole("button", {
+      name: "Add Second Album to DAP selection",
+    });
+    addSecond.focus();
+    await user.keyboard("{Enter}");
+    const selection = screen.getByRole("list", {
+      name: "Albums selected for DAP sync",
+    });
+    expect(
+      within(selection).getByText("Fixture Artist — Fixture Album"),
+    ).toBeVisible();
+    expect(
+      within(selection).getByText("Other Artist — Second Album"),
+    ).toBeVisible();
+
+    const chooseTarget = screen.getByRole("button", {
+      name: "Choose DAP target for selected albums",
+    });
+    chooseTarget.focus();
+    await user.keyboard("{Enter}");
+    expect(chooseSyncTargetAndCreateProfile).toHaveBeenCalledWith({
+      name: "Outgroove 2-album DAP",
+      albumIds: [album.id, secondAlbum.id],
+    });
+    expect(
+      await screen.findByText(
+        "No successful sync runs have been recorded yet.",
+      ),
+    ).toBeVisible();
+    expect(applySync).not.toHaveBeenCalled();
+
+    const previewButton = await screen.findByRole("button", {
+      name: "Preview sync plan",
+    });
+    previewButton.focus();
+    await user.keyboard("{Enter}");
+    const preview = await screen.findByLabelText("Sync confirmation");
+    expect(preview).toHaveTextContent("Fixture Album");
+    expect(preview).toHaveTextContent("Second Album");
+    expect(applySync).not.toHaveBeenCalled();
+    const confirm = within(preview).getByRole("button", {
+      name: "Confirm and apply copy plan",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applySync).toHaveBeenCalledWith({
+      planId: plan.id,
+      confirmationToken: plan.confirmationToken,
+    });
+    await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
+    expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
+    expect(listSyncHistory).toHaveBeenNthCalledWith(2, { profileId });
+
+    let resolveCancelledApply: (
+      result: Awaited<ReturnType<OutgrooveApi["applySync"]>>,
+    ) => void = () => undefined;
+    applySync.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCancelledApply = resolve;
+        }),
+    );
+    const retryConfirm = within(
+      screen.getByLabelText("Sync confirmation"),
+    ).getByRole("button", { name: "Confirm and apply copy plan" });
+    await waitFor(() => expect(retryConfirm).toBeEnabled());
+    retryConfirm.focus();
+    await user.keyboard("{Enter}");
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel active sync",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(cancelSync).toHaveBeenCalledWith({ planId: plan.id });
+    expect(cancel).toBeDisabled();
+    expect(screen.getByText("Status: Cancelling safely")).toBeVisible();
+    resolveCancelledApply({
+      ok: true,
+      value: {
+        outcome: "cancelled",
+        copied: 1,
+        rolledBack: 1,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: [],
+      },
+    });
+    expect(
+      await screen.findByText(/Sync cancelled safely after 1 completed copy/u),
+    ).toHaveTextContent("No new manifest was committed");
+    expect(listSyncHistory).toHaveBeenCalledTimes(2);
+    expect(retryConfirm).toBeEnabled();
+  });
+
+  it("shows restart-safe sync recovery actions and confirms them with the keyboard", async () => {
+    const mockApi = api(true);
+    const runId = "a0be4702-0050-4fca-b6df-cbba6529b5f9";
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const confirmationToken = "sync-recovery-confirmation-token-long-enough";
+    const listSyncRecoveries = vi
+      .spyOn(mockApi, "listSyncRecoveries")
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [
+          {
+            runId,
+            profileId,
+            profileName: "Road DAP",
+            targetPath: "/fixture/dap",
+            interruptedAt: "2026-07-22T10:00:00.000Z",
+            phase: "copying",
+            mode: "rollback",
+          },
+        ],
+      })
+      .mockResolvedValue({ ok: true, value: [] });
+    const previewSyncRecovery = vi
+      .spyOn(mockApi, "previewSyncRecovery")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          runId,
+          profileId,
+          profileName: "Road DAP",
+          targetPath: "/fixture/dap",
+          interruptedAt: "2026-07-22T10:00:00.000Z",
+          phase: "copying",
+          mode: "rollback",
+          actions: [
+            {
+              path: "/fixture/dap/Artist/Album/01 Track.flac",
+              action: "remove",
+              explanation: "Remove the uncommitted Outgroove copy.",
+            },
+          ],
+          warnings: [],
+          canRecover: true,
+          confirmationToken,
+        },
+      });
+    const applySyncRecovery = vi
+      .spyOn(mockApi, "applySyncRecovery")
+      .mockResolvedValue({
+        ok: true,
+        value: { runId, recovered: 1, errors: [], complete: true },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const recoveries = await screen.findByRole("list", {
+      name: "Interrupted sync recoveries",
+    });
+    const review = within(recoveries).getByRole("button", {
+      name: "Review recovery for Road DAP",
+    });
+    review.focus();
+    await user.keyboard("{Enter}");
+    expect(previewSyncRecovery).toHaveBeenCalledWith({ runId });
+    expect(recoveries).toHaveTextContent(
+      "Remove: /fixture/dap/Artist/Album/01 Track.flac",
+    );
+    const confirm = within(recoveries).getByRole("button", {
+      name: "Confirm recovery for Road DAP",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applySyncRecovery).toHaveBeenCalledWith({
+      runId,
+      confirmationToken,
+    });
+    expect(
+      await screen.findByText(/Interrupted sync recovery complete/u),
+    ).toHaveTextContent("1 change restored or removed");
+    await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(2));
+  });
+
+  it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    vi.spyOn(mockApi, "listSyncProfiles").mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: profileId,
+          name: "Road DAP",
+          targetPath: "/fixture/dap",
+          albumIds: [album.id, secondAlbum.id],
+          albums: [
+            {
+              id: album.id,
+              title: album.title,
+              albumArtist: album.albumArtist,
+            },
+            {
+              id: secondAlbum.id,
+              title: secondAlbum.title,
+              albumArtist: secondAlbum.albumArtist,
+            },
+          ],
+          createdAt: "2026-07-22T10:00:00.000Z",
+        },
+      ],
+    });
+    const listSyncHistory = vi
+      .spyOn(mockApi, "listSyncHistory")
+      .mockResolvedValue({
+        ok: true,
+        value: [
+          {
+            id: "b1a3e2cd-2d58-4b53-a414-07d34b7da3a7",
+            profileId,
+            targetPath: "/fixture/dap",
+            completedAt: "2026-07-22T10:00:00.000Z",
+            entryCount: 2,
+          },
+          {
+            id: "986176c9-9e80-460c-a2a0-ab7dcc3e7834",
+            profileId,
+            targetPath: "/fixture/older-dap",
+            completedAt: "2026-07-21T09:00:00.000Z",
+            entryCount: 1,
+          },
+        ],
+      });
+    const planSync = vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [
+          {
+            sourceFileId: album.tracks[0]?.id ?? album.id,
+            sourcePath: album.tracks[0]?.path ?? "/fixture/track.mp3",
+            relativeDestination: "Fixture Artist/Fixture Album/01-01 Track.mp3",
+            size: 100,
+            signature: "100:1",
+          },
+        ],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 100,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const profiles = await screen.findByRole("list", {
+      name: "Saved DAP profiles",
+    });
+    expect(profiles).toHaveTextContent("/fixture/dap");
+    expect(profiles).toHaveTextContent("Fixture Artist — Fixture Album");
+    expect(profiles).toHaveTextContent("Other Artist — Second Album");
+    const open = within(profiles).getByRole("button", {
+      name: "Open DAP profile Road DAP",
+    });
+    open.focus();
+    await user.keyboard("{Enter}");
+    expect(open).toHaveAttribute("aria-pressed", "true");
+    expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
+    const history = await screen.findByRole("list", {
+      name: "Successful sync history for Road DAP",
+    });
+    expect(history).toHaveTextContent("2 files");
+    expect(history).toHaveTextContent("1 file");
+    expect(history).toHaveTextContent("/fixture/dap");
+    expect(history).toHaveTextContent("/fixture/older-dap");
+    expect(
+      within(history).getByText(
+        (_content, element) =>
+          element?.matches('time[datetime="2026-07-22T10:00:00.000Z"]') ??
+          false,
+      ),
+    ).toBeVisible();
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(planSync).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+
+    const preview = screen.getByRole("button", {
+      name: "Preview sync plan",
+    });
+    preview.focus();
+    await user.keyboard("{Enter}");
+    expect(planSync).toHaveBeenCalledWith({ profileId });
+    expect(await screen.findByLabelText("Sync confirmation")).toHaveTextContent(
+      "Fixture Album",
+    );
+    expect(applySync).not.toHaveBeenCalled();
+  });
+
+  it("renames a saved DAP profile with the keyboard without changing its current preview", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const initialProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    const renamedProfile = { ...initialProfile, name: "Pocket DAP" };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [initialProfile] })
+      .mockResolvedValue({ ok: true, value: [renamedProfile] });
+    const renameSyncProfile = vi
+      .spyOn(mockApi, "renameSyncProfile")
+      .mockResolvedValue({ ok: true, value: renamedProfile });
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 0,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const updateAlbums = vi.spyOn(mockApi, "updateSyncProfileAlbums");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open DAP profile Road DAP",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
+    const preview = await screen.findByLabelText("Sync confirmation");
+    const rename = screen.getByRole("button", {
+      name: "Rename DAP profile Road DAP",
+    });
+    rename.focus();
+    await user.keyboard("{Enter}");
+    const input = screen.getByRole("textbox", {
+      name: "New name for Road DAP",
+    });
+    expect(input).toHaveFocus();
+    await user.clear(input);
+    await user.type(input, "Pocket DAP{Enter}");
+
+    await waitFor(() =>
+      expect(renameSyncProfile).toHaveBeenCalledWith({
+        id: profileId,
+        name: "Pocket DAP",
+      }),
+    );
+    expect(preview).toBeVisible();
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(updateAlbums).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+    const profiles = screen.getByRole("list", { name: "Saved DAP profiles" });
+    expect(profiles).toHaveTextContent("Pocket DAP");
+    expect(profiles).toHaveTextContent("/fixture/dap");
+    expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
+      "Pocket DAP",
+    );
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Rename DAP profile Pocket DAP",
+      }),
+    );
+    await user.clear(
+      screen.getByRole("textbox", { name: "New name for Pocket DAP" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "New name for Pocket DAP" }),
+      "Discarded name",
+    );
+    const cancel = screen.getByRole("button", {
+      name: "Cancel DAP profile rename",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(renameSyncProfile).toHaveBeenCalledTimes(1);
+    expect(profiles).toHaveTextContent("Pocket DAP");
+    expect(profiles).not.toHaveTextContent("Discarded name");
+  });
+
+  it("revises a saved profile selection without reselecting its target and requires a fresh preview", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, secondAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const initialProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    const updatedProfile = {
+      ...initialProfile,
+      albumIds: [album.id, secondAlbum.id],
+      albums: [
+        ...initialProfile.albums,
+        {
+          id: secondAlbum.id,
+          title: secondAlbum.title,
+          albumArtist: secondAlbum.albumArtist,
+        },
+      ],
+    };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [initialProfile] })
+      .mockResolvedValue({ ok: true, value: [updatedProfile] });
+    const updateSyncProfileAlbums = vi
+      .spyOn(mockApi, "updateSyncProfileAlbums")
+      .mockResolvedValue({ ok: true, value: updatedProfile });
+    vi.spyOn(mockApi, "planSync").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        profileId,
+        targetPath: "/fixture/dap",
+        confirmationToken: "sync-confirmation-token-long-enough",
+        copies: [],
+        unchanged: [],
+        conflicts: [],
+        errors: [],
+        requiredBytes: 0,
+      },
+    });
+    const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const open = await screen.findByRole("button", {
+      name: "Open DAP profile Road DAP",
+    });
+    await user.click(open);
+    await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
+    expect(await screen.findByLabelText("Sync confirmation")).toBeVisible();
+    const edit = screen.getByRole("button", {
+      name: "Edit albums in DAP profile Road DAP",
+    });
+    edit.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.queryByLabelText("Sync confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Status: Album-selection changes are not saved yet."),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /^Second Album/u }));
+    const addSecond = screen.getByRole("button", {
+      name: "Add Second Album to DAP selection",
+    });
+    addSecond.focus();
+    await user.keyboard("{Enter}");
+    const save = screen.getByRole("button", {
+      name: "Save album selection for Road DAP",
+    });
+    save.focus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() =>
+      expect(updateSyncProfileAlbums).toHaveBeenCalledWith({
+        id: profileId,
+        albumIds: [album.id, secondAlbum.id],
+      }),
+    );
+    expect(chooseTarget).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+    expect(
+      screen.queryByLabelText("Sync confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Preview sync plan" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("list", { name: "Saved DAP profiles" }),
+    ).toHaveTextContent("Other Artist — Second Album");
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Edit albums in DAP profile Road DAP",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Remove Second Album from DAP selection",
+      }),
+    );
+    const cancel = screen.getByRole("button", {
+      name: "Cancel album selection changes",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(updateSyncProfileAlbums).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("list", { name: "Saved DAP profiles" }),
+    ).toHaveTextContent("Other Artist — Second Album");
+  });
+
   it("shows a database restore preview before explicit confirmation", async () => {
     const mockApi = api(true);
     const chooseDatabaseRestore = vi.fn(() =>
@@ -2252,6 +3273,7 @@ describe("tag edit UI safety states", () => {
             albums: 30,
             tracks: 300,
             syncProfiles: 1,
+            savedLibraryFilters: 2,
           },
         },
       }),
@@ -2280,6 +3302,9 @@ describe("tag edit UI safety states", () => {
     );
     expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
     expect(preview).toHaveTextContent("300");
+    expect(
+      within(preview).getByText("Saved Library filters").nextElementSibling,
+    ).toHaveTextContent("2");
     await user.click(
       screen.getByRole("button", { name: "Confirm restore and restart" }),
     );

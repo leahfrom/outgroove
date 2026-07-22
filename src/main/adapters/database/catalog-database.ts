@@ -4,19 +4,27 @@ import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 
-import type {
-  LibraryFormatDto,
-  LibraryFolderDto,
-  LibraryPageDto,
-  LibraryTrackDto,
-  LibraryRootDto,
-  LibraryRootRemovalPreviewDto,
-  LibraryRootRemovalResultDto,
-  ScanErrorDto,
-  ScanJobDto,
-  ScanJobState,
-  ScanResultDto,
-  TagEditHistoryItemDto,
+import {
+  createSavedLibraryFilterRequestSchema,
+  savedLibraryFilterDefinitionSchema,
+  updateSavedLibraryFilterRequestSchema,
+  type SavedLibraryFilterDefinition,
+  type SavedLibraryFilterDto,
+  type LibraryFormatDto,
+  type LibraryFolderDto,
+  type LibraryGenreDto,
+  type LibraryPageDto,
+  type LibraryTrackDto,
+  type LibraryRootDto,
+  type LibraryRootRemovalPreviewDto,
+  type LibraryRootRemovalResultDto,
+  type ScanErrorDto,
+  type ScanJobDto,
+  type ScanJobState,
+  type ScanResultDto,
+  type SyncHistoryItemDto,
+  type SyncProfileDto,
+  type TagEditHistoryItemDto,
 } from "../../../shared/contracts/api";
 import type {
   CatalogAlbum,
@@ -41,10 +49,17 @@ interface AudioFileRow {
   signature: string;
   format: string | null;
   duration_seconds: number | null;
+  codec: string | null;
+  bitrate: number | null;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  channels: number | null;
+  technical_properties_version: number;
   normalized_tags_json: string | null;
   native_tags_json: string | null;
   scan_state: "ok" | "error" | "missing";
   scan_error: string | null;
+  genres_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -59,6 +74,30 @@ interface ScanJobRow {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+}
+
+export interface SyncRunChangeRecord {
+  readonly id: string;
+  readonly sequence: number;
+  readonly kind: "copy" | "playlist" | "manifest";
+  readonly relativeDestination: string;
+  readonly temporaryRelative: string;
+  readonly rollbackRelative: string | null;
+  readonly expectedHash: string;
+  readonly installed: boolean;
+}
+
+export interface SyncRunRecord {
+  readonly id: string;
+  readonly planId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly phase: "copying" | "finalizing";
+  readonly state: "applying" | "recovery-required" | "committed-cleanup";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly changes: readonly SyncRunChangeRecord[];
 }
 
 interface ScanStatements {
@@ -218,7 +257,8 @@ export class CatalogDatabase {
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
-        "SELECT * FROM audio_files WHERE path_key = ?",
+        `SELECT *, json_type(normalized_tags_json, '$.genres') AS genres_type
+         FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
         `UPDATE audio_files SET scan_state='ok', scan_error=NULL, scanned_at=?
@@ -246,10 +286,17 @@ export class CatalogDatabase {
       ),
       upsertAudioFile: this.connection.prepare(
         `INSERT INTO audio_files
-         (id, root_id, path, path_key, size, modified_ms, signature, format, duration_seconds, normalized_tags_json, native_tags_json, scan_state, scan_error, scanned_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ok', NULL, ?)
+         (id, root_id, path, path_key, size, modified_ms, signature, format,
+          duration_seconds, codec, bitrate, sample_rate, bit_depth, channels,
+          technical_properties_version, normalized_tags_json, native_tags_json,
+          scan_state, scan_error, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'ok', NULL, ?)
          ON CONFLICT(id) DO UPDATE SET path=excluded.path, path_key=excluded.path_key, size=excluded.size, modified_ms=excluded.modified_ms,
-           signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds, normalized_tags_json=excluded.normalized_tags_json,
+           signature=excluded.signature, format=excluded.format, duration_seconds=excluded.duration_seconds,
+           codec=excluded.codec, bitrate=excluded.bitrate, sample_rate=excluded.sample_rate,
+           bit_depth=excluded.bit_depth, channels=excluded.channels,
+           technical_properties_version=excluded.technical_properties_version,
+           normalized_tags_json=excluded.normalized_tags_json,
            native_tags_json=excluded.native_tags_json, scan_state='ok', scan_error=NULL, scanned_at=excluded.scanned_at`,
       ),
       upsertTrack: this.connection.prepare(
@@ -399,6 +446,15 @@ export class CatalogDatabase {
             .run(canonical, duplicate);
           this.connection
             .prepare(
+              `INSERT OR IGNORE INTO sync_profile_albums (profile_id, album_id)
+               SELECT profile_id, ? FROM sync_profile_albums WHERE album_id=?`,
+            )
+            .run(canonical, duplicate);
+          this.connection
+            .prepare("DELETE FROM sync_profile_albums WHERE album_id=?")
+            .run(duplicate);
+          this.connection
+            .prepare(
               "UPDATE album_grouping_aliases SET album_id=? WHERE album_id=?",
             )
             .run(canonical, duplicate);
@@ -435,12 +491,20 @@ export class CatalogDatabase {
 
   private interruptOrphanedJobs(): void {
     const now = new Date().toISOString();
-    this.connection
-      .prepare(
-        `UPDATE jobs SET state='interrupted', error='Outgroove closed before this scan finished.', updated_at=?, finished_at=?
-         WHERE state IN ('queued', 'running', 'cancelling')`,
-      )
-      .run(now, now);
+    this.connection.transaction(() => {
+      this.connection
+        .prepare(
+          `UPDATE jobs SET state='interrupted', error='Outgroove closed before this scan finished.', updated_at=?, finished_at=?
+           WHERE state IN ('queued', 'running', 'cancelling')`,
+        )
+        .run(now, now);
+      this.connection
+        .prepare(
+          `UPDATE sync_runs SET state='recovery-required', updated_at=?
+           WHERE state='applying'`,
+        )
+        .run(now);
+    })();
   }
 
   backup(destinationPath: string): Promise<void> {
@@ -492,6 +556,128 @@ export class CatalogDatabase {
          WHERE removed_at IS NULL ORDER BY created_at`,
       )
       .all() as LibraryRootDto[];
+  }
+
+  listSavedLibraryFilters(): readonly SavedLibraryFilterDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT id, name, definition_version, definition_json, created_at
+         FROM saved_library_filters
+         ORDER BY name COLLATE NOCASE, name, id
+         LIMIT 100`,
+      )
+      .all() as {
+      id: string;
+      name: string;
+      definition_version: number;
+      definition_json: string;
+      created_at: string;
+    }[];
+    return rows.map((row) => {
+      if (row.definition_version !== 1)
+        throw new Error(
+          `Saved Library filter “${row.name}” uses an unsupported definition version.`,
+        );
+      return {
+        id: row.id,
+        name: row.name,
+        definition: savedLibraryFilterDefinitionSchema.parse(
+          JSON.parse(row.definition_json),
+        ),
+        createdAt: row.created_at,
+      };
+    });
+  }
+
+  createSavedLibraryFilter(
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+  ): SavedLibraryFilterDto {
+    const parsed = createSavedLibraryFilterRequestSchema.parse({
+      name,
+      definition,
+    });
+    const duplicate = this.connection
+      .prepare(
+        "SELECT 1 FROM saved_library_filters WHERE name=? COLLATE NOCASE",
+      )
+      .get(parsed.name);
+    if (duplicate)
+      throw new Error(
+        `A saved Library filter named “${parsed.name}” already exists.`,
+      );
+    const count = this.connection
+      .prepare("SELECT COUNT(*) FROM saved_library_filters")
+      .pluck()
+      .get() as number;
+    if (count >= 100)
+      throw new Error("Outgroove supports up to 100 saved Library filters.");
+    const saved: SavedLibraryFilterDto = {
+      id: randomUUID(),
+      name: parsed.name,
+      definition: parsed.definition,
+      createdAt: new Date().toISOString(),
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO saved_library_filters
+         (id, name, definition_version, definition_json, created_at)
+         VALUES (?, ?, 1, ?, ?)`,
+      )
+      .run(
+        saved.id,
+        saved.name,
+        JSON.stringify(saved.definition),
+        saved.createdAt,
+      );
+    return saved;
+  }
+
+  updateSavedLibraryFilter(
+    id: string,
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+  ): SavedLibraryFilterDto {
+    const parsed = updateSavedLibraryFilterRequestSchema.parse({
+      id,
+      name,
+      definition,
+    });
+    const existing = this.connection
+      .prepare("SELECT created_at FROM saved_library_filters WHERE id=?")
+      .get(parsed.id) as { created_at: string } | undefined;
+    if (!existing)
+      throw new Error("The saved Library filter no longer exists.");
+    const duplicate = this.connection
+      .prepare(
+        "SELECT 1 FROM saved_library_filters WHERE name=? COLLATE NOCASE AND id<>?",
+      )
+      .get(parsed.name, parsed.id);
+    if (duplicate)
+      throw new Error(
+        `A saved Library filter named “${parsed.name}” already exists.`,
+      );
+    this.connection
+      .prepare(
+        `UPDATE saved_library_filters
+         SET name=?, definition_version=1, definition_json=? WHERE id=?`,
+      )
+      .run(parsed.name, JSON.stringify(parsed.definition), parsed.id);
+    return {
+      id: parsed.id,
+      name: parsed.name,
+      definition: parsed.definition,
+      createdAt: existing.created_at,
+    };
+  }
+
+  deleteSavedLibraryFilter(id: string): { id: string } {
+    const result = this.connection
+      .prepare("DELETE FROM saved_library_filters WHERE id=?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error("The saved Library filter no longer exists.");
+    return { id };
   }
 
   getLibraryRootRemovalImpact(
@@ -727,7 +913,12 @@ export class CatalogDatabase {
       signature,
       file.format,
       file.durationSeconds,
-      JSON.stringify(file.tags),
+      file.codec ?? null,
+      file.bitrate ?? null,
+      file.sampleRate ?? null,
+      file.bitDepth ?? null,
+      file.channels ?? null,
+      JSON.stringify({ ...file.tags, genres: file.tags.genres ?? [] }),
       JSON.stringify(file.nativeTags),
       now,
     );
@@ -844,7 +1035,10 @@ export class CatalogDatabase {
         const existing = this.getFileByPathKey(entry.pathKey);
         if (
           existing?.size === entry.size &&
-          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs)
+          Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs) &&
+          (existing.scan_state === "error" ||
+            (existing.genres_type === "array" &&
+              existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
             new Date().toISOString(),
@@ -950,13 +1144,21 @@ export class CatalogDatabase {
   queryLibrary(request: {
     query: string;
     view:
-      "albums" | "artists" | "formats" | "folders" | "tracks" | "scan-errors";
+      | "albums"
+      | "artists"
+      | "genres"
+      | "formats"
+      | "folders"
+      | "tracks"
+      | "scan-errors";
     offset: number;
     limit: number;
     albumArtist?: string;
     albumId?: string;
     format?: string;
     folderId?: string;
+    genre?: string;
+    missingGenre?: true;
   }): LibraryPageDto {
     const escaped = request.query.replace(/[\\%_]/gu, "\\$&");
     const pattern = `%${escaped}%`;
@@ -1069,6 +1271,54 @@ export class CatalogDatabase {
       };
     }
 
+    if (request.view === "genres") {
+      const genreArray =
+        "CASE WHEN json_type(f.normalized_tags_json, '$.genres') = 'array' THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END";
+      const normalizedGenre = "NULLIF(TRIM(CAST(genre.value AS TEXT)), '')";
+      const search = request.query
+        ? ` AND COALESCE(${normalizedGenre}, 'No genre tag') LIKE ? ESCAPE '\\' COLLATE NOCASE`
+        : "";
+      const searchParameters = request.query ? [pattern] : [];
+      const visibleGenres = ` FROM audio_files f
+        JOIN tracks t ON t.file_id=f.id
+        LEFT JOIN json_each(${genreArray}) genre ON TRUE
+        WHERE f.scan_state='ok'${search}
+        GROUP BY (${normalizedGenre} IS NULL), ${normalizedGenre} COLLATE NOCASE`;
+      const totalItems = this.connection
+        .prepare(`SELECT COUNT(*) FROM (SELECT 1${visibleGenres})`)
+        .pluck()
+        .get(...searchParameters) as number;
+      const rows = this.connection
+        .prepare(
+          `SELECT COALESCE(MIN(${normalizedGenre}), 'No genre tag') AS name,
+            COUNT(DISTINCT f.id) AS trackCount,
+            (${normalizedGenre} IS NULL) AS missing
+           ${visibleGenres}
+           ORDER BY missing, name COLLATE NOCASE, name LIMIT ? OFFSET ?`,
+        )
+        .all(...searchParameters, request.limit, request.offset) as {
+        name: string;
+        trackCount: number;
+        missing: number;
+      }[];
+      const genres: LibraryGenreDto[] = rows.map((row) => ({
+        ...row,
+        missing: row.missing === 1,
+      }));
+      return {
+        albums: [],
+        artists: [],
+        genres,
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems,
+        offset: request.offset,
+        limit: request.limit,
+      };
+    }
+
     if (request.view === "tracks") {
       if (request.folderId) this.refreshCatalogSearchIfNeeded();
       const formatFilter = request.format
@@ -1077,16 +1327,35 @@ export class CatalogDatabase {
       const formatParameters = request.format ? [request.format] : [];
       const folderFilter = request.folderId ? ` AND folder.folder_id = ?` : "";
       const folderParameters = request.folderId ? [request.folderId] : [];
+      const genreFilter = request.genre
+        ? ` AND EXISTS (
+          SELECT 1 FROM json_each(CASE
+            WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+            THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) selected_genre
+          WHERE NULLIF(TRIM(CAST(selected_genre.value AS TEXT)), '') = ? COLLATE NOCASE)`
+        : request.missingGenre
+          ? ` AND NOT EXISTS (
+            SELECT 1 FROM json_each(CASE
+              WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+              THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) selected_genre
+            WHERE NULLIF(TRIM(CAST(selected_genre.value AS TEXT)), '') IS NOT NULL)`
+          : "";
+      const genreParameters = request.genre ? [request.genre] : [];
       const search = request.query
         ? ` AND (t.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR json_extract(f.normalized_tags_json, '$.artist') LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR a.title LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR a.album_artist LIKE ? ESCAPE '\\' COLLATE NOCASE
           OR f.format LIKE ? ESCAPE '\\' COLLATE NOCASE
+          OR EXISTS (
+            SELECT 1 FROM json_each(CASE
+              WHEN json_type(f.normalized_tags_json, '$.genres') = 'array'
+              THEN json_extract(f.normalized_tags_json, '$.genres') ELSE json('[]') END) searched_genre
+            WHERE CAST(searched_genre.value AS TEXT) LIKE ? ESCAPE '\\' COLLATE NOCASE)
           OR f.path LIKE ? ESCAPE '\\' COLLATE NOCASE)`
         : "";
       const searchParameters = request.query
-        ? [pattern, pattern, pattern, pattern, pattern, pattern]
+        ? [pattern, pattern, pattern, pattern, pattern, pattern, pattern]
         : [];
       const trackTables = request.folderId
         ? ` FROM catalog_file_folders folder INDEXED BY catalog_file_folders_by_folder
@@ -1097,13 +1366,14 @@ export class CatalogDatabase {
           JOIN audio_files f ON f.id=t.file_id
           JOIN albums a ON a.id=t.album_id`;
       const visibleTracks = `${trackTables}
-        WHERE f.scan_state='ok'${formatFilter}${folderFilter}${search}`;
+        WHERE f.scan_state='ok'${formatFilter}${folderFilter}${genreFilter}${search}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleTracks}`)
         .pluck()
         .get(
           ...formatParameters,
           ...folderParameters,
+          ...genreParameters,
           ...searchParameters,
         ) as number;
       const tracks = this.connection
@@ -1113,7 +1383,9 @@ export class CatalogDatabase {
             a.title AS albumTitle, a.album_artist AS albumArtist,
             t.track_number AS trackNumber, t.disc_number AS discNumber,
             COALESCE(NULLIF(TRIM(f.format), ''), 'unknown') AS format,
-            f.duration_seconds AS durationSeconds, f.path
+            f.duration_seconds AS durationSeconds, f.codec,
+            f.bitrate, f.sample_rate AS sampleRate, f.bit_depth AS bitDepth,
+            f.channels, f.size, f.path
            ${visibleTracks}
            ORDER BY a.album_artist, a.title, a.id,
              COALESCE(t.disc_number, 0), COALESCE(t.track_number, 0), f.path
@@ -1122,6 +1394,7 @@ export class CatalogDatabase {
         .all(
           ...formatParameters,
           ...folderParameters,
+          ...genreParameters,
           ...searchParameters,
           request.limit,
           request.offset,
@@ -1349,6 +1622,11 @@ export class CatalogDatabase {
         modifiedMs: row.modified_ms,
         format: row.format ?? "unknown",
         durationSeconds: row.duration_seconds,
+        codec: row.codec,
+        bitrate: row.bitrate,
+        sampleRate: row.sample_rate,
+        bitDepth: row.bit_depth,
+        channels: row.channels,
         tags,
         nativeTags: JSON.parse(
           row.native_tags_json ?? "[]",
@@ -1808,6 +2086,10 @@ export class CatalogDatabase {
     this.catalogSearchDirty = false;
   }
 
+  refreshConnectionLocalProjections(): void {
+    this.rebuildFolderCatalog();
+  }
+
   private rebuildCatalogSearch(): void {
     this.connection.exec(`
       DELETE FROM catalog_search_documents;
@@ -1849,37 +2131,420 @@ export class CatalogDatabase {
   createSyncProfile(
     name: string,
     targetPath: string,
-    albumId: string,
-  ): { id: string; name: string; targetPath: string } {
+    albumIds: readonly string[],
+  ): { id: string; name: string; targetPath: string; albumIds: string[] } {
+    const selectedAlbumIds = this.validateSyncProfileAlbumIds(albumIds);
     const id = randomUUID();
-    this.connection
-      .prepare(
-        "INSERT INTO sync_profiles (id, name, target_path, album_id, created_at) VALUES (?, ?, ?, ?, ?)",
-      )
-      .run(id, name, targetPath, albumId, new Date().toISOString());
-    return { id, name, targetPath };
+    this.connection.transaction(() => {
+      this.connection
+        .prepare(
+          "INSERT INTO sync_profiles (id, name, target_path, album_id, created_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          name,
+          targetPath,
+          selectedAlbumIds[0],
+          new Date().toISOString(),
+        );
+      const insertSelection = this.connection.prepare(
+        "INSERT INTO sync_profile_albums (profile_id, album_id) VALUES (?, ?)",
+      );
+      for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
+    })();
+    return { id, name, targetPath, albumIds: selectedAlbumIds };
   }
 
-  getSyncProfile(
+  private validateSyncProfileAlbumIds(albumIds: readonly string[]): string[] {
+    const selectedAlbumIds = [...new Set(albumIds)].sort();
+    if (
+      selectedAlbumIds.length < 1 ||
+      selectedAlbumIds.length > 100 ||
+      selectedAlbumIds.length !== albumIds.length
+    )
+      throw new Error("Choose between 1 and 100 distinct albums.");
+    const existingAlbums = this.connection
+      .prepare(
+        `SELECT COUNT(*) FROM albums
+         WHERE id IN (${selectedAlbumIds.map(() => "?").join(",")})`,
+      )
+      .pluck()
+      .get(...selectedAlbumIds) as number;
+    if (existingAlbums !== selectedAlbumIds.length)
+      throw new Error("One or more selected albums no longer exist.");
+    return selectedAlbumIds;
+  }
+
+  updateSyncProfileAlbums(
     id: string,
-  ):
-    | { id: string; name: string; target_path: string; album_id: string }
+    albumIds: readonly string[],
+  ): SyncProfileDto {
+    const selectedAlbumIds = this.validateSyncProfileAlbumIds(albumIds);
+    this.connection.transaction(() => {
+      const updated = this.connection
+        .prepare("UPDATE sync_profiles SET album_id=? WHERE id=?")
+        .run(selectedAlbumIds[0], id);
+      if (updated.changes === 0)
+        throw new Error("Sync profile no longer exists.");
+      this.connection
+        .prepare("DELETE FROM sync_profile_albums WHERE profile_id=?")
+        .run(id);
+      const insertSelection = this.connection.prepare(
+        "INSERT INTO sync_profile_albums (profile_id, album_id) VALUES (?, ?)",
+      );
+      for (const albumId of selectedAlbumIds) insertSelection.run(id, albumId);
+    })();
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile) throw new Error("Updated sync profile could not be loaded.");
+    return profile;
+  }
+
+  renameSyncProfile(id: string, name: string): SyncProfileDto {
+    const normalizedName = name.trim();
+    if (normalizedName.length < 1 || normalizedName.length > 100)
+      throw new Error(
+        "Choose a DAP profile name between 1 and 100 characters.",
+      );
+    const updated = this.connection
+      .prepare("UPDATE sync_profiles SET name=? WHERE id=?")
+      .run(normalizedName, id);
+    if (updated.changes === 0)
+      throw new Error("Sync profile no longer exists.");
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile) throw new Error("Renamed sync profile could not be loaded.");
+    return profile;
+  }
+
+  listSyncProfiles(): readonly SyncProfileDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT profile.id, profile.name, profile.target_path,
+           profile.created_at, album.id AS album_id,
+           album.title AS album_title, album.album_artist
+         FROM sync_profiles profile
+         LEFT JOIN sync_profile_albums selection
+           ON selection.profile_id=profile.id
+         LEFT JOIN albums album ON album.id=selection.album_id
+         ORDER BY profile.created_at DESC, profile.id,
+           album.album_artist COLLATE NOCASE, album.title COLLATE NOCASE,
+           album.id`,
+      )
+      .all() as {
+      id: string;
+      name: string;
+      target_path: string;
+      created_at: string;
+      album_id: string | null;
+      album_title: string | null;
+      album_artist: string | null;
+    }[];
+    const profiles = new Map<string, SyncProfileDto>();
+    for (const row of rows) {
+      if (
+        row.album_id === null ||
+        row.album_title === null ||
+        row.album_artist === null
+      )
+        throw new Error(`Sync profile “${row.name}” has no selected albums.`);
+      const existing = profiles.get(row.id);
+      const album = {
+        id: row.album_id,
+        title: row.album_title,
+        albumArtist: row.album_artist,
+      };
+      if (existing) {
+        profiles.set(row.id, {
+          ...existing,
+          albumIds: [...existing.albumIds, album.id],
+          albums: [...existing.albums, album],
+        });
+      } else {
+        profiles.set(row.id, {
+          id: row.id,
+          name: row.name,
+          targetPath: row.target_path,
+          albumIds: [album.id],
+          albums: [album],
+          createdAt: row.created_at,
+        });
+      }
+    }
+    return [...profiles.values()];
+  }
+
+  getSyncProfile(id: string):
+    | {
+        id: string;
+        name: string;
+        target_path: string;
+        album_id: string;
+        album_ids: readonly string[];
+        album_selections: readonly { id: string; title: string }[];
+      }
     | undefined {
-    return this.connection
+    const profile = this.connection
       .prepare(
         "SELECT id, name, target_path, album_id FROM sync_profiles WHERE id=?",
       )
       .get(id) as
       | { id: string; name: string; target_path: string; album_id: string }
       | undefined;
+    if (!profile) return undefined;
+    const albumSelections = this.connection
+      .prepare(
+        `SELECT selection.album_id AS id, album.title
+         FROM sync_profile_albums selection
+         JOIN albums album ON album.id=selection.album_id
+         WHERE selection.profile_id=? ORDER BY selection.album_id`,
+      )
+      .all(id) as { id: string; title: string }[];
+    if (albumSelections.length === 0)
+      throw new Error("Sync profile has no selected albums.");
+    return {
+      ...profile,
+      album_ids: albumSelections.map((selection) => selection.id),
+      album_selections: albumSelections,
+    };
   }
 
   getLatestManifest(profileId: string): { manifest_json: string } | undefined {
     return this.connection
       .prepare(
-        "SELECT manifest_json FROM sync_manifests WHERE profile_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT manifest_json FROM sync_manifests WHERE profile_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
       )
       .get(profileId) as { manifest_json: string } | undefined;
+  }
+
+  createSyncRun(
+    planId: string,
+    profileId: string,
+    targetPath: string,
+  ): SyncRunRecord {
+    if (this.getSyncRunForProfile(profileId))
+      throw new Error(
+        "Recover this profile's interrupted sync before applying another plan.",
+      );
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.connection
+      .prepare(
+        `INSERT INTO sync_runs
+         (id, plan_id, profile_id, target_path, phase, state, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'copying', 'applying', ?, ?)`,
+      )
+      .run(id, planId, profileId, targetPath, now, now);
+    const run = this.getSyncRun(id);
+    if (!run)
+      throw new Error("Created sync recovery journal could not be read.");
+    return run;
+  }
+
+  addSyncRunChange(
+    runId: string,
+    change: Omit<SyncRunChangeRecord, "id" | "sequence" | "installed">,
+  ): SyncRunChangeRecord {
+    const id = randomUUID();
+    this.connection.transaction(() => {
+      const sequence = this.connection
+        .prepare(
+          `SELECT COALESCE(MAX(sequence), 0) + 1
+           FROM sync_run_changes WHERE run_id=?`,
+        )
+        .pluck()
+        .get(runId) as number;
+      this.connection
+        .prepare(
+          `INSERT INTO sync_run_changes
+           (id, run_id, sequence, kind, relative_destination,
+            temporary_relative, rollback_relative, expected_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          runId,
+          sequence,
+          change.kind,
+          change.relativeDestination,
+          change.temporaryRelative,
+          change.rollbackRelative,
+          change.expectedHash,
+        );
+      this.connection
+        .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+        .run(new Date().toISOString(), runId);
+    })();
+    const recorded = this.getSyncRun(runId)?.changes.find(
+      (candidate) => candidate.id === id,
+    );
+    if (!recorded) throw new Error("Sync recovery change could not be read.");
+    return recorded;
+  }
+
+  markSyncRunChangeInstalled(runId: string, changeId: string): void {
+    const updated = this.connection
+      .prepare(
+        `UPDATE sync_run_changes SET installed=1
+         WHERE id=? AND run_id=?`,
+      )
+      .run(changeId, runId);
+    if (updated.changes !== 1)
+      throw new Error("Sync recovery change no longer exists.");
+    this.connection
+      .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), runId);
+  }
+
+  deleteSyncRunChange(runId: string, changeId: string): void {
+    this.connection
+      .prepare("DELETE FROM sync_run_changes WHERE id=? AND run_id=?")
+      .run(changeId, runId);
+    this.connection
+      .prepare("UPDATE sync_runs SET updated_at=? WHERE id=?")
+      .run(new Date().toISOString(), runId);
+  }
+
+  updateSyncRun(
+    runId: string,
+    update: {
+      phase?: SyncRunRecord["phase"];
+      state?: SyncRunRecord["state"];
+    },
+  ): SyncRunRecord {
+    const current = this.getSyncRun(runId);
+    if (!current) throw new Error("Sync recovery journal does not exist.");
+    this.connection
+      .prepare(`UPDATE sync_runs SET phase=?, state=?, updated_at=? WHERE id=?`)
+      .run(
+        update.phase ?? current.phase,
+        update.state ?? current.state,
+        new Date().toISOString(),
+        runId,
+      );
+    const updated = this.getSyncRun(runId);
+    if (!updated) throw new Error("Updated sync recovery journal is missing.");
+    return updated;
+  }
+
+  deleteSyncRun(runId: string): void {
+    this.connection.prepare("DELETE FROM sync_runs WHERE id=?").run(runId);
+  }
+
+  getSyncRunForProfile(profileId: string): SyncRunRecord | undefined {
+    const id = this.connection
+      .prepare("SELECT id FROM sync_runs WHERE profile_id=?")
+      .pluck()
+      .get(profileId) as string | undefined;
+    return id ? this.getSyncRun(id) : undefined;
+  }
+
+  getSyncRun(runId: string): SyncRunRecord | undefined {
+    const row = this.connection
+      .prepare(
+        `SELECT run.*, profile.name AS profile_name
+         FROM sync_runs run
+         JOIN sync_profiles profile ON profile.id=run.profile_id
+         WHERE run.id=?`,
+      )
+      .get(runId) as
+      | {
+          id: string;
+          plan_id: string;
+          profile_id: string;
+          profile_name: string;
+          target_path: string;
+          phase: SyncRunRecord["phase"];
+          state: SyncRunRecord["state"];
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return undefined;
+    const changes = this.connection
+      .prepare(
+        `SELECT id, sequence, kind, relative_destination,
+           temporary_relative, rollback_relative, expected_hash, installed
+         FROM sync_run_changes WHERE run_id=? ORDER BY sequence`,
+      )
+      .all(runId) as {
+      id: string;
+      sequence: number;
+      kind: SyncRunChangeRecord["kind"];
+      relative_destination: string;
+      temporary_relative: string;
+      rollback_relative: string | null;
+      expected_hash: string;
+      installed: 0 | 1;
+    }[];
+    return {
+      id: row.id,
+      planId: row.plan_id,
+      profileId: row.profile_id,
+      profileName: row.profile_name,
+      targetPath: row.target_path,
+      phase: row.phase,
+      state: row.state,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      changes: changes.map((change) => ({
+        id: change.id,
+        sequence: change.sequence,
+        kind: change.kind,
+        relativeDestination: change.relative_destination,
+        temporaryRelative: change.temporary_relative,
+        rollbackRelative: change.rollback_relative,
+        expectedHash: change.expected_hash,
+        installed: change.installed === 1,
+      })),
+    };
+  }
+
+  listSyncRuns(): readonly SyncRunRecord[] {
+    const ids = this.connection
+      .prepare("SELECT id FROM sync_runs ORDER BY created_at, id")
+      .pluck()
+      .all() as string[];
+    return ids.flatMap((id) => {
+      const run = this.getSyncRun(id);
+      return run ? [run] : [];
+    });
+  }
+
+  listSyncHistory(profileId: string): readonly SyncHistoryItemDto[] {
+    const profileExists = this.connection
+      .prepare("SELECT 1 FROM sync_profiles WHERE id=?")
+      .pluck()
+      .get(profileId);
+    if (!profileExists) throw new Error("Sync profile no longer exists.");
+    const rows = this.connection
+      .prepare(
+        `SELECT manifest.id, manifest.profile_id, manifest.target_path,
+           manifest.created_at, COUNT(entry.id) AS entry_count
+         FROM sync_manifests manifest
+         LEFT JOIN sync_entries entry ON entry.manifest_id=manifest.id
+         WHERE manifest.profile_id=?
+         GROUP BY manifest.id, manifest.profile_id, manifest.target_path,
+           manifest.created_at
+         ORDER BY manifest.created_at DESC, manifest.id DESC
+         LIMIT 20`,
+      )
+      .all(profileId) as {
+      id: string;
+      profile_id: string;
+      target_path: string;
+      created_at: string;
+      entry_count: number;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      profileId: row.profile_id,
+      targetPath: row.target_path,
+      completedAt: row.created_at,
+      entryCount: row.entry_count,
+    }));
   }
 
   saveManifest(
@@ -1894,31 +2559,74 @@ export class CatalogDatabase {
       }[];
     },
   ): void {
-    const manifestId = randomUUID();
+    this.connection.transaction(() =>
+      this.insertManifest(profileId, targetPath, manifest),
+    )();
+  }
+
+  completeSyncRun(
+    runId: string,
+    profileId: string,
+    targetPath: string,
+    manifest: {
+      entries: readonly {
+        sourceFileId: string;
+        relativeDestination: string;
+        signature: string;
+        size: number;
+      }[];
+    },
+  ): void {
     this.connection.transaction(() => {
+      const run = this.getSyncRun(runId);
+      if (!run) throw new Error("Sync recovery journal no longer exists.");
+      if (run.profileId !== profileId || run.targetPath !== targetPath)
+        throw new Error("Sync recovery journal no longer matches this plan.");
+      this.insertManifest(profileId, targetPath, manifest);
       this.connection
         .prepare(
-          "INSERT INTO sync_manifests (id, profile_id, target_path, created_at, manifest_json) VALUES (?, ?, ?, ?, ?)",
+          `UPDATE sync_runs SET state='committed-cleanup', updated_at=?
+           WHERE id=?`,
         )
-        .run(
-          manifestId,
-          profileId,
-          targetPath,
-          new Date().toISOString(),
-          JSON.stringify(manifest),
-        );
-      const insert = this.connection.prepare(
-        "INSERT INTO sync_entries (id, manifest_id, source_file_id, relative_destination, source_signature, size) VALUES (?, ?, ?, ?, ?, ?)",
-      );
-      for (const entry of manifest.entries)
-        insert.run(
-          randomUUID(),
-          manifestId,
-          entry.sourceFileId,
-          entry.relativeDestination,
-          entry.signature,
-          entry.size,
-        );
+        .run(new Date().toISOString(), runId);
     })();
+  }
+
+  private insertManifest(
+    profileId: string,
+    targetPath: string,
+    manifest: {
+      entries: readonly {
+        sourceFileId: string;
+        relativeDestination: string;
+        signature: string;
+        size: number;
+      }[];
+    },
+  ): void {
+    const manifestId = randomUUID();
+    this.connection
+      .prepare(
+        "INSERT INTO sync_manifests (id, profile_id, target_path, created_at, manifest_json) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(
+        manifestId,
+        profileId,
+        targetPath,
+        new Date().toISOString(),
+        JSON.stringify(manifest),
+      );
+    const insert = this.connection.prepare(
+      "INSERT INTO sync_entries (id, manifest_id, source_file_id, relative_destination, source_signature, size) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    for (const entry of manifest.entries)
+      insert.run(
+        randomUUID(),
+        manifestId,
+        entry.sourceFileId,
+        entry.relativeDestination,
+        entry.signature,
+        entry.size,
+      );
   }
 }

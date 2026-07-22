@@ -15,18 +15,20 @@ export const libraryRootRemovalPreviewRequestSchema = z
 export const libraryRootRemovalApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const libraryViews = [
+  "albums",
+  "artists",
+  "genres",
+  "formats",
+  "folders",
+  "tracks",
+  "data-quality",
+  "scan-errors",
+] as const;
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum([
-      "albums",
-      "artists",
-      "formats",
-      "folders",
-      "tracks",
-      "data-quality",
-      "scan-errors",
-    ]),
+    view: z.enum(libraryViews),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
     qualityFilter: z.enum(albumDiagnosticFilters).optional(),
@@ -34,6 +36,8 @@ export const libraryQueryRequestSchema = z
     albumId: z.uuid().optional(),
     format: z.string().trim().min(1).max(100).optional(),
     folderId: z.string().min(1).max(32_768).optional(),
+    genre: z.string().trim().min(1).max(400).optional(),
+    missingGenre: z.literal(true).optional(),
   })
   .strict()
   .refine(
@@ -48,7 +52,77 @@ export const libraryQueryRequestSchema = z
   .refine(({ view, folderId }) => folderId === undefined || view === "tracks", {
     path: ["folderId"],
     message: "Folder filters require Tracks.",
-  });
+  })
+  .refine(
+    ({ view, genre, missingGenre }) =>
+      (genre === undefined && missingGenre === undefined) || view === "tracks",
+    { message: "Genre filters require Tracks." },
+  )
+  .refine(
+    ({ genre, missingGenre }) =>
+      genre === undefined || missingGenre === undefined,
+    { message: "Choose either a genre or missing genre, not both." },
+  );
+export const savedLibraryFilterDefinitionSchema = z
+  .object({
+    query: z.string().trim().max(200),
+    view: z.enum(libraryViews),
+    qualityFilter: z.enum(albumDiagnosticFilters).optional(),
+    albumArtist: z.string().trim().min(1).max(400).optional(),
+    format: z.string().trim().min(1).max(100).optional(),
+    folder: z
+      .object({
+        id: z.string().min(1).max(32_768),
+        path: z.string().min(1).max(32_768),
+      })
+      .strict()
+      .optional(),
+    genre: z
+      .object({
+        name: z.string().trim().min(1).max(400),
+        missing: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    ({ view, qualityFilter }) =>
+      qualityFilter === undefined || view === "data-quality",
+    { message: "Quality filters require Albums needing review." },
+  )
+  .refine(
+    ({ view, albumArtist }) => albumArtist === undefined || view === "albums",
+    { message: "Album-artist filters require Albums." },
+  )
+  .refine(
+    ({ view, format, folder, genre }) =>
+      (format === undefined && folder === undefined && genre === undefined) ||
+      view === "tracks",
+    { message: "Track filters require Tracks." },
+  )
+  .refine(
+    ({ format, folder, genre }) =>
+      [format, folder, genre].filter((value) => value !== undefined).length <=
+      1,
+    { message: "A saved view can contain only one exact Track filter." },
+  );
+export const createSavedLibraryFilterRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    definition: savedLibraryFilterDefinitionSchema,
+  })
+  .strict();
+export const updateSavedLibraryFilterRequestSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string().trim().min(1).max(100),
+    definition: savedLibraryFilterDefinitionSchema,
+  })
+  .strict();
+export const deleteSavedLibraryFilterRequestSchema = z
+  .object({ id: z.uuid() })
+  .strict();
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -127,12 +201,38 @@ export const trackNumberSequencePreviewRequestSchema = z
     ({ fileIds, startNumber }) => startNumber + fileIds.length - 1 <= 9999,
     { message: "The resulting track number exceeds 9999." },
   );
+const syncProfileAlbumIdsSchema = z
+  .array(z.uuid())
+  .min(1)
+  .max(100)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "Choose each album only once.",
+  });
 export const syncProfileRequestSchema = z
-  .object({ name: z.string().trim().min(1).max(100), albumId: z.uuid() })
+  .object({
+    name: z.string().trim().min(1).max(100),
+    albumIds: syncProfileAlbumIdsSchema,
+  })
+  .strict();
+export const updateSyncProfileAlbumsRequestSchema = z
+  .object({ id: z.uuid(), albumIds: syncProfileAlbumIdsSchema })
+  .strict();
+export const renameSyncProfileRequestSchema = z
+  .object({ id: z.uuid(), name: z.string().trim().min(1).max(100) })
+  .strict();
+export const syncHistoryRequestSchema = z
+  .object({ profileId: z.uuid() })
   .strict();
 export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
+export const syncCancelRequestSchema = z.object({ planId: z.uuid() }).strict();
+export const syncRecoveryApplyRequestSchema = z
+  .object({ runId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
+export const syncRecoveryPreviewRequestSchema = z
+  .object({ runId: z.uuid() })
   .strict();
 export const databaseRestoreApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
@@ -199,6 +299,11 @@ export interface LibraryFormatDto {
   readonly name: string;
   readonly trackCount: number;
 }
+export interface LibraryGenreDto {
+  readonly name: string;
+  readonly trackCount: number;
+  readonly missing: boolean;
+}
 export interface LibraryFolderDto {
   readonly id: string;
   readonly path: string;
@@ -216,18 +321,34 @@ export interface LibraryTrackDto {
   readonly discNumber: number | null;
   readonly format: string;
   readonly durationSeconds: number | null;
+  readonly codec: string | null;
+  readonly bitrate: number | null;
+  readonly sampleRate: number | null;
+  readonly bitDepth: number | null;
+  readonly channels: number | null;
+  readonly size: number;
   readonly path: string;
 }
 export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
   readonly artists: readonly LibraryArtistDto[];
   readonly formats: readonly LibraryFormatDto[];
+  readonly genres?: readonly LibraryGenreDto[];
   readonly folders: readonly LibraryFolderDto[];
   readonly tracks: readonly LibraryTrackDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;
   readonly offset: number;
   readonly limit: number;
+}
+export type SavedLibraryFilterDefinition = z.infer<
+  typeof savedLibraryFilterDefinitionSchema
+>;
+export interface SavedLibraryFilterDto {
+  readonly id: string;
+  readonly name: string;
+  readonly definition: SavedLibraryFilterDefinition;
+  readonly createdAt: string;
 }
 export interface DatabaseBackupResultDto {
   readonly path: string;
@@ -242,6 +363,7 @@ export interface DatabaseRestorePreviewDto {
     readonly albums: number;
     readonly tracks: number;
     readonly syncProfiles: number;
+    readonly savedLibraryFilters: number;
   };
 }
 export interface TagEditFilePreviewDto {
@@ -313,6 +435,25 @@ export interface SyncPlanItemDto {
   readonly size: number;
   readonly signature: string;
 }
+export interface SyncProfileDto {
+  readonly id: string;
+  readonly name: string;
+  readonly targetPath: string;
+  readonly albumIds: readonly string[];
+  readonly albums: readonly {
+    readonly id: string;
+    readonly title: string;
+    readonly albumArtist: string;
+  }[];
+  readonly createdAt: string;
+}
+export interface SyncHistoryItemDto {
+  readonly id: string;
+  readonly profileId: string;
+  readonly targetPath: string;
+  readonly completedAt: string;
+  readonly entryCount: number;
+}
 export interface SyncPlanDto {
   readonly id: string;
   readonly profileId: string;
@@ -325,11 +466,50 @@ export interface SyncPlanDto {
   readonly requiredBytes: number;
 }
 export interface SyncApplyResultDto {
+  readonly outcome: "completed" | "cancelled" | "failed";
   readonly copied: number;
+  readonly rolledBack: number;
   readonly unchanged: number;
   readonly playlistPath: string;
   readonly manifestPath: string;
   readonly errors: readonly string[];
+}
+export interface SyncCancelResultDto {
+  readonly planId: string;
+  readonly accepted: boolean;
+  readonly state: "cancelling" | "finalizing" | "not-running";
+}
+export interface SyncRecoveryPreviewDto {
+  readonly runId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly interruptedAt: string;
+  readonly phase: "copying" | "finalizing";
+  readonly mode: "rollback" | "committed-cleanup";
+  readonly actions: readonly {
+    readonly path: string;
+    readonly action: "remove" | "restore";
+    readonly explanation: string;
+  }[];
+  readonly warnings: readonly string[];
+  readonly canRecover: boolean;
+  readonly confirmationToken: string;
+}
+export interface SyncRecoverySummaryDto {
+  readonly runId: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly interruptedAt: string;
+  readonly phase: "copying" | "finalizing";
+  readonly mode: "rollback" | "committed-cleanup";
+}
+export interface SyncRecoveryResultDto {
+  readonly runId: string;
+  readonly recovered: number;
+  readonly errors: readonly string[];
+  readonly complete: boolean;
 }
 
 export interface OutgrooveApi {
@@ -356,6 +536,16 @@ export interface OutgrooveApi {
   queryLibrary(
     request: z.infer<typeof libraryQueryRequestSchema>,
   ): Promise<Result<LibraryPageDto>>;
+  listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
+  createSavedLibraryFilter(
+    request: z.infer<typeof createSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<SavedLibraryFilterDto>>;
+  updateSavedLibraryFilter(
+    request: z.infer<typeof updateSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<SavedLibraryFilterDto>>;
+  deleteSavedLibraryFilter(
+    request: z.infer<typeof deleteSavedLibraryFilterRequestSchema>,
+  ): Promise<Result<{ id: string }>>;
   previewAlbumTitleEdit(
     request: z.infer<typeof albumEditPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;
@@ -403,13 +593,40 @@ export interface OutgrooveApi {
   ): Promise<Result<TagEditResultDto>>;
   chooseSyncTargetAndCreateProfile(
     request: z.infer<typeof syncProfileRequestSchema>,
-  ): Promise<Result<{ id: string; name: string; targetPath: string } | null>>;
+  ): Promise<
+    Result<{
+      id: string;
+      name: string;
+      targetPath: string;
+      albumIds: readonly string[];
+    } | null>
+  >;
+  listSyncProfiles(): Promise<Result<readonly SyncProfileDto[]>>;
+  updateSyncProfileAlbums(
+    request: z.infer<typeof updateSyncProfileAlbumsRequestSchema>,
+  ): Promise<Result<SyncProfileDto>>;
+  renameSyncProfile(
+    request: z.infer<typeof renameSyncProfileRequestSchema>,
+  ): Promise<Result<SyncProfileDto>>;
+  listSyncHistory(
+    request: z.infer<typeof syncHistoryRequestSchema>,
+  ): Promise<Result<readonly SyncHistoryItemDto[]>>;
   planSync(
     request: z.infer<typeof syncPlanRequestSchema>,
   ): Promise<Result<SyncPlanDto>>;
   applySync(
     request: z.infer<typeof syncApplyRequestSchema>,
   ): Promise<Result<SyncApplyResultDto>>;
+  cancelSync(
+    request: z.infer<typeof syncCancelRequestSchema>,
+  ): Promise<Result<SyncCancelResultDto>>;
+  listSyncRecoveries(): Promise<Result<readonly SyncRecoverySummaryDto[]>>;
+  previewSyncRecovery(
+    request: z.infer<typeof syncRecoveryPreviewRequestSchema>,
+  ): Promise<Result<SyncRecoveryPreviewDto>>;
+  applySyncRecovery(
+    request: z.infer<typeof syncRecoveryApplyRequestSchema>,
+  ): Promise<Result<SyncRecoveryResultDto>>;
   onJobProgress(
     listener: (progress: {
       job: "scan" | "tag-edit" | "sync" | "library-quality";

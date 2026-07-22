@@ -9,18 +9,27 @@ import {
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
+  createSavedLibraryFilterRequestSchema,
+  deleteSavedLibraryFilterRequestSchema,
   emptyRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  renameSyncProfileRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
+  syncCancelRequestSchema,
+  syncHistoryRequestSchema,
+  syncRecoveryApplyRequestSchema,
+  syncRecoveryPreviewRequestSchema,
   syncPlanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
+  updateSyncProfileAlbumsRequestSchema,
+  updateSavedLibraryFilterRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
@@ -190,21 +199,53 @@ export function registerIpc(
             ? "scan-errors"
             : request.view === "artists"
               ? "artists"
-              : request.view === "formats"
-                ? "formats"
-                : request.view === "folders"
-                  ? "folders"
-                  : request.view === "tracks"
-                    ? "tracks"
-                    : "albums",
+              : request.view === "genres"
+                ? "genres"
+                : request.view === "formats"
+                  ? "formats"
+                  : request.view === "folders"
+                    ? "folders"
+                    : request.view === "tracks"
+                      ? "tracks"
+                      : "albums",
         offset: request.offset,
         limit: request.limit,
         ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
         ...(request.albumId ? { albumId: request.albumId } : {}),
         ...(request.format ? { format: request.format } : {}),
         ...(request.folderId ? { folderId: request.folderId } : {}),
+        ...(request.genre ? { genre: request.genre } : {}),
+        ...(request.missingGenre ? { missingGenre: request.missingGenre } : {}),
       });
     }),
+  );
+  ipcMain.handle(
+    channels.listSavedLibraryFilters,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.database.listSavedLibraryFilters(),
+    ),
+  );
+  ipcMain.handle(
+    channels.createSavedLibraryFilter,
+    createValidatedHandler(
+      createSavedLibraryFilterRequestSchema,
+      ({ name, definition }) =>
+        dependencies.database.createSavedLibraryFilter(name, definition),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateSavedLibraryFilter,
+    createValidatedHandler(
+      updateSavedLibraryFilterRequestSchema,
+      ({ id, name, definition }) =>
+        dependencies.database.updateSavedLibraryFilter(id, name, definition),
+    ),
+  );
+  ipcMain.handle(
+    channels.deleteSavedLibraryFilter,
+    createValidatedHandler(deleteSavedLibraryFilterRequestSchema, ({ id }) =>
+      dependencies.database.deleteSavedLibraryFilter(id),
+    ),
   );
   ipcMain.handle(
     channels.previewAlbumTitleEdit,
@@ -355,10 +396,35 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.listSyncProfiles,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.database.listSyncProfiles(),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateSyncProfileAlbums,
+    createValidatedHandler(
+      updateSyncProfileAlbumsRequestSchema,
+      ({ id, albumIds }) => dependencies.sync.updateProfileAlbums(id, albumIds),
+    ),
+  );
+  ipcMain.handle(
+    channels.renameSyncProfile,
+    createValidatedHandler(renameSyncProfileRequestSchema, ({ id, name }) =>
+      dependencies.database.renameSyncProfile(id, name),
+    ),
+  );
+  ipcMain.handle(
+    channels.listSyncHistory,
+    createValidatedHandler(syncHistoryRequestSchema, ({ profileId }) =>
+      dependencies.database.listSyncHistory(profileId),
+    ),
+  );
+  ipcMain.handle(
     channels.createSyncProfile,
     createValidatedHandler(
       syncProfileRequestSchema,
-      async ({ name, albumId }) => {
+      async ({ name, albumIds }) => {
         const selected = await dialog.showOpenDialog(dependencies.window, {
           title: "Choose a folder-backed DAP target",
           properties: ["openDirectory", "createDirectory"],
@@ -369,7 +435,7 @@ export function registerIpc(
           : dependencies.database.createSyncProfile(
               name,
               normalize(resolve(targetPath)),
-              albumId,
+              albumIds,
             );
       },
     ),
@@ -386,6 +452,32 @@ export function registerIpc(
       syncApplyRequestSchema,
       ({ planId, confirmationToken }) =>
         dependencies.sync.apply(planId, confirmationToken, progress("sync")),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelSync,
+    createValidatedHandler(syncCancelRequestSchema, ({ planId }) =>
+      dependencies.sync.cancel(planId),
+    ),
+  );
+  ipcMain.handle(
+    channels.listSyncRecoveries,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.sync.listRecoverySummaries(),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewSyncRecovery,
+    createValidatedHandler(syncRecoveryPreviewRequestSchema, ({ runId }) =>
+      dependencies.sync.previewRecovery(runId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applySyncRecovery,
+    createValidatedHandler(
+      syncRecoveryApplyRequestSchema,
+      ({ runId, confirmationToken }) =>
+        dependencies.sync.recover(runId, confirmationToken),
     ),
   );
 }

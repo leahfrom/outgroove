@@ -5,12 +5,19 @@ import type {
   LibraryArtistDto,
   LibraryFormatDto,
   LibraryFolderDto,
+  LibraryGenreDto,
   LibraryRootDto,
   LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
+  SavedLibraryFilterDefinition,
+  SavedLibraryFilterDto,
   ScanErrorDto,
   ScanJobDto,
+  SyncHistoryItemDto,
+  SyncRecoveryPreviewDto,
+  SyncRecoverySummaryDto,
   SyncPlanDto,
+  SyncProfileDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
@@ -18,6 +25,14 @@ import type {
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  formatBitDepth,
+  formatBitrate,
+  formatChannels,
+  formatDuration,
+  formatFileSize,
+  formatSampleRate,
+} from "../../shared/domain/audio-technical";
 import {
   albumDiagnosticFilters,
   diagnoseAlbum,
@@ -54,6 +69,36 @@ const diagnosticFilterLabels: Record<AlbumDiagnosticFilter, string> = {
   "missing-tags": "Missing/placeholder tags",
 };
 
+const libraryViewLabels: Record<SavedLibraryFilterDefinition["view"], string> =
+  {
+    albums: "Albums",
+    artists: "Album artists",
+    genres: "Genres",
+    formats: "Formats",
+    folders: "Folders",
+    tracks: "Tracks",
+    "data-quality": "Albums needing review",
+    "scan-errors": "Scan problems",
+  };
+
+function describeSavedFilter(definition: SavedLibraryFilterDefinition): string {
+  const parts = [libraryViewLabels[definition.view]];
+  if (definition.query) parts.push(`search “${definition.query}”`);
+  if (definition.qualityFilter)
+    parts.push(diagnosticFilterLabels[definition.qualityFilter]);
+  if (definition.albumArtist)
+    parts.push(`album artist “${definition.albumArtist}”`);
+  if (definition.format) parts.push(`format “${definition.format}”`);
+  if (definition.folder) parts.push(`folder “${definition.folder.path}”`);
+  if (definition.genre)
+    parts.push(
+      definition.genre.missing
+        ? "no genre tag"
+        : `genre “${definition.genre.name}”`,
+    );
+  return parts.join(" · ");
+}
+
 function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
   switch (workflow) {
     case "track-editor":
@@ -78,15 +123,25 @@ export function App(): React.JSX.Element {
   );
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
+  const [genres, setGenres] = useState<readonly LibraryGenreDto[]>([]);
   const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
   const [folders, setFolders] = useState<readonly LibraryFolderDto[]>([]);
   const [tracks, setTracks] = useState<readonly LibraryTrackDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
+  const [savedFilters, setSavedFilters] = useState<
+    readonly SavedLibraryFilterDto[]
+  >([]);
+  const [savedFilterName, setSavedFilterName] = useState("");
+  const [savedFilterNames, setSavedFilterNames] = useState<
+    Record<string, string>
+  >({});
+  const [savedFilterBusy, setSavedFilterBusy] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
     | "albums"
     | "artists"
+    | "genres"
     | "formats"
     | "folders"
     | "tracks"
@@ -100,6 +155,8 @@ export function App(): React.JSX.Element {
   const [trackFormatFilter, setTrackFormatFilter] = useState<string>();
   const [trackFolderFilter, setTrackFolderFilter] =
     useState<Pick<LibraryFolderDto, "id" | "path">>();
+  const [trackGenreFilter, setTrackGenreFilter] =
+    useState<Pick<LibraryGenreDto, "name" | "missing">>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
@@ -152,12 +209,35 @@ export function App(): React.JSX.Element {
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
+  const [syncAlbums, setSyncAlbums] = useState<
+    readonly Pick<CatalogAlbum, "id" | "title" | "albumArtist">[]
+  >([]);
+  const [syncProfiles, setSyncProfiles] = useState<readonly SyncProfileDto[]>(
+    [],
+  );
+  const [editingSyncProfileId, setEditingSyncProfileId] = useState<string>();
+  const [renamingSyncProfileId, setRenamingSyncProfileId] = useState<string>();
+  const [syncProfileNameDraft, setSyncProfileNameDraft] = useState("");
+  const [syncHistory, setSyncHistory] = useState<readonly SyncHistoryItemDto[]>(
+    [],
+  );
+  const [syncHistoryProfileId, setSyncHistoryProfileId] = useState<string>();
+  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
+  const [syncRecoveries, setSyncRecoveries] = useState<
+    readonly SyncRecoverySummaryDto[]
+  >([]);
+  const [syncRecoveryPreview, setSyncRecoveryPreview] =
+    useState<SyncRecoveryPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
     targetPath: string;
+    albumIds: readonly string[];
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
+  const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
+  const [syncCancellationRequested, setSyncCancellationRequested] =
+    useState(false);
   const [progress, setProgress] = useState<Progress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
@@ -173,6 +253,7 @@ export function App(): React.JSX.Element {
   const sequenceEditorRef = useRef<HTMLDivElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const libraryRequestId = useRef(0);
+  const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
     scanJob?.state === "running" ||
@@ -184,6 +265,11 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const editingSyncProfile = useMemo(
+    () =>
+      syncProfiles.find((candidate) => candidate.id === editingSyncProfileId),
+    [editingSyncProfileId, syncProfiles],
   );
   const diagnosticsByAlbum = useMemo(
     () =>
@@ -239,6 +325,11 @@ export function App(): React.JSX.Element {
       ...(libraryView === "tracks" && trackFolderFilter
         ? { folderId: trackFolderFilter.id }
         : {}),
+      ...(libraryView === "tracks" && trackGenreFilter
+        ? trackGenreFilter.missing
+          ? { missingGenre: true as const }
+          : { genre: trackGenreFilter.name }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -252,6 +343,7 @@ export function App(): React.JSX.Element {
       }
       setAlbums(result.value.albums);
       setArtists(result.value.artists);
+      setGenres(result.value.genres ?? []);
       setFormats(result.value.formats);
       setFolders(result.value.folders);
       setTracks(result.value.tracks);
@@ -272,6 +364,7 @@ export function App(): React.JSX.Element {
     query,
     trackFolderFilter,
     trackFormatFilter,
+    trackGenreFilter,
   ]);
 
   const refreshEditHistory = useCallback(
@@ -292,6 +385,58 @@ export function App(): React.JSX.Element {
           ? current
           : result.value[0]?.id,
       );
+    } else setNotice(result.error.message);
+  }, []);
+
+  const refreshSavedFilters = useCallback(async (): Promise<boolean> => {
+    const result = await window.outgroove.listSavedLibraryFilters();
+    if (result.ok) {
+      setSavedFilters(result.value);
+      setSavedFilterNames(
+        Object.fromEntries(result.value.map((saved) => [saved.id, saved.name])),
+      );
+      return true;
+    }
+    setNotice(result.error.message);
+    return false;
+  }, []);
+
+  const refreshSyncProfiles = useCallback(async (): Promise<
+    readonly SyncProfileDto[] | undefined
+  > => {
+    const result = await window.outgroove.listSyncProfiles();
+    if (result.ok) {
+      setSyncProfiles(result.value);
+      return result.value;
+    }
+    setNotice(result.error.message);
+    return undefined;
+  }, []);
+
+  const refreshSyncHistory = useCallback(
+    async (profileId: string): Promise<boolean> => {
+      const requestId = ++syncHistoryRequestId.current;
+      setSyncHistoryProfileId(profileId);
+      setSyncHistory([]);
+      setSyncHistoryLoading(true);
+      const result = await window.outgroove.listSyncHistory({ profileId });
+      if (requestId !== syncHistoryRequestId.current) return false;
+      setSyncHistoryLoading(false);
+      if (result.ok) {
+        setSyncHistory(result.value);
+        return true;
+      }
+      setNotice(result.error.message);
+      return false;
+    },
+    [],
+  );
+
+  const refreshSyncRecoveries = useCallback(async (): Promise<void> => {
+    const result = await window.outgroove.listSyncRecoveries();
+    if (result.ok) {
+      setSyncRecoveries(result.value);
+      setSyncRecoveryPreview(undefined);
     } else setNotice(result.error.message);
   }, []);
 
@@ -337,6 +482,15 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
+  useEffect(() => {
+    void refreshSavedFilters();
+  }, [refreshSavedFilters]);
+  useEffect(() => {
+    void refreshSyncProfiles();
+  }, [refreshSyncProfiles]);
+  useEffect(() => {
+    void refreshSyncRecoveries();
+  }, [refreshSyncRecoveries]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -891,16 +1045,171 @@ export function App(): React.JSX.Element {
   };
 
   const chooseTarget = async (): Promise<void> => {
-    if (!selectedAlbum) return;
+    if (syncAlbums.length === 0) return;
     const result = await window.outgroove.chooseSyncTargetAndCreateProfile({
-      name: `${selectedAlbum.title} test DAP`,
-      albumId: selectedAlbum.id,
+      name:
+        syncAlbums.length === 1
+          ? `${syncAlbums[0]?.title ?? "Album"} DAP`
+          : `Outgroove ${syncAlbums.length}-album DAP`,
+      albumIds: syncAlbums.map((album) => album.id),
     });
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
-      setNotice(`DAP target selected: ${result.value.targetPath}`);
+      void refreshSyncHistory(result.value.id);
+      const refreshed = await refreshSyncProfiles();
+      if (refreshed) {
+        const saved = refreshed.find(
+          (candidate) => candidate.id === result.value?.id,
+        );
+        if (saved) setProfile(saved);
+        setNotice(`DAP target selected: ${result.value.targetPath}`);
+      }
     } else if (!result.ok) setNotice(result.error.message);
+  };
+
+  const toggleSyncAlbum = (album: CatalogAlbum): void => {
+    const selected = syncAlbums.some((candidate) => candidate.id === album.id);
+    if (!selected && syncAlbums.length >= 100) {
+      setNotice("A DAP profile can contain up to 100 albums.");
+      return;
+    }
+    setSyncAlbums((current) =>
+      selected
+        ? current.filter((candidate) => candidate.id !== album.id)
+        : [...current, album]
+            .map(({ id, title, albumArtist }) => ({ id, title, albumArtist }))
+            .sort(
+              (left, right) =>
+                left.albumArtist.localeCompare(right.albumArtist) ||
+                left.title.localeCompare(right.title) ||
+                left.id.localeCompare(right.id),
+            ),
+    );
+    setNotice(
+      selected
+        ? `Removed ${album.title} from the DAP selection.`
+        : editingSyncProfile
+          ? `Added ${album.title} to the ${editingSyncProfile.name} selection draft.`
+          : `Added ${album.title} to the DAP selection. Choose a target only after the selection is complete.`,
+    );
+  };
+
+  const currentLibraryFilterDefinition = ():
+    SavedLibraryFilterDefinition | undefined => {
+    if (albumIdFilter) return undefined;
+    return {
+      query,
+      view: libraryView,
+      ...(libraryView === "data-quality" ? { qualityFilter } : {}),
+      ...(libraryView === "albums" && albumArtistFilter
+        ? { albumArtist: albumArtistFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackFormatFilter
+        ? { format: trackFormatFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackFolderFilter
+        ? { folder: trackFolderFilter }
+        : {}),
+      ...(libraryView === "tracks" && trackGenreFilter
+        ? { genre: trackGenreFilter }
+        : {}),
+    };
+  };
+
+  const saveCurrentLibraryFilter = async (): Promise<void> => {
+    const definition = currentLibraryFilterDefinition();
+    if (!definition) {
+      setNotice(
+        "Exact Workbench album routes cannot be saved as Library filters.",
+      );
+      return;
+    }
+    const name = savedFilterName.trim();
+    if (!name) return;
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.createSavedLibraryFilter({
+        name,
+        definition,
+      });
+      if (result.ok) {
+        setSavedFilterName("");
+        if (await refreshSavedFilters())
+          setNotice(`Saved Library filter “${result.value.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
+  };
+
+  const updateSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+    action: "Renamed" | "Updated",
+  ): Promise<void> => {
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.updateSavedLibraryFilter({
+        id: saved.id,
+        name,
+        definition,
+      });
+      if (result.ok) {
+        if (await refreshSavedFilters())
+          setNotice(`${action} saved Library filter “${result.value.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
+  };
+
+  const replaceSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+  ): Promise<void> => {
+    const definition = currentLibraryFilterDefinition();
+    if (!definition) {
+      setNotice(
+        "Exact Workbench album routes cannot replace a saved Library filter.",
+      );
+      return;
+    }
+    await updateSavedLibraryFilter(saved, saved.name, definition, "Updated");
+  };
+
+  const openSavedLibraryFilter = (saved: SavedLibraryFilterDto): void => {
+    const definition = saved.definition;
+    setLibraryView(definition.view);
+    setSearchText(definition.query);
+    setQuery(definition.query);
+    setQualityFilter(definition.qualityFilter ?? "all");
+    setAlbumArtistFilter(definition.albumArtist);
+    setAlbumIdFilter(undefined);
+    setTrackRouteLabel(undefined);
+    setPendingTrackId(undefined);
+    setTrackFormatFilter(definition.format);
+    setTrackFolderFilter(definition.folder);
+    setTrackGenreFilter(definition.genre);
+    setPageOffset(0);
+    setNotice(`Opened saved Library filter “${saved.name}”.`);
+  };
+
+  const deleteSavedLibraryFilter = async (
+    saved: SavedLibraryFilterDto,
+  ): Promise<void> => {
+    setSavedFilterBusy(true);
+    try {
+      const result = await window.outgroove.deleteSavedLibraryFilter({
+        id: saved.id,
+      });
+      if (result.ok) {
+        if (await refreshSavedFilters())
+          setNotice(`Deleted saved Library filter “${saved.name}”.`);
+      } else setNotice(result.error.message);
+    } finally {
+      setSavedFilterBusy(false);
+    }
   };
 
   const planSync = async (): Promise<void> => {
@@ -910,22 +1219,206 @@ export function App(): React.JSX.Element {
     else setNotice(result.error.message);
   };
 
+  const openSyncProfile = (saved: SyncProfileDto): void => {
+    setEditingSyncProfileId(undefined);
+    setSyncAlbums([]);
+    setProfile(saved);
+    setSyncPlan(undefined);
+    void refreshSyncHistory(saved.id);
+    setNotice(
+      `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
+    );
+  };
+
+  const editSyncProfileAlbums = (saved: SyncProfileDto): void => {
+    setProfile(saved);
+    setSyncPlan(undefined);
+    setEditingSyncProfileId(saved.id);
+    setSyncAlbums(saved.albums);
+    void refreshSyncHistory(saved.id);
+    setNotice(
+      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in the Workbench, then save the selection.`,
+    );
+  };
+
+  const cancelSyncProfileAlbumEdit = (): void => {
+    const name = editingSyncProfile?.name ?? "DAP profile";
+    setEditingSyncProfileId(undefined);
+    setSyncAlbums([]);
+    setNotice(`Discarded unsaved album-selection changes for “${name}”.`);
+  };
+
+  const saveSyncProfileAlbums = async (): Promise<void> => {
+    if (!editingSyncProfile || syncAlbums.length === 0) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.updateSyncProfileAlbums({
+        id: editingSyncProfile.id,
+        albumIds: syncAlbums.map((album) => album.id),
+      });
+      if (result.ok) {
+        setProfile(result.value);
+        setSyncPlan(undefined);
+        setEditingSyncProfileId(undefined);
+        setSyncAlbums([]);
+        const refreshed = await refreshSyncProfiles();
+        if (refreshed) {
+          const saved = refreshed.find(
+            (candidate) => candidate.id === result.value.id,
+          );
+          if (saved) setProfile(saved);
+          setNotice(
+            `Saved ${result.value.albumIds.length} albums in “${result.value.name}”. Its previous sync preview is invalid; create a fresh preview before applying.`,
+          );
+        }
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startSyncProfileRename = (saved: SyncProfileDto): void => {
+    setRenamingSyncProfileId(saved.id);
+    setSyncProfileNameDraft(saved.name);
+    setNotice(`Renaming DAP profile “${saved.name}”.`);
+  };
+
+  const cancelSyncProfileRename = (): void => {
+    setRenamingSyncProfileId(undefined);
+    setSyncProfileNameDraft("");
+    setNotice("Discarded the unsaved DAP profile name.");
+  };
+
+  const renameSyncProfile = async (saved: SyncProfileDto): Promise<void> => {
+    const name = syncProfileNameDraft.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.renameSyncProfile({
+        id: saved.id,
+        name,
+      });
+      if (result.ok) {
+        setSyncProfiles((current) =>
+          current.map((candidate) =>
+            candidate.id === result.value.id ? result.value : candidate,
+          ),
+        );
+        if (profile?.id === result.value.id) setProfile(result.value);
+        setRenamingSyncProfileId(undefined);
+        setSyncProfileNameDraft("");
+        if (await refreshSyncProfiles())
+          setNotice(
+            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+          );
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const applySync = async (): Promise<void> => {
     if (!syncPlan) return;
+    const applyingPlan = syncPlan;
+    setSyncApplyingPlanId(applyingPlan.id);
+    setSyncCancellationRequested(false);
     setBusy(true);
     try {
       const result = await window.outgroove.applySync({
-        planId: syncPlan.id,
-        confirmationToken: syncPlan.confirmationToken,
+        planId: applyingPlan.id,
+        confirmationToken: applyingPlan.confirmationToken,
       });
       if (result.ok) {
+        if (result.value.outcome === "completed")
+          setNotice(
+            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+          );
+        else if (result.value.outcome === "cancelled")
+          setNotice(
+            result.value.errors.length === 0
+              ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
+              : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
+          );
+        else
+          setNotice(
+            `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
+          );
+        if (result.value.outcome === "completed") {
+          await planSync();
+          await refreshSyncHistory(applyingPlan.profileId);
+        }
+        await refreshSyncRecoveries();
+      } else setNotice(result.error.message);
+    } finally {
+      setProgress((current) => (current?.job === "sync" ? undefined : current));
+      setSyncApplyingPlanId(undefined);
+      setSyncCancellationRequested(false);
+      setBusy(false);
+    }
+  };
+
+  const cancelSync = async (): Promise<void> => {
+    if (!syncApplyingPlanId || syncCancellationRequested) return;
+    const result = await window.outgroove.cancelSync({
+      planId: syncApplyingPlanId,
+    });
+    if (!result.ok) {
+      setNotice(result.error.message);
+      return;
+    }
+    if (result.value.accepted) {
+      setSyncCancellationRequested(true);
+      setNotice(
+        "Sync cancellation requested. Outgroove will finish or discard the current temporary copy, then restore files completed by this run.",
+      );
+    } else if (result.value.state === "finalizing")
+      setNotice(
+        "The sync is committing its playlist and manifest and can no longer be cancelled safely.",
+      );
+    else setNotice("The sync is no longer running.");
+  };
+
+  const applySyncRecovery = async (
+    recovery: SyncRecoveryPreviewDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncRecovery({
+        runId: recovery.runId,
+        confirmationToken: recovery.confirmationToken,
+      });
+      if (!result.ok) {
+        setNotice(result.error.message);
+        await refreshSyncRecoveries();
+        return;
+      }
+      await refreshSyncRecoveries();
+      if (result.value.complete) {
+        await refreshSyncHistory(recovery.profileId);
         setNotice(
           result.value.errors.length === 0
-            ? `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.`
-            : `Sync stopped: ${result.value.errors.join(" ")}`,
+            ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
+            : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
         );
-        if (result.value.errors.length === 0) await planSync();
-      } else setNotice(result.error.message);
+      } else
+        setNotice(
+          `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
+        );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reviewSyncRecovery = async (
+    recovery: SyncRecoverySummaryDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewSyncRecovery({
+        runId: recovery.runId,
+      });
+      if (result.ok) setSyncRecoveryPreview(result.value);
+      else setNotice(result.error.message);
     } finally {
       setBusy(false);
     }
@@ -1014,7 +1507,7 @@ export function App(): React.JSX.Element {
           id="library-search"
           type="search"
           value={searchText}
-          placeholder="Album, artist, track, format, or path"
+          placeholder="Album, artist, genre, track, format, or path"
           onChange={(event) => setSearchText(event.target.value)}
         />
         <label htmlFor="library-view">View</label>
@@ -1025,6 +1518,7 @@ export function App(): React.JSX.Element {
             const view = event.target.value as
               | "albums"
               | "artists"
+              | "genres"
               | "formats"
               | "folders"
               | "tracks"
@@ -1037,6 +1531,7 @@ export function App(): React.JSX.Element {
             setPendingTrackId(undefined);
             setTrackFormatFilter(undefined);
             setTrackFolderFilter(undefined);
+            setTrackGenreFilter(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
@@ -1044,6 +1539,7 @@ export function App(): React.JSX.Element {
         >
           <option value="albums">Albums</option>
           <option value="artists">Album artists</option>
+          <option value="genres">Genres</option>
           <option value="formats">Formats</option>
           <option value="folders">Folders</option>
           <option value="tracks">Tracks</option>
@@ -1133,7 +1629,131 @@ export function App(): React.JSX.Element {
             Show all folders
           </button>
         )}
+        {libraryView === "tracks" && trackGenreFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setTrackGenreFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all genres
+          </button>
+        )}
       </form>
+      <section className="saved-filters" aria-labelledby="saved-filters-title">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Local shortcuts</p>
+            <h2 id="saved-filters-title">Saved Library filters</h2>
+          </div>
+          <form
+            className="inline"
+            aria-label="Save current Library filter"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveCurrentLibraryFilter();
+            }}
+          >
+            <label htmlFor="saved-filter-name">Filter name</label>
+            <input
+              id="saved-filter-name"
+              value={savedFilterName}
+              maxLength={100}
+              placeholder="For example, Ambient FLAC"
+              onChange={(event) => setSavedFilterName(event.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={
+                savedFilterBusy ||
+                !savedFilterName.trim() ||
+                Boolean(albumIdFilter)
+              }
+            >
+              Save current filter
+            </button>
+          </form>
+        </div>
+        <p>
+          Saves the active search and view. Page position and exact Workbench
+          album routes remain temporary.
+        </p>
+        {albumIdFilter && (
+          <p>Status: Return to a normal Library view before saving.</p>
+        )}
+        {savedFilters.length === 0 ? (
+          <p>No saved Library filters yet.</p>
+        ) : (
+          <ul>
+            {savedFilters.map((saved) => (
+              <li key={saved.id}>
+                <div>
+                  <strong>{saved.name}</strong>
+                  <span>{describeSavedFilter(saved.definition)}</span>
+                </div>
+                <form
+                  className="inline"
+                  aria-label={`Rename ${saved.name}`}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const name = (savedFilterNames[saved.id] ?? "").trim();
+                    if (name)
+                      void updateSavedLibraryFilter(
+                        saved,
+                        name,
+                        saved.definition,
+                        "Renamed",
+                      );
+                  }}
+                >
+                  <label htmlFor={`saved-filter-name-${saved.id}`}>Name</label>
+                  <input
+                    id={`saved-filter-name-${saved.id}`}
+                    aria-label={`Name for ${saved.name}`}
+                    value={savedFilterNames[saved.id] ?? saved.name}
+                    maxLength={100}
+                    onChange={(event) =>
+                      setSavedFilterNames((names) => ({
+                        ...names,
+                        [saved.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      savedFilterBusy ||
+                      !(savedFilterNames[saved.id] ?? "").trim() ||
+                      (savedFilterNames[saved.id] ?? "").trim() === saved.name
+                    }
+                  >
+                    Rename {saved.name}
+                  </button>
+                </form>
+                <button
+                  disabled={savedFilterBusy}
+                  onClick={() => openSavedLibraryFilter(saved)}
+                >
+                  Open {saved.name}
+                </button>
+                <button
+                  disabled={savedFilterBusy || Boolean(albumIdFilter)}
+                  onClick={() => void replaceSavedLibraryFilter(saved)}
+                >
+                  Update {saved.name} to current filter
+                </button>
+                <button
+                  disabled={savedFilterBusy}
+                  onClick={() => void deleteSavedLibraryFilter(saved)}
+                >
+                  Delete {saved.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
         {libraryView === "scan-errors"
@@ -1144,25 +1764,29 @@ export function App(): React.JSX.Element {
             ? totalItems === 1
               ? "album artist"
               : "album artists"
-            : libraryView === "formats"
+            : libraryView === "genres"
               ? totalItems === 1
-                ? "format"
-                : "formats"
-              : libraryView === "folders"
+                ? "genre"
+                : "genres"
+              : libraryView === "formats"
                 ? totalItems === 1
-                  ? "folder"
-                  : "folders"
-                : libraryView === "tracks"
+                  ? "format"
+                  : "formats"
+                : libraryView === "folders"
                   ? totalItems === 1
-                    ? "track"
-                    : "tracks"
-                  : libraryView === "data-quality"
+                    ? "folder"
+                    : "folders"
+                  : libraryView === "tracks"
                     ? totalItems === 1
-                      ? "album needing review"
-                      : "albums needing review"
-                    : totalItems === 1
-                      ? "album"
-                      : "albums"}
+                      ? "track"
+                      : "tracks"
+                    : libraryView === "data-quality"
+                      ? totalItems === 1
+                        ? "album needing review"
+                        : "albums needing review"
+                      : totalItems === 1
+                        ? "album"
+                        : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
@@ -1178,6 +1802,11 @@ export function App(): React.JSX.Element {
           : ""}
         {libraryView === "tracks" && trackFolderFilter
           ? ` in folder “${trackFolderFilter.path}”`
+          : ""}
+        {libraryView === "tracks" && trackGenreFilter
+          ? trackGenreFilter.missing
+            ? " with no genre tag"
+            : ` with genre “${trackGenreFilter.name}”`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -1240,6 +1869,54 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "genres" ? (
+        <main className="genres" aria-labelledby="library-genres">
+          <h2 id="library-genres">Genres</h2>
+          {genres.length === 0 ? (
+            <p>
+              {query
+                ? "No genres match this search."
+                : "The current catalog has no genre entries."}
+            </p>
+          ) : (
+            <ul>
+              {genres.map((genre) => (
+                <li key={`${genre.missing ? "missing" : "tag"}:${genre.name}`}>
+                  <article>
+                    <h3>{genre.name}</h3>
+                    <p>
+                      Status: {genre.trackCount}{" "}
+                      {genre.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setTrackGenreFilter({
+                          name: genre.name,
+                          missing: genre.missing,
+                        });
+                        setTrackFormatFilter(undefined);
+                        setTrackFolderFilter(undefined);
+                        setLibraryView("tracks");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(
+                          genre.missing
+                            ? "Showing tracks with no genre tag from the local catalog."
+                            : `Showing tracks tagged ${genre.name} from the local catalog.`,
+                        );
+                      }}
+                    >
+                      {genre.missing
+                        ? "Browse tracks with no genre tag"
+                        : `Browse ${genre.name} tracks`}
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
       ) : libraryView === "formats" ? (
         <main className="formats" aria-labelledby="library-formats">
           <h2 id="library-formats">Formats</h2>
@@ -1263,6 +1940,7 @@ export function App(): React.JSX.Element {
                       onClick={() => {
                         setTrackFormatFilter(format.name);
                         setTrackFolderFilter(undefined);
+                        setTrackGenreFilter(undefined);
                         setLibraryView("tracks");
                         setSearchText("");
                         setQuery("");
@@ -1308,6 +1986,7 @@ export function App(): React.JSX.Element {
                           path: folder.path,
                         });
                         setTrackFormatFilter(undefined);
+                        setTrackGenreFilter(undefined);
                         setLibraryView("tracks");
                         setSearchText("");
                         setQuery("");
@@ -1334,9 +2013,13 @@ export function App(): React.JSX.Element {
                 ? "No tracks match this search."
                 : trackFolderFilter
                   ? `No tracks are cataloged in ${trackFolderFilter.path}.`
-                  : trackFormatFilter
-                    ? `No tracks use ${trackFormatFilter} format.`
-                    : "The current catalog has no tracks."}
+                  : trackGenreFilter
+                    ? trackGenreFilter.missing
+                      ? "No tracks are missing a genre tag."
+                      : `No tracks use the ${trackGenreFilter.name} genre.`
+                    : trackFormatFilter
+                      ? `No tracks use ${trackFormatFilter} format.`
+                      : "The current catalog has no tracks."}
             </p>
           ) : (
             <div className="track-table-scroll">
@@ -1347,7 +2030,7 @@ export function App(): React.JSX.Element {
                     <th scope="col">Artist</th>
                     <th scope="col">Album</th>
                     <th scope="col">Number</th>
-                    <th scope="col">Format</th>
+                    <th scope="col">Technical details</th>
                     <th scope="col">File</th>
                     <th scope="col">Action</th>
                   </tr>
@@ -1366,8 +2049,15 @@ export function App(): React.JSX.Element {
                         {track.trackNumber ?? "missing"}
                       </td>
                       <td>
-                        {track.format} ·{" "}
-                        {track.durationSeconds?.toFixed(1) ?? "—"}s
+                        {track.format} · {track.codec ?? "Unknown codec"}
+                        <small>
+                          Duration {formatDuration(track.durationSeconds)} ·{" "}
+                          {formatBitrate(track.bitrate)} ·{" "}
+                          {formatSampleRate(track.sampleRate)} ·{" "}
+                          {formatBitDepth(track.bitDepth)} ·{" "}
+                          {formatChannels(track.channels)} ·{" "}
+                          {formatFileSize(track.size)}
+                        </small>
                       </td>
                       <td>{track.path}</td>
                       <td>
@@ -1378,6 +2068,7 @@ export function App(): React.JSX.Element {
                             setPendingTrackId(track.id);
                             setTrackFormatFilter(undefined);
                             setTrackFolderFilter(undefined);
+                            setTrackGenreFilter(undefined);
                             setAlbumArtistFilter(undefined);
                             setLibraryView("albums");
                             setSearchText("");
@@ -1558,11 +2249,27 @@ export function App(): React.JSX.Element {
                           {track.tags.trackNumber ?? "—"} {track.tags.title}
                         </span>
                         <span>
-                          {track.format} ·{" "}
-                          {track.durationSeconds?.toFixed(1) ?? "—"}s
+                          {track.format} · {track.codec ?? "Unknown codec"} ·{" "}
+                          {formatDuration(track.durationSeconds)}
                         </span>
                       </summary>
                       <dl>
+                        <dt>Container/format</dt>
+                        <dd>{track.format}</dd>
+                        <dt>Codec</dt>
+                        <dd>{track.codec ?? "Unknown"}</dd>
+                        <dt>Duration</dt>
+                        <dd>{formatDuration(track.durationSeconds)}</dd>
+                        <dt>Bitrate</dt>
+                        <dd>{formatBitrate(track.bitrate)}</dd>
+                        <dt>Sample rate</dt>
+                        <dd>{formatSampleRate(track.sampleRate)}</dd>
+                        <dt>Bit depth</dt>
+                        <dd>{formatBitDepth(track.bitDepth)}</dd>
+                        <dt>Channels</dt>
+                        <dd>{formatChannels(track.channels)}</dd>
+                        <dt>File size</dt>
+                        <dd>{formatFileSize(track.size)}</dd>
                         <dt>Path</dt>
                         <dd>{track.path}</dd>
                         <dt>Normalized tags</dt>
@@ -2490,52 +3197,74 @@ export function App(): React.JSX.Element {
                     Copies only. This slice never deletes target files or
                     modifies source audio.
                   </p>
-                  <button disabled={busy} onClick={() => void chooseTarget()}>
-                    Choose fake DAP target
+                  <button
+                    disabled={
+                      busy ||
+                      (syncAlbums.length >= 100 &&
+                        !syncAlbums.some(
+                          (album) => album.id === selectedAlbum.id,
+                        ))
+                    }
+                    aria-pressed={syncAlbums.some(
+                      (album) => album.id === selectedAlbum.id,
+                    )}
+                    onClick={() => toggleSyncAlbum(selectedAlbum)}
+                  >
+                    {syncAlbums.some((album) => album.id === selectedAlbum.id)
+                      ? `Remove ${selectedAlbum.title} from DAP selection`
+                      : `Add ${selectedAlbum.title} to DAP selection`}
                   </button>
-                  {profile && (
-                    <div>
-                      <p>
-                        <strong>{profile.name}</strong>
-                        <br />
-                        {profile.targetPath}
-                      </p>
-                      <button onClick={() => void planSync()}>
-                        Preview sync plan
-                      </button>
-                    </div>
+                  <p aria-live="polite">
+                    {syncAlbums.length} of 100 albums selected for{" "}
+                    {editingSyncProfile
+                      ? `the ${editingSyncProfile.name} revision.`
+                      : "the next DAP profile."}
+                  </p>
+                  {syncAlbums.length > 0 && (
+                    <ul aria-label="Albums selected for DAP sync">
+                      {syncAlbums.map((album) => (
+                        <li key={album.id}>
+                          {album.albumArtist} — {album.title}
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                  {syncPlan && (
-                    <div className="preview" aria-label="Sync confirmation">
-                      <h4>Sync preview</h4>
-                      <PlanGroup
-                        title="Copies"
-                        items={syncPlan.copies.map(
-                          (item) => item.relativeDestination,
-                        )}
-                      />
-                      <PlanGroup
-                        title="Unchanged / skipped"
-                        items={syncPlan.unchanged.map(
-                          (item) => item.relativeDestination,
-                        )}
-                      />
-                      <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-                      <PlanGroup title="Errors" items={syncPlan.errors} />
-                      <p>{syncPlan.requiredBytes} bytes required.</p>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          syncPlan.conflicts.length > 0 ||
-                          syncPlan.errors.length > 0
-                        }
-                        onClick={() => void applySync()}
-                      >
-                        Confirm and apply copy plan
-                      </button>
-                    </div>
-                  )}
+                  <div className="actions">
+                    {editingSyncProfile ? (
+                      <>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => void saveSyncProfileAlbums()}
+                        >
+                          Save album selection for {editingSyncProfile.name}
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={cancelSyncProfileAlbumEdit}
+                        >
+                          Cancel album selection changes
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => void chooseTarget()}
+                        >
+                          Choose DAP target for selected albums
+                        </button>
+                        <button
+                          disabled={busy || syncAlbums.length === 0}
+                          onClick={() => {
+                            setSyncAlbums([]);
+                            setNotice("Cleared the DAP album selection.");
+                          }}
+                        >
+                          Clear DAP album selection
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </section>
               </>
             )}
@@ -2562,6 +3291,257 @@ export function App(): React.JSX.Element {
           </button>
         </nav>
       )}
+      <section className="card settings" aria-labelledby="dap-profiles">
+        <h2 id="dap-profiles">DAP profiles</h2>
+        <p>
+          Saved profiles can be reopened after restarting Outgroove. Opening a
+          profile only restores its selection; it does not read or change the
+          target until you request a preview. Interrupted syncs are detected at
+          startup, but the target is inspected read-only only when you review a
+          recovery.
+        </p>
+        {syncRecoveries.length > 0 && (
+          <section aria-labelledby="sync-recovery-title" className="preview">
+            <h3 id="sync-recovery-title">Interrupted sync recovery</h3>
+            <p>
+              Review every action before confirming. Recovery never changes
+              source audio and leaves target files with unexpected contents
+              untouched.
+            </p>
+            <ul aria-label="Interrupted sync recoveries">
+              {syncRecoveries.map((recovery) => (
+                <li key={recovery.runId}>
+                  <strong>{recovery.profileName}</strong>
+                  <p>
+                    Status:{" "}
+                    {recovery.mode === "committed-cleanup"
+                      ? "Sync committed; internal cleanup was interrupted"
+                      : `Interrupted during ${recovery.phase}`}
+                  </p>
+                  <p>{recovery.targetPath}</p>
+                  <button
+                    disabled={busy}
+                    onClick={() => void reviewSyncRecovery(recovery)}
+                  >
+                    Review recovery for {recovery.profileName}
+                  </button>
+                  {syncRecoveryPreview?.runId === recovery.runId && (
+                    <div className="preview">
+                      {syncRecoveryPreview.actions.length === 0 ? (
+                        <p>No target changes can currently be applied.</p>
+                      ) : (
+                        <ul
+                          aria-label={`Recovery actions for ${recovery.profileName}`}
+                        >
+                          {syncRecoveryPreview.actions.map((action) => (
+                            <li key={`${action.action}:${action.path}`}>
+                              {action.action === "restore"
+                                ? "Restore"
+                                : "Remove"}
+                              : {action.path}. {action.explanation}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {syncRecoveryPreview.warnings.map((warning) => (
+                        <p key={warning}>Warning: {warning}</p>
+                      ))}
+                      <button
+                        disabled={busy || !syncRecoveryPreview.canRecover}
+                        onClick={() =>
+                          void applySyncRecovery(syncRecoveryPreview)
+                        }
+                      >
+                        Confirm recovery for {recovery.profileName}
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {syncProfiles.length === 0 ? (
+          <p>No DAP profiles have been saved yet.</p>
+        ) : (
+          <ul className="library-root-list" aria-label="Saved DAP profiles">
+            {syncProfiles.map((saved) => (
+              <li key={saved.id}>
+                <div>
+                  <strong>{saved.name}</strong>
+                  <span>{saved.targetPath}</span>
+                  <span>
+                    {saved.albums.length} saved{" "}
+                    {saved.albums.length === 1 ? "album" : "albums"}:{" "}
+                    {saved.albums
+                      .map((album) => `${album.albumArtist} — ${album.title}`)
+                      .join("; ")}
+                  </span>
+                </div>
+                <div className="library-root-actions">
+                  <button
+                    disabled={busy || Boolean(renamingSyncProfileId)}
+                    aria-pressed={profile?.id === saved.id}
+                    onClick={() => openSyncProfile(saved)}
+                  >
+                    Open DAP profile {saved.name}
+                  </button>
+                  <button
+                    disabled={busy || Boolean(renamingSyncProfileId)}
+                    onClick={() => editSyncProfileAlbums(saved)}
+                  >
+                    Edit albums in DAP profile {saved.name}
+                  </button>
+                  {renamingSyncProfileId === saved.id ? (
+                    <form
+                      aria-label={`Rename DAP profile ${saved.name}`}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void renameSyncProfile(saved);
+                      }}
+                    >
+                      <label htmlFor={`sync-profile-name-${saved.id}`}>
+                        New name for {saved.name}
+                      </label>
+                      <input
+                        autoFocus
+                        id={`sync-profile-name-${saved.id}`}
+                        maxLength={100}
+                        value={syncProfileNameDraft}
+                        onChange={(event) =>
+                          setSyncProfileNameDraft(event.target.value)
+                        }
+                      />
+                      <button
+                        disabled={
+                          busy || syncProfileNameDraft.trim().length === 0
+                        }
+                        type="submit"
+                      >
+                        Save DAP profile name
+                      </button>
+                      <button
+                        disabled={busy}
+                        type="button"
+                        onClick={cancelSyncProfileRename}
+                      >
+                        Cancel DAP profile rename
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      disabled={
+                        busy ||
+                        Boolean(editingSyncProfileId) ||
+                        Boolean(renamingSyncProfileId)
+                      }
+                      onClick={() => startSyncProfileRename(saved)}
+                    >
+                      Rename DAP profile {saved.name}
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {profile && (
+          <div aria-label="Active DAP profile">
+            <p>
+              <strong>{profile.name}</strong>
+              <br />
+              {profile.targetPath}
+            </p>
+            <p>
+              Status: {profile.albumIds.length} selected{" "}
+              {profile.albumIds.length === 1 ? "album" : "albums"} saved in this
+              profile.
+            </p>
+            {editingSyncProfile?.id === profile.id && (
+              <p>Status: Album-selection changes are not saved yet.</p>
+            )}
+            <button
+              disabled={busy || editingSyncProfile?.id === profile.id}
+              onClick={() => void planSync()}
+            >
+              Preview sync plan
+            </button>
+            <section
+              aria-labelledby={`sync-history-${profile.id}`}
+              className="preview"
+            >
+              <h3 id={`sync-history-${profile.id}`}>Successful sync history</h3>
+              <p>
+                Shows only runs whose manifest was committed successfully. The
+                20 newest runs are shown in this view.
+              </p>
+              {syncHistoryProfileId !== profile.id || syncHistoryLoading ? (
+                <p aria-live="polite">Loading successful sync history…</p>
+              ) : syncHistory.length === 0 ? (
+                <p>No successful sync runs have been recorded yet.</p>
+              ) : (
+                <ul aria-label={`Successful sync history for ${profile.name}`}>
+                  {syncHistory.map((item) => (
+                    <li key={item.id}>
+                      <time dateTime={item.completedAt}>
+                        {new Date(item.completedAt).toLocaleString()}
+                      </time>
+                      {" — "}
+                      {item.entryCount}{" "}
+                      {item.entryCount === 1 ? "file" : "files"}
+                      {" — "}
+                      {item.targetPath}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        )}
+        {syncPlan && (
+          <div className="preview" aria-label="Sync confirmation">
+            <h3>Sync preview</h3>
+            <PlanGroup
+              title="Copies"
+              items={syncPlan.copies.map((item) => item.relativeDestination)}
+            />
+            <PlanGroup
+              title="Unchanged / skipped"
+              items={syncPlan.unchanged.map((item) => item.relativeDestination)}
+            />
+            <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
+            <PlanGroup title="Errors" items={syncPlan.errors} />
+            <p>{syncPlan.requiredBytes} bytes required.</p>
+            <button
+              className="primary"
+              disabled={
+                busy ||
+                syncPlan.conflicts.length > 0 ||
+                syncPlan.errors.length > 0
+              }
+              onClick={() => void applySync()}
+            >
+              Confirm and apply copy plan
+            </button>
+            {syncApplyingPlanId === syncPlan.id && (
+              <div aria-live="polite">
+                <p>
+                  Status:{" "}
+                  {syncCancellationRequested
+                    ? "Cancelling safely"
+                    : "Sync in progress"}
+                </p>
+                <button
+                  disabled={syncCancellationRequested}
+                  onClick={() => void cancelSync()}
+                >
+                  Cancel active sync
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
       <section
         className="card settings"
         aria-labelledby="watched-library-folders"
@@ -2693,6 +3673,8 @@ export function App(): React.JSX.Element {
               <dd>{restorePreview.summary.tracks}</dd>
               <dt>DAP profiles</dt>
               <dd>{restorePreview.summary.syncProfiles}</dd>
+              <dt>Saved Library filters</dt>
+              <dd>{restorePreview.summary.savedLibraryFilters}</dd>
               <dt>Schema</dt>
               <dd>Version {restorePreview.schemaVersion}</dd>
             </dl>
