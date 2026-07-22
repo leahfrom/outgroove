@@ -21,6 +21,7 @@ function addAlbum(
   rootId: string,
   directory: string,
   index: number,
+  albumArtist = "Fixture Artist",
 ): void {
   const album = `Album ${String(index).padStart(2, "0")}`;
   const path = join(
@@ -38,7 +39,7 @@ function addAlbum(
       title: index === 9 ? "Needle Track" : `Track ${index}`,
       album,
       artist: index === 5 ? "Guest Track Artist" : "Fixture Artist",
-      albumArtist: "Fixture Artist",
+      albumArtist,
       trackNumber: 1,
       discNumber: 1,
       year: "2026",
@@ -48,6 +49,85 @@ function addAlbum(
 }
 
 describe("paginated library query", () => {
+  it("pages searchable album artists with exact album and track counts", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-artists-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    for (let index = 0; index < 21; index++)
+      addAlbum(
+        database,
+        root.id,
+        directory,
+        index,
+        `Artist ${String(index).padStart(2, "0")}`,
+      );
+    addAlbum(database, root.id, directory, 50, "Artist 05");
+
+    const first = database.queryLibrary({
+      query: "",
+      view: "artists",
+      offset: 0,
+      limit: 10,
+    });
+    const last = database.queryLibrary({
+      query: "",
+      view: "artists",
+      offset: 20,
+      limit: 10,
+    });
+    expect(first.totalItems).toBe(21);
+    expect(first.artists).toHaveLength(10);
+    expect(first.artists[0]).toEqual({
+      name: "Artist 00",
+      albumCount: 1,
+      trackCount: 1,
+    });
+    expect(last.artists.map((artist) => artist.name)).toEqual(["Artist 20"]);
+
+    const searched = database.queryLibrary({
+      query: "05",
+      view: "artists",
+      offset: 0,
+      limit: 10,
+    });
+    expect(searched.artists).toEqual([
+      { name: "Artist 05", albumCount: 2, trackCount: 2 },
+    ]);
+    const filtered = database.queryLibrary({
+      query: "Album 50",
+      view: "albums",
+      offset: 0,
+      limit: 10,
+      albumArtist: "Artist 05",
+    });
+    expect(filtered.albums.map((album) => album.title)).toEqual(["Album 50"]);
+    expect(
+      database
+        .queryLibrary({
+          query: "50",
+          view: "albums",
+          offset: 0,
+          limit: 10,
+          albumArtist: "Artist 05",
+        })
+        .albums.map((album) => album.title),
+    ).toEqual(["Album 50"]);
+    expect(
+      database.queryLibrary({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 10,
+        albumArtist: "Artist 05",
+      }).totalItems,
+    ).toBe(2);
+    database.close();
+  });
+
   it("returns stable bounded pages and searches track, path, and format", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-query-"));
     temporary.push(directory);

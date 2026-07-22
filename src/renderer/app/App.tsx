@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   DatabaseRestorePreviewDto,
+  LibraryArtistDto,
   ScanErrorDto,
   ScanJobDto,
   SyncPlanDto,
@@ -57,12 +58,14 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
+  const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [scanErrors, setScanErrors] = useState<readonly ScanErrorDto[]>([]);
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
-    "albums" | "data-quality" | "scan-errors"
+    "albums" | "artists" | "data-quality" | "scan-errors"
   >("albums");
+  const [albumArtistFilter, setAlbumArtistFilter] = useState<string>();
   const [qualityFilter, setQualityFilter] =
     useState<AlbumDiagnosticFilter>("all");
   const [pageOffset, setPageOffset] = useState(0);
@@ -188,6 +191,9 @@ export function App(): React.JSX.Element {
       offset: pageOffset,
       limit: PAGE_SIZE,
       ...(libraryView === "data-quality" ? { qualityFilter } : {}),
+      ...(libraryView === "albums" && albumArtistFilter
+        ? { albumArtist: albumArtistFilter }
+        : {}),
     });
     if (requestId !== libraryRequestId.current) return;
     if (result.ok) {
@@ -200,6 +206,7 @@ export function App(): React.JSX.Element {
         return;
       }
       setAlbums(result.value.albums);
+      setArtists(result.value.artists);
       setScanErrors(result.value.scanErrors);
       setTotalItems(result.value.totalItems);
       setSelectedAlbumId((current) =>
@@ -208,7 +215,7 @@ export function App(): React.JSX.Element {
           : result.value.albums[0]?.id,
       );
     } else setNotice(result.error.message);
-  }, [libraryView, pageOffset, qualityFilter, query]);
+  }, [albumArtistFilter, libraryView, pageOffset, qualityFilter, query]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -882,14 +889,16 @@ export function App(): React.JSX.Element {
           value={libraryView}
           onChange={(event) => {
             const view = event.target.value as
-              "albums" | "data-quality" | "scan-errors";
+              "albums" | "artists" | "data-quality" | "scan-errors";
             setLibraryView(view);
+            setAlbumArtistFilter(undefined);
             setPageOffset(0);
             if (view === "data-quality")
               setNotice("Checking album data quality in a background worker…");
           }}
         >
           <option value="albums">Albums</option>
+          <option value="artists">Album artists</option>
           <option value="data-quality">Albums needing review</option>
           <option value="scan-errors">Scan problems</option>
         </select>
@@ -930,6 +939,17 @@ export function App(): React.JSX.Element {
             Clear search
           </button>
         )}
+        {libraryView === "albums" && albumArtistFilter && (
+          <button
+            type="button"
+            onClick={() => {
+              setAlbumArtistFilter(undefined);
+              setPageOffset(0);
+            }}
+          >
+            Show all album artists
+          </button>
+        )}
       </form>
       <p className="result-count" aria-live="polite">
         {totalItems}{" "}
@@ -937,16 +957,23 @@ export function App(): React.JSX.Element {
           ? totalItems === 1
             ? "scan problem"
             : "scan problems"
-          : libraryView === "data-quality"
+          : libraryView === "artists"
             ? totalItems === 1
-              ? "album needing review"
-              : "albums needing review"
-            : totalItems === 1
-              ? "album"
-              : "albums"}
+              ? "album artist"
+              : "album artists"
+            : libraryView === "data-quality"
+              ? totalItems === 1
+                ? "album needing review"
+                : "albums needing review"
+              : totalItems === 1
+                ? "album"
+                : "albums"}
         {query ? ` matching “${query}”` : ""}
         {libraryView === "data-quality" && qualityFilter !== "all"
           ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
+          : ""}
+        {libraryView === "albums" && albumArtistFilter
+          ? ` by “${albumArtistFilter}”`
           : ""}
       </p>
       {libraryView === "scan-errors" ? (
@@ -970,25 +997,68 @@ export function App(): React.JSX.Element {
             </ul>
           )}
         </main>
+      ) : libraryView === "artists" ? (
+        <main className="artists" aria-labelledby="album-artists">
+          <h2 id="album-artists">Album artists</h2>
+          {artists.length === 0 ? (
+            <p>
+              {query
+                ? "No album artists match this search."
+                : "The current catalog has no album artists."}
+            </p>
+          ) : (
+            <ul>
+              {artists.map((artist) => (
+                <li key={artist.name}>
+                  <article>
+                    <h3>{artist.name}</h3>
+                    <p>
+                      Status: {artist.albumCount}{" "}
+                      {artist.albumCount === 1 ? "album" : "albums"} ·{" "}
+                      {artist.trackCount}{" "}
+                      {artist.trackCount === 1 ? "track" : "tracks"}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setAlbumArtistFilter(artist.name);
+                        setLibraryView("albums");
+                        setSearchText("");
+                        setQuery("");
+                        setPageOffset(0);
+                        setNotice(`Showing albums by ${artist.name}.`);
+                      }}
+                    >
+                      Browse albums by {artist.name}
+                    </button>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          )}
+        </main>
       ) : albums.length === 0 ? (
         <main className="empty">
           <h2>
             {query
               ? "No matching albums"
-              : libraryView === "data-quality"
-                ? "No albums need review"
-                : "Your Library is empty"}
+              : albumArtistFilter
+                ? `No albums by ${albumArtistFilter}`
+                : libraryView === "data-quality"
+                  ? "No albums need review"
+                  : "Your Library is empty"}
           </h2>
           <p>
             {query
               ? "Try a different album, artist, track, format, or path."
-              : libraryView === "data-quality"
-                ? qualityFilter === "all"
-                  ? "The current catalog has no album data-quality findings."
-                  : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
-                : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+              : albumArtistFilter
+                ? "Clear the album-artist filter to return to the full Library."
+                : libraryView === "data-quality"
+                  ? qualityFilter === "all"
+                    ? "The current catalog has no album data-quality findings."
+                    : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                  : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
           </p>
-          {!query && libraryView !== "data-quality" && (
+          {!query && !albumArtistFilter && libraryView !== "data-quality" && (
             <button
               disabled={busy || scanActive}
               onClick={() => void chooseAndScan()}

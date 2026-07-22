@@ -166,9 +166,15 @@ export function registerIpc(
       await dependencies.qualityQuery.cancel();
       return dependencies.database.queryLibrary({
         query: request.query,
-        view: request.view === "scan-errors" ? "scan-errors" : "albums",
+        view:
+          request.view === "scan-errors"
+            ? "scan-errors"
+            : request.view === "artists"
+              ? "artists"
+              : "albums",
         offset: request.offset,
         limit: request.limit,
+        ...(request.albumArtist ? { albumArtist: request.albumArtist } : {}),
       });
     }),
   );
