@@ -5,6 +5,7 @@ import type {
   LibraryArtistDto,
   LibraryFormatDto,
   LibraryFolderDto,
+  LibraryRootDto,
   LibraryTrackDto,
   ScanErrorDto,
   ScanJobDto,
@@ -71,6 +72,9 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 
 export function App(): React.JSX.Element {
   const [rootId, setRootId] = useState<string>();
+  const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
+    [],
+  );
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
@@ -276,6 +280,18 @@ export function App(): React.JSX.Element {
     [],
   );
 
+  const refreshLibraryRoots = useCallback(async (): Promise<void> => {
+    const result = await window.outgroove.listLibraryRoots();
+    if (result.ok) {
+      setLibraryRoots(result.value);
+      setRootId((current) =>
+        current && result.value.some((root) => root.id === current)
+          ? current
+          : result.value[0]?.id,
+      );
+    } else setNotice(result.error.message);
+  }, []);
+
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
     const unsubscribe = window.outgroove.onScanJobUpdated((job) => {
@@ -284,6 +300,7 @@ export function App(): React.JSX.Element {
         setNotice(
           `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
         );
+        void refreshLibraryRoots();
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
@@ -293,10 +310,12 @@ export function App(): React.JSX.Element {
       window.outgroove.listLibraryRoots(),
       window.outgroove.getLatestScanJob(),
     ]).then(([roots, latest]) => {
-      if (roots.ok)
+      if (roots.ok) {
+        setLibraryRoots(roots.value);
         setRootId(
           latest.ok && latest.value ? latest.value.rootId : roots.value[0]?.id,
         );
+      } else setNotice(roots.error.message);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
         if (
@@ -307,7 +326,7 @@ export function App(): React.JSX.Element {
       }
     });
     return unsubscribe;
-  }, [refreshCatalog]);
+  }, [refreshCatalog, refreshLibraryRoots]);
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
@@ -352,6 +371,7 @@ export function App(): React.JSX.Element {
   }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<void> => {
+    setRootId(selectedRootId);
     const started = await window.outgroove.scanLibrary({
       rootId: selectedRootId,
     });
@@ -375,8 +395,16 @@ export function App(): React.JSX.Element {
         setNotice("Folder selection cancelled.");
         return;
       }
-      setRootId(selected.value.id);
-      await startScan(selected.value.id);
+      const selectedRoot = selected.value;
+      setLibraryRoots((current) => {
+        const existing = current.find((root) => root.id === selectedRoot.id);
+        return existing
+          ? current.map((root) =>
+              root.id === selectedRoot.id ? selectedRoot : root,
+            )
+          : [...current, selectedRoot];
+      });
+      await startScan(selectedRoot.id);
     } finally {
       setBusy(false);
     }
@@ -878,7 +906,7 @@ export function App(): React.JSX.Element {
             disabled={busy || scanActive || !rootId}
             onClick={() => void rescan()}
           >
-            Scan again
+            Scan current folder
           </button>
         </div>
       </header>
@@ -920,7 +948,10 @@ export function App(): React.JSX.Element {
           {(scanJob.state === "cancelled" ||
             scanJob.state === "failed" ||
             scanJob.state === "interrupted") && (
-            <button disabled={!rootId} onClick={() => void rescan()}>
+            <button
+              disabled={!scanJob.rootId}
+              onClick={() => void startScan(scanJob.rootId)}
+            >
               Retry scan
             </button>
           )}
@@ -2488,6 +2519,55 @@ export function App(): React.JSX.Element {
           </button>
         </nav>
       )}
+      <section
+        className="card settings"
+        aria-labelledby="watched-library-folders"
+      >
+        <h2 id="watched-library-folders">Watched Library folders</h2>
+        <p>
+          Outgroove scans only folders you explicitly choose. Rescanning reads
+          that folder through the existing incremental scan and never changes
+          audio files.
+        </p>
+        {libraryRoots.length === 0 ? (
+          <p>No Library folders have been chosen yet.</p>
+        ) : (
+          <ul className="library-root-list">
+            {libraryRoots.map((root) => {
+              const isCurrent = root.id === rootId;
+              const isScanning = scanActive && scanJob.rootId === root.id;
+              return (
+                <li key={root.id}>
+                  <div>
+                    <strong>{root.path}</strong>
+                    <span>
+                      Status: {isScanning ? "Scan in progress" : null}
+                      {isScanning && root.lastScanAt ? " · " : null}
+                      {root.lastScanAt ? (
+                        <>
+                          Last scanned{" "}
+                          <time dateTime={root.lastScanAt}>
+                            {new Date(root.lastScanAt).toLocaleString()}
+                          </time>
+                        </>
+                      ) : isScanning ? null : (
+                        "Never scanned"
+                      )}
+                    </span>
+                    {isCurrent && <span>Current scan target</span>}
+                  </div>
+                  <button
+                    disabled={busy || scanActive}
+                    onClick={() => void startScan(root.id)}
+                  >
+                    Scan folder {root.path}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
       <section className="card settings" aria-labelledby="database-safety">
         <h2 id="database-safety">Database safety</h2>
         <p>
