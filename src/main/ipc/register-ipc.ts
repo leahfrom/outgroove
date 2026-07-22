@@ -19,6 +19,7 @@ import {
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
+  syncHistoryRequestSchema,
   syncPlanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
@@ -408,6 +409,12 @@ export function registerIpc(
     channels.renameSyncProfile,
     createValidatedHandler(renameSyncProfileRequestSchema, ({ id, name }) =>
       dependencies.database.renameSyncProfile(id, name),
+    ),
+  );
+  ipcMain.handle(
+    channels.listSyncHistory,
+    createValidatedHandler(syncHistoryRequestSchema, ({ profileId }) =>
+      dependencies.database.listSyncHistory(profileId),
     ),
   );
   ipcMain.handle(

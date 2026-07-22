@@ -13,6 +13,7 @@ import type {
   SavedLibraryFilterDto,
   ScanErrorDto,
   ScanJobDto,
+  SyncHistoryItemDto,
   SyncPlanDto,
   SyncProfileDto,
   TagEditResultDto,
@@ -215,6 +216,11 @@ export function App(): React.JSX.Element {
   const [editingSyncProfileId, setEditingSyncProfileId] = useState<string>();
   const [renamingSyncProfileId, setRenamingSyncProfileId] = useState<string>();
   const [syncProfileNameDraft, setSyncProfileNameDraft] = useState("");
+  const [syncHistory, setSyncHistory] = useState<readonly SyncHistoryItemDto[]>(
+    [],
+  );
+  const [syncHistoryProfileId, setSyncHistoryProfileId] = useState<string>();
+  const [syncHistoryLoading, setSyncHistoryLoading] = useState(false);
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -237,6 +243,7 @@ export function App(): React.JSX.Element {
   const sequenceEditorRef = useRef<HTMLDivElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const libraryRequestId = useRef(0);
+  const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
     scanJob?.state === "running" ||
@@ -395,6 +402,25 @@ export function App(): React.JSX.Element {
     setNotice(result.error.message);
     return undefined;
   }, []);
+
+  const refreshSyncHistory = useCallback(
+    async (profileId: string): Promise<boolean> => {
+      const requestId = ++syncHistoryRequestId.current;
+      setSyncHistoryProfileId(profileId);
+      setSyncHistory([]);
+      setSyncHistoryLoading(true);
+      const result = await window.outgroove.listSyncHistory({ profileId });
+      if (requestId !== syncHistoryRequestId.current) return false;
+      setSyncHistoryLoading(false);
+      if (result.ok) {
+        setSyncHistory(result.value);
+        return true;
+      }
+      setNotice(result.error.message);
+      return false;
+    },
+    [],
+  );
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
   useEffect(() => {
@@ -1009,6 +1035,7 @@ export function App(): React.JSX.Element {
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
+      void refreshSyncHistory(result.value.id);
       const refreshed = await refreshSyncProfiles();
       if (refreshed) {
         const saved = refreshed.find(
@@ -1176,6 +1203,7 @@ export function App(): React.JSX.Element {
     setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
+    void refreshSyncHistory(saved.id);
     setNotice(
       `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
     );
@@ -1186,6 +1214,7 @@ export function App(): React.JSX.Element {
     setSyncPlan(undefined);
     setEditingSyncProfileId(saved.id);
     setSyncAlbums(saved.albums);
+    void refreshSyncHistory(saved.id);
     setNotice(
       `Editing albums for DAP profile “${saved.name}”. Add or remove albums in the Workbench, then save the selection.`,
     );
@@ -1281,7 +1310,10 @@ export function App(): React.JSX.Element {
             ? `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.`
             : `Sync stopped: ${result.value.errors.join(" ")}`,
         );
-        if (result.value.errors.length === 0) await planSync();
+        if (result.value.errors.length === 0) {
+          await planSync();
+          await refreshSyncHistory(syncPlan.profileId);
+        }
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -3267,6 +3299,36 @@ export function App(): React.JSX.Element {
             >
               Preview sync plan
             </button>
+            <section
+              aria-labelledby={`sync-history-${profile.id}`}
+              className="preview"
+            >
+              <h3 id={`sync-history-${profile.id}`}>Successful sync history</h3>
+              <p>
+                Shows only runs whose manifest was committed successfully. The
+                20 newest runs are shown in this view.
+              </p>
+              {syncHistoryProfileId !== profile.id || syncHistoryLoading ? (
+                <p aria-live="polite">Loading successful sync history…</p>
+              ) : syncHistory.length === 0 ? (
+                <p>No successful sync runs have been recorded yet.</p>
+              ) : (
+                <ul aria-label={`Successful sync history for ${profile.name}`}>
+                  {syncHistory.map((item) => (
+                    <li key={item.id}>
+                      <time dateTime={item.completedAt}>
+                        {new Date(item.completedAt).toLocaleString()}
+                      </time>
+                      {" — "}
+                      {item.entryCount}{" "}
+                      {item.entryCount === 1 ? "file" : "files"}
+                      {" — "}
+                      {item.targetPath}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         )}
         {syncPlan && (

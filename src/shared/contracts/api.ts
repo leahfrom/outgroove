@@ -220,6 +220,9 @@ export const updateSyncProfileAlbumsRequestSchema = z
 export const renameSyncProfileRequestSchema = z
   .object({ id: z.uuid(), name: z.string().trim().min(1).max(100) })
   .strict();
+export const syncHistoryRequestSchema = z
+  .object({ profileId: z.uuid() })
+  .strict();
 export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
@@ -437,6 +440,13 @@ export interface SyncProfileDto {
   }[];
   readonly createdAt: string;
 }
+export interface SyncHistoryItemDto {
+  readonly id: string;
+  readonly profileId: string;
+  readonly targetPath: string;
+  readonly completedAt: string;
+  readonly entryCount: number;
+}
 export interface SyncPlanDto {
   readonly id: string;
   readonly profileId: string;
@@ -552,6 +562,9 @@ export interface OutgrooveApi {
   renameSyncProfile(
     request: z.infer<typeof renameSyncProfileRequestSchema>,
   ): Promise<Result<SyncProfileDto>>;
+  listSyncHistory(
+    request: z.infer<typeof syncHistoryRequestSchema>,
+  ): Promise<Result<readonly SyncHistoryItemDto[]>>;
   planSync(
     request: z.infer<typeof syncPlanRequestSchema>,
   ): Promise<Result<SyncPlanDto>>;

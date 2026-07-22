@@ -183,6 +183,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     updateSyncProfileAlbums: vi.fn(),
     renameSyncProfile: vi.fn(),
+    listSyncHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
@@ -2654,6 +2655,9 @@ describe("tag edit UI safety states", () => {
           albumIds: [album.id, secondAlbum.id],
         },
       });
+    const listSyncHistory = vi
+      .spyOn(mockApi, "listSyncHistory")
+      .mockResolvedValue({ ok: true, value: [] });
     const plan = {
       id: "853a8e28-560a-4261-b152-1fe31c26dc42",
       profileId,
@@ -2718,6 +2722,11 @@ describe("tag edit UI safety states", () => {
       name: "Outgroove 2-album DAP",
       albumIds: [album.id, secondAlbum.id],
     });
+    expect(
+      await screen.findByText(
+        "No successful sync runs have been recorded yet.",
+      ),
+    ).toBeVisible();
     expect(applySync).not.toHaveBeenCalled();
 
     const previewButton = await screen.findByRole("button", {
@@ -2738,6 +2747,9 @@ describe("tag edit UI safety states", () => {
       planId: plan.id,
       confirmationToken: plan.confirmationToken,
     });
+    await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
+    expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
+    expect(listSyncHistory).toHaveBeenNthCalledWith(2, { profileId });
   });
 
   it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {
@@ -2767,6 +2779,27 @@ describe("tag edit UI safety states", () => {
         },
       ],
     });
+    const listSyncHistory = vi
+      .spyOn(mockApi, "listSyncHistory")
+      .mockResolvedValue({
+        ok: true,
+        value: [
+          {
+            id: "b1a3e2cd-2d58-4b53-a414-07d34b7da3a7",
+            profileId,
+            targetPath: "/fixture/dap",
+            completedAt: "2026-07-22T10:00:00.000Z",
+            entryCount: 2,
+          },
+          {
+            id: "986176c9-9e80-460c-a2a0-ab7dcc3e7834",
+            profileId,
+            targetPath: "/fixture/older-dap",
+            completedAt: "2026-07-21T09:00:00.000Z",
+            entryCount: 1,
+          },
+        ],
+      });
     const planSync = vi.spyOn(mockApi, "planSync").mockResolvedValue({
       ok: true,
       value: {
@@ -2810,6 +2843,21 @@ describe("tag edit UI safety states", () => {
     open.focus();
     await user.keyboard("{Enter}");
     expect(open).toHaveAttribute("aria-pressed", "true");
+    expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
+    const history = await screen.findByRole("list", {
+      name: "Successful sync history for Road DAP",
+    });
+    expect(history).toHaveTextContent("2 files");
+    expect(history).toHaveTextContent("1 file");
+    expect(history).toHaveTextContent("/fixture/dap");
+    expect(history).toHaveTextContent("/fixture/older-dap");
+    expect(
+      within(history).getByText(
+        (_content, element) =>
+          element?.matches('time[datetime="2026-07-22T10:00:00.000Z"]') ??
+          false,
+      ),
+    ).toBeVisible();
     expect(chooseTarget).not.toHaveBeenCalled();
     expect(planSync).not.toHaveBeenCalled();
     expect(applySync).not.toHaveBeenCalled();

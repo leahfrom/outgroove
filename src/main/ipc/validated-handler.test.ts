@@ -14,6 +14,7 @@ import {
   renameSyncProfileRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
+  syncHistoryRequestSchema,
   trackBatchEditPreviewRequestSchema,
   trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
@@ -132,6 +133,26 @@ describe("validated IPC handlers", () => {
       { id, name: "x".repeat(101) },
       { id, name: "Pocket DAP", targetPath: "/Volumes/DAP" },
       { id, name: "Pocket DAP", albumIds: [id] },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only a profile identity for bounded sync history", async () => {
+    const useCase = vi.fn(() => []);
+    const handler = createValidatedHandler(syncHistoryRequestSchema, useCase);
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { profileId })).resolves.toEqual({
+      ok: true,
+      value: [],
+    });
+    expect(useCase).toHaveBeenCalledWith({ profileId });
+    for (const request of [
+      { profileId: "not-a-uuid" },
+      { profileId, targetPath: "/Volumes/DAP" },
+      { profileId, limit: 10 },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,
