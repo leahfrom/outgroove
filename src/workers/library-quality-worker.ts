@@ -89,6 +89,7 @@ function runQuery(): LibraryQualityWorkerMessage {
     type: "complete",
     page: {
       albums,
+      artists: [],
       scanErrors: [],
       totalItems: matchingAlbums,
       offset: request.offset,

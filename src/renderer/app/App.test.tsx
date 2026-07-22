@@ -51,6 +51,7 @@ function api(applyVerified: boolean): OutgrooveApi {
         ok: true,
         value: {
           albums: [album],
+          artists: [],
           scanErrors: [],
           totalItems: 1,
           offset: 0,
@@ -267,6 +268,7 @@ describe("tag edit UI safety states", () => {
       ok: true,
       value: {
         albums: [batchAlbum],
+        artists: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -456,6 +458,7 @@ describe("tag edit UI safety states", () => {
       ok: true,
       value: {
         albums: [sequenceAlbum],
+        artists: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -574,6 +577,7 @@ describe("tag edit UI safety states", () => {
       ok: true,
       value: {
         albums: [diagnosticAlbum],
+        artists: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -646,6 +650,7 @@ describe("tag edit UI safety states", () => {
       ok: true,
       value: {
         albums: [diagnosticAlbum],
+        artists: [],
         scanErrors: [],
         totalItems: 1,
         offset: 0,
@@ -728,6 +733,7 @@ describe("tag edit UI safety states", () => {
       ok: true,
       value: {
         albums: [album, flaggedAlbum],
+        artists: [],
         scanErrors: [],
         totalItems: 2,
         offset: 0,
@@ -1243,6 +1249,7 @@ describe("tag edit UI safety states", () => {
           request.view === "scan-errors"
             ? {
                 albums: [],
+                artists: [],
                 scanErrors: [
                   {
                     kind: "file" as const,
@@ -1261,6 +1268,7 @@ describe("tag edit UI safety states", () => {
               }
             : {
                 albums: [album],
+                artists: [],
                 scanErrors: [],
                 totalItems: 1,
                 offset: 0,
@@ -1296,6 +1304,91 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByText("/fixture/blocked")).toBeVisible();
   });
 
+  it("browses album artists and opens an exact removable album filter", async () => {
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.view === "albums" ? [album] : [],
+            artists:
+              request.view === "artists"
+                ? [
+                    {
+                      name: "Fixture Artist",
+                      albumCount: 2,
+                      trackCount: 7,
+                    },
+                  ]
+                : [],
+            scanErrors: [],
+            totalItems: request.view === "artists" ? 21 : 1,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+
+    await user.selectOptions(screen.getByLabelText("View"), "artists");
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "artists",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Album artists" }),
+    ).toBeVisible();
+    expect(screen.getByText("Status: 2 albums · 7 tracks")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "artists",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Browse albums by Fixture Artist" }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+        albumArtist: "Fixture Artist",
+      }),
+    );
+    expect(screen.getByText("1 album by “Fixture Artist”")).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Show all album artists" }),
+    );
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+  });
+
   it("queries the worker-backed data-quality view and shows its progress", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1324,6 +1417,7 @@ describe("tag edit UI safety states", () => {
           ok: true,
           value: {
             albums: request.view === "data-quality" ? [flaggedAlbum] : [album],
+            artists: [],
             scanErrors: [],
             totalItems: 1,
             offset: request.offset,
@@ -1421,6 +1515,7 @@ describe("tag edit UI safety states", () => {
           ok: true,
           value: {
             albums: albumQueries === 1 ? [album] : [freshAlbum],
+            artists: [],
             scanErrors: [],
             totalItems: 1,
             offset: request.offset,
@@ -1455,6 +1550,7 @@ describe("tag edit UI safety states", () => {
         ok: true,
         value: {
           albums: [],
+          artists: [],
           scanErrors: [],
           totalItems: 0,
           offset: 0,
@@ -1475,6 +1571,7 @@ describe("tag edit UI safety states", () => {
         ok: true as const,
         value: {
           albums: [album],
+          artists: [],
           scanErrors: [],
           totalItems: 21,
           offset: 0,
@@ -1528,6 +1625,7 @@ describe("tag edit UI safety states", () => {
           ok: true,
           value: {
             albums: request.offset === 0 ? [album] : [flaggedAlbum],
+            artists: [],
             scanErrors: [],
             totalItems: 21,
             offset: request.offset,

@@ -111,6 +111,54 @@ describe("validated IPC handlers", () => {
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "artists",
+          offset: 0,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "fixture",
+      view: "artists",
+      offset: 0,
+      limit: 20,
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          albumArtist: "Fixture Artist",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenLastCalledWith({
+      query: "fixture",
+      view: "albums",
+      offset: 0,
+      limit: 20,
+      albumArtist: "Fixture Artist",
+    });
+    await expect(
+      handler(
+        {},
+        {
+          query: "",
+          view: "albums",
+          offset: 0,
+          limit: 20,
+          albumArtist: " ",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
   });
 
   it("rejects malformed database restore confirmations", async () => {

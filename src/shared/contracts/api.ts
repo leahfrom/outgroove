@@ -12,12 +12,17 @@ export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
 export const libraryQueryRequestSchema = z
   .object({
     query: z.string().trim().max(200),
-    view: z.enum(["albums", "data-quality", "scan-errors"]),
+    view: z.enum(["albums", "artists", "data-quality", "scan-errors"]),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
     qualityFilter: z.enum(albumDiagnosticFilters).optional(),
+    albumArtist: z.string().trim().min(1).max(400).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    ({ view, albumArtist }) => albumArtist === undefined || view === "albums",
+    { path: ["albumArtist"], message: "Album artist filters require Albums." },
+  );
 export const albumEditPreviewRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -143,8 +148,14 @@ export interface ScanErrorDto {
   readonly path: string;
   readonly message: string;
 }
+export interface LibraryArtistDto {
+  readonly name: string;
+  readonly albumCount: number;
+  readonly trackCount: number;
+}
 export interface LibraryPageDto {
   readonly albums: readonly CatalogAlbum[];
+  readonly artists: readonly LibraryArtistDto[];
   readonly scanErrors: readonly ScanErrorDto[];
   readonly totalItems: number;
   readonly offset: number;
