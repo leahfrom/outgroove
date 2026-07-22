@@ -17,6 +17,7 @@ import {
   syncPlanRequestSchema,
   syncProfileRequestSchema,
   trackBatchEditPreviewRequestSchema,
+  trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
@@ -271,6 +272,29 @@ export function registerIpc(
       albumEditApplyRequestSchema,
       ({ operationId, confirmationToken }) =>
         dependencies.trackEditor.applyBatchUndo(
+          operationId,
+          confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewTrackNumberSequence,
+    createValidatedHandler(
+      trackNumberSequencePreviewRequestSchema,
+      ({ fileIds, startNumber }) =>
+        dependencies.trackEditor.previewTrackNumberSequence(
+          fileIds,
+          startNumber,
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyTrackNumberSequence,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.trackEditor.applyTrackNumberSequence(
           operationId,
           confirmationToken,
           progress("tag-edit"),

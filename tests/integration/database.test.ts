@@ -91,11 +91,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the shipped track-number sequence migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "011_track_number_sequence.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 11);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(10);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(11);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -154,7 +166,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -196,7 +208,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -227,7 +239,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -280,7 +292,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(
       migrated.queryLibrary({
@@ -356,7 +368,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -372,14 +384,14 @@ describe("database migration and backup", () => {
     migrated.close();
   });
 
-  it("upgrades the v9 batch-edit schema without losing proposals or snapshots", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v9-"));
+  it("upgrades the v10 batch-undo schema without losing proposals or snapshots", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v10-"));
     temporary.push(directory);
     const path = join(directory, "catalog.sqlite3");
     const legacy = new Database(path);
-    for (const migration of migrations.filter((item) => item.version <= 9))
+    for (const migration of migrations.filter((item) => item.version <= 10))
       legacy.exec(migration.sql);
-    legacy.pragma("user_version = 9");
+    legacy.pragma("user_version = 10");
     legacy.exec(`
       INSERT INTO library_roots (id, path, path_key, created_at)
         VALUES ('root', '/fixture/library', '/fixture/library', '2026-01-01');
@@ -411,7 +423,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      10,
+      11,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",

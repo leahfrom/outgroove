@@ -1049,6 +1049,33 @@ export class CatalogDatabase {
     return id;
   }
 
+  createTrackNumberSequenceOperation(
+    albumId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    startNumber: number,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-number-sequence-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `Sequence track numbers from ${startNumber}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1062,7 +1089,8 @@ export class CatalogDatabase {
           | "track-tags-edit"
           | "track-tags-undo"
           | "track-tags-batch-edit"
-          | "track-tags-batch-undo";
+          | "track-tags-batch-undo"
+          | "track-number-sequence-edit";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1088,7 +1116,8 @@ export class CatalogDatabase {
             | "track-tags-edit"
             | "track-tags-undo"
             | "track-tags-batch-edit"
-            | "track-tags-batch-undo";
+            | "track-tags-batch-undo"
+            | "track-number-sequence-edit";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -1125,7 +1154,8 @@ export class CatalogDatabase {
         | "track-tags-edit"
         | "track-tags-undo"
         | "track-tags-batch-edit"
-        | "track-tags-batch-undo";
+        | "track-tags-batch-undo"
+        | "track-number-sequence-edit";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";

@@ -8,6 +8,7 @@ import {
   libraryQueryRequestSchema,
   scanRequestSchema,
   trackBatchEditPreviewRequestSchema,
+  trackNumberSequencePreviewRequestSchema,
   trackTagEditPreviewRequestSchema,
 } from "../../shared/contracts/api";
 import { createValidatedHandler } from "./validated-handler";
@@ -177,6 +178,33 @@ describe("validated IPC handlers", () => {
           fileIds: [first, second],
           changes: { artist: "Artist" },
           directory: "/arbitrary/path",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    expect(useCase).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit bounded order for track-number sequencing", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      trackNumberSequencePreviewRequestSchema,
+      useCase,
+    );
+    const first = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const second = "e709f458-a288-4f90-a016-9c42347670bb";
+    await expect(
+      handler({}, { fileIds: [first, first], startNumber: 1 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileIds: [first, second], startNumber: 9999 }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          startNumber: 1,
+          inferredPathOrder: ["/arbitrary/file.mp3"],
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });

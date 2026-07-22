@@ -12,6 +12,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 - Select one track and safely preview/edit its title, track artist, album artist, track/disc numbers, and partial release date. Apply refuses to overwrite a targeted field changed after preview.
 - Select multiple tracks in one album and batch-preview explicitly enabled shared fields (track artist, album artist, disc number, and partial release date). Matching files are skipped, while stale or failed files are reported independently.
 - Preview a field-scoped batch undo from edit history. Only verified writes participate; already restored files are skipped and stale files are refused without stopping safe restores.
+- Explicitly order selected tracks, preview sequential track numbers from a chosen starting value, safely apply them, and undo verified sequence writes from history.
 - Preview a field-scoped track metadata undo from edit history. It restores only fields changed by that verified operation and refuses targeted fields changed afterward.
 - Review confirmed album-title edit history and preview an honest per-file undo. Undo reuses the same safe writer and refuses to overwrite a title changed after the original edit.
 - Choose a normal folder as a fake DAP, preview a deterministic copy-only plan, apply verified temporary copies, write UTF-8 M3U8, and commit `.outgroove/manifest.json` last.
@@ -118,7 +119,8 @@ The currently editable common fields are album title plus a selected track's
 title, track artist, album artist, track/disc number, and partial release date.
 Batch editing is deliberately narrower: it supports only track artist, album
 artist, disc number, and partial release date, requires an explicit opt-in for
-each field, and does not mass-edit titles or track numbers.
+each field, and does not mass-edit titles. Track numbers use a separate sequence
+preview whose order is explicitly controlled by the user.
 
 The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove's `MetadataWriter`. See [ADR 0001](docs/decisions/0001-foundation-and-metadata-writer.md) and the [ID3v2.4 preservation decision](docs/decisions/0003-mp3-id3v24-writes.md). This is fixture evidence, not a claim that every unusual tag/frame in the wild is safe. Broadening the write matrix requires a new preservation fixture and round-trip test.
 
