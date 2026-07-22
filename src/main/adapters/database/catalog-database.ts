@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import {
   createSavedLibraryFilterRequestSchema,
   savedLibraryFilterDefinitionSchema,
+  updateSavedLibraryFilterRequestSchema,
   type SavedLibraryFilterDefinition,
   type SavedLibraryFilterDto,
   type LibraryFormatDto,
@@ -587,6 +588,44 @@ export class CatalogDatabase {
         saved.createdAt,
       );
     return saved;
+  }
+
+  updateSavedLibraryFilter(
+    id: string,
+    name: string,
+    definition: SavedLibraryFilterDefinition,
+  ): SavedLibraryFilterDto {
+    const parsed = updateSavedLibraryFilterRequestSchema.parse({
+      id,
+      name,
+      definition,
+    });
+    const existing = this.connection
+      .prepare("SELECT created_at FROM saved_library_filters WHERE id=?")
+      .get(parsed.id) as { created_at: string } | undefined;
+    if (!existing)
+      throw new Error("The saved Library filter no longer exists.");
+    const duplicate = this.connection
+      .prepare(
+        "SELECT 1 FROM saved_library_filters WHERE name=? COLLATE NOCASE AND id<>?",
+      )
+      .get(parsed.name, parsed.id);
+    if (duplicate)
+      throw new Error(
+        `A saved Library filter named “${parsed.name}” already exists.`,
+      );
+    this.connection
+      .prepare(
+        `UPDATE saved_library_filters
+         SET name=?, definition_version=1, definition_json=? WHERE id=?`,
+      )
+      .run(parsed.name, JSON.stringify(parsed.definition), parsed.id);
+    return {
+      id: parsed.id,
+      name: parsed.name,
+      definition: parsed.definition,
+      createdAt: existing.created_at,
+    };
   }
 
   deleteSavedLibraryFilter(id: string): { id: string } {
