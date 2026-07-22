@@ -106,12 +106,31 @@ describe("saved DAP profiles", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
+    expect(() => database.renameSyncProfile(older.id, "   ")).toThrow(
+      "between 1 and 100",
+    );
+    expect(() =>
+      database.renameSyncProfile(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "Missing DAP",
+      ),
+    ).toThrow("no longer exists");
+    expect(
+      database.renameSyncProfile(older.id, "  Pocket DAP  "),
+    ).toMatchObject({
+      id: older.id,
+      name: "Pocket DAP",
+      targetPath: "/targets/older",
+      albumIds: [alphaId, zetaId],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
     database.close();
 
     const reopened = new CatalogDatabase(databasePath);
     expect(reopened.listSyncProfiles().map((profile) => profile.name)).toEqual([
       "Road DAP",
-      "Older DAP",
+      "Pocket DAP",
     ]);
     expect(reopened.listSyncProfiles()[0]?.albums).toHaveLength(2);
     expect(

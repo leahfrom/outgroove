@@ -2168,6 +2168,24 @@ export class CatalogDatabase {
     return profile;
   }
 
+  renameSyncProfile(id: string, name: string): SyncProfileDto {
+    const normalizedName = name.trim();
+    if (normalizedName.length < 1 || normalizedName.length > 100)
+      throw new Error(
+        "Choose a DAP profile name between 1 and 100 characters.",
+      );
+    const updated = this.connection
+      .prepare("UPDATE sync_profiles SET name=? WHERE id=?")
+      .run(normalizedName, id);
+    if (updated.changes === 0)
+      throw new Error("Sync profile no longer exists.");
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile) throw new Error("Renamed sync profile could not be loaded.");
+    return profile;
+  }
+
   listSyncProfiles(): readonly SyncProfileDto[] {
     const rows = this.connection
       .prepare(

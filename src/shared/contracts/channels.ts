@@ -31,6 +31,7 @@ export const channels = {
   applyTrackNumberSequence: "tagging:apply-track-number-sequence",
   listSyncProfiles: "sync:list-profiles",
   updateSyncProfileAlbums: "sync:update-profile-albums",
+  renameSyncProfile: "sync:rename-profile",
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",
   applySync: "sync:apply",

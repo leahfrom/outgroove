@@ -83,5 +83,12 @@ describe("preload saved-filter allowlist", () => {
       channels.updateSyncProfileAlbums,
       update,
     );
+
+    const rename = { id: update.id, name: "Pocket DAP" };
+    await api.renameSyncProfile(rename);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.renameSyncProfile,
+      rename,
+    );
   });
 });
