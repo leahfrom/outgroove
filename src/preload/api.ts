@@ -55,7 +55,7 @@ export const api: OutgrooveApi = {
     const wrapped = (
       _event: Electron.IpcRendererEvent,
       value: {
-        job: "scan" | "tag-edit" | "sync";
+        job: "scan" | "tag-edit" | "sync" | "library-quality";
         completed: number;
         total: number;
         detail: string;

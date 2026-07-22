@@ -61,7 +61,7 @@ describe("validated IPC handlers", () => {
     expect(useCase).not.toHaveBeenCalled();
   });
 
-  it("caps library query pages and rejects undeclared filters", async () => {
+  it("validates bounded Library views and rejects undeclared filters", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(libraryQueryRequestSchema, useCase);
     await expect(
@@ -80,6 +80,23 @@ describe("validated IPC handlers", () => {
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler(
+        {},
+        {
+          query: "fixture",
+          view: "data-quality",
+          offset: 20,
+          limit: 20,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    expect(useCase).toHaveBeenCalledWith({
+      query: "fixture",
+      view: "data-quality",
+      offset: 20,
+      limit: 20,
+    });
   });
 
   it("rejects malformed database restore confirmations", async () => {

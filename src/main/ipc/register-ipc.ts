@@ -22,6 +22,7 @@ import {
 } from "../../shared/contracts/api";
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
+import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-library-quality-query";
 import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
@@ -32,6 +33,7 @@ import { createValidatedHandler } from "./validated-handler";
 
 interface Dependencies {
   database: CatalogDatabase;
+  qualityQuery: WorkerLibraryQualityQuery;
   backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
   editor: EditAlbumTitle;
@@ -46,7 +48,7 @@ export function registerIpc(
   dependencies: Dependencies,
 ): void {
   const progress =
-    (job: "scan" | "tag-edit" | "sync") =>
+    (job: "scan" | "tag-edit" | "sync" | "library-quality") =>
     (completed: number, total: number, detail: string): void => {
       if (!dependencies.window.isDestroyed())
         dependencies.window.webContents.send(channels.jobProgress, {
@@ -150,9 +152,24 @@ export function registerIpc(
   );
   ipcMain.handle(
     channels.queryLibrary,
-    createValidatedHandler(libraryQueryRequestSchema, (request) =>
-      dependencies.database.queryLibrary(request),
-    ),
+    createValidatedHandler(libraryQueryRequestSchema, async (request) => {
+      if (request.view === "data-quality")
+        return dependencies.qualityQuery.query(
+          {
+            query: request.query,
+            offset: request.offset,
+            limit: request.limit,
+          },
+          progress("library-quality"),
+        );
+      await dependencies.qualityQuery.cancel();
+      return dependencies.database.queryLibrary({
+        query: request.query,
+        view: request.view === "scan-errors" ? "scan-errors" : "albums",
+        offset: request.offset,
+        limit: request.limit,
+      });
+    }),
   );
   ipcMain.handle(
     channels.previewAlbumTitleEdit,
