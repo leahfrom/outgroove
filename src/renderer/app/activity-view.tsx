@@ -21,6 +21,7 @@ export function ActivityView({
   scanJob,
   onCancel,
   onChooseFolder,
+  onOpenLibrary,
   onReviewScanProblems,
   onRetry,
 }: {
@@ -30,6 +31,7 @@ export function ActivityView({
   readonly scanJob: ScanJobDto | undefined;
   readonly onCancel: () => void;
   readonly onChooseFolder: () => void;
+  readonly onOpenLibrary: () => void;
   readonly onReviewScanProblems: () => void;
   readonly onRetry: (rootId: string) => void;
 }): React.JSX.Element {
@@ -159,6 +161,11 @@ export function ActivityView({
               <button onClick={onReviewScanProblems} type="button">
                 Review {scanJob.result.errors} scan{" "}
                 {scanJob.result.errors === 1 ? "problem" : "problems"}
+              </button>
+            )}
+            {scanJob.state === "completed" && (
+              <button onClick={onOpenLibrary} type="button">
+                Browse Library
               </button>
             )}
           </div>
