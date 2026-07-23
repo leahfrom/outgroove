@@ -1,7 +1,7 @@
 # Outgroove build plan
 
 > Status: initial product and technical plan  
-> Updated: 2026-07-21  
+> Updated: 2026-07-23
 > Target: macOS and Windows first; Linux kept compatible and added to the release matrix when stable
 
 ## 1. Product vision
@@ -301,6 +301,54 @@ Generate UTF-8 M3U8 playlists initially. Device-specific legacy encodings and ab
 - **Settings:** library roots, metadata/artwork policy, network/privacy, backups, appearance, updates.
 
 Keyboard navigation, screen-reader names, visible focus, scalable text, reduced motion, and high-contrast states are acceptance criteria, not a final polish phase. Avoid using color as the only indication of tag differences or sync actions.
+
+### 9.1 Near-term UI foundation priority
+
+Pause broad roadmap expansion until the implemented Library, Workbench, Sync,
+Jobs/activity, and Settings behavior is organized into a usable desktop
+application shell. This is product work, not optional cosmetic polish.
+
+The near-term information architecture is:
+
+- **Library:** search, saved filters, browsing, scan health, and album/track
+  inspection. Editing and sync entry points are contextual actions rather than
+  embedded full workflows.
+- **Workbench:** retain the selected album and track context while disclosing
+  one relevant edit, sequencing, preview, result, or history workflow at a
+  time.
+- **Sync:** album selection, DAP profiles, plan review, progress, history,
+  errors, and interrupted-run recovery.
+- **Activity:** persistent scan and job progress, cancellation, retry, and
+  structured failures.
+- **Settings:** watched Library folders, database backup/restore, and later
+  metadata, privacy, appearance, and update preferences.
+
+The first independently mergeable slice must establish persistent primary
+navigation and render one contextual main view at a time without changing
+backend behavior. Library selections, searches, pagination, Workbench drafts
+and previews, Sync selections and plans, and pending confirmations must retain
+their safe state when users navigate. Album and track actions must route into
+the existing preview-only Workbench flows without applying a proposal.
+
+Acceptance for that slice includes:
+
+- semantic keyboard-operable navigation with a visible current destination;
+- clear view headings, empty/loading/error states, and distinct hierarchy for
+  previews, destructive confirmations, recovery, results, and ordinary
+  information;
+- layouts that work at the application's minimum window size, at 200% text
+  scaling, with long paths and metadata, and without a fixed document minimum
+  width;
+- focused UI tests for navigation, state preservation, and routing into
+  existing preview/confirmation workflows;
+- visual and functional verification in the packaged Electron application;
+- no routing library, renderer-side privileged access, duplicate catalog
+  state, backend behavior change, or speculative design-system framework.
+
+Follow with smaller workflow-specific usability slices for Library/detail,
+Workbench editing, and Sync/recovery. Consider a `v0.9.0` prerelease only when
+the navigation plus core Library → Workbench and Library/Workbench → Sync
+journeys form a coherent, cross-platform-tested experience.
 
 ## 10. Cross-platform requirements
 
