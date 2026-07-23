@@ -3003,6 +3003,9 @@ describe("tag edit UI safety states", () => {
     expect(
       within(selection).getByText("Other Artist — Second Album"),
     ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Preview & apply" }),
+    ).toBeDisabled();
 
     const chooseTarget = screen.getByRole("button", {
       name: "Choose DAP target",
@@ -3013,6 +3016,9 @@ describe("tag edit UI safety states", () => {
       name: "Outgroove 2-album DAP",
       albumIds: [album.id, secondAlbum.id],
     });
+    expect(
+      screen.getByRole("button", { name: "Preview & apply" }),
+    ).toHaveAttribute("aria-current", "step");
     expect(
       await screen.findByText(
         "No successful sync runs have been recorded yet.",
@@ -3144,6 +3150,18 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Sync");
 
+    const recoveryAlert = screen.getByRole("alert");
+    expect(recoveryAlert).toHaveTextContent(
+      "Database restore remains blocked until pending recovery is completed.",
+    );
+    const openRecovery = within(recoveryAlert).getByRole("button", {
+      name: "Review recovery",
+    });
+    openRecovery.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("button", { name: "Recovery, 1 pending" }),
+    ).toHaveAttribute("aria-current", "step");
     const recoveries = await screen.findByRole("list", {
       name: "Interrupted sync recoveries",
     });
@@ -3262,7 +3280,12 @@ describe("tag edit UI safety states", () => {
     });
     open.focus();
     await user.keyboard("{Enter}");
-    expect(open).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Preview & apply" }),
+    ).toHaveAttribute("aria-current", "step");
+    expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
+      "Road DAP",
+    );
     expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
     const history = await screen.findByRole("list", {
       name: "Successful sync history for Road DAP",
@@ -3292,6 +3315,15 @@ describe("tag edit UI safety states", () => {
       "Fixture Album",
     );
     expect(applySync).not.toHaveBeenCalled();
+
+    await openPrimaryView(user, "Activity");
+    await openPrimaryView(user, "Sync");
+    expect(
+      screen.getByRole("button", { name: "Preview & apply" }),
+    ).toHaveAttribute("aria-current", "step");
+    expect(screen.getByLabelText("Sync confirmation")).toHaveTextContent(
+      "Fixture Album",
+    );
   });
 
   it("renames a saved DAP profile with the keyboard without changing its current preview", async () => {
@@ -3318,7 +3350,7 @@ describe("tag edit UI safety states", () => {
     const renameSyncProfile = vi
       .spyOn(mockApi, "renameSyncProfile")
       .mockResolvedValue({ ok: true, value: renamedProfile });
-    vi.spyOn(mockApi, "planSync").mockResolvedValue({
+    const planSync = vi.spyOn(mockApi, "planSync").mockResolvedValue({
       ok: true,
       value: {
         id: "853a8e28-560a-4261-b152-1fe31c26dc42",
@@ -3349,7 +3381,8 @@ describe("tag edit UI safety states", () => {
       }),
     );
     await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
-    const preview = await screen.findByLabelText("Sync confirmation");
+    await screen.findByLabelText("Sync confirmation");
+    await user.click(screen.getByRole("button", { name: "Manage Road DAP" }));
     const rename = screen.getByRole("button", {
       name: "Rename DAP profile Road DAP",
     });
@@ -3368,17 +3401,20 @@ describe("tag edit UI safety states", () => {
         name: "Pocket DAP",
       }),
     );
-    expect(preview).toBeVisible();
     expect(chooseTarget).not.toHaveBeenCalled();
     expect(updateAlbums).not.toHaveBeenCalled();
     expect(applySync).not.toHaveBeenCalled();
     const profiles = screen.getByRole("list", { name: "Saved DAP profiles" });
     expect(profiles).toHaveTextContent("Pocket DAP");
     expect(profiles).toHaveTextContent("/fixture/dap");
+    await user.click(screen.getByRole("button", { name: "Preview & apply" }));
+    expect(screen.getByLabelText("Sync confirmation")).toBeVisible();
     expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
       "Pocket DAP",
     );
+    expect(planSync).toHaveBeenCalledTimes(1);
 
+    await user.click(screen.getByRole("button", { name: "Albums & profiles" }));
     await user.click(
       screen.getByRole("button", {
         name: "Rename DAP profile Pocket DAP",
@@ -3579,6 +3615,7 @@ describe("tag edit UI safety states", () => {
     await user.click(open);
     await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
     expect(await screen.findByLabelText("Sync confirmation")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Manage Road DAP" }));
     const edit = screen.getByRole("button", {
       name: "Edit albums in DAP profile Road DAP",
     });
@@ -3587,9 +3624,7 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.queryByLabelText("Sync confirmation"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Status: Album-selection changes are not saved yet."),
-    ).toBeVisible();
+    expect(screen.getByText(/for the Road DAP revision/u)).toBeVisible();
 
     await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: /^Second Album/u }));
@@ -3618,6 +3653,7 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Preview sync plan" }),
     ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Albums & profiles" }));
     expect(
       screen.getByRole("list", { name: "Saved DAP profiles" }),
     ).toHaveTextContent("Other Artist — Second Album");
