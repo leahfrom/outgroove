@@ -1153,6 +1153,12 @@ describe("tag edit UI safety states", () => {
     const discNumber = screen.getByLabelText("Sequence disc number");
     await user.clear(discNumber);
     await user.type(discNumber, "3");
+    const secondTrackComparison = screen.getByLabelText(
+      "Sequence comparison for Second Track",
+    );
+    expect(secondTrackComparison).toHaveTextContent("Track 2 · Disc 1");
+    expect(secondTrackComparison).toHaveTextContent("Track 7 · Disc 3");
+    expect(within(secondTrackComparison).getByText("Changed")).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Preview track-number sequence" }),
     );

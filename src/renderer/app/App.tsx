@@ -56,6 +56,7 @@ import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import {
   SettingsNavigation,
@@ -65,11 +66,6 @@ import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
-import {
-  WorkbenchConfirmation,
-  WorkbenchDraftHeading,
-  WorkbenchWriteResult,
-} from "./workbench-review-stage";
 
 const PAGE_SIZE = 20;
 
@@ -293,7 +289,7 @@ export function App(): React.JSX.Element {
   }>();
   const trackEditorRef = useRef<HTMLElement>(null);
   const batchEditorRef = useRef<HTMLElement>(null);
-  const sequenceEditorRef = useRef<HTMLDivElement>(null);
+  const sequenceEditorRef = useRef<HTMLElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
@@ -314,6 +310,16 @@ export function App(): React.JSX.Element {
       selectedAlbum?.tracks.filter((track) =>
         batchTrackIds.includes(track.id),
       ) ?? [],
+    [batchTrackIds, selectedAlbum],
+  );
+  const orderedSequenceTracks = useMemo(
+    () =>
+      batchTrackIds.flatMap((fileId) => {
+        const track = selectedAlbum?.tracks.find(
+          (candidate) => candidate.id === fileId,
+        );
+        return track ? [track] : [];
+      }),
     [batchTrackIds, selectedAlbum],
   );
   const editingSyncProfile = useMemo(
@@ -2724,166 +2730,35 @@ export function App(): React.JSX.Element {
                   )}
                   {activeView === "workbench" &&
                     workbenchTool === "sequence" && (
-                      <section
-                        className="card sequence-editor"
-                        aria-label="Track number sequencing"
+                      <TrackOrderEditor
+                        busy={busy}
+                        discDraft={sequenceDiscNumber}
+                        discEnabled={sequenceDiscEnabled}
+                        preview={sequencePreview}
                         ref={sequenceEditorRef}
-                        tabIndex={-1}
-                      >
-                        <WorkbenchDraftHeading
-                          context="Order"
-                          title="Sequence track numbers"
-                          description="Outgroove uses exactly the order below. Reorder it explicitly before previewing; file names and existing numbers are never used to guess a different order."
-                        />
-                        {batchTrackIds.length === 0 ? (
-                          <p>Select at least two tracks above.</p>
-                        ) : (
-                          <ol>
-                            {batchTrackIds.map((fileId, index) => {
-                              const track = selectedAlbum.tracks.find(
-                                (candidate) => candidate.id === fileId,
-                              );
-                              return (
-                                <li key={fileId}>
-                                  <span>{track?.tags.title ?? fileId}</span>
-                                  <button
-                                    aria-label={`Move ${track?.tags.title ?? "track"} up`}
-                                    disabled={busy || index === 0}
-                                    onClick={() => moveBatchTrack(fileId, -1)}
-                                  >
-                                    Move up
-                                  </button>
-                                  <button
-                                    aria-label={`Move ${track?.tags.title ?? "track"} down`}
-                                    disabled={
-                                      busy || index === batchTrackIds.length - 1
-                                    }
-                                    onClick={() => moveBatchTrack(fileId, 1)}
-                                  >
-                                    Move down
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ol>
-                        )}
-                        <div className="sequence-settings">
-                          <label>
-                            Starting track number
-                            <input
-                              type="number"
-                              min="1"
-                              max="9999"
-                              value={sequenceStart}
-                              onChange={(event) => {
-                                setSequenceStart(event.target.value);
-                                setSequencePreview(undefined);
-                                setSequenceResult(undefined);
-                              }}
-                            />
-                          </label>
-                          <div className="disc-assignment">
-                            <label className="checkbox-label">
-                              <input
-                                type="checkbox"
-                                checked={sequenceDiscEnabled}
-                                onChange={(event) => {
-                                  setSequenceDiscEnabled(event.target.checked);
-                                  setSequencePreview(undefined);
-                                  setSequenceResult(undefined);
-                                }}
-                              />
-                              Set one disc number for this sequence
-                            </label>
-                            <label>
-                              Sequence disc number
-                              <input
-                                type="number"
-                                min="1"
-                                max="999"
-                                disabled={!sequenceDiscEnabled}
-                                value={sequenceDiscNumber}
-                                onChange={(event) => {
-                                  setSequenceDiscNumber(event.target.value);
-                                  setSequencePreview(undefined);
-                                  setSequenceResult(undefined);
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                        <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            batchTrackIds.length < 2 ||
-                            !Number.isInteger(Number(sequenceStart)) ||
-                            Number(sequenceStart) < 1 ||
-                            Number(sequenceStart) + batchTrackIds.length - 1 >
-                              9999 ||
-                            (sequenceDiscEnabled &&
-                              (!Number.isInteger(Number(sequenceDiscNumber)) ||
-                                Number(sequenceDiscNumber) < 1 ||
-                                Number(sequenceDiscNumber) > 999))
-                          }
-                          onClick={() => void previewTrackNumberSequence()}
-                        >
-                          Preview track-number sequence
-                        </button>
-                        {sequencePreview && (
-                          <WorkbenchConfirmation
-                            blocked={sequencePreview.files.some(
-                              (file) =>
-                                file.willWrite && file.warnings.length > 0,
-                            )}
-                            busy={busy}
-                            cancelLabel="Return to track order"
-                            confirmLabel="Confirm track-number sequence"
-                            description="Review the explicit order and every proposed track or disc number. Each write is checked again before its snapshot and safe replacement."
-                            label="Track number sequence confirmation"
-                            title="Review the exact sequence"
-                            onCancel={() => setSequencePreview(undefined)}
-                            onConfirm={() => void applyTrackNumberSequence()}
-                          >
-                            <ol className="sequence-review-list">
-                              {sequencePreview.files.map((file) => (
-                                <li key={file.fileId}>
-                                  <strong>{file.path}</strong>
-                                  {file.willWrite ? (
-                                    <ul>
-                                      {file.changes.map((change) => (
-                                        <li key={change.field}>
-                                          {change.field}:{" "}
-                                          {change.before ?? "Not set"} →{" "}
-                                          {change.after ?? "Not set"}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    "unchanged — skipped"
-                                  )}
-                                  {file.warnings.map((warning) => (
-                                    <p
-                                      className="workflow-error"
-                                      key={warning}
-                                      role="alert"
-                                    >
-                                      {warning}
-                                    </p>
-                                  ))}
-                                </li>
-                              ))}
-                            </ol>
-                          </WorkbenchConfirmation>
-                        )}
-                        {sequenceResult && (
-                          <WorkbenchWriteResult
-                            label="Track number sequence result"
-                            results={sequenceResult.results}
-                            subject="Track-number sequence"
-                          />
-                        )}
-                      </section>
+                        result={sequenceResult}
+                        startDraft={sequenceStart}
+                        tracks={orderedSequenceTracks}
+                        onCancelPreview={() => setSequencePreview(undefined)}
+                        onConfirm={() => void applyTrackNumberSequence()}
+                        onDiscChange={(value) => {
+                          setSequenceDiscNumber(value);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                        onDiscEnabledChange={(enabled) => {
+                          setSequenceDiscEnabled(enabled);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                        onMove={moveBatchTrack}
+                        onPreview={() => void previewTrackNumberSequence()}
+                        onStartChange={(value) => {
+                          setSequenceStart(value);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                      />
                     )}
                   {activeView === "workbench" &&
                     workbenchTool === "track" &&
