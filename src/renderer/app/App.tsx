@@ -51,6 +51,10 @@ import {
 } from "./track-metadata-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import {
+  SettingsNavigation,
+  type SettingsSection,
+} from "./settings-navigation";
+import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
@@ -126,6 +130,8 @@ export function App(): React.JSX.Element {
   const [activeView, setActiveView] = useState<AppView>("library");
   const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("library-folders");
   const [rootId, setRootId] = useState<string>();
   const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
     [],
@@ -3855,172 +3861,195 @@ export function App(): React.JSX.Element {
       )}
       {activeView === "settings" && (
         <main className="settings-view">
-          <section
-            className="card settings"
-            aria-labelledby="watched-library-folders"
-          >
-            <h2 id="watched-library-folders">Watched Library folders</h2>
-            <p>
-              Outgroove scans only folders you explicitly choose. Rescanning
-              reads that folder through the existing incremental scan and never
-              changes audio files.
-            </p>
-            {libraryRoots.length === 0 ? (
-              <p>No Library folders have been chosen yet.</p>
-            ) : (
-              <ul className="library-root-list">
-                {libraryRoots.map((root) => {
-                  const isCurrent = root.id === rootId;
-                  const isScanning = scanActive && scanJob.rootId === root.id;
-                  return (
-                    <li key={root.id}>
-                      <div>
-                        <strong>{root.path}</strong>
-                        <span>
-                          Status: {isScanning ? "Scan in progress" : null}
-                          {isScanning && root.lastScanAt ? " · " : null}
-                          {root.lastScanAt ? (
-                            <>
-                              Last scanned{" "}
-                              <time dateTime={root.lastScanAt}>
-                                {new Date(root.lastScanAt).toLocaleString()}
-                              </time>
-                            </>
-                          ) : isScanning ? null : (
-                            "Never scanned"
-                          )}
-                        </span>
-                        {isCurrent && <span>Current scan target</span>}
-                      </div>
-                      <div className="library-root-actions">
-                        <button
-                          disabled={busy || scanActive}
-                          onClick={() => void startScan(root.id)}
-                        >
-                          Scan folder {root.path}
-                        </button>
-                        <button
-                          disabled={busy || scanActive}
-                          onClick={() => void previewRootRemoval(root.id)}
-                        >
-                          Stop watching {root.path}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {rootRemovalPreview && (
-              <div
-                className="preview"
-                aria-label="Library folder removal preview"
-              >
-                <h3>Stop watching this Library folder?</h3>
-                <p>
-                  <strong>{rootRemovalPreview.path}</strong>
-                </p>
-                <dl>
-                  <dt>Visible tracks hidden</dt>
-                  <dd>{rootRemovalPreview.visibleTracks}</dd>
-                  <dt>Albums no longer visible</dt>
-                  <dd>{rootRemovalPreview.albumsHidden}</dd>
-                  <dt>Scan problems hidden</dt>
-                  <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
-                </dl>
-                <p>
-                  <strong>No audio or DAP files will be deleted.</strong>{" "}
-                  Catalog identities, edit history, DAP profiles, sync
-                  manifests, and scan history are retained. Choosing this folder
-                  again reuses its catalog identity and requires a rescan before
-                  tracks reappear.
-                </p>
-                <div className="actions">
-                  <button
-                    className="primary"
-                    disabled={busy || scanActive}
-                    onClick={() => void applyRootRemoval()}
-                  >
-                    Confirm stop watching
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => setRootRemovalPreview(undefined)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-          <section className="card settings" aria-labelledby="database-safety">
-            <h2 id="database-safety">Database safety</h2>
-            <p>
-              Backups contain the local catalog, edit history, and DAP profiles,
-              but never copy or change audio files.
-            </p>
-            <div className="actions">
-              <button
-                disabled={busy || scanActive}
-                onClick={() => void createBackup()}
-              >
-                Create database backup
-              </button>
-              <button
-                disabled={busy || scanActive}
-                onClick={() => void chooseRestore()}
-              >
-                Restore from backup
-              </button>
+          <section className="settings-workflow-header">
+            <div>
+              <p className="eyebrow">Local application settings</p>
+              <h2>Choose what to manage</h2>
+              <p>
+                Library roots and database replacement are separate safety
+                workflows. Audio and DAP files are never included in a database
+                backup or restore.
+              </p>
             </div>
-            {restorePreview && (
-              <div
-                className="preview"
-                aria-label="Database restore confirmation"
-              >
-                <h3>Review database replacement</h3>
-                <p>
-                  <strong>{restorePreview.sourceName}</strong> passed integrity
-                  and schema checks. Restoring replaces the current Outgroove
-                  database and restarts the app. Source audio and DAP files are
-                  untouched.
-                </p>
-                <dl>
-                  <dt>Library roots</dt>
-                  <dd>{restorePreview.summary.libraryRoots}</dd>
-                  <dt>Albums</dt>
-                  <dd>{restorePreview.summary.albums}</dd>
-                  <dt>Tracks</dt>
-                  <dd>{restorePreview.summary.tracks}</dd>
-                  <dt>DAP profiles</dt>
-                  <dd>{restorePreview.summary.syncProfiles}</dd>
-                  <dt>Saved Library filters</dt>
-                  <dd>{restorePreview.summary.savedLibraryFilters}</dd>
-                  <dt>Schema</dt>
-                  <dd>Version {restorePreview.schemaVersion}</dd>
-                </dl>
-                <p>
-                  Outgroove creates and verifies an automatic rollback backup
-                  before replacing anything.
-                </p>
-                <div className="actions">
-                  <button
-                    className="primary"
-                    disabled={busy || scanActive}
-                    onClick={() => void applyRestore()}
-                  >
-                    Confirm restore and restart
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => setRestorePreview(undefined)}
-                  >
-                    Cancel restore
-                  </button>
-                </div>
-              </div>
-            )}
+            <SettingsNavigation
+              activeSection={settingsSection}
+              hasRestorePreview={Boolean(restorePreview)}
+              onSelect={setSettingsSection}
+            />
           </section>
+          {settingsSection === "library-folders" && (
+            <section
+              className="card settings"
+              aria-labelledby="watched-library-folders"
+            >
+              <h2 id="watched-library-folders">Watched Library folders</h2>
+              <p>
+                Outgroove scans only folders you explicitly choose. Rescanning
+                reads that folder through the existing incremental scan and
+                never changes audio files.
+              </p>
+              {libraryRoots.length === 0 ? (
+                <p>No Library folders have been chosen yet.</p>
+              ) : (
+                <ul className="library-root-list">
+                  {libraryRoots.map((root) => {
+                    const isCurrent = root.id === rootId;
+                    const isScanning = scanActive && scanJob.rootId === root.id;
+                    return (
+                      <li key={root.id}>
+                        <div>
+                          <strong>{root.path}</strong>
+                          <span>
+                            Status: {isScanning ? "Scan in progress" : null}
+                            {isScanning && root.lastScanAt ? " · " : null}
+                            {root.lastScanAt ? (
+                              <>
+                                Last scanned{" "}
+                                <time dateTime={root.lastScanAt}>
+                                  {new Date(root.lastScanAt).toLocaleString()}
+                                </time>
+                              </>
+                            ) : isScanning ? null : (
+                              "Never scanned"
+                            )}
+                          </span>
+                          {isCurrent && <span>Current scan target</span>}
+                        </div>
+                        <div className="library-root-actions">
+                          <button
+                            disabled={busy || scanActive}
+                            onClick={() => void startScan(root.id)}
+                          >
+                            Scan folder {root.path}
+                          </button>
+                          <button
+                            disabled={busy || scanActive}
+                            onClick={() => void previewRootRemoval(root.id)}
+                          >
+                            Stop watching {root.path}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {rootRemovalPreview && (
+                <div
+                  className="preview"
+                  aria-label="Library folder removal preview"
+                >
+                  <h3>Stop watching this Library folder?</h3>
+                  <p>
+                    <strong>{rootRemovalPreview.path}</strong>
+                  </p>
+                  <dl>
+                    <dt>Visible tracks hidden</dt>
+                    <dd>{rootRemovalPreview.visibleTracks}</dd>
+                    <dt>Albums no longer visible</dt>
+                    <dd>{rootRemovalPreview.albumsHidden}</dd>
+                    <dt>Scan problems hidden</dt>
+                    <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
+                  </dl>
+                  <p>
+                    <strong>No audio or DAP files will be deleted.</strong>{" "}
+                    Catalog identities, edit history, DAP profiles, sync
+                    manifests, and scan history are retained. Choosing this
+                    folder again reuses its catalog identity and requires a
+                    rescan before tracks reappear.
+                  </p>
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={busy || scanActive}
+                      onClick={() => void applyRootRemoval()}
+                    >
+                      Confirm stop watching
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setRootRemovalPreview(undefined)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+          {settingsSection === "database" && (
+            <section
+              className="card settings"
+              aria-labelledby="database-safety"
+            >
+              <h2 id="database-safety">Database safety</h2>
+              <p>
+                Backups contain the local catalog, edit history, and DAP
+                profiles, but never copy or change audio files.
+              </p>
+              <div className="actions">
+                <button
+                  disabled={busy || scanActive}
+                  onClick={() => void createBackup()}
+                >
+                  Create database backup
+                </button>
+                <button
+                  disabled={busy || scanActive}
+                  onClick={() => void chooseRestore()}
+                >
+                  Restore from backup
+                </button>
+              </div>
+              {restorePreview && (
+                <div
+                  className="preview"
+                  aria-label="Database restore confirmation"
+                >
+                  <h3>Review database replacement</h3>
+                  <p>
+                    <strong>{restorePreview.sourceName}</strong> passed
+                    integrity and schema checks. Restoring replaces the current
+                    Outgroove database and restarts the app. Source audio and
+                    DAP files are untouched.
+                  </p>
+                  <dl>
+                    <dt>Library roots</dt>
+                    <dd>{restorePreview.summary.libraryRoots}</dd>
+                    <dt>Albums</dt>
+                    <dd>{restorePreview.summary.albums}</dd>
+                    <dt>Tracks</dt>
+                    <dd>{restorePreview.summary.tracks}</dd>
+                    <dt>DAP profiles</dt>
+                    <dd>{restorePreview.summary.syncProfiles}</dd>
+                    <dt>Saved Library filters</dt>
+                    <dd>{restorePreview.summary.savedLibraryFilters}</dd>
+                    <dt>Schema</dt>
+                    <dd>Version {restorePreview.schemaVersion}</dd>
+                  </dl>
+                  <p>
+                    Outgroove creates and verifies an automatic rollback backup
+                    before replacing anything.
+                  </p>
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={busy || scanActive}
+                      onClick={() => void applyRestore()}
+                    >
+                      Confirm restore and restart
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setRestorePreview(undefined)}
+                    >
+                      Cancel restore
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </main>
       )}
     </ApplicationShell>
