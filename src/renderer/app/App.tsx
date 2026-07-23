@@ -59,6 +59,11 @@ import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
+import {
+  WorkbenchConfirmation,
+  WorkbenchDraftHeading,
+  WorkbenchWriteResult,
+} from "./workbench-review-stage";
 
 const PAGE_SIZE = 20;
 
@@ -2613,13 +2618,17 @@ export function App(): React.JSX.Element {
                       ref={batchEditorRef}
                       tabIndex={-1}
                     >
-                      <p className="eyebrow">Shared-field workflow</p>
-                      <h3>Edit shared metadata</h3>
-                      <p>
-                        {batchTrackIds.length} tracks selected. Enable only the
-                        shared fields you intend to write. Track titles and
-                        track numbers stay in the single-track editor.
-                      </p>
+                      <WorkbenchDraftHeading
+                        context="Draft"
+                        title="Edit shared metadata"
+                        description={
+                          <>
+                            {batchTrackIds.length} tracks selected. Enable only
+                            the shared fields you intend to write. Track titles
+                            and track numbers stay in the single-track editor.
+                          </>
+                        }
+                      />
                       <div className="field-grid">
                         <label>
                           <span>
@@ -2759,82 +2768,73 @@ export function App(): React.JSX.Element {
                         Preview selected tracks
                       </button>
                       {batchPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Batch confirmation"
+                        <WorkbenchConfirmation
+                          blocked={batchPreview.files.some(
+                            (file) =>
+                              file.willWrite && file.warnings.length > 0,
+                          )}
+                          busy={busy}
+                          cancelLabel="Return to shared-field draft"
+                          confirmLabel="Confirm and write selected tracks"
+                          description="Unchanged tracks will be skipped. Every proposed write is checked again immediately before Outgroove creates a snapshot and writes."
+                          label="Batch confirmation"
+                          title="Review every selected file"
+                          onCancel={() => setBatchPreview(undefined)}
+                          onConfirm={() => void applyBatchEdit()}
                         >
-                          <h4>Per-file review</h4>
-                          <p>
-                            No file has changed yet. Unchanged tracks will be
-                            skipped; every other track is checked again before
-                            its write.
-                          </p>
-                          {batchPreview.files.map((file) => (
-                            <div key={file.fileId}>
-                              <h5>{file.path}</h5>
-                              {!file.willWrite && (
-                                <p>Status: unchanged — skipped</p>
-                              )}
-                              {file.changes.length > 0 && (
-                                <table>
-                                  <thead>
-                                    <tr>
-                                      <th>Field</th>
-                                      <th>Before</th>
-                                      <th>After</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {file.changes.map((change) => (
-                                      <tr key={change.field}>
-                                        <td>{change.field}</td>
-                                        <td>{change.before ?? "Not set"}</td>
-                                        <td>{change.after ?? "Not set"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                              {file.warnings.map((warning) => (
-                                <p key={warning} role="alert">
-                                  {warning}
-                                </p>
-                              ))}
-                            </div>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                batchPreview.files.some(
-                                  (file) =>
-                                    file.willWrite && file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyBatchEdit()}
-                            >
-                              Confirm and write selected tracks
-                            </button>
-                            <button onClick={() => setBatchPreview(undefined)}>
-                              Cancel
-                            </button>
+                          <div className="workbench-file-reviews">
+                            {batchPreview.files.map((file) => (
+                              <article key={file.fileId}>
+                                <h5>{file.path}</h5>
+                                {!file.willWrite && (
+                                  <p className="review-status">
+                                    Status: unchanged — skipped
+                                  </p>
+                                )}
+                                {file.changes.length > 0 && (
+                                  <div className="preview-table-scroll">
+                                    <table>
+                                      <thead>
+                                        <tr>
+                                          <th>Field</th>
+                                          <th>Before</th>
+                                          <th>After</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {file.changes.map((change) => (
+                                          <tr key={change.field}>
+                                            <td>{change.field}</td>
+                                            <td>
+                                              {change.before ?? "Not set"}
+                                            </td>
+                                            <td>{change.after ?? "Not set"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                                {file.warnings.map((warning) => (
+                                  <p
+                                    className="workflow-error"
+                                    key={warning}
+                                    role="alert"
+                                  >
+                                    {warning}
+                                  </p>
+                                ))}
+                              </article>
+                            ))}
                           </div>
-                        </div>
+                        </WorkbenchConfirmation>
                       )}
                       {batchResult && (
-                        <div className="preview" aria-live="polite">
-                          <h4>Batch write results</h4>
-                          <ul>
-                            {batchResult.results.map((result) => (
-                              <li key={result.fileId}>
-                                {result.path}:{" "}
-                                {result.verified ? "verified" : "failed"}
-                                {result.error ? ` — ${result.error}` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                        <WorkbenchWriteResult
+                          label="Batch metadata result"
+                          results={batchResult.results}
+                          subject="Shared-field write"
+                        />
                       )}
                     </section>
                   )}
@@ -2846,13 +2846,11 @@ export function App(): React.JSX.Element {
                         ref={sequenceEditorRef}
                         tabIndex={-1}
                       >
-                        <p className="eyebrow">Track-order workflow</p>
-                        <h3>Sequence track numbers</h3>
-                        <p>
-                          Outgroove uses exactly the order below. Reorder it
-                          explicitly before previewing; file names and existing
-                          numbers are never used to guess a different order.
-                        </p>
+                        <WorkbenchDraftHeading
+                          context="Order"
+                          title="Sequence track numbers"
+                          description="Outgroove uses exactly the order below. Reorder it explicitly before previewing; file names and existing numbers are never used to guess a different order."
+                        />
                         {batchTrackIds.length === 0 ? (
                           <p>Select at least two tracks above.</p>
                         ) : (
@@ -2949,15 +2947,24 @@ export function App(): React.JSX.Element {
                           Preview track-number sequence
                         </button>
                         {sequencePreview && (
-                          <div
-                            className="preview"
-                            aria-label="Track number sequence confirmation"
+                          <WorkbenchConfirmation
+                            blocked={sequencePreview.files.some(
+                              (file) =>
+                                file.willWrite && file.warnings.length > 0,
+                            )}
+                            busy={busy}
+                            cancelLabel="Return to track order"
+                            confirmLabel="Confirm track-number sequence"
+                            description="Review the explicit order and every proposed track or disc number. Each write is checked again before its snapshot and safe replacement."
+                            label="Track number sequence confirmation"
+                            title="Review the exact sequence"
+                            onCancel={() => setSequencePreview(undefined)}
+                            onConfirm={() => void applyTrackNumberSequence()}
                           >
-                            <h5>Review exact sequence</h5>
-                            <ol>
+                            <ol className="sequence-review-list">
                               {sequencePreview.files.map((file) => (
                                 <li key={file.fileId}>
-                                  <strong>{file.path}</strong>:{" "}
+                                  <strong>{file.path}</strong>
                                   {file.willWrite ? (
                                     <ul>
                                       {file.changes.map((change) => (
@@ -2972,49 +2979,25 @@ export function App(): React.JSX.Element {
                                     "unchanged — skipped"
                                   )}
                                   {file.warnings.map((warning) => (
-                                    <p key={warning} role="alert">
+                                    <p
+                                      className="workflow-error"
+                                      key={warning}
+                                      role="alert"
+                                    >
                                       {warning}
                                     </p>
                                   ))}
                                 </li>
                               ))}
                             </ol>
-                            <div className="actions">
-                              <button
-                                className="primary"
-                                disabled={
-                                  busy ||
-                                  sequencePreview.files.some(
-                                    (file) =>
-                                      file.willWrite &&
-                                      file.warnings.length > 0,
-                                  )
-                                }
-                                onClick={() => void applyTrackNumberSequence()}
-                              >
-                                Confirm track-number sequence
-                              </button>
-                              <button
-                                onClick={() => setSequencePreview(undefined)}
-                              >
-                                Cancel sequence
-                              </button>
-                            </div>
-                          </div>
+                          </WorkbenchConfirmation>
                         )}
                         {sequenceResult && (
-                          <div className="preview" aria-live="polite">
-                            <h5>Track-number results</h5>
-                            <ul>
-                              {sequenceResult.results.map((result) => (
-                                <li key={result.fileId}>
-                                  {result.path}:{" "}
-                                  {result.verified ? "verified" : "failed"}
-                                  {result.error ? ` — ${result.error}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                          <WorkbenchWriteResult
+                            label="Track number sequence result"
+                            results={sequenceResult.results}
+                            subject="Track-number sequence"
+                          />
                         )}
                       </section>
                     )}
