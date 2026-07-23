@@ -294,7 +294,7 @@ Generate UTF-8 M3U8 playlists initially. Device-specific legacy encodings and ab
 - **Onboarding:** choose library folders, explain local/network behavior, start first scan.
 - **Library:** album grid/table, artist view, track table, saved filters, scan health.
 - **Album detail:** artwork, release data, discs/tracks, file properties, tag consistency, match status.
-- **Workbench:** editable field grid, proposed changes, candidate comparison, validation, write results, undo history.
+- **Workbench:** editable field comparison grid, current and proposed values, candidate comparison, validation, write results, undo history.
 - **Radar:** upcoming/recent/newly-found tabs, favorite artists, filters, seen/dismiss actions.
 - **Sync:** profiles, selection rules, capacity estimate, plan diff, progress, history, errors.
 - **Jobs:** persistent activity center for scans, lookups, fingerprinting, edits, and sync.
@@ -349,6 +349,41 @@ Follow with smaller workflow-specific usability slices for Library/detail,
 Workbench editing, and Sync/recovery. Consider a `v0.9.0` prerelease only when
 the navigation plus core Library → Workbench and Library/Workbench → Sync
 journeys form a coherent, cross-platform-tested experience.
+
+### 9.2 Tag comparison workspace direction
+
+Workbench editing should adapt the clearest part of established desktop tag
+editors without copying their full multi-pane interface: keep the selected
+album and tracks visible, then present each editable field as a direct
+**Current value → Proposed value** comparison. The proposed value is the draft;
+the current value remains read-only evidence from the catalog until a fresh
+per-file preview is generated.
+
+The comparison workspace must:
+
+- show common fields first and progressively disclose advanced or raw metadata;
+- make unchanged, changed, mixed-selection, missing, invalid, and externally
+  conflicted values distinguishable with text or icons as well as color;
+- retain typed partial dates, disc/track totals, MusicBrainz identifier types,
+  and ordered artist credits rather than flattening them for grid display;
+- let batch selections show an explicit “mixed values” state instead of
+  inventing one current value, with per-track or per-file expansion before
+  confirmation;
+- preserve long metadata and paths through wrapping, horizontal containment, or
+  a stacked narrow-window layout at minimum size and 200% text scaling;
+- keep draft comparison separate from the consequential per-file preview,
+  confirmation, write progress, verification result, errors, and undo;
+- preserve keyboard row navigation, associated labels, visible focus, and a
+  logical focus move from the edited proposal to preview and confirmation.
+
+The first independently mergeable vertical slice is the existing single-track
+metadata editor expressed as this comparison grid, retaining album and track
+context and all current fields and write behavior. A following slice may extend
+the same interaction to shared multi-track edits with mixed-value handling and
+per-file review. This direction does not authorize spreadsheet-style bulk
+application, automatic metadata writes, renderer-side tag logic, or any change
+to the required select → propose → validate → preview → confirm → snapshot →
+write → re-read → verify sequence.
 
 ## 10. Cross-platform requirements
 
