@@ -790,26 +790,123 @@ h1 {
 .track-actions label {
   margin: 0;
 }
-.selection-toolbar {
+.workbench-track-context-heading {
   display: flex;
   gap: 1rem;
   align-items: center;
   justify-content: space-between;
-  margin-top: 1.25rem;
-  padding: 1rem;
+}
+.workbench-track-context-heading > div:first-child {
+  min-width: 0;
+}
+.workbench-track-context-heading h3,
+.workbench-track-context-heading p:last-child {
+  margin-bottom: 0;
+}
+.workbench-track-context-heading p:last-child {
+  color: #3e4e44;
+}
+.selected-track-summary {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+  padding: 0;
+  color: #425149;
+  list-style: none;
+}
+.selected-track-summary li {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #c5cec7;
+  border-radius: 999px;
+  background: #f3f5f3;
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.workbench-track-chooser {
   border: 1px solid #8ca394;
   border-radius: 10px;
   background: #eef8f1;
 }
-.selection-toolbar > div:first-child {
+.workbench-track-chooser > summary,
+.workbench-technical-tracks > summary {
+  cursor: pointer;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  font-weight: 750;
+}
+.workbench-track-chooser > summary > span:last-child {
+  color: #526159;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+.compact-track-picker {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0 1rem 1rem;
+  list-style: none;
+}
+.compact-track-picker li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid #c5cec7;
+  border-radius: 9px;
+  background: white;
+}
+.compact-track-picker li[data-selected="true"] {
+  border-color: #8ca394;
+  background: #f5fbf6;
+}
+.compact-track-picker label {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+}
+.compact-track-picker label input {
+  flex: 0 0 auto;
   min-width: 0;
 }
-.selection-toolbar h3,
-.selection-toolbar p:last-child {
-  margin-bottom: 0;
+.compact-track-identity {
+  display: grid;
+  min-width: 0;
 }
-.selection-toolbar p:last-child {
-  color: #3e4e44;
+.compact-track-identity strong,
+.compact-track-identity span,
+.compact-track-facts {
+  overflow-wrap: anywhere;
+}
+.compact-track-identity span,
+.compact-track-facts {
+  color: #526159;
+  font-size: 0.82rem;
+}
+.compact-track-picker button {
+  padding: 0.45rem 0.65rem;
+}
+.workbench-technical-tracks {
+  margin: 0 1rem 1rem;
+  border: 1px solid #c5cec7;
+  border-radius: 9px;
+  background: white;
+}
+.workbench-technical-tracks > p,
+.workbench-technical-tracks > .track-list {
+  margin-right: 1rem;
+  margin-left: 1rem;
+}
+.workbench-technical-tracks > p {
+  color: #526159;
 }
 .track-order-editor {
   max-width: 1120px;
@@ -1532,9 +1629,18 @@ td {
   .track-editor-context dd + dt {
     margin-top: 0.5rem;
   }
-  .selection-toolbar {
+  .workbench-track-context-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .compact-track-picker li {
+    grid-template-columns: 1fr;
+  }
+  .compact-track-facts {
+    padding-left: 1.85rem;
+  }
+  .compact-track-picker button {
+    width: 100%;
   }
   .sequence-comparison-header {
     display: none;
