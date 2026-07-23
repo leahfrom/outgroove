@@ -46,6 +46,10 @@ import { ActivityView } from "./activity-view";
 import { ApplicationShell, type AppView } from "./application-shell";
 import { LibraryTrackDetail } from "./library-track-detail";
 import {
+  TrackMetadataEditor,
+  type TrackMetadataDraft,
+} from "./track-metadata-editor";
+import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
@@ -183,7 +187,7 @@ export function App(): React.JSX.Element {
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
-  const [trackDraft, setTrackDraft] = useState({
+  const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
     artist: "",
     albumArtist: "",
@@ -193,6 +197,8 @@ export function App(): React.JSX.Element {
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [trackEditResult, setTrackEditResult] = useState<TagEditResultDto>();
+  const [trackEditError, setTrackEditError] = useState<string>();
   const [trackUndoPreview, setTrackUndoPreview] =
     useState<TrackTagEditPreviewDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
@@ -513,6 +519,8 @@ export function App(): React.JSX.Element {
     setUndoPreview(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
@@ -536,6 +544,8 @@ export function App(): React.JSX.Element {
     setWorkbenchTool("track");
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
     setPendingTrackId(undefined);
@@ -754,6 +764,8 @@ export function App(): React.JSX.Element {
     setWorkbenchTool("track");
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
   };
@@ -831,6 +843,8 @@ export function App(): React.JSX.Element {
 
   const previewTrackEdit = async (): Promise<void> => {
     if (!selectedTrack) return;
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     const result = await window.outgroove.previewTrackTagEdit({
       fileId: selectedTrack.id,
       changes: {
@@ -847,7 +861,10 @@ export function App(): React.JSX.Element {
       },
     });
     if (result.ok) setTrackEditPreview(result.value);
-    else setNotice(result.error.message);
+    else {
+      setTrackEditError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyTrackEdit = async (): Promise<void> => {
@@ -859,6 +876,8 @@ export function App(): React.JSX.Element {
         confirmationToken: trackEditPreview.confirmationToken,
       });
       if (result.ok) {
+        setTrackEditResult(result.value);
+        setTrackEditError(undefined);
         const written = result.value.results[0];
         setNotice(
           written?.verified
@@ -867,11 +886,13 @@ export function App(): React.JSX.Element {
         );
         if (written?.verified) {
           setTrackEditPreview(undefined);
-          setSelectedTrackId(undefined);
           await refreshCatalog();
           if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
         }
-      } else setNotice(result.error.message);
+      } else {
+        setTrackEditError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -883,6 +904,8 @@ export function App(): React.JSX.Element {
       setEditPreview(undefined);
       setUndoPreview(undefined);
       setTrackEditPreview(undefined);
+      setTrackEditResult(undefined);
+      setTrackEditError(undefined);
       setTrackUndoPreview(result.value);
     } else setNotice(result.error.message);
   };
@@ -2851,167 +2874,37 @@ export function App(): React.JSX.Element {
                   {activeView === "workbench" &&
                     workbenchTool === "track" &&
                     selectedTrack && (
-                      <section
-                        className="card"
-                        aria-label="Track metadata editor"
+                      <TrackMetadataEditor
+                        busy={busy}
+                        draft={trackDraft}
+                        error={trackEditError}
+                        onCancelPreview={() => {
+                          setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
+                        }}
+                        onClose={() => {
+                          setSelectedTrackId(undefined);
+                          setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
+                        }}
+                        onConfirm={() => void applyTrackEdit()}
+                        onDraftChange={(field, value) => {
+                          setTrackDraft((draft) => ({
+                            ...draft,
+                            [field]: value,
+                          }));
+                          setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
+                        }}
+                        onPreview={() => void previewTrackEdit()}
+                        preview={trackEditPreview}
                         ref={trackEditorRef}
-                        tabIndex={-1}
-                      >
-                        <h3>Workbench · track metadata</h3>
-                        <p>
-                          Editing {selectedTrack.tags.title}. Only fields that
-                          differ will be included in the write.
-                        </p>
-                        <div className="field-grid">
-                          <label>
-                            Track title
-                            <input
-                              value={trackDraft.title}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  title: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Track artist
-                            <input
-                              value={trackDraft.artist}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  artist: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Album artist
-                            <input
-                              value={trackDraft.albumArtist}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  albumArtist: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Track number
-                            <input
-                              type="number"
-                              min="1"
-                              max="9999"
-                              value={trackDraft.trackNumber}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  trackNumber: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Disc number
-                            <input
-                              type="number"
-                              min="1"
-                              max="999"
-                              value={trackDraft.discNumber}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  discNumber: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                          <label>
-                            Release date
-                            <input
-                              placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
-                              value={trackDraft.year}
-                              onChange={(event) =>
-                                setTrackDraft((draft) => ({
-                                  ...draft,
-                                  year: event.target.value,
-                                }))
-                              }
-                            />
-                          </label>
-                        </div>
-                        <div className="actions">
-                          <button
-                            disabled={busy}
-                            onClick={() => void previewTrackEdit()}
-                          >
-                            Preview track changes
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setSelectedTrackId(undefined);
-                              setTrackEditPreview(undefined);
-                            }}
-                          >
-                            Close editor
-                          </button>
-                        </div>
-                        {trackEditPreview && (
-                          <div
-                            className="preview"
-                            aria-label="Track metadata confirmation"
-                          >
-                            <h4>Review before writing</h4>
-                            <p>
-                              No file has changed yet. The proposal will be
-                              checked again immediately before the safe write.
-                            </p>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Field</th>
-                                  <th>Before</th>
-                                  <th>After</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {trackEditPreview.changes.map((change) => (
-                                  <tr key={change.field}>
-                                    <td>{change.field}</td>
-                                    <td>{change.before ?? "Not set"}</td>
-                                    <td>{change.after ?? "Not set"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            {trackEditPreview.warnings.map((warning) => (
-                              <p key={warning} role="alert">
-                                {warning}
-                              </p>
-                            ))}
-                            <div className="actions">
-                              <button
-                                className="primary"
-                                disabled={
-                                  busy || trackEditPreview.warnings.length > 0
-                                }
-                                onClick={() => void applyTrackEdit()}
-                              >
-                                Confirm and write track
-                              </button>
-                              <button
-                                onClick={() => setTrackEditPreview(undefined)}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </section>
+                        result={trackEditResult}
+                        track={selectedTrack}
+                      />
                     )}
                   {activeView === "workbench" && workbenchTool === "album" && (
                     <section

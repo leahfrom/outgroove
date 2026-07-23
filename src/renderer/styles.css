@@ -167,7 +167,7 @@ button:disabled {
   background: #eef8f1;
   font-weight: 750;
 }
-.workbench-workspace {
+.workspace.workbench-workspace {
   grid-template-columns: minmax(0, 1fr);
 }
 .sync-view,
@@ -554,6 +554,104 @@ pre {
   min-width: 0;
   width: 100%;
 }
+.track-editor {
+  max-width: 980px;
+}
+.track-editor fieldset {
+  min-width: 0;
+  margin: 1.25rem 0 0;
+  padding: 1rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 10px;
+  background: white;
+}
+.track-editor legend {
+  padding: 0 0.35rem;
+  font-weight: 750;
+}
+.track-editor fieldset .field-grid {
+  margin-bottom: 0;
+}
+.track-editor > .actions {
+  margin-top: 1rem;
+}
+.workflow-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.workflow-heading > div {
+  min-width: 0;
+}
+.workflow-heading p:last-child {
+  margin-bottom: 0;
+  color: #526159;
+  overflow-wrap: anywhere;
+}
+.safety-badge {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #8ca394;
+  border-radius: 999px;
+  background: #eef8f1;
+  color: #245c39;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.safety-note {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid #245c39;
+  border-radius: 0 8px 8px 0;
+  background: #eef8f1;
+}
+.safety-note span {
+  color: #3e4e44;
+}
+.confirmation-panel {
+  margin-top: 1.5rem;
+}
+.preview-table-scroll {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
+.workflow-error,
+.workflow-result {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 9px;
+  overflow-wrap: anywhere;
+}
+.workflow-error {
+  border: 1px solid #a64a41;
+  background: #fff1ef;
+  color: #71352f;
+}
+.workflow-error > * {
+  margin: 0;
+}
+.workflow-result {
+  border: 2px solid #37724b;
+  background: #eef8f1;
+}
+.workflow-result.failed {
+  border-color: #a64a41;
+  background: #fff1ef;
+}
+.workflow-result .eyebrow,
+.workflow-result h4,
+.workflow-result p {
+  margin-bottom: 0;
+}
+.workflow-result.failed .eyebrow,
+.workflow-result.failed h4 {
+  color: #71352f;
+}
 .settings {
   background: white;
   border: 1px solid #d8ddd8;
@@ -733,9 +831,13 @@ td {
   .album-context,
   .section-heading,
   .track-section-heading,
-  .track-list summary {
+  .track-list summary,
+  .workflow-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .safety-badge {
+    align-self: flex-start;
   }
   .empty {
     padding: 2rem 1rem;
