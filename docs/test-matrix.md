@@ -3,6 +3,12 @@
 The v0.9.0 release candidate was verified locally on macOS arm64, on native
 Windows x64, and under an x86-64 Debian Docker container on Apple Silicon.
 
+| v0.9.0 candidate artifact | SHA-256                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| macOS arm64 ZIP           | `2dcf722f7425b327d6cfad1ddaac8ea11f2757d711d8ad42790099552d6b9392` |
+| Windows x64 ZIP           | `2ec01ecbeec7b254e6dba60250f168efd8b8b8fce593353fb100adffab7e846d` |
+| Linux x64 ZIP             | `49fb4389cc62c72982adc791f676d3207ad798ca093ed50c617b157268f1349a` |
+
 | Area                                                              | macOS arm64                     | Windows x64                                                                               | Linux x64                                                              |
 | ----------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Strict TypeScript / lint / unit + temp integration tests          | v0.9.0 candidate passed locally | v0.9.0 candidate passed on native Windows                                                 | v0.9.0 candidate passed in x86-64 Debian Docker emulation              |
