@@ -49,6 +49,7 @@ import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import {
   WorkbenchNavigation,
   type WorkbenchTool,
@@ -131,6 +132,7 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 export function App(): React.JSX.Element {
   const [activeView, setActiveView] = useState<AppView>("library");
   const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
+  const [syncStage, setSyncStage] = useState<SyncStage>("setup");
   const [rootId, setRootId] = useState<string>();
   const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
     [],
@@ -1102,6 +1104,7 @@ export function App(): React.JSX.Element {
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
+      setSyncStage("review");
       void refreshSyncHistory(result.value.id);
       const refreshed = await refreshSyncProfiles();
       if (refreshed) {
@@ -1267,6 +1270,7 @@ export function App(): React.JSX.Element {
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
     setActiveView("sync");
+    setSyncStage("review");
     setEditingSyncProfileId(undefined);
     setSyncAlbums([]);
     setProfile(saved);
@@ -1280,6 +1284,7 @@ export function App(): React.JSX.Element {
 
   const editSyncProfileAlbums = (saved: SyncProfileDto): void => {
     setActiveView("sync");
+    setSyncStage("setup");
     setProfile(saved);
     setSyncPlan(undefined);
     setEditingSyncProfileId(saved.id);
@@ -1310,6 +1315,7 @@ export function App(): React.JSX.Element {
         setSyncPlan(undefined);
         setEditingSyncProfileId(undefined);
         setSyncAlbums([]);
+        setSyncStage("review");
         const refreshed = await refreshSyncProfiles();
         if (refreshed) {
           const saved = refreshed.find(
@@ -1400,6 +1406,7 @@ export function App(): React.JSX.Element {
         setProfile(result.value);
         setSyncPlan(undefined);
         setSyncTargetPreview(undefined);
+        setSyncStage("review");
         setSyncProfiles((current) =>
           current.map((candidate) =>
             candidate.id === result.value.id ? result.value : candidate,
@@ -2342,6 +2349,7 @@ export function App(): React.JSX.Element {
                                 )
                               )
                                 toggleSyncAlbum(selectedAlbum);
+                              setSyncStage("setup");
                               setActiveView("sync");
                             }}
                           >
@@ -3337,130 +3345,454 @@ export function App(): React.JSX.Element {
       )}
       {activeView === "sync" && (
         <main className="sync-view">
-          <section
-            className="card selection-card"
-            aria-labelledby="sync-selection"
-          >
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Copy selection</p>
-                <h2 id="sync-selection">Albums for the next DAP plan</h2>
-                <p>
-                  Source audio is never modified. Selecting albums does not
-                  inspect or change a target.
-                </p>
-              </div>
-              {selectedAlbum && (
-                <button
-                  disabled={
-                    busy ||
-                    (syncAlbums.length >= 100 &&
-                      !syncAlbums.some(
-                        (album) => album.id === selectedAlbum.id,
-                      ))
-                  }
-                  aria-pressed={syncAlbums.some(
-                    (album) => album.id === selectedAlbum.id,
-                  )}
-                  onClick={() => toggleSyncAlbum(selectedAlbum)}
-                >
-                  {syncAlbums.some((album) => album.id === selectedAlbum.id)
-                    ? `Remove ${selectedAlbum.title}`
-                    : `Add ${selectedAlbum.title}`}
-                </button>
-              )}
+          <section className="sync-workflow-header">
+            <div>
+              <p className="eyebrow">Folder-backed DAP sync</p>
+              <h2>Prepare, review, then copy</h2>
+              <p>
+                Source audio is never modified. Every target plan remains
+                preview-only until you explicitly confirm it.
+              </p>
             </div>
-            <p aria-live="polite">
-              {syncAlbums.length} of 100 albums selected
-              {editingSyncProfile
-                ? ` for the ${editingSyncProfile.name} revision.`
-                : "."}
-            </p>
-            {syncAlbums.length === 0 ? (
-              <div className="empty compact">
-                <h3>No albums selected</h3>
-                <p>
-                  Choose an album in Library, then use its contextual Sync
-                  action.
-                </p>
-                <button onClick={() => setActiveView("library")}>
-                  Browse Library
-                </button>
+            <SyncNavigation
+              activeStage={syncStage}
+              hasActiveProfile={Boolean(profile)}
+              recoveryCount={syncRecoveries.length}
+              onSelect={setSyncStage}
+            />
+          </section>
+          {syncRecoveries.length > 0 && syncStage !== "recovery" && (
+            <section className="sync-recovery-alert" role="alert">
+              <div>
+                <strong>
+                  {syncRecoveries.length} interrupted{" "}
+                  {syncRecoveries.length === 1 ? "sync needs" : "syncs need"}{" "}
+                  review
+                </strong>
+                <span>
+                  Database restore remains blocked until pending recovery is
+                  completed.
+                </span>
               </div>
-            ) : (
-              <ul aria-label="Albums selected for DAP sync">
-                {syncAlbums.map((album) => (
-                  <li key={album.id}>
-                    {album.albumArtist} — {album.title}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="actions">
-              {editingSyncProfile ? (
-                <>
+              <button
+                className="primary"
+                onClick={() => setSyncStage("recovery")}
+              >
+                Review recovery
+              </button>
+            </section>
+          )}
+          {syncStage === "setup" && (
+            <section
+              className="card selection-card"
+              aria-labelledby="sync-selection"
+            >
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Copy selection</p>
+                  <h2 id="sync-selection">Albums for the next DAP plan</h2>
+                  <p>
+                    Source audio is never modified. Selecting albums does not
+                    inspect or change a target.
+                  </p>
+                </div>
+                {selectedAlbum && (
                   <button
-                    disabled={busy || syncAlbums.length === 0}
-                    onClick={() => void saveSyncProfileAlbums()}
+                    disabled={
+                      busy ||
+                      (syncAlbums.length >= 100 &&
+                        !syncAlbums.some(
+                          (album) => album.id === selectedAlbum.id,
+                        ))
+                    }
+                    aria-pressed={syncAlbums.some(
+                      (album) => album.id === selectedAlbum.id,
+                    )}
+                    onClick={() => toggleSyncAlbum(selectedAlbum)}
                   >
-                    Save album selection for {editingSyncProfile.name}
+                    {syncAlbums.some((album) => album.id === selectedAlbum.id)
+                      ? `Remove ${selectedAlbum.title}`
+                      : `Add ${selectedAlbum.title}`}
                   </button>
-                  <button disabled={busy} onClick={cancelSyncProfileAlbumEdit}>
-                    Cancel album selection changes
+                )}
+              </div>
+              <p aria-live="polite">
+                {syncAlbums.length} of 100 albums selected
+                {editingSyncProfile
+                  ? ` for the ${editingSyncProfile.name} revision.`
+                  : "."}
+              </p>
+              {syncAlbums.length === 0 ? (
+                <div className="empty compact">
+                  <h3>No albums selected</h3>
+                  <p>
+                    Choose an album in Library, then use its contextual Sync
+                    action.
+                  </p>
+                  <button onClick={() => setActiveView("library")}>
+                    Browse Library
                   </button>
-                </>
+                </div>
               ) : (
-                <>
+                <ul aria-label="Albums selected for DAP sync">
+                  {syncAlbums.map((album) => (
+                    <li key={album.id}>
+                      {album.albumArtist} — {album.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="actions">
+                {editingSyncProfile ? (
+                  <>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => void saveSyncProfileAlbums()}
+                    >
+                      Save album selection for {editingSyncProfile.name}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={cancelSyncProfileAlbumEdit}
+                    >
+                      Cancel album selection changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => void chooseTarget()}
+                    >
+                      Choose DAP target
+                    </button>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => {
+                        setSyncAlbums([]);
+                        setNotice("Cleared the DAP album selection.");
+                      }}
+                    >
+                      Clear selection
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+          {syncStage === "setup" && (
+            <section className="card settings" aria-labelledby="dap-profiles">
+              <h2 id="dap-profiles">DAP profiles</h2>
+              <p>
+                Saved profiles can be reopened after restarting Outgroove.
+                Opening a profile only restores its selection; it does not read
+                or change the target until you request a preview. Interrupted
+                syncs are detected at startup, but the target is inspected
+                read-only only when you review a recovery.
+              </p>
+              {syncProfiles.length === 0 ? (
+                <p>No DAP profiles have been saved yet.</p>
+              ) : (
+                <ul
+                  className="library-root-list"
+                  aria-label="Saved DAP profiles"
+                >
+                  {syncProfiles.map((saved) => (
+                    <li key={saved.id}>
+                      <div>
+                        <strong>{saved.name}</strong>
+                        <span>{saved.targetPath}</span>
+                        <span>
+                          {saved.albums.length} saved{" "}
+                          {saved.albums.length === 1 ? "album" : "albums"}:{" "}
+                          {saved.albums
+                            .map(
+                              (album) =>
+                                `${album.albumArtist} — ${album.title}`,
+                            )
+                            .join("; ")}
+                        </span>
+                      </div>
+                      <div className="library-root-actions">
+                        <button
+                          disabled={busy || Boolean(renamingSyncProfileId)}
+                          aria-pressed={profile?.id === saved.id}
+                          onClick={() => openSyncProfile(saved)}
+                        >
+                          Open DAP profile {saved.name}
+                        </button>
+                        <button
+                          disabled={busy || Boolean(renamingSyncProfileId)}
+                          onClick={() => editSyncProfileAlbums(saved)}
+                        >
+                          Edit albums in DAP profile {saved.name}
+                        </button>
+                        <button
+                          disabled={
+                            busy ||
+                            Boolean(editingSyncProfileId) ||
+                            Boolean(renamingSyncProfileId)
+                          }
+                          onClick={() => void chooseSyncProfileTarget(saved)}
+                        >
+                          Change DAP target for {saved.name}
+                        </button>
+                        {renamingSyncProfileId === saved.id ? (
+                          <form
+                            aria-label={`Rename DAP profile ${saved.name}`}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void renameSyncProfile(saved);
+                            }}
+                          >
+                            <label htmlFor={`sync-profile-name-${saved.id}`}>
+                              New name for {saved.name}
+                            </label>
+                            <input
+                              autoFocus
+                              id={`sync-profile-name-${saved.id}`}
+                              maxLength={100}
+                              value={syncProfileNameDraft}
+                              onChange={(event) =>
+                                setSyncProfileNameDraft(event.target.value)
+                              }
+                            />
+                            <button
+                              disabled={
+                                busy || syncProfileNameDraft.trim().length === 0
+                              }
+                              type="submit"
+                            >
+                              Save DAP profile name
+                            </button>
+                            <button
+                              disabled={busy}
+                              type="button"
+                              onClick={cancelSyncProfileRename}
+                            >
+                              Cancel DAP profile rename
+                            </button>
+                          </form>
+                        ) : (
+                          <button
+                            disabled={
+                              busy ||
+                              Boolean(editingSyncProfileId) ||
+                              Boolean(renamingSyncProfileId)
+                            }
+                            onClick={() => startSyncProfileRename(saved)}
+                          >
+                            Rename DAP profile {saved.name}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {syncTargetPreview && (
+                <section
+                  className="preview"
+                  aria-label="DAP target confirmation"
+                >
+                  <h3>Review DAP target change</h3>
+                  <p>
+                    <strong>{syncTargetPreview.profileName}</strong>
+                  </p>
+                  <p>Current target: {syncTargetPreview.currentTargetPath}</p>
+                  <p>New target: {syncTargetPreview.proposedTargetPath}</p>
+                  <p>
+                    This changes only the saved profile. No source audio or
+                    target files will be read, copied, replaced, or deleted.
+                    Existing sync history stays attached to the profile. A fresh
+                    sync preview will treat ownership separately for this
+                    target.
+                  </p>
                   <button
-                    disabled={busy || syncAlbums.length === 0}
-                    onClick={() => void chooseTarget()}
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => void applySyncProfileTarget()}
                   >
-                    Choose DAP target
+                    Confirm DAP target change
                   </button>
                   <button
-                    disabled={busy || syncAlbums.length === 0}
+                    disabled={busy}
                     onClick={() => {
-                      setSyncAlbums([]);
-                      setNotice("Cleared the DAP album selection.");
+                      setSyncTargetPreview(undefined);
+                      setNotice("Discarded the DAP target change preview.");
                     }}
                   >
-                    Clear selection
+                    Cancel DAP target change
                   </button>
-                </>
+                </section>
               )}
-            </div>
-          </section>
-          <section className="card settings" aria-labelledby="dap-profiles">
-            <h2 id="dap-profiles">DAP profiles</h2>
-            <p>
-              Saved profiles can be reopened after restarting Outgroove. Opening
-              a profile only restores its selection; it does not read or change
-              the target until you request a preview. Interrupted syncs are
-              detected at startup, but the target is inspected read-only only
-              when you review a recovery.
-            </p>
-            {syncRecoveries.length > 0 && (
-              <section
-                aria-labelledby="sync-recovery-title"
-                className="preview"
-              >
-                <h3 id="sync-recovery-title">Interrupted sync recovery</h3>
-                <p>
-                  Review every action before confirming. Recovery never changes
-                  source audio and leaves target files with unexpected contents
-                  untouched.
-                </p>
-                <ul aria-label="Interrupted sync recoveries">
-                  {syncRecoveries.map((recovery) => (
-                    <li key={recovery.runId}>
-                      <strong>{recovery.profileName}</strong>
+            </section>
+          )}
+          {syncStage === "review" && (
+            <section
+              className="card settings sync-review"
+              aria-labelledby="sync-review-title"
+            >
+              <p className="eyebrow">Preview and apply</p>
+              <h2 id="sync-review-title">Review the active DAP profile</h2>
+              {profile && (
+                <div
+                  className="sync-profile-summary"
+                  aria-label="Active DAP profile"
+                >
+                  <p>
+                    <strong>{profile.name}</strong>
+                    <br />
+                    {profile.targetPath}
+                  </p>
+                  <p>
+                    Status: {profile.albumIds.length} selected{" "}
+                    {profile.albumIds.length === 1 ? "album" : "albums"} saved
+                    in this profile.
+                  </p>
+                  {editingSyncProfile?.id === profile.id && (
+                    <p>Status: Album-selection changes are not saved yet.</p>
+                  )}
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={busy || editingSyncProfile?.id === profile.id}
+                      onClick={() => void planSync()}
+                    >
+                      Preview sync plan
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setSyncStage("setup")}
+                    >
+                      Manage {profile.name}
+                    </button>
+                  </div>
+                  <section
+                    aria-labelledby={`sync-history-${profile.id}`}
+                    className="sync-history"
+                  >
+                    <h3 id={`sync-history-${profile.id}`}>
+                      Successful sync history
+                    </h3>
+                    <p>
+                      Shows only runs whose manifest was committed successfully.
+                      The 20 newest runs are shown in this view.
+                    </p>
+                    {syncHistoryProfileId !== profile.id ||
+                    syncHistoryLoading ? (
+                      <p aria-live="polite">Loading successful sync history…</p>
+                    ) : syncHistory.length === 0 ? (
+                      <p>No successful sync runs have been recorded yet.</p>
+                    ) : (
+                      <ul
+                        aria-label={`Successful sync history for ${profile.name}`}
+                      >
+                        {syncHistory.map((item) => (
+                          <li key={item.id}>
+                            <time dateTime={item.completedAt}>
+                              {new Date(item.completedAt).toLocaleString()}
+                            </time>
+                            {" — "}
+                            {item.entryCount}{" "}
+                            {item.entryCount === 1 ? "file" : "files"}
+                            {" — "}
+                            {item.targetPath}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+              )}
+              {syncPlan && (
+                <div className="preview" aria-label="Sync confirmation">
+                  <h3>Sync preview</h3>
+                  <PlanGroup
+                    title="Copies"
+                    items={syncPlan.copies.map(
+                      (item) => item.relativeDestination,
+                    )}
+                  />
+                  <PlanGroup
+                    title="Unchanged / skipped"
+                    items={syncPlan.unchanged.map(
+                      (item) => item.relativeDestination,
+                    )}
+                  />
+                  <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
+                  <PlanGroup title="Errors" items={syncPlan.errors} />
+                  <p>{syncPlan.requiredBytes} bytes required.</p>
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      syncPlan.conflicts.length > 0 ||
+                      syncPlan.errors.length > 0
+                    }
+                    onClick={() => void applySync()}
+                  >
+                    Confirm and apply copy plan
+                  </button>
+                  {syncApplyingPlanId === syncPlan.id && (
+                    <div aria-live="polite">
                       <p>
                         Status:{" "}
-                        {recovery.mode === "committed-cleanup"
-                          ? "Sync committed; internal cleanup was interrupted"
-                          : `Interrupted during ${recovery.phase}`}
+                        {syncCancellationRequested
+                          ? "Cancelling safely"
+                          : "Sync in progress"}
                       </p>
-                      <p>{recovery.targetPath}</p>
+                      <button
+                        disabled={syncCancellationRequested}
+                        onClick={() => void cancelSync()}
+                      >
+                        Cancel active sync
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+          {syncStage === "recovery" && (
+            <section
+              className="card settings sync-recovery"
+              aria-labelledby="sync-recovery-title"
+            >
+              <p className="eyebrow">Restart safety</p>
+              <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
+              <p>
+                Review every target action before confirming. Recovery never
+                changes source audio and leaves files with unexpected contents
+                untouched.
+              </p>
+              {syncRecoveries.length === 0 ? (
+                <div className="empty compact">
+                  <h3>No recovery is pending</h3>
+                  <p>
+                    Outgroove has no interrupted target changes requiring
+                    review.
+                  </p>
+                  <button onClick={() => setSyncStage("setup")}>
+                    Return to albums and profiles
+                  </button>
+                </div>
+              ) : (
+                <ul
+                  className="sync-recovery-list"
+                  aria-label="Interrupted sync recoveries"
+                >
+                  {syncRecoveries.map((recovery) => (
+                    <li key={recovery.runId}>
+                      <div>
+                        <strong>{recovery.profileName}</strong>
+                        <span>
+                          {recovery.mode === "committed-cleanup"
+                            ? "Sync committed; internal cleanup was interrupted"
+                            : `Interrupted during ${recovery.phase}`}
+                        </span>
+                        <span>{recovery.targetPath}</span>
+                      </div>
                       <button
                         disabled={busy}
                         onClick={() => void reviewSyncRecovery(recovery)}
@@ -3468,7 +3800,11 @@ export function App(): React.JSX.Element {
                         Review recovery for {recovery.profileName}
                       </button>
                       {syncRecoveryPreview?.runId === recovery.runId && (
-                        <div className="preview">
+                        <section
+                          className="preview"
+                          aria-label={`Recovery confirmation for ${recovery.profileName}`}
+                        >
+                          <h3>Exact recovery actions</h3>
                           {syncRecoveryPreview.actions.length === 0 ? (
                             <p>No target changes can currently be applied.</p>
                           ) : (
@@ -3486,9 +3822,12 @@ export function App(): React.JSX.Element {
                             </ul>
                           )}
                           {syncRecoveryPreview.warnings.map((warning) => (
-                            <p key={warning}>Warning: {warning}</p>
+                            <p key={warning} role="alert">
+                              Warning: {warning}
+                            </p>
                           ))}
                           <button
+                            className="primary"
                             disabled={busy || !syncRecoveryPreview.canRecover}
                             onClick={() =>
                               void applySyncRecovery(syncRecoveryPreview)
@@ -3496,246 +3835,14 @@ export function App(): React.JSX.Element {
                           >
                             Confirm recovery for {recovery.profileName}
                           </button>
-                        </div>
+                        </section>
                       )}
                     </li>
                   ))}
                 </ul>
-              </section>
-            )}
-            {syncProfiles.length === 0 ? (
-              <p>No DAP profiles have been saved yet.</p>
-            ) : (
-              <ul className="library-root-list" aria-label="Saved DAP profiles">
-                {syncProfiles.map((saved) => (
-                  <li key={saved.id}>
-                    <div>
-                      <strong>{saved.name}</strong>
-                      <span>{saved.targetPath}</span>
-                      <span>
-                        {saved.albums.length} saved{" "}
-                        {saved.albums.length === 1 ? "album" : "albums"}:{" "}
-                        {saved.albums
-                          .map(
-                            (album) => `${album.albumArtist} — ${album.title}`,
-                          )
-                          .join("; ")}
-                      </span>
-                    </div>
-                    <div className="library-root-actions">
-                      <button
-                        disabled={busy || Boolean(renamingSyncProfileId)}
-                        aria-pressed={profile?.id === saved.id}
-                        onClick={() => openSyncProfile(saved)}
-                      >
-                        Open DAP profile {saved.name}
-                      </button>
-                      <button
-                        disabled={busy || Boolean(renamingSyncProfileId)}
-                        onClick={() => editSyncProfileAlbums(saved)}
-                      >
-                        Edit albums in DAP profile {saved.name}
-                      </button>
-                      <button
-                        disabled={
-                          busy ||
-                          Boolean(editingSyncProfileId) ||
-                          Boolean(renamingSyncProfileId)
-                        }
-                        onClick={() => void chooseSyncProfileTarget(saved)}
-                      >
-                        Change DAP target for {saved.name}
-                      </button>
-                      {renamingSyncProfileId === saved.id ? (
-                        <form
-                          aria-label={`Rename DAP profile ${saved.name}`}
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void renameSyncProfile(saved);
-                          }}
-                        >
-                          <label htmlFor={`sync-profile-name-${saved.id}`}>
-                            New name for {saved.name}
-                          </label>
-                          <input
-                            autoFocus
-                            id={`sync-profile-name-${saved.id}`}
-                            maxLength={100}
-                            value={syncProfileNameDraft}
-                            onChange={(event) =>
-                              setSyncProfileNameDraft(event.target.value)
-                            }
-                          />
-                          <button
-                            disabled={
-                              busy || syncProfileNameDraft.trim().length === 0
-                            }
-                            type="submit"
-                          >
-                            Save DAP profile name
-                          </button>
-                          <button
-                            disabled={busy}
-                            type="button"
-                            onClick={cancelSyncProfileRename}
-                          >
-                            Cancel DAP profile rename
-                          </button>
-                        </form>
-                      ) : (
-                        <button
-                          disabled={
-                            busy ||
-                            Boolean(editingSyncProfileId) ||
-                            Boolean(renamingSyncProfileId)
-                          }
-                          onClick={() => startSyncProfileRename(saved)}
-                        >
-                          Rename DAP profile {saved.name}
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {syncTargetPreview && (
-              <section className="preview" aria-label="DAP target confirmation">
-                <h3>Review DAP target change</h3>
-                <p>
-                  <strong>{syncTargetPreview.profileName}</strong>
-                </p>
-                <p>Current target: {syncTargetPreview.currentTargetPath}</p>
-                <p>New target: {syncTargetPreview.proposedTargetPath}</p>
-                <p>
-                  This changes only the saved profile. No source audio or target
-                  files will be read, copied, replaced, or deleted. Existing
-                  sync history stays attached to the profile. A fresh sync
-                  preview will treat ownership separately for this target.
-                </p>
-                <button
-                  className="primary"
-                  disabled={busy}
-                  onClick={() => void applySyncProfileTarget()}
-                >
-                  Confirm DAP target change
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => {
-                    setSyncTargetPreview(undefined);
-                    setNotice("Discarded the DAP target change preview.");
-                  }}
-                >
-                  Cancel DAP target change
-                </button>
-              </section>
-            )}
-            {profile && (
-              <div aria-label="Active DAP profile">
-                <p>
-                  <strong>{profile.name}</strong>
-                  <br />
-                  {profile.targetPath}
-                </p>
-                <p>
-                  Status: {profile.albumIds.length} selected{" "}
-                  {profile.albumIds.length === 1 ? "album" : "albums"} saved in
-                  this profile.
-                </p>
-                {editingSyncProfile?.id === profile.id && (
-                  <p>Status: Album-selection changes are not saved yet.</p>
-                )}
-                <button
-                  disabled={busy || editingSyncProfile?.id === profile.id}
-                  onClick={() => void planSync()}
-                >
-                  Preview sync plan
-                </button>
-                <section
-                  aria-labelledby={`sync-history-${profile.id}`}
-                  className="preview"
-                >
-                  <h3 id={`sync-history-${profile.id}`}>
-                    Successful sync history
-                  </h3>
-                  <p>
-                    Shows only runs whose manifest was committed successfully.
-                    The 20 newest runs are shown in this view.
-                  </p>
-                  {syncHistoryProfileId !== profile.id || syncHistoryLoading ? (
-                    <p aria-live="polite">Loading successful sync history…</p>
-                  ) : syncHistory.length === 0 ? (
-                    <p>No successful sync runs have been recorded yet.</p>
-                  ) : (
-                    <ul
-                      aria-label={`Successful sync history for ${profile.name}`}
-                    >
-                      {syncHistory.map((item) => (
-                        <li key={item.id}>
-                          <time dateTime={item.completedAt}>
-                            {new Date(item.completedAt).toLocaleString()}
-                          </time>
-                          {" — "}
-                          {item.entryCount}{" "}
-                          {item.entryCount === 1 ? "file" : "files"}
-                          {" — "}
-                          {item.targetPath}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              </div>
-            )}
-            {syncPlan && (
-              <div className="preview" aria-label="Sync confirmation">
-                <h3>Sync preview</h3>
-                <PlanGroup
-                  title="Copies"
-                  items={syncPlan.copies.map(
-                    (item) => item.relativeDestination,
-                  )}
-                />
-                <PlanGroup
-                  title="Unchanged / skipped"
-                  items={syncPlan.unchanged.map(
-                    (item) => item.relativeDestination,
-                  )}
-                />
-                <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-                <PlanGroup title="Errors" items={syncPlan.errors} />
-                <p>{syncPlan.requiredBytes} bytes required.</p>
-                <button
-                  className="primary"
-                  disabled={
-                    busy ||
-                    syncPlan.conflicts.length > 0 ||
-                    syncPlan.errors.length > 0
-                  }
-                  onClick={() => void applySync()}
-                >
-                  Confirm and apply copy plan
-                </button>
-                {syncApplyingPlanId === syncPlan.id && (
-                  <div aria-live="polite">
-                    <p>
-                      Status:{" "}
-                      {syncCancellationRequested
-                        ? "Cancelling safely"
-                        : "Sync in progress"}
-                    </p>
-                    <button
-                      disabled={syncCancellationRequested}
-                      onClick={() => void cancelSync()}
-                    >
-                      Cancel active sync
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
+              )}
+            </section>
+          )}
         </main>
       )}
       {activeView === "settings" && (

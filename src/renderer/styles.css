@@ -175,6 +175,92 @@ button:disabled {
   display: grid;
   gap: 1rem;
 }
+.sync-workflow-header {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 14px;
+  background: white;
+}
+.sync-workflow-header > div > p:last-child {
+  margin-bottom: 0;
+  color: #526159;
+}
+.sync-navigation {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.sync-navigation button {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+}
+.sync-navigation button span {
+  font-weight: 750;
+}
+.sync-navigation button small {
+  color: #526159;
+  line-height: 1.35;
+}
+.sync-navigation button[aria-current="step"] {
+  border-color: #245c39;
+  background: #eef8f1;
+}
+.sync-recovery-alert {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 2px solid #a64a41;
+  border-radius: 10px;
+  background: #fff1ef;
+  color: #71352f;
+}
+.sync-recovery-alert > div {
+  display: grid;
+  gap: 0.2rem;
+}
+.sync-profile-summary {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #8ca394;
+  border-radius: 10px;
+  background: #eef8f1;
+}
+.sync-profile-summary > p {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+.sync-history {
+  padding-top: 1rem;
+  border-top: 1px solid #b9c9bd;
+}
+.sync-recovery-list {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+.sync-recovery-list > li {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 10px;
+}
+.sync-recovery-list > li > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+.sync-recovery-list span,
+.sync-recovery-list li {
+  overflow-wrap: anywhere;
+}
 .sync-view > .card,
 .settings-view > .card {
   margin-top: 0;
@@ -887,6 +973,13 @@ td {
     grid-template-columns: 1fr;
   }
   .library-root-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sync-navigation {
+    grid-template-columns: 1fr;
+  }
+  .sync-recovery-alert {
     align-items: stretch;
     flex-direction: column;
   }
