@@ -493,6 +493,67 @@ h1 {
 .track-actions label {
   margin: 0;
 }
+.selection-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid #8ca394;
+  border-radius: 10px;
+  background: #eef8f1;
+}
+.selection-toolbar > div:first-child {
+  min-width: 0;
+}
+.selection-toolbar h3,
+.selection-toolbar p:last-child {
+  margin-bottom: 0;
+}
+.selection-toolbar p:last-child {
+  color: #3e4e44;
+}
+.sequence-editor > ol {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.sequence-editor > ol > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.65rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 9px;
+  background: white;
+}
+.sequence-editor > ol > li > span {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+.sequence-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 1rem;
+  max-width: 760px;
+  margin: 1rem 0;
+}
+.sequence-settings label {
+  margin-bottom: 0;
+}
+.sequence-settings label > input:not([type="checkbox"]) {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+}
+.disc-assignment {
+  display: grid;
+  gap: 0.75rem;
+}
 dl {
   display: grid;
   grid-template-columns: 130px 1fr;
@@ -553,6 +614,19 @@ pre {
   margin-top: 0.35rem;
   min-width: 0;
   width: 100%;
+}
+.field-grid label > span,
+.checkbox-label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+.field-grid input[type="checkbox"],
+.checkbox-label input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
 }
 .track-editor {
   max-width: 980px;
@@ -855,6 +929,19 @@ td {
   .track-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .selection-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sequence-editor > ol > li {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sequence-editor > ol > li > span {
+    grid-column: 1 / -1;
+  }
+  .sequence-settings {
+    grid-template-columns: 1fr;
   }
   dd {
     margin-bottom: 0.5rem;

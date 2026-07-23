@@ -13,6 +13,7 @@ type AlbumTrack = CatalogAlbum["tracks"][number];
 export function LibraryTrackDetail({
   busy,
   mode,
+  selectionPurpose,
   selectedForBatch,
   track,
   onEdit,
@@ -20,6 +21,7 @@ export function LibraryTrackDetail({
 }: {
   readonly busy: boolean;
   readonly mode: "library" | "workbench";
+  readonly selectionPurpose: string;
   readonly selectedForBatch: boolean;
   readonly track: AlbumTrack;
   readonly onEdit: () => void;
@@ -91,7 +93,7 @@ export function LibraryTrackDetail({
                 checked={selectedForBatch}
                 onChange={onToggleBatch}
               />
-              Select {track.tags.title} for batch edit
+              Select {track.tags.title} for {selectionPurpose}
             </label>
             <button disabled={busy} onClick={onEdit} type="button">
               Edit track metadata
