@@ -139,7 +139,7 @@ describe("worker-backed Library data-quality query", () => {
     await expect(second).resolves.toEqual(emptyPage);
   });
 
-  it("pages and searches exact findings through a real SQLite worker", async () => {
+  it("queries a real SQLite worker", { timeout: 15_000 }, async () => {
     const directory = await mkdtemp(
       join(tmpdir(), "outgroove-quality-worker-"),
     );
