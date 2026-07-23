@@ -3801,6 +3801,12 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
+    const databaseSection = screen.getByRole("button", {
+      name: "Database safety",
+    });
+    databaseSection.focus();
+    await user.keyboard("{Enter}");
+    expect(databaseSection).toHaveAttribute("aria-current", "page");
     await user.click(
       await screen.findByRole("button", { name: "Restore from backup" }),
     );
@@ -3812,6 +3818,20 @@ describe("tag edit UI safety states", () => {
     expect(
       within(preview).getByText("Saved Library filters").nextElementSibling,
     ).toHaveTextContent("2");
+    await user.click(screen.getByRole("button", { name: "Library folders" }));
+    expect(
+      screen.queryByLabelText("Database restore confirmation"),
+    ).not.toBeInTheDocument();
+    await openPrimaryView(user, "Activity");
+    await openPrimaryView(user, "Settings");
+    const pendingDatabaseSection = screen.getByRole("button", {
+      name: "Database safety, confirmation pending",
+    });
+    pendingDatabaseSection.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByLabelText("Database restore confirmation"),
+    ).toBeVisible();
     await user.click(
       screen.getByRole("button", { name: "Confirm restore and restart" }),
     );
@@ -3837,6 +3857,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
+    await user.click(screen.getByRole("button", { name: "Database safety" }));
     await user.click(
       await screen.findByRole("button", { name: "Create database backup" }),
     );

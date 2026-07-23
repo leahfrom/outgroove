@@ -183,6 +183,40 @@ button:disabled {
   border-radius: 14px;
   background: white;
 }
+.settings-workflow-header {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 14px;
+  background: white;
+}
+.settings-workflow-header > div > p:last-child {
+  margin-bottom: 0;
+  color: #526159;
+}
+.settings-navigation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.settings-navigation button {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+}
+.settings-navigation button span {
+  font-weight: 750;
+}
+.settings-navigation button small {
+  color: #526159;
+  line-height: 1.35;
+}
+.settings-navigation button[aria-current="page"] {
+  border-color: #245c39;
+  background: #eef8f1;
+}
 .sync-workflow-header > div > p:last-child {
   margin-bottom: 0;
   color: #526159;
@@ -1013,6 +1047,9 @@ td {
     flex-direction: column;
   }
   .sync-navigation {
+    grid-template-columns: 1fr;
+  }
+  .settings-navigation {
     grid-template-columns: 1fr;
   }
   .sync-recovery-alert {
