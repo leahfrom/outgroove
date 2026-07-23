@@ -950,6 +950,14 @@ describe("tag edit UI safety states", () => {
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
     expect(
+      within(confirmation).getByText("Step 2 · Confirmation"),
+    ).toBeVisible();
+    expect(
+      within(confirmation).getByRole("button", {
+        name: "Confirm and write selected tracks",
+      }),
+    ).toHaveFocus();
+    expect(
       within(confirmation).getByText("/fixture/track.mp3"),
     ).toBeInTheDocument();
     expect(
@@ -1000,6 +1008,14 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByText(/1 writes verified; 1 failed/u),
     ).toBeInTheDocument();
+    const batchResult = screen.getByRole("alert", {
+      name: "Batch metadata result",
+    });
+    expect(batchResult).toHaveFocus();
+    expect(batchResult).toHaveTextContent("1 verified; 1 need attention");
+    expect(batchResult).toHaveTextContent(
+      "A failed item is never reported as verified",
+    );
     await user.click(screen.getByRole("button", { name: "Album title" }));
     await user.click(
       screen.getByRole("button", { name: "Preview batch undo" }),
@@ -1126,17 +1142,24 @@ describe("tag edit UI safety states", () => {
     const confirmation = await screen.findByLabelText(
       "Track number sequence confirmation",
     );
+    const confirmSequence = within(confirmation).getByRole("button", {
+      name: "Confirm track-number sequence",
+    });
+    expect(confirmSequence).toHaveFocus();
     expect(within(confirmation).getByText(/2 → 7/u)).toBeInTheDocument();
     expect(within(confirmation).getByText(/1 → 8/u)).toBeInTheDocument();
     expect(within(confirmation).getAllByText(/1 → 3/u)).toHaveLength(2);
-    await user.click(
-      within(confirmation).getByRole("button", {
-        name: "Confirm track-number sequence",
-      }),
-    );
+    await user.click(confirmSequence);
     expect(
       await screen.findByText("Re-read and verified 2 track-number writes."),
     ).toBeInTheDocument();
+    const sequenceResult = screen.getByRole("status", {
+      name: "Track number sequence result",
+    });
+    expect(sequenceResult).toHaveFocus();
+    expect(sequenceResult).toHaveTextContent(
+      "Track-number sequence re-read and verified",
+    );
   });
 
   it("shows affected files and routes a keyboard action into sequencing without previewing", async () => {

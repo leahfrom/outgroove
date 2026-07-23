@@ -51,6 +51,11 @@ button:disabled {
   color: white;
   border-color: #245c39;
 }
+.primary:hover:not(:disabled) {
+  border-color: #173f27;
+  background: #1d4d2f;
+  color: white;
+}
 .application-shell {
   display: grid;
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
@@ -926,6 +931,47 @@ pre {
 .confirmation-panel {
   margin-top: 1.5rem;
 }
+.confirmation-panel:focus,
+.confirmation-panel .primary:focus,
+.workflow-result:focus {
+  outline: 3px solid #e59b2d;
+  outline-offset: 2px;
+}
+.workbench-file-reviews {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+.workbench-file-reviews article,
+.sequence-review-list > li {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid #d7c69f;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 72%);
+}
+.workbench-file-reviews h5,
+.sequence-review-list strong {
+  overflow-wrap: anywhere;
+}
+.workbench-file-reviews h5 {
+  margin-bottom: 0.5rem;
+}
+.review-status {
+  color: #526159;
+  font-weight: 700;
+}
+.sequence-review-list {
+  display: grid;
+  gap: 0.85rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.sequence-review-list ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.3rem;
+}
 .preview-table-scroll {
   overflow-x: auto;
   margin-top: 1rem;
@@ -963,6 +1009,31 @@ pre {
 .workflow-result.failed .eyebrow,
 .workflow-result.failed h4 {
   color: #71352f;
+}
+.workflow-result-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-result-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 1rem;
+  min-width: 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid #8ca394;
+}
+.workflow-result.failed .workflow-result-list li {
+  border-top-color: #d7aaa5;
+}
+.workflow-result-list strong,
+.workflow-result-list span:last-child {
+  overflow-wrap: anywhere;
+}
+.workflow-result-list span:last-child:not(:nth-child(2)) {
+  grid-column: 1 / -1;
 }
 .settings {
   background: white;
@@ -1203,6 +1274,12 @@ td {
   }
   .sequence-editor > ol > li > span {
     grid-column: 1 / -1;
+  }
+  .workflow-result-list li {
+    grid-template-columns: 1fr;
+  }
+  .workflow-result-list span:last-child {
+    grid-column: 1;
   }
   .sequence-settings {
     grid-template-columns: 1fr;
