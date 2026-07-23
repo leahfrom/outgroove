@@ -42,7 +42,7 @@ import {
   type AlbumDiagnosticFilter,
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
-import { ActivityView } from "./activity-view";
+import { ActivityView, type ActivityProgress } from "./activity-view";
 import { ApplicationShell, type AppView } from "./application-shell";
 import { LibraryTrackDetail } from "./library-track-detail";
 import {
@@ -54,13 +54,6 @@ import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
-
-interface Progress {
-  job: "scan" | "tag-edit" | "sync" | "library-quality";
-  completed: number;
-  total: number;
-  detail: string;
-}
 
 const PAGE_SIZE = 20;
 
@@ -258,7 +251,7 @@ export function App(): React.JSX.Element {
   const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
   const [syncCancellationRequested, setSyncCancellationRequested] =
     useState(false);
-  const [progress, setProgress] = useState<Progress>();
+  const [progress, setProgress] = useState<ActivityProgress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
     "Choose a fixture or test library folder to begin.",
@@ -1535,21 +1528,36 @@ export function App(): React.JSX.Element {
       notice={notice}
       onNavigate={setActiveView}
     >
-      {progress && progress.completed < progress.total && (
-        <div className="progress" aria-label={`${progress.job} progress`}>
-          <progress value={progress.completed} max={progress.total} />
-          <span>
-            {progress.completed}/{progress.total}: {progress.detail}
-          </span>
-        </div>
-      )}
+      {progress &&
+        progress.completed < progress.total &&
+        activeView !== "activity" && (
+          <div className="progress" aria-label={`${progress.job} progress`}>
+            <progress value={progress.completed} max={progress.total} />
+            <span>
+              {progress.completed}/{progress.total}: {progress.detail}
+            </span>
+          </div>
+        )}
       {activeView === "activity" && (
         <ActivityView
           busy={busy}
+          progress={progress}
           scanActive={scanActive}
           scanJob={scanJob}
           onCancel={() => void cancelScan()}
           onChooseFolder={() => void chooseAndScan()}
+          onReviewScanProblems={() => {
+            setLibraryView("scan-errors");
+            setAlbumArtistFilter(undefined);
+            setAlbumIdFilter(undefined);
+            setTrackRouteLabel(undefined);
+            setPendingTrackId(undefined);
+            setTrackFormatFilter(undefined);
+            setTrackFolderFilter(undefined);
+            setTrackGenreFilter(undefined);
+            setPageOffset(0);
+            setActiveView("library");
+          }}
           onRetry={(selectedRootId) => void startScan(selectedRootId)}
         />
       )}

@@ -272,6 +272,50 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByLabelText("View")).toHaveValue("tracks");
   });
 
+  it("keeps active operation progress visible and contextualizes it in Activity", async () => {
+    const mockApi = api(true);
+    let emitProgress: Parameters<OutgrooveApi["onJobProgress"]>[0] | undefined;
+    const onJobProgress = vi.fn(
+      (listener: Parameters<OutgrooveApi["onJobProgress"]>[0]) => {
+        emitProgress = listener;
+        return () => undefined;
+      },
+    );
+    Object.assign(mockApi, { onJobProgress });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(onJobProgress).toHaveBeenCalled());
+
+    act(() => {
+      emitProgress?.({
+        job: "sync",
+        completed: 1,
+        total: 3,
+        detail: "Verifying Fixture Album",
+      });
+    });
+    expect(screen.getByLabelText("sync progress")).toHaveTextContent(
+      "1/3: Verifying Fixture Album",
+    );
+
+    await openPrimaryView(user, "Activity");
+    expect(screen.queryByLabelText("sync progress")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "DAP sync" })).toBeVisible();
+    expect(screen.getByText("Verifying Fixture Album")).toBeVisible();
+    expect(
+      screen.getByRole("progressbar", { name: "DAP sync progress" }),
+    ).toHaveAttribute("value", "1");
+
+    await openPrimaryView(user, "Settings");
+    expect(screen.getByLabelText("sync progress")).toHaveTextContent(
+      "1/3: Verifying Fixture Album",
+    );
+  });
+
   it("preserves an unconfirmed Workbench preview across navigation", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,
@@ -1514,6 +1558,47 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
 
+  it("routes completed scan problems from Activity into the exact Library view", async () => {
+    const mockApi = api(true);
+    const getLatestScanJob = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        state: "completed",
+        completed: 3,
+        total: 3,
+        detail: "Scan complete",
+        result: { parsed: 2, unchanged: 0, errors: 1 },
+        error: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        finishedAt: "2026-01-01T00:01:00.000Z",
+      } satisfies ScanJobDto,
+    });
+    Object.assign(mockApi, { getLatestScanJob });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Activity");
+
+    const review = await screen.findByRole("button", {
+      name: "Review 1 scan problem",
+    });
+    expect(screen.getByText("Parsed").nextSibling).toHaveTextContent("2");
+    expect(screen.getByText("Problems").nextSibling).toHaveTextContent("1");
+    review.focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByRole("heading", { name: "Scan problems" }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("View")).toHaveValue("scan-errors");
+  });
+
   it("shows watched folders and routes a named keyboard action into the existing scan", async () => {
     const mockApi = api(true);
     const firstRootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
@@ -1798,9 +1883,9 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Activity");
-    await user.click(
-      await screen.findByRole("button", { name: "Cancel scan" }),
-    );
+    const cancel = await screen.findByRole("button", { name: "Cancel scan" });
+    cancel.focus();
+    await user.keyboard("{Enter}");
     expect(
       screen.getByRole("progressbar", { name: "Reading audio metadata" }),
     ).toHaveAttribute("value", "1");
