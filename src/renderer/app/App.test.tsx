@@ -272,6 +272,210 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByLabelText("View")).toHaveValue("tracks");
   });
 
+  it("separates first folder selection from the keyboard-started scan and preserves it across navigation", async () => {
+    const mockApi = api(true);
+    const root = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      path: "/fixture/a very long first library folder/音乐",
+      lastScanAt: null,
+    };
+    const chooseLibraryFolder = vi.fn().mockResolvedValue({
+      ok: true,
+      value: root,
+    });
+    const scanLibrary = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId: root.id,
+        state: "queued",
+        completed: 0,
+        total: 0,
+        detail: "Queued",
+        result: null,
+        error: null,
+        createdAt: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:00.000Z",
+        finishedAt: null,
+      } satisfies ScanJobDto,
+    });
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 0,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    Object.assign(mockApi, { chooseLibraryFolder, scanLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Start with your music folder",
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: "Library guarantees" }),
+    ).toHaveTextContent("Read-only scanning");
+    expect(
+      screen.getByText(/does not change, rename, or move audio/i),
+    ).toBeVisible();
+
+    const choose = screen.getByRole("button", {
+      name: "Choose first Library folder",
+    });
+    choose.focus();
+    await user.keyboard("{Enter}");
+
+    expect(await screen.findByText(root.path)).toBeVisible();
+    expect(scanLibrary).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("heading", { name: "Review your first scan" }),
+    ).toBeVisible();
+
+    await openPrimaryView(user, "Settings");
+    await openPrimaryView(user, "Library");
+    expect(screen.getByText(root.path)).toBeVisible();
+
+    const start = screen.getByRole("button", { name: "Start first scan" });
+    start.focus();
+    await user.keyboard("{Enter}");
+
+    expect(scanLibrary).toHaveBeenCalledWith({ rootId: root.id });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Activity" }),
+    ).toBeVisible();
+    expect(screen.getByText("Library scan: queued")).toBeVisible();
+  });
+
+  it("keeps first-run folder-picker and scan failures recoverable", async () => {
+    const mockApi = api(true);
+    const root = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      path: "C:\\Fixture Music\\Unavailable",
+      lastScanAt: null,
+    };
+    const chooseLibraryFolder = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: null })
+      .mockResolvedValue({ ok: true, value: root });
+    const scanLibrary = vi.fn().mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "The selected folder is no longer available.",
+        recoverable: true,
+      },
+    });
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 0,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    Object.assign(mockApi, { chooseLibraryFolder, scanLibrary });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Choose first Library folder",
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Folder selection cancelled.",
+    );
+    expect(scanLibrary).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Choose first Library folder" }),
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Start first scan" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The selected folder is no longer available.",
+    );
+    expect(
+      screen.getByRole("button", { name: "Start first scan" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Library" }),
+    ).toBeVisible();
+  });
+
+  it("routes a completed first scan from Activity back to the populated Library", async () => {
+    const mockApi = api(true);
+    const rootId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    vi.spyOn(mockApi, "listLibraryRoots").mockResolvedValue({
+      ok: true,
+      value: [{ id: rootId, path: "/fixture", lastScanAt: null }],
+    });
+    vi.spyOn(mockApi, "getLatestScanJob").mockResolvedValue({
+      ok: true,
+      value: {
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        rootId,
+        state: "completed",
+        completed: 1,
+        total: 1,
+        detail: "Scan complete",
+        result: { parsed: 1, unchanged: 0, errors: 0 },
+        error: null,
+        createdAt: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:01:00.000Z",
+        finishedAt: "2026-07-23T00:01:00.000Z",
+      } satisfies ScanJobDto,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    await openPrimaryView(user, "Activity");
+    const browse = await screen.findByRole("button", {
+      name: "Browse Library",
+    });
+    browse.focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByRole("heading", { name: "Fixture Album" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Library/u })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("keeps active operation progress visible and contextualizes it in Activity", async () => {
     const mockApi = api(true);
     let emitProgress: Parameters<OutgrooveApi["onJobProgress"]>[0] | undefined;
@@ -1985,7 +2189,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await user.type(
-      screen.getByRole("searchbox", { name: "Search Library" }),
+      await screen.findByRole("searchbox", { name: "Search Library" }),
       "Needle",
     );
     await user.click(screen.getByRole("button", { name: "Search" }));
@@ -2350,7 +2554,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const name = screen.getByLabelText("Filter name");
+    const name = await screen.findByLabelText("Filter name");
     await user.type(name, "Existing");
     await user.click(
       screen.getByRole("button", { name: "Save current filter" }),

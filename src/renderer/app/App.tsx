@@ -44,6 +44,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { ApplicationShell, type AppView } from "./application-shell";
+import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import {
   TrackMetadataEditor,
@@ -136,6 +137,9 @@ export function App(): React.JSX.Element {
   const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
     [],
   );
+  const [libraryRootsLoaded, setLibraryRootsLoaded] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [librarySetupError, setLibrarySetupError] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [genres, setGenres] = useState<readonly LibraryGenreDto[]>([]);
@@ -260,7 +264,7 @@ export function App(): React.JSX.Element {
   const [progress, setProgress] = useState<ActivityProgress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
-    "Choose a fixture or test library folder to begin.",
+    "Choose a Library folder when you're ready. Scanning stays local and read-only.",
   );
   const [busy, setBusy] = useState(false);
   const [diagnosticDestination, setDiagnosticDestination] = useState<{
@@ -351,6 +355,7 @@ export function App(): React.JSX.Element {
         : {}),
     });
     if (requestId !== libraryRequestId.current) return;
+    setCatalogLoaded(true);
     if (result.ok) {
       if (result.value.totalItems <= pageOffset && pageOffset > 0) {
         setPageOffset(
@@ -405,6 +410,7 @@ export function App(): React.JSX.Element {
           : result.value[0]?.id,
       );
     } else setNotice(result.error.message);
+    setLibraryRootsLoaded(true);
   }, []);
 
   const refreshSavedFilters = useCallback(async (): Promise<boolean> => {
@@ -487,6 +493,7 @@ export function App(): React.JSX.Element {
             : undefined;
         setRootId(latestRootId ?? roots.value[0]?.id);
       } else setNotice(roots.error.message);
+      setLibraryRootsLoaded(true);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
         if (
@@ -556,7 +563,8 @@ export function App(): React.JSX.Element {
     }));
   }, [pendingTrackId, selectedAlbum]);
 
-  const startScan = async (selectedRootId: string): Promise<void> => {
+  const startScan = async (selectedRootId: string): Promise<boolean> => {
+    setLibrarySetupError(undefined);
     setRootId(selectedRootId);
     const started = await window.outgroove.scanLibrary({
       rootId: selectedRootId,
@@ -566,31 +574,56 @@ export function App(): React.JSX.Element {
       setNotice(
         "Scan started. You can cancel it without losing the previous catalog.",
       );
-    } else setNotice(started.error.message);
+      return true;
+    }
+    setLibrarySetupError(started.error.message);
+    setNotice(started.error.message);
+    return false;
+  };
+
+  const selectLibraryFolder = async (): Promise<LibraryRootDto | undefined> => {
+    setLibrarySetupError(undefined);
+    const selected = await window.outgroove.chooseLibraryFolder();
+    if (!selected.ok) {
+      setLibrarySetupError(selected.error.message);
+      setNotice(selected.error.message);
+      return undefined;
+    }
+    if (!selected.value) {
+      setNotice("Folder selection cancelled.");
+      return undefined;
+    }
+    const selectedRoot = selected.value;
+    setLibraryRoots((current) => {
+      const existing = current.find((root) => root.id === selectedRoot.id);
+      return existing
+        ? current.map((root) =>
+            root.id === selectedRoot.id ? selectedRoot : root,
+          )
+        : [...current, selectedRoot];
+    });
+    setLibraryRootsLoaded(true);
+    setRootId(selectedRoot.id);
+    setNotice(
+      "Library folder selected. Review what the first scan reads before starting.",
+    );
+    return selectedRoot;
+  };
+
+  const chooseFirstLibraryFolder = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await selectLibraryFolder();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const chooseAndScan = async (): Promise<void> => {
     setBusy(true);
     try {
-      const selected = await window.outgroove.chooseLibraryFolder();
-      if (!selected.ok) {
-        setNotice(selected.error.message);
-        return;
-      }
-      if (!selected.value) {
-        setNotice("Folder selection cancelled.");
-        return;
-      }
-      const selectedRoot = selected.value;
-      setLibraryRoots((current) => {
-        const existing = current.find((root) => root.id === selectedRoot.id);
-        return existing
-          ? current.map((root) =>
-              root.id === selectedRoot.id ? selectedRoot : root,
-            )
-          : [...current, selectedRoot];
-      });
-      await startScan(selectedRoot.id);
+      const selectedRoot = await selectLibraryFolder();
+      if (selectedRoot) await startScan(selectedRoot.id);
     } finally {
       setBusy(false);
     }
@@ -599,6 +632,15 @@ export function App(): React.JSX.Element {
   const rescan = async (): Promise<void> => {
     if (!rootId) return;
     await startScan(rootId);
+  };
+
+  const startFirstScan = async (selectedRootId: string): Promise<void> => {
+    setBusy(true);
+    try {
+      if (await startScan(selectedRootId)) setActiveView("activity");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const previewRootRemoval = async (rootId: string): Promise<void> => {
@@ -1528,6 +1570,18 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const libraryOnboardingVisible =
+    activeView === "library" &&
+    (!libraryRootsLoaded ||
+      !catalogLoaded ||
+      (albums.length === 0 &&
+        totalItems === 0 &&
+        (libraryRoots.length === 0 ||
+          (libraryView === "albums" &&
+            !query &&
+            !albumArtistFilter &&
+            !albumIdFilter))));
+
   return (
     <ApplicationShell
       activeView={activeView}
@@ -1552,6 +1606,7 @@ export function App(): React.JSX.Element {
           scanJob={scanJob}
           onCancel={() => void cancelScan()}
           onChooseFolder={() => void chooseAndScan()}
+          onOpenLibrary={() => setActiveView("library")}
           onReviewScanProblems={() => {
             setLibraryView("scan-errors");
             setAlbumArtistFilter(undefined);
@@ -1569,7 +1624,7 @@ export function App(): React.JSX.Element {
       )}
       {(activeView === "library" || activeView === "workbench") && (
         <>
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <section className="view-actions" aria-label="Library actions">
               <div>
                 <p className="eyebrow">Local collection</p>
@@ -1595,7 +1650,7 @@ export function App(): React.JSX.Element {
               </div>
             </section>
           )}
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <>
               <form
                 className="library-toolbar"
@@ -1872,7 +1927,7 @@ export function App(): React.JSX.Element {
               </section>
             </>
           )}
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <p className="result-count" aria-live="polite">
               {totalItems}{" "}
               {libraryView === "scan-errors"
@@ -1929,7 +1984,23 @@ export function App(): React.JSX.Element {
                 : ""}
             </p>
           )}
-          {activeView === "library" && libraryView === "scan-errors" ? (
+          {libraryOnboardingVisible ? (
+            <LibraryOnboarding
+              busy={busy}
+              catalogLoaded={catalogLoaded}
+              libraryRoots={libraryRoots}
+              rootsLoaded={libraryRootsLoaded}
+              scanActive={scanActive}
+              scanJob={scanJob}
+              selectedRootId={rootId}
+              setupError={librarySetupError}
+              onChooseFolder={() => void chooseFirstLibraryFolder()}
+              onOpenActivity={() => setActiveView("activity")}
+              onStartScan={(selectedRootId) =>
+                void startFirstScan(selectedRootId)
+              }
+            />
+          ) : activeView === "library" && libraryView === "scan-errors" ? (
             <main className="errors" aria-labelledby="scan-errors">
               <h2 id="scan-errors">Scan problems</h2>
               {scanErrors.length === 0 ? (
@@ -3333,28 +3404,30 @@ export function App(): React.JSX.Element {
               </section>
             </main>
           )}
-          {activeView === "library" && totalItems > PAGE_SIZE && (
-            <nav className="pagination" aria-label="Library pages">
-              <button
-                disabled={pageOffset === 0}
-                onClick={() =>
-                  setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))
-                }
-              >
-                Previous page
-              </button>
-              <span>
-                {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)}{" "}
-                of {totalItems}
-              </span>
-              <button
-                disabled={pageOffset + PAGE_SIZE >= totalItems}
-                onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
-              >
-                Next page
-              </button>
-            </nav>
-          )}
+          {activeView === "library" &&
+            !libraryOnboardingVisible &&
+            totalItems > PAGE_SIZE && (
+              <nav className="pagination" aria-label="Library pages">
+                <button
+                  disabled={pageOffset === 0}
+                  onClick={() =>
+                    setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))
+                  }
+                >
+                  Previous page
+                </button>
+                <span>
+                  {pageOffset + 1}–
+                  {Math.min(pageOffset + PAGE_SIZE, totalItems)} of {totalItems}
+                </span>
+                <button
+                  disabled={pageOffset + PAGE_SIZE >= totalItems}
+                  onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+                >
+                  Next page
+                </button>
+              </nav>
+            )}
         </>
       )}
       {activeView === "sync" && (

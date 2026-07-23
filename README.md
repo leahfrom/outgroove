@@ -4,6 +4,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 
 ## What works
 
+- Start an empty Library through a focused first-run flow that explains Outgroove's local, offline, read-only scanning model before any work begins. Folder selection and scan start are separate explicit steps; active work opens in Activity, while cancellation, interruption, failure, empty-folder results, and retry remain recoverable without changing audio.
 - Use a persistent desktop shell to move between contextual Library, Workbench, Sync, Activity, and Settings views without losing the current Library search, album/track context, edit draft or unconfirmed preview, or DAP selection. Library offers contextual entry points; Workbench discloses one metadata workflow at a time; Sync owns DAP selection and review.
 - Use separate **Library folders** and **Database safety** Settings contexts so long root lists do not bury backup and restore controls. A verified but unconfirmed restore remains pending across navigation and is never applied by changing views.
 - Choose Library folders with a native dialog, see every watched folder and its last successful scan, explicitly rescan one folder, or preview and confirm that Outgroove should stop watching it without deleting audio or durable history.

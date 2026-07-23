@@ -452,6 +452,88 @@ h1 {
   margin-right: auto;
   color: #526159;
 }
+.library-onboarding {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: clamp(1rem, 3vw, 2rem);
+  padding: clamp(1.25rem, 4vw, 3rem);
+  border: 1px solid #d8ddd8;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, #e2f0e5 0, transparent 40%), white;
+}
+.library-onboarding[aria-busy="true"] {
+  display: block;
+}
+.onboarding-introduction {
+  min-width: 0;
+}
+.onboarding-introduction > p:not(.eyebrow, .workflow-error, .onboarding-path) {
+  max-width: 680px;
+  color: #526159;
+  line-height: 1.65;
+}
+.onboarding-introduction > .actions {
+  margin-top: 1.25rem;
+}
+.onboarding-path {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem 1rem;
+  border-left: 4px solid #245c39;
+  border-radius: 0 9px 9px 0;
+  background: #eef8f1;
+}
+.onboarding-path span {
+  color: #526159;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.onboarding-path strong {
+  overflow-wrap: anywhere;
+}
+.onboarding-introduction progress {
+  width: min(100%, 680px);
+}
+.onboarding-assurances {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-assurances li,
+.onboarding-safety-note {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #cad8cd;
+  border-radius: 11px;
+  background: #f7faf7;
+}
+.onboarding-assurances span,
+.onboarding-safety-note p {
+  color: #526159;
+  line-height: 1.5;
+}
+.onboarding-safety-note {
+  align-self: start;
+}
+.onboarding-safety-note ol {
+  margin: 0.35rem 0;
+  padding-left: 1.3rem;
+}
+.onboarding-safety-note li + li {
+  margin-top: 0.45rem;
+}
+.onboarding-safety-note p {
+  margin: 0;
+}
 .workspace {
   display: grid;
   grid-template-columns: minmax(220px, 280px) 1fr;
@@ -1066,6 +1148,9 @@ td {
   .workspace {
     grid-template-columns: 1fr;
   }
+  .library-onboarding {
+    grid-template-columns: 1fr;
+  }
   .workspace > aside {
     position: static;
   }
@@ -1088,6 +1173,12 @@ td {
   }
   .empty {
     padding: 2rem 1rem;
+  }
+  .library-onboarding {
+    padding: 1.25rem;
+  }
+  .onboarding-assurances {
+    grid-template-columns: 1fr;
   }
   dl {
     grid-template-columns: 1fr;
