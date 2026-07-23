@@ -811,26 +811,79 @@ h1 {
 .selection-toolbar p:last-child {
   color: #3e4e44;
 }
-.sequence-editor > ol {
+.track-order-editor {
+  max-width: 1120px;
+}
+.sequence-comparison {
+  overflow: hidden;
+  border: 1px solid #b8c3bb;
+  border-radius: 12px;
+  background: white;
+}
+.sequence-comparison-header,
+.sequence-comparison > ol > li {
   display: grid;
-  gap: 0.5rem;
-  margin: 1rem 0;
+  grid-template-columns:
+    minmax(180px, 1.2fr) minmax(140px, 0.85fr) minmax(160px, 0.95fr)
+    minmax(88px, auto) minmax(170px, auto);
+  gap: 0.75rem;
+  align-items: center;
+}
+.sequence-comparison-header {
+  padding: 0.7rem 0.85rem;
+  background: #edf1ed;
+  color: #425149;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sequence-comparison > ol {
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-.sequence-editor > ol > li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 0.65rem;
-  border: 1px solid #d8ddd8;
-  border-radius: 9px;
-  background: white;
+.sequence-comparison > ol > li {
+  padding: 0.75rem 0.85rem;
+  border-top: 1px solid #d8ddd8;
 }
-.sequence-editor > ol > li > span {
+.sequence-comparison > ol > li[data-changed="true"] {
+  background: #fff9eb;
+  box-shadow: inset 3px 0 #9a6822;
+}
+.sequence-comparison > ol > li[data-invalid="true"] {
+  background: #fff1ef;
+  box-shadow: inset 3px 0 #a64a41;
+}
+.sequence-track,
+.sequence-number {
+  min-width: 0;
+}
+.sequence-track {
+  display: grid;
+  gap: 0.15rem;
+}
+.sequence-track strong,
+.sequence-track span,
+.sequence-number span {
   overflow-wrap: anywhere;
-  font-weight: 700;
+}
+.sequence-track > span:last-child {
+  color: #526159;
+  font-size: 0.78rem;
+}
+.sequence-order-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+.sequence-order-actions button {
+  padding: 0.45rem 0.6rem;
+}
+.comparison-status.invalid {
+  border: 1px solid #a64a41;
+  background: #fff1ef;
+  color: #71352f;
 }
 .sequence-settings {
   display: grid;
@@ -850,6 +903,9 @@ h1 {
 .disc-assignment {
   display: grid;
   gap: 0.75rem;
+}
+.sequence-empty {
+  margin-bottom: 1rem;
 }
 dl {
   display: grid;
@@ -1480,11 +1536,16 @@ td {
     align-items: stretch;
     flex-direction: column;
   }
-  .sequence-editor > ol > li {
-    grid-template-columns: 1fr 1fr;
+  .sequence-comparison-header {
+    display: none;
   }
-  .sequence-editor > ol > li > span {
-    grid-column: 1 / -1;
+  .sequence-comparison > ol > li {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+    padding: 1rem;
+  }
+  .sequence-order-actions {
+    justify-content: flex-start;
   }
   .workflow-result-list li {
     grid-template-columns: 1fr;
