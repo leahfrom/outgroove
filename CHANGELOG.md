@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.9.0 — 2026-07-23
+
+- Replace the single-page development workbench with a persistent desktop
+  shell for Library, Workbench, Sync, Activity, and Settings. Navigation keeps
+  Library searches and selections, Workbench drafts and previews, Sync plans,
+  and pending confirmations in context.
+- Restructure album and track detail around progressive disclosure, readable
+  technical facts, long-path handling, contextual Workbench and Sync actions,
+  and focused empty, loading, result, and error states.
+- Separate Workbench into album title, single-track metadata, shared-field
+  batch, and track-order workflows. Single-track changes now move through
+  draft, exact-change confirmation, and verified result stages; batch and
+  sequencing modes retain their shared track selection.
+- Separate DAP Sync into Albums & profiles, Preview & apply, and Recovery.
+  Pending restart recovery remains prominent, while active profiles,
+  deterministic plans, successful history, cancellation, and confirmations
+  remain available only in their relevant stage.
+- Allow an existing DAP profile to choose and explicitly confirm a new target
+  without reading or changing either target during selection. Retargeting
+  preserves history, invalidates stale plans, and keeps manifest ownership
+  scoped to the exact recorded target.
+- Add a contextual Activity center for active metadata, Library-quality, and
+  DAP work plus the latest durable scan. Completed scan counts and errors route
+  directly to Library scan problems, while cancellation and retry remain
+  keyboard accessible.
+- Separate Settings into Library folders and Database safety so long watched
+  root lists do not bury backup and restore controls. Verified restore previews
+  remain pending across navigation and are never applied by changing views.
+- Increase only the real SQLite-worker quality-query integration test timeout
+  to accommodate slower Windows cleanup without changing production behavior
+  or the repository-wide test timeout.
+
 ## 0.8.0 — 2026-07-22
 
 - Add searchable genre browsing, complete scanned track technical details, and
