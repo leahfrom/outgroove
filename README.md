@@ -31,7 +31,7 @@ No provider calls, telemetry, source moves, transcoding, target deletions, mirro
 
 - Node.js 24 or newer
 - npm 11 or newer
-- macOS, Windows, or Linux for development; v0.8.0 was packaged and smoke-tested on macOS arm64 and native Windows x64, with Linux x64 verified under Debian container emulation
+- macOS, Windows, or Linux for development; v0.9.0 was packaged and smoke-tested on macOS arm64 and native Windows x64, with Linux x64 verified under Debian container emulation
 
 Install exactly from the lockfile:
 
