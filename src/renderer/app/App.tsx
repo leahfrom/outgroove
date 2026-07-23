@@ -18,6 +18,7 @@ import type {
   SyncRecoverySummaryDto,
   SyncPlanDto,
   SyncProfileDto,
+  SyncProfileTargetPreviewDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
@@ -41,13 +42,22 @@ import {
   type AlbumDiagnosticFilter,
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
-
-interface Progress {
-  job: "scan" | "tag-edit" | "sync" | "library-quality";
-  completed: number;
-  total: number;
-  detail: string;
-}
+import { ActivityView, type ActivityProgress } from "./activity-view";
+import { ApplicationShell, type AppView } from "./application-shell";
+import { LibraryTrackDetail } from "./library-track-detail";
+import {
+  TrackMetadataEditor,
+  type TrackMetadataDraft,
+} from "./track-metadata-editor";
+import { SyncNavigation, type SyncStage } from "./sync-navigation";
+import {
+  SettingsNavigation,
+  type SettingsSection,
+} from "./settings-navigation";
+import {
+  WorkbenchNavigation,
+  type WorkbenchTool,
+} from "./workbench-navigation";
 
 const PAGE_SIZE = 20;
 
@@ -117,6 +127,11 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 }
 
 export function App(): React.JSX.Element {
+  const [activeView, setActiveView] = useState<AppView>("library");
+  const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
+  const [syncStage, setSyncStage] = useState<SyncStage>("setup");
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("library-folders");
   const [rootId, setRootId] = useState<string>();
   const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
     [],
@@ -173,7 +188,7 @@ export function App(): React.JSX.Element {
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
-  const [trackDraft, setTrackDraft] = useState({
+  const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
     artist: "",
     albumArtist: "",
@@ -183,6 +198,8 @@ export function App(): React.JSX.Element {
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [trackEditResult, setTrackEditResult] = useState<TagEditResultDto>();
+  const [trackEditError, setTrackEditError] = useState<string>();
   const [trackUndoPreview, setTrackUndoPreview] =
     useState<TrackTagEditPreviewDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
@@ -228,6 +245,8 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [syncTargetPreview, setSyncTargetPreview] =
+    useState<SyncProfileTargetPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -238,7 +257,7 @@ export function App(): React.JSX.Element {
   const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
   const [syncCancellationRequested, setSyncCancellationRequested] =
     useState(false);
-  const [progress, setProgress] = useState<Progress>();
+  const [progress, setProgress] = useState<ActivityProgress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
   const [notice, setNotice] = useState(
     "Choose a fixture or test library folder to begin.",
@@ -501,6 +520,8 @@ export function App(): React.JSX.Element {
     setUndoPreview(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
@@ -520,8 +541,12 @@ export function App(): React.JSX.Element {
       (candidate) => candidate.id === pendingTrackId,
     );
     if (!track) return;
+    setActiveView("workbench");
+    setWorkbenchTool("track");
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
     setPendingTrackId(undefined);
@@ -736,14 +761,19 @@ export function App(): React.JSX.Element {
   };
 
   const editTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    setActiveView("workbench");
+    setWorkbenchTool("track");
     setSelectedTrackId(track.id);
     setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
   };
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
     if (!selectedAlbum) return;
+    setActiveView("workbench");
     const affectedIds = [...finding.affectedTrackIds];
     setBatchTrackIds(affectedIds);
     setBatchPreview(undefined);
@@ -758,10 +788,12 @@ export function App(): React.JSX.Element {
         );
         if (firstTrack) editTrack(firstTrack);
         target = "track";
+        setWorkbenchTool("track");
         break;
       }
       case "sequence":
         target = "sequence";
+        setWorkbenchTool("sequence");
         break;
       case "batch-track-artist":
         setBatchEnabled({
@@ -772,6 +804,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
+        setWorkbenchTool("batch");
         break;
       case "batch-album-artist":
         setBatchEnabled({
@@ -782,6 +815,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
+        setWorkbenchTool("batch");
         break;
       case "batch-release-date":
         setBatchEnabled({
@@ -792,9 +826,11 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
+        setWorkbenchTool("batch");
         break;
       case "album-title":
         target = "album-title";
+        setWorkbenchTool("album");
         break;
     }
     setNotice(
@@ -808,6 +844,8 @@ export function App(): React.JSX.Element {
 
   const previewTrackEdit = async (): Promise<void> => {
     if (!selectedTrack) return;
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
     const result = await window.outgroove.previewTrackTagEdit({
       fileId: selectedTrack.id,
       changes: {
@@ -824,7 +862,10 @@ export function App(): React.JSX.Element {
       },
     });
     if (result.ok) setTrackEditPreview(result.value);
-    else setNotice(result.error.message);
+    else {
+      setTrackEditError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyTrackEdit = async (): Promise<void> => {
@@ -836,6 +877,8 @@ export function App(): React.JSX.Element {
         confirmationToken: trackEditPreview.confirmationToken,
       });
       if (result.ok) {
+        setTrackEditResult(result.value);
+        setTrackEditError(undefined);
         const written = result.value.results[0];
         setNotice(
           written?.verified
@@ -844,11 +887,13 @@ export function App(): React.JSX.Element {
         );
         if (written?.verified) {
           setTrackEditPreview(undefined);
-          setSelectedTrackId(undefined);
           await refreshCatalog();
           if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
         }
-      } else setNotice(result.error.message);
+      } else {
+        setTrackEditError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -860,6 +905,8 @@ export function App(): React.JSX.Element {
       setEditPreview(undefined);
       setUndoPreview(undefined);
       setTrackEditPreview(undefined);
+      setTrackEditResult(undefined);
+      setTrackEditError(undefined);
       setTrackUndoPreview(result.value);
     } else setNotice(result.error.message);
   };
@@ -1056,6 +1103,7 @@ export function App(): React.JSX.Element {
     if (result.ok && result.value) {
       setProfile(result.value);
       setSyncPlan(undefined);
+      setSyncStage("review");
       void refreshSyncHistory(result.value.id);
       const refreshed = await refreshSyncProfiles();
       if (refreshed) {
@@ -1220,10 +1268,13 @@ export function App(): React.JSX.Element {
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
+    setActiveView("sync");
+    setSyncStage("review");
     setEditingSyncProfileId(undefined);
     setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncTargetPreview(undefined);
     void refreshSyncHistory(saved.id);
     setNotice(
       `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
@@ -1231,6 +1282,8 @@ export function App(): React.JSX.Element {
   };
 
   const editSyncProfileAlbums = (saved: SyncProfileDto): void => {
+    setActiveView("sync");
+    setSyncStage("setup");
     setProfile(saved);
     setSyncPlan(undefined);
     setEditingSyncProfileId(saved.id);
@@ -1261,6 +1314,7 @@ export function App(): React.JSX.Element {
         setSyncPlan(undefined);
         setEditingSyncProfileId(undefined);
         setSyncAlbums([]);
+        setSyncStage("review");
         const refreshed = await refreshSyncProfiles();
         if (refreshed) {
           const saved = refreshed.find(
@@ -1311,6 +1365,56 @@ export function App(): React.JSX.Element {
           setNotice(
             `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
           );
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseSyncProfileTarget = async (
+    saved: SyncProfileDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.chooseSyncProfileTarget({
+        profileId: saved.id,
+      });
+      if (result.ok && result.value) {
+        setProfile(saved);
+        setSyncPlan(undefined);
+        setSyncTargetPreview(result.value);
+        setNotice(
+          `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+        );
+      } else if (!result.ok) setNotice(result.error.message);
+      else setNotice("DAP target selection cancelled.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applySyncProfileTarget = async (): Promise<void> => {
+    if (!syncTargetPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncProfileTarget({
+        operationId: syncTargetPreview.operationId,
+        confirmationToken: syncTargetPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setProfile(result.value);
+        setSyncPlan(undefined);
+        setSyncTargetPreview(undefined);
+        setSyncStage("review");
+        setSyncProfiles((current) =>
+          current.map((candidate) =>
+            candidate.id === result.value.id ? result.value : candidate,
+          ),
+        );
+        await refreshSyncProfiles();
+        setNotice(
+          `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+        );
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -1425,106 +1529,31 @@ export function App(): React.JSX.Element {
   };
 
   return (
-    <div className="shell">
-      <header>
-        <div>
-          <p className="eyebrow">Local-first music library</p>
-          <h1>Outgroove</h1>
-        </div>
-        <div className="actions">
-          <button
-            disabled={busy || scanActive}
-            onClick={() => void chooseAndScan()}
-          >
-            Choose library folder
-          </button>
-          <button
-            disabled={busy || scanActive || !rootId}
-            onClick={() => void rescan()}
-          >
-            Scan current folder
-          </button>
-        </div>
-      </header>
-      <p className="notice" role="status">
-        {notice}
-      </p>
-      {progress && progress.completed < progress.total && (
-        <div className="progress" aria-label={`${progress.job} progress`}>
-          <progress value={progress.completed} max={progress.total} />
-          <span>
-            {progress.completed}/{progress.total}: {progress.detail}
-          </span>
-        </div>
-      )}
-      {scanJob && (
-        <section className="scan-job" aria-label="Scan activity">
-          <div>
-            <strong>Library scan: {scanJob.state}</strong>
-            <span>{scanJob.detail || "Waiting to start…"}</span>
-            {scanJob.error && <span role="alert">{scanJob.error}</span>}
+    <ApplicationShell
+      activeView={activeView}
+      notice={notice}
+      onNavigate={setActiveView}
+    >
+      {progress &&
+        progress.completed < progress.total &&
+        activeView !== "activity" && (
+          <div className="progress" aria-label={`${progress.job} progress`}>
+            <progress value={progress.completed} max={progress.total} />
+            <span>
+              {progress.completed}/{progress.total}: {progress.detail}
+            </span>
           </div>
-          {scanJob.state === "running" && scanJob.total === 0 ? (
-            <progress aria-label="Discovering audio files" />
-          ) : scanJob.total > 0 ? (
-            <progress
-              aria-label="Reading audio metadata"
-              value={scanJob.completed}
-              max={scanJob.total}
-            />
-          ) : null}
-          {scanActive && (
-            <button
-              disabled={scanJob.state === "cancelling"}
-              onClick={() => void cancelScan()}
-            >
-              {scanJob.state === "cancelling" ? "Cancelling…" : "Cancel scan"}
-            </button>
-          )}
-          {(scanJob.state === "cancelled" ||
-            scanJob.state === "failed" ||
-            scanJob.state === "interrupted") && (
-            <button
-              disabled={!scanJob.rootId}
-              onClick={() => void startScan(scanJob.rootId)}
-            >
-              Retry scan
-            </button>
-          )}
-        </section>
-      )}
-      <form
-        className="library-toolbar"
-        role="search"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setPageOffset(0);
-          setQuery(searchText.trim());
-        }}
-      >
-        <label htmlFor="library-search">Search Library</label>
-        <input
-          id="library-search"
-          type="search"
-          value={searchText}
-          placeholder="Album, artist, genre, track, format, or path"
-          onChange={(event) => setSearchText(event.target.value)}
-        />
-        <label htmlFor="library-view">View</label>
-        <select
-          id="library-view"
-          value={libraryView}
-          onChange={(event) => {
-            const view = event.target.value as
-              | "albums"
-              | "artists"
-              | "genres"
-              | "formats"
-              | "folders"
-              | "tracks"
-              | "data-quality"
-              | "scan-errors";
-            setLibraryView(view);
+        )}
+      {activeView === "activity" && (
+        <ActivityView
+          busy={busy}
+          progress={progress}
+          scanActive={scanActive}
+          scanJob={scanJob}
+          onCancel={() => void cancelScan()}
+          onChooseFolder={() => void chooseAndScan()}
+          onReviewScanProblems={() => {
+            setLibraryView("scan-errors");
             setAlbumArtistFilter(undefined);
             setAlbumIdFilter(undefined);
             setTrackRouteLabel(undefined);
@@ -1533,1670 +1562,1855 @@ export function App(): React.JSX.Element {
             setTrackFolderFilter(undefined);
             setTrackGenreFilter(undefined);
             setPageOffset(0);
-            if (view === "data-quality")
-              setNotice("Checking album data quality in a background worker…");
+            setActiveView("library");
           }}
-        >
-          <option value="albums">Albums</option>
-          <option value="artists">Album artists</option>
-          <option value="genres">Genres</option>
-          <option value="formats">Formats</option>
-          <option value="folders">Folders</option>
-          <option value="tracks">Tracks</option>
-          <option value="data-quality">Albums needing review</option>
-          <option value="scan-errors">Scan problems</option>
-        </select>
-        {libraryView === "data-quality" && (
-          <>
-            <label htmlFor="quality-filter">Issue type</label>
-            <select
-              id="quality-filter"
-              value={qualityFilter}
-              onChange={(event) => {
-                const filter = event.target.value;
-                if (!isAlbumDiagnosticFilter(filter)) return;
-                setQualityFilter(filter);
-                setPageOffset(0);
-                setNotice(
-                  `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
-                );
-              }}
-            >
-              {albumDiagnosticFilters.map((filter) => (
-                <option key={filter} value={filter}>
-                  {diagnosticFilterLabels[filter]}
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-        <button type="submit">Search</button>
-        {(query || searchText) && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchText("");
-              setQuery("");
-              setPageOffset(0);
-            }}
-          >
-            Clear search
-          </button>
-        )}
-        {libraryView === "albums" && albumArtistFilter && (
-          <button
-            type="button"
-            onClick={() => {
-              setAlbumArtistFilter(undefined);
-              setPageOffset(0);
-            }}
-          >
-            Show all album artists
-          </button>
-        )}
-        {libraryView === "albums" && albumIdFilter && (
-          <button
-            type="button"
-            onClick={() => {
-              setAlbumIdFilter(undefined);
-              setTrackRouteLabel(undefined);
-              setPendingTrackId(undefined);
-              setPageOffset(0);
-            }}
-          >
-            Show all albums
-          </button>
-        )}
-        {libraryView === "tracks" && trackFormatFilter && (
-          <button
-            type="button"
-            onClick={() => {
-              setTrackFormatFilter(undefined);
-              setPageOffset(0);
-            }}
-          >
-            Show all formats
-          </button>
-        )}
-        {libraryView === "tracks" && trackFolderFilter && (
-          <button
-            type="button"
-            onClick={() => {
-              setTrackFolderFilter(undefined);
-              setPageOffset(0);
-            }}
-          >
-            Show all folders
-          </button>
-        )}
-        {libraryView === "tracks" && trackGenreFilter && (
-          <button
-            type="button"
-            onClick={() => {
-              setTrackGenreFilter(undefined);
-              setPageOffset(0);
-            }}
-          >
-            Show all genres
-          </button>
-        )}
-      </form>
-      <section className="saved-filters" aria-labelledby="saved-filters-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Local shortcuts</p>
-            <h2 id="saved-filters-title">Saved Library filters</h2>
-          </div>
-          <form
-            className="inline"
-            aria-label="Save current Library filter"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveCurrentLibraryFilter();
-            }}
-          >
-            <label htmlFor="saved-filter-name">Filter name</label>
-            <input
-              id="saved-filter-name"
-              value={savedFilterName}
-              maxLength={100}
-              placeholder="For example, Ambient FLAC"
-              onChange={(event) => setSavedFilterName(event.target.value)}
-            />
-            <button
-              type="submit"
-              disabled={
-                savedFilterBusy ||
-                !savedFilterName.trim() ||
-                Boolean(albumIdFilter)
-              }
-            >
-              Save current filter
-            </button>
-          </form>
-        </div>
-        <p>
-          Saves the active search and view. Page position and exact Workbench
-          album routes remain temporary.
-        </p>
-        {albumIdFilter && (
-          <p>Status: Return to a normal Library view before saving.</p>
-        )}
-        {savedFilters.length === 0 ? (
-          <p>No saved Library filters yet.</p>
-        ) : (
-          <ul>
-            {savedFilters.map((saved) => (
-              <li key={saved.id}>
-                <div>
-                  <strong>{saved.name}</strong>
-                  <span>{describeSavedFilter(saved.definition)}</span>
-                </div>
-                <form
-                  className="inline"
-                  aria-label={`Rename ${saved.name}`}
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const name = (savedFilterNames[saved.id] ?? "").trim();
-                    if (name)
-                      void updateSavedLibraryFilter(
-                        saved,
-                        name,
-                        saved.definition,
-                        "Renamed",
+          onRetry={(selectedRootId) => void startScan(selectedRootId)}
+        />
+      )}
+      {(activeView === "library" || activeView === "workbench") && (
+        <>
+          {activeView === "library" && (
+            <section className="view-actions" aria-label="Library actions">
+              <div>
+                <p className="eyebrow">Local collection</p>
+                <h2>Browse your Library</h2>
+                <p>
+                  Search and inspect local metadata. Editing and DAP copies open
+                  in their own reviewed workspaces.
+                </p>
+              </div>
+              <div className="actions">
+                <button
+                  disabled={busy || scanActive}
+                  onClick={() => void chooseAndScan()}
+                >
+                  Choose Library folder
+                </button>
+                <button
+                  disabled={busy || scanActive || !rootId}
+                  onClick={() => void rescan()}
+                >
+                  Scan current folder
+                </button>
+              </div>
+            </section>
+          )}
+          {activeView === "library" && (
+            <>
+              <form
+                className="library-toolbar"
+                role="search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setPageOffset(0);
+                  setQuery(searchText.trim());
+                }}
+              >
+                <label htmlFor="library-search">Search Library</label>
+                <input
+                  id="library-search"
+                  type="search"
+                  value={searchText}
+                  placeholder="Album, artist, genre, track, format, or path"
+                  onChange={(event) => setSearchText(event.target.value)}
+                />
+                <label htmlFor="library-view">View</label>
+                <select
+                  id="library-view"
+                  value={libraryView}
+                  onChange={(event) => {
+                    const view = event.target.value as
+                      | "albums"
+                      | "artists"
+                      | "genres"
+                      | "formats"
+                      | "folders"
+                      | "tracks"
+                      | "data-quality"
+                      | "scan-errors";
+                    setLibraryView(view);
+                    setAlbumArtistFilter(undefined);
+                    setAlbumIdFilter(undefined);
+                    setTrackRouteLabel(undefined);
+                    setPendingTrackId(undefined);
+                    setTrackFormatFilter(undefined);
+                    setTrackFolderFilter(undefined);
+                    setTrackGenreFilter(undefined);
+                    setPageOffset(0);
+                    if (view === "data-quality")
+                      setNotice(
+                        "Checking album data quality in a background worker…",
                       );
                   }}
                 >
-                  <label htmlFor={`saved-filter-name-${saved.id}`}>Name</label>
-                  <input
-                    id={`saved-filter-name-${saved.id}`}
-                    aria-label={`Name for ${saved.name}`}
-                    value={savedFilterNames[saved.id] ?? saved.name}
-                    maxLength={100}
-                    onChange={(event) =>
-                      setSavedFilterNames((names) => ({
-                        ...names,
-                        [saved.id]: event.target.value,
-                      }))
-                    }
-                  />
+                  <option value="albums">Albums</option>
+                  <option value="artists">Album artists</option>
+                  <option value="genres">Genres</option>
+                  <option value="formats">Formats</option>
+                  <option value="folders">Folders</option>
+                  <option value="tracks">Tracks</option>
+                  <option value="data-quality">Albums needing review</option>
+                  <option value="scan-errors">Scan problems</option>
+                </select>
+                {libraryView === "data-quality" && (
+                  <>
+                    <label htmlFor="quality-filter">Issue type</label>
+                    <select
+                      id="quality-filter"
+                      value={qualityFilter}
+                      onChange={(event) => {
+                        const filter = event.target.value;
+                        if (!isAlbumDiagnosticFilter(filter)) return;
+                        setQualityFilter(filter);
+                        setPageOffset(0);
+                        setNotice(
+                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                        );
+                      }}
+                    >
+                      {albumDiagnosticFilters.map((filter) => (
+                        <option key={filter} value={filter}>
+                          {diagnosticFilterLabels[filter]}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                <button type="submit">Search</button>
+                {(query || searchText) && (
                   <button
-                    type="submit"
-                    disabled={
-                      savedFilterBusy ||
-                      !(savedFilterNames[saved.id] ?? "").trim() ||
-                      (savedFilterNames[saved.id] ?? "").trim() === saved.name
-                    }
+                    type="button"
+                    onClick={() => {
+                      setSearchText("");
+                      setQuery("");
+                      setPageOffset(0);
+                    }}
                   >
-                    Rename {saved.name}
+                    Clear search
                   </button>
-                </form>
-                <button
-                  disabled={savedFilterBusy}
-                  onClick={() => openSavedLibraryFilter(saved)}
-                >
-                  Open {saved.name}
-                </button>
-                <button
-                  disabled={savedFilterBusy || Boolean(albumIdFilter)}
-                  onClick={() => void replaceSavedLibraryFilter(saved)}
-                >
-                  Update {saved.name} to current filter
-                </button>
-                <button
-                  disabled={savedFilterBusy}
-                  onClick={() => void deleteSavedLibraryFilter(saved)}
-                >
-                  Delete {saved.name}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <p className="result-count" aria-live="polite">
-        {totalItems}{" "}
-        {libraryView === "scan-errors"
-          ? totalItems === 1
-            ? "scan problem"
-            : "scan problems"
-          : libraryView === "artists"
-            ? totalItems === 1
-              ? "album artist"
-              : "album artists"
-            : libraryView === "genres"
-              ? totalItems === 1
-                ? "genre"
-                : "genres"
-              : libraryView === "formats"
+                )}
+                {libraryView === "albums" && albumArtistFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlbumArtistFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all album artists
+                  </button>
+                )}
+                {libraryView === "albums" && albumIdFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAlbumIdFilter(undefined);
+                      setTrackRouteLabel(undefined);
+                      setPendingTrackId(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all albums
+                  </button>
+                )}
+                {libraryView === "tracks" && trackFormatFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackFormatFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all formats
+                  </button>
+                )}
+                {libraryView === "tracks" && trackFolderFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackFolderFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all folders
+                  </button>
+                )}
+                {libraryView === "tracks" && trackGenreFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackGenreFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all genres
+                  </button>
+                )}
+              </form>
+              <section
+                className="saved-filters"
+                aria-labelledby="saved-filters-title"
+              >
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Local shortcuts</p>
+                    <h2 id="saved-filters-title">Saved Library filters</h2>
+                  </div>
+                  <form
+                    className="inline"
+                    aria-label="Save current Library filter"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveCurrentLibraryFilter();
+                    }}
+                  >
+                    <label htmlFor="saved-filter-name">Filter name</label>
+                    <input
+                      id="saved-filter-name"
+                      value={savedFilterName}
+                      maxLength={100}
+                      placeholder="For example, Ambient FLAC"
+                      onChange={(event) =>
+                        setSavedFilterName(event.target.value)
+                      }
+                    />
+                    <button
+                      type="submit"
+                      disabled={
+                        savedFilterBusy ||
+                        !savedFilterName.trim() ||
+                        Boolean(albumIdFilter)
+                      }
+                    >
+                      Save current filter
+                    </button>
+                  </form>
+                </div>
+                <p>
+                  Saves the active search and view. Page position and exact
+                  Workbench album routes remain temporary.
+                </p>
+                {albumIdFilter && (
+                  <p>Status: Return to a normal Library view before saving.</p>
+                )}
+                {savedFilters.length === 0 ? (
+                  <p>No saved Library filters yet.</p>
+                ) : (
+                  <ul>
+                    {savedFilters.map((saved) => (
+                      <li key={saved.id}>
+                        <div>
+                          <strong>{saved.name}</strong>
+                          <span>{describeSavedFilter(saved.definition)}</span>
+                        </div>
+                        <form
+                          className="inline"
+                          aria-label={`Rename ${saved.name}`}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const name = (
+                              savedFilterNames[saved.id] ?? ""
+                            ).trim();
+                            if (name)
+                              void updateSavedLibraryFilter(
+                                saved,
+                                name,
+                                saved.definition,
+                                "Renamed",
+                              );
+                          }}
+                        >
+                          <label htmlFor={`saved-filter-name-${saved.id}`}>
+                            Name
+                          </label>
+                          <input
+                            id={`saved-filter-name-${saved.id}`}
+                            aria-label={`Name for ${saved.name}`}
+                            value={savedFilterNames[saved.id] ?? saved.name}
+                            maxLength={100}
+                            onChange={(event) =>
+                              setSavedFilterNames((names) => ({
+                                ...names,
+                                [saved.id]: event.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            type="submit"
+                            disabled={
+                              savedFilterBusy ||
+                              !(savedFilterNames[saved.id] ?? "").trim() ||
+                              (savedFilterNames[saved.id] ?? "").trim() ===
+                                saved.name
+                            }
+                          >
+                            Rename {saved.name}
+                          </button>
+                        </form>
+                        <button
+                          disabled={savedFilterBusy}
+                          onClick={() => openSavedLibraryFilter(saved)}
+                        >
+                          Open {saved.name}
+                        </button>
+                        <button
+                          disabled={savedFilterBusy || Boolean(albumIdFilter)}
+                          onClick={() => void replaceSavedLibraryFilter(saved)}
+                        >
+                          Update {saved.name} to current filter
+                        </button>
+                        <button
+                          disabled={savedFilterBusy}
+                          onClick={() => void deleteSavedLibraryFilter(saved)}
+                        >
+                          Delete {saved.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+          {activeView === "library" && (
+            <p className="result-count" aria-live="polite">
+              {totalItems}{" "}
+              {libraryView === "scan-errors"
                 ? totalItems === 1
-                  ? "format"
-                  : "formats"
-                : libraryView === "folders"
+                  ? "scan problem"
+                  : "scan problems"
+                : libraryView === "artists"
                   ? totalItems === 1
-                    ? "folder"
-                    : "folders"
-                  : libraryView === "tracks"
+                    ? "album artist"
+                    : "album artists"
+                  : libraryView === "genres"
                     ? totalItems === 1
-                      ? "track"
-                      : "tracks"
-                    : libraryView === "data-quality"
+                      ? "genre"
+                      : "genres"
+                    : libraryView === "formats"
                       ? totalItems === 1
-                        ? "album needing review"
-                        : "albums needing review"
-                      : totalItems === 1
-                        ? "album"
-                        : "albums"}
-        {query ? ` matching “${query}”` : ""}
-        {libraryView === "data-quality" && qualityFilter !== "all"
-          ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
-          : ""}
-        {libraryView === "albums" && albumArtistFilter
-          ? ` by “${albumArtistFilter}”`
-          : ""}
-        {libraryView === "albums" && trackRouteLabel
-          ? ` containing “${trackRouteLabel}”`
-          : ""}
-        {libraryView === "tracks" && trackFormatFilter
-          ? ` in “${trackFormatFilter}” format`
-          : ""}
-        {libraryView === "tracks" && trackFolderFilter
-          ? ` in folder “${trackFolderFilter.path}”`
-          : ""}
-        {libraryView === "tracks" && trackGenreFilter
-          ? trackGenreFilter.missing
-            ? " with no genre tag"
-            : ` with genre “${trackGenreFilter.name}”`
-          : ""}
-      </p>
-      {libraryView === "scan-errors" ? (
-        <main className="errors" aria-labelledby="scan-errors">
-          <h2 id="scan-errors">Scan problems</h2>
-          {scanErrors.length === 0 ? (
-            <p>No scan problems match this view.</p>
-          ) : (
-            <ul>
-              {scanErrors.map((error) => (
-                <li key={`${error.kind}:${error.path}`}>
-                  <span>
-                    {error.kind === "directory"
-                      ? "Folder could not be scanned"
-                      : "Audio file could not be read"}
-                  </span>
-                  <strong>{error.path}</strong>
-                  <span>{error.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </main>
-      ) : libraryView === "artists" ? (
-        <main className="artists" aria-labelledby="album-artists">
-          <h2 id="album-artists">Album artists</h2>
-          {artists.length === 0 ? (
-            <p>
-              {query
-                ? "No album artists match this search."
-                : "The current catalog has no album artists."}
+                        ? "format"
+                        : "formats"
+                      : libraryView === "folders"
+                        ? totalItems === 1
+                          ? "folder"
+                          : "folders"
+                        : libraryView === "tracks"
+                          ? totalItems === 1
+                            ? "track"
+                            : "tracks"
+                          : libraryView === "data-quality"
+                            ? totalItems === 1
+                              ? "album needing review"
+                              : "albums needing review"
+                            : totalItems === 1
+                              ? "album"
+                              : "albums"}
+              {query ? ` matching “${query}”` : ""}
+              {libraryView === "data-quality" && qualityFilter !== "all"
+                ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
+                : ""}
+              {libraryView === "albums" && albumArtistFilter
+                ? ` by “${albumArtistFilter}”`
+                : ""}
+              {libraryView === "albums" && trackRouteLabel
+                ? ` containing “${trackRouteLabel}”`
+                : ""}
+              {libraryView === "tracks" && trackFormatFilter
+                ? ` in “${trackFormatFilter}” format`
+                : ""}
+              {libraryView === "tracks" && trackFolderFilter
+                ? ` in folder “${trackFolderFilter.path}”`
+                : ""}
+              {libraryView === "tracks" && trackGenreFilter
+                ? trackGenreFilter.missing
+                  ? " with no genre tag"
+                  : ` with genre “${trackGenreFilter.name}”`
+                : ""}
             </p>
-          ) : (
-            <ul>
-              {artists.map((artist) => (
-                <li key={artist.name}>
-                  <article>
-                    <h3>{artist.name}</h3>
-                    <p>
-                      Status: {artist.albumCount}{" "}
-                      {artist.albumCount === 1 ? "album" : "albums"} ·{" "}
-                      {artist.trackCount}{" "}
-                      {artist.trackCount === 1 ? "track" : "tracks"}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setAlbumArtistFilter(artist.name);
-                        setLibraryView("albums");
-                        setSearchText("");
-                        setQuery("");
-                        setPageOffset(0);
-                        setNotice(`Showing albums by ${artist.name}.`);
-                      }}
-                    >
-                      Browse albums by {artist.name}
-                    </button>
-                  </article>
-                </li>
-              ))}
-            </ul>
           )}
-        </main>
-      ) : libraryView === "genres" ? (
-        <main className="genres" aria-labelledby="library-genres">
-          <h2 id="library-genres">Genres</h2>
-          {genres.length === 0 ? (
-            <p>
-              {query
-                ? "No genres match this search."
-                : "The current catalog has no genre entries."}
-            </p>
-          ) : (
-            <ul>
-              {genres.map((genre) => (
-                <li key={`${genre.missing ? "missing" : "tag"}:${genre.name}`}>
-                  <article>
-                    <h3>{genre.name}</h3>
-                    <p>
-                      Status: {genre.trackCount}{" "}
-                      {genre.trackCount === 1 ? "track" : "tracks"}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setTrackGenreFilter({
-                          name: genre.name,
-                          missing: genre.missing,
-                        });
-                        setTrackFormatFilter(undefined);
-                        setTrackFolderFilter(undefined);
-                        setLibraryView("tracks");
-                        setSearchText("");
-                        setQuery("");
-                        setPageOffset(0);
-                        setNotice(
-                          genre.missing
-                            ? "Showing tracks with no genre tag from the local catalog."
-                            : `Showing tracks tagged ${genre.name} from the local catalog.`,
-                        );
-                      }}
-                    >
-                      {genre.missing
-                        ? "Browse tracks with no genre tag"
-                        : `Browse ${genre.name} tracks`}
-                    </button>
-                  </article>
-                </li>
-              ))}
-            </ul>
-          )}
-        </main>
-      ) : libraryView === "formats" ? (
-        <main className="formats" aria-labelledby="library-formats">
-          <h2 id="library-formats">Formats</h2>
-          {formats.length === 0 ? (
-            <p>
-              {query
-                ? "No formats match this search."
-                : "The current catalog has no formats."}
-            </p>
-          ) : (
-            <ul>
-              {formats.map((format) => (
-                <li key={format.name}>
-                  <article>
-                    <h3>{format.name}</h3>
-                    <p>
-                      Status: {format.trackCount}{" "}
-                      {format.trackCount === 1 ? "track" : "tracks"}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setTrackFormatFilter(format.name);
-                        setTrackFolderFilter(undefined);
-                        setTrackGenreFilter(undefined);
-                        setLibraryView("tracks");
-                        setSearchText("");
-                        setQuery("");
-                        setPageOffset(0);
-                        setNotice(
-                          `Showing tracks in ${format.name} format from the local catalog.`,
-                        );
-                      }}
-                    >
-                      Browse {format.name} tracks
-                    </button>
-                  </article>
-                </li>
-              ))}
-            </ul>
-          )}
-        </main>
-      ) : libraryView === "folders" ? (
-        <main className="folders" aria-labelledby="library-folders">
-          <h2 id="library-folders">Folders</h2>
-          {folders.length === 0 ? (
-            <p>
-              {query
-                ? "No folders match this search."
-                : "The current catalog has no folders."}
-            </p>
-          ) : (
-            <ul>
-              {folders.map((folder) => (
-                <li key={folder.id}>
-                  <article>
-                    <h3>{folder.path}</h3>
-                    <p>
-                      Status: {folder.albumCount}{" "}
-                      {folder.albumCount === 1 ? "album" : "albums"} ·{" "}
-                      {folder.trackCount}{" "}
-                      {folder.trackCount === 1 ? "track" : "tracks"}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setTrackFolderFilter({
-                          id: folder.id,
-                          path: folder.path,
-                        });
-                        setTrackFormatFilter(undefined);
-                        setTrackGenreFilter(undefined);
-                        setLibraryView("tracks");
-                        setSearchText("");
-                        setQuery("");
-                        setPageOffset(0);
-                        setNotice(
-                          `Showing tracks in ${folder.path} from the local catalog.`,
-                        );
-                      }}
-                    >
-                      Browse tracks in {folder.path}
-                    </button>
-                  </article>
-                </li>
-              ))}
-            </ul>
-          )}
-        </main>
-      ) : libraryView === "tracks" ? (
-        <main className="tracks" aria-labelledby="library-tracks">
-          <h2 id="library-tracks">Tracks</h2>
-          {tracks.length === 0 ? (
-            <p>
-              {query
-                ? "No tracks match this search."
-                : trackFolderFilter
-                  ? `No tracks are cataloged in ${trackFolderFilter.path}.`
-                  : trackGenreFilter
-                    ? trackGenreFilter.missing
-                      ? "No tracks are missing a genre tag."
-                      : `No tracks use the ${trackGenreFilter.name} genre.`
-                    : trackFormatFilter
-                      ? `No tracks use ${trackFormatFilter} format.`
-                      : "The current catalog has no tracks."}
-            </p>
-          ) : (
-            <div className="track-table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th scope="col">Track</th>
-                    <th scope="col">Artist</th>
-                    <th scope="col">Album</th>
-                    <th scope="col">Number</th>
-                    <th scope="col">Technical details</th>
-                    <th scope="col">File</th>
-                    <th scope="col">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tracks.map((track) => (
-                    <tr key={track.id}>
-                      <td>{track.title}</td>
-                      <td>{track.artist}</td>
-                      <td>
-                        {track.albumTitle}
-                        <small>{track.albumArtist}</small>
-                      </td>
-                      <td>
-                        Disc {track.discNumber ?? 1}, track{" "}
-                        {track.trackNumber ?? "missing"}
-                      </td>
-                      <td>
-                        {track.format} · {track.codec ?? "Unknown codec"}
-                        <small>
-                          Duration {formatDuration(track.durationSeconds)} ·{" "}
-                          {formatBitrate(track.bitrate)} ·{" "}
-                          {formatSampleRate(track.sampleRate)} ·{" "}
-                          {formatBitDepth(track.bitDepth)} ·{" "}
-                          {formatChannels(track.channels)} ·{" "}
-                          {formatFileSize(track.size)}
-                        </small>
-                      </td>
-                      <td>{track.path}</td>
-                      <td>
+          {activeView === "library" && libraryView === "scan-errors" ? (
+            <main className="errors" aria-labelledby="scan-errors">
+              <h2 id="scan-errors">Scan problems</h2>
+              {scanErrors.length === 0 ? (
+                <p>No scan problems match this view.</p>
+              ) : (
+                <ul>
+                  {scanErrors.map((error) => (
+                    <li key={`${error.kind}:${error.path}`}>
+                      <span>
+                        {error.kind === "directory"
+                          ? "Folder could not be scanned"
+                          : "Audio file could not be read"}
+                      </span>
+                      <strong>{error.path}</strong>
+                      <span>{error.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </main>
+          ) : activeView === "library" && libraryView === "artists" ? (
+            <main className="artists" aria-labelledby="album-artists">
+              <h2 id="album-artists">Album artists</h2>
+              {artists.length === 0 ? (
+                <p>
+                  {query
+                    ? "No album artists match this search."
+                    : "The current catalog has no album artists."}
+                </p>
+              ) : (
+                <ul>
+                  {artists.map((artist) => (
+                    <li key={artist.name}>
+                      <article>
+                        <h3>{artist.name}</h3>
+                        <p>
+                          Status: {artist.albumCount}{" "}
+                          {artist.albumCount === 1 ? "album" : "albums"} ·{" "}
+                          {artist.trackCount}{" "}
+                          {artist.trackCount === 1 ? "track" : "tracks"}
+                        </p>
                         <button
                           onClick={() => {
-                            setAlbumIdFilter(track.albumId);
-                            setTrackRouteLabel(track.title);
-                            setPendingTrackId(track.id);
-                            setTrackFormatFilter(undefined);
-                            setTrackFolderFilter(undefined);
-                            setTrackGenreFilter(undefined);
-                            setAlbumArtistFilter(undefined);
+                            setAlbumArtistFilter(artist.name);
                             setLibraryView("albums");
                             setSearchText("");
                             setQuery("");
                             setPageOffset(0);
-                            setNotice(
-                              `Opening ${track.title} in the existing preview-only track editor.`,
-                            );
+                            setNotice(`Showing albums by ${artist.name}.`);
                           }}
                         >
-                          Open {track.title} in Workbench
+                          Browse albums by {artist.name}
                         </button>
-                      </td>
-                    </tr>
+                      </article>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </main>
-      ) : albums.length === 0 ? (
-        <main className="empty">
-          <h2>
-            {query
-              ? "No matching albums"
-              : albumArtistFilter
-                ? `No albums by ${albumArtistFilter}`
-                : albumIdFilter
-                  ? "The selected track’s album is unavailable"
-                  : libraryView === "data-quality"
-                    ? "No albums need review"
-                    : "Your Library is empty"}
-          </h2>
-          <p>
-            {query
-              ? "Try a different album, artist, track, format, or path."
-              : albumArtistFilter
-                ? "Clear the album-artist filter to return to the full Library."
-                : albumIdFilter
-                  ? "The track may have been removed or rescanned. Show all albums to continue browsing."
-                  : libraryView === "data-quality"
-                    ? qualityFilter === "all"
-                      ? "The current catalog has no album data-quality findings."
-                      : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
-                    : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
-          </p>
-          {!query &&
-            !albumArtistFilter &&
-            !albumIdFilter &&
-            libraryView !== "data-quality" && (
-              <button
-                disabled={busy || scanActive}
-                onClick={() => void chooseAndScan()}
-              >
-                Choose a library folder
-              </button>
-            )}
-        </main>
-      ) : (
-        <main className="workspace">
-          <aside aria-label="Albums">
-            <h2>Albums</h2>
-            <p className="album-quality-summary" aria-live="polite">
-              Albums needing review on this page: {albumsWithDiagnostics} of{" "}
-              {albums.length}.
-            </p>
-            {albums.map((album) => {
-              const findings = diagnosticsByAlbum.get(album.id) ?? [];
-              const needsAttention = findings.some(
-                (finding) => finding.severity === "needs-attention",
-              );
-              return (
-                <button
-                  className={
-                    album.id === selectedAlbumId ? "album selected" : "album"
-                  }
-                  key={album.id}
-                  onClick={() => {
-                    setSelectedAlbumId(album.id);
-                    setEditPreview(undefined);
-                    setSyncPlan(undefined);
-                  }}
-                >
-                  {album.title}
-                  <small>
-                    {album.albumArtist} · {album.tracks.length} tracks
-                  </small>
-                  <small
-                    className={`album-quality-status ${
-                      findings.length === 0 ? "clean" : "review"
-                    }`}
-                  >
-                    {findings.length === 0
-                      ? "Status: No data-quality findings"
-                      : `Status: ${findings.length} data-quality ${findings.length === 1 ? "finding" : "findings"} — ${
-                          needsAttention
-                            ? "needs attention"
-                            : "review recommended"
-                        }`}
-                  </small>
-                </button>
-              );
-            })}
-          </aside>
-          <section className="detail">
-            {selectedAlbum && (
-              <>
-                <div className="section-heading">
-                  <div>
-                    <p className="eyebrow">Album detail</p>
-                    <h2>{selectedAlbum.title}</h2>
-                    <p>{selectedAlbum.albumArtist}</p>
-                  </div>
-                </div>
-                <section
-                  className="card diagnostics"
-                  aria-label="Album data quality"
-                >
-                  <h3>Workbench · album data quality</h3>
-                  <p>
-                    Findings come from the current local catalog. They select a
-                    review workflow but never infer, preview, or write a
-                    correction.
-                  </p>
-                  {albumDiagnostics.length === 0 ? (
-                    <p>Status: No data-quality findings for this album.</p>
-                  ) : (
-                    <ol className="diagnostic-list">
-                      {albumDiagnostics.map((finding) => {
-                        const affectedTracks = finding.affectedTrackIds.flatMap(
-                          (fileId) => {
-                            const track = selectedAlbum.tracks.find(
-                              (candidate) => candidate.id === fileId,
-                            );
-                            return track ? [track] : [];
-                          },
-                        );
-                        return (
-                          <li key={finding.id}>
-                            <article
-                              aria-labelledby={`diagnostic-${finding.id}`}
-                            >
-                              <p className="diagnostic-status">
-                                Status:{" "}
-                                {finding.severity === "needs-attention"
-                                  ? "Needs attention"
-                                  : "Review recommended"}
-                              </p>
-                              <h4 id={`diagnostic-${finding.id}`}>
-                                {finding.title}
-                              </h4>
-                              <p>{finding.explanation}</p>
-                              <h5>Affected files</h5>
-                              <ul>
-                                {affectedTracks.map((track) => (
-                                  <li key={track.id}>{track.path}</li>
-                                ))}
-                              </ul>
-                              <button
-                                disabled={busy}
-                                onClick={() => routeDiagnostic(finding)}
-                              >
-                                {diagnosticActionLabel(finding.workflow)}
-                              </button>
-                            </article>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  )}
-                </section>
-                <div className="track-list">
-                  {selectedAlbum.tracks.map((track) => (
-                    <details key={track.id}>
-                      <summary>
-                        <span>
-                          {track.tags.discNumber ?? 1}.
-                          {track.tags.trackNumber ?? "—"} {track.tags.title}
-                        </span>
-                        <span>
-                          {track.format} · {track.codec ?? "Unknown codec"} ·{" "}
-                          {formatDuration(track.durationSeconds)}
-                        </span>
-                      </summary>
-                      <dl>
-                        <dt>Container/format</dt>
-                        <dd>{track.format}</dd>
-                        <dt>Codec</dt>
-                        <dd>{track.codec ?? "Unknown"}</dd>
-                        <dt>Duration</dt>
-                        <dd>{formatDuration(track.durationSeconds)}</dd>
-                        <dt>Bitrate</dt>
-                        <dd>{formatBitrate(track.bitrate)}</dd>
-                        <dt>Sample rate</dt>
-                        <dd>{formatSampleRate(track.sampleRate)}</dd>
-                        <dt>Bit depth</dt>
-                        <dd>{formatBitDepth(track.bitDepth)}</dd>
-                        <dt>Channels</dt>
-                        <dd>{formatChannels(track.channels)}</dd>
-                        <dt>File size</dt>
-                        <dd>{formatFileSize(track.size)}</dd>
-                        <dt>Path</dt>
-                        <dd>{track.path}</dd>
-                        <dt>Normalized tags</dt>
-                        <dd>
-                          <pre>{JSON.stringify(track.tags, null, 2)}</pre>
-                        </dd>
-                        <dt>Native tags</dt>
-                        <dd>
-                          <pre>{JSON.stringify(track.nativeTags, null, 2)}</pre>
-                        </dd>
-                      </dl>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={batchTrackIds.includes(track.id)}
-                          onChange={() => toggleBatchTrack(track.id)}
-                        />
-                        Select {track.tags.title} for batch edit
-                      </label>
-                      <button disabled={busy} onClick={() => editTrack(track)}>
-                        Edit track metadata
-                      </button>
-                    </details>
-                  ))}
-                </div>
-                <section
-                  className="card"
-                  aria-label="Batch metadata editor"
-                  ref={batchEditorRef}
-                  tabIndex={-1}
-                >
-                  <h3>Workbench · batch metadata</h3>
-                  <p>
-                    {batchTrackIds.length} tracks selected. Enable only the
-                    shared fields you intend to write. Track titles and track
-                    numbers stay in the single-track editor.
-                  </p>
-                  <div className="actions">
-                    <button
-                      disabled={busy}
-                      onClick={() => {
-                        setBatchTrackIds(
-                          selectedAlbum.tracks.map((track) => track.id),
-                        );
-                        setBatchPreview(undefined);
-                        setSequencePreview(undefined);
-                        setSequenceResult(undefined);
-                      }}
+                </ul>
+              )}
+            </main>
+          ) : activeView === "library" && libraryView === "genres" ? (
+            <main className="genres" aria-labelledby="library-genres">
+              <h2 id="library-genres">Genres</h2>
+              {genres.length === 0 ? (
+                <p>
+                  {query
+                    ? "No genres match this search."
+                    : "The current catalog has no genre entries."}
+                </p>
+              ) : (
+                <ul>
+                  {genres.map((genre) => (
+                    <li
+                      key={`${genre.missing ? "missing" : "tag"}:${genre.name}`}
                     >
-                      Select all tracks
-                    </button>
-                    <button
-                      disabled={busy || batchTrackIds.length === 0}
-                      onClick={() => {
-                        setBatchTrackIds([]);
-                        setBatchPreview(undefined);
-                        setSequencePreview(undefined);
-                        setSequenceResult(undefined);
-                      }}
-                    >
-                      Clear selection
-                    </button>
-                  </div>
-                  <div className="field-grid">
-                    <label>
-                      <span>
-                        <input
-                          type="checkbox"
-                          checked={batchEnabled.artist}
-                          onChange={(event) => {
-                            setBatchEnabled((enabled) => ({
-                              ...enabled,
-                              artist: event.target.checked,
-                            }));
-                            setBatchPreview(undefined);
-                          }}
-                        />
-                        Change track artist
-                      </span>
-                      <input
-                        aria-label="Batch track artist value"
-                        disabled={!batchEnabled.artist}
-                        value={batchDraft.artist}
-                        onChange={(event) =>
-                          setBatchDraft((draft) => ({
-                            ...draft,
-                            artist: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>
-                        <input
-                          type="checkbox"
-                          checked={batchEnabled.albumArtist}
-                          onChange={(event) => {
-                            setBatchEnabled((enabled) => ({
-                              ...enabled,
-                              albumArtist: event.target.checked,
-                            }));
-                            setBatchPreview(undefined);
-                          }}
-                        />
-                        Change album artist
-                      </span>
-                      <input
-                        aria-label="Batch album artist value"
-                        disabled={!batchEnabled.albumArtist}
-                        value={batchDraft.albumArtist}
-                        onChange={(event) =>
-                          setBatchDraft((draft) => ({
-                            ...draft,
-                            albumArtist: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>
-                        <input
-                          type="checkbox"
-                          checked={batchEnabled.discNumber}
-                          onChange={(event) => {
-                            setBatchEnabled((enabled) => ({
-                              ...enabled,
-                              discNumber: event.target.checked,
-                            }));
-                            setBatchPreview(undefined);
-                          }}
-                        />
-                        Change disc number
-                      </span>
-                      <input
-                        aria-label="Batch disc number value"
-                        type="number"
-                        min="1"
-                        max="999"
-                        placeholder="Empty clears the value"
-                        disabled={!batchEnabled.discNumber}
-                        value={batchDraft.discNumber}
-                        onChange={(event) =>
-                          setBatchDraft((draft) => ({
-                            ...draft,
-                            discNumber: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label>
-                      <span>
-                        <input
-                          type="checkbox"
-                          checked={batchEnabled.year}
-                          onChange={(event) => {
-                            setBatchEnabled((enabled) => ({
-                              ...enabled,
-                              year: event.target.checked,
-                            }));
-                            setBatchPreview(undefined);
-                          }}
-                        />
-                        Change release date
-                      </span>
-                      <input
-                        aria-label="Batch release date value"
-                        placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
-                        disabled={!batchEnabled.year}
-                        value={batchDraft.year}
-                        onChange={(event) =>
-                          setBatchDraft((draft) => ({
-                            ...draft,
-                            year: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  <button
-                    disabled={
-                      busy ||
-                      batchTrackIds.length < 2 ||
-                      !Object.values(batchEnabled).some(Boolean)
-                    }
-                    onClick={() => void previewBatchEdit()}
-                  >
-                    Preview selected tracks
-                  </button>
-                  {batchPreview && (
-                    <div className="preview" aria-label="Batch confirmation">
-                      <h4>Per-file review</h4>
-                      <p>
-                        No file has changed yet. Unchanged tracks will be
-                        skipped; every other track is checked again before its
-                        write.
-                      </p>
-                      {batchPreview.files.map((file) => (
-                        <div key={file.fileId}>
-                          <h5>{file.path}</h5>
-                          {!file.willWrite && (
-                            <p>Status: unchanged — skipped</p>
-                          )}
-                          {file.changes.length > 0 && (
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Field</th>
-                                  <th>Before</th>
-                                  <th>After</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {file.changes.map((change) => (
-                                  <tr key={change.field}>
-                                    <td>{change.field}</td>
-                                    <td>{change.before ?? "Not set"}</td>
-                                    <td>{change.after ?? "Not set"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                          {file.warnings.map((warning) => (
-                            <p key={warning} role="alert">
-                              {warning}
-                            </p>
-                          ))}
-                        </div>
-                      ))}
-                      <div className="actions">
+                      <article>
+                        <h3>{genre.name}</h3>
+                        <p>
+                          Status: {genre.trackCount}{" "}
+                          {genre.trackCount === 1 ? "track" : "tracks"}
+                        </p>
                         <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            batchPreview.files.some(
-                              (file) =>
-                                file.willWrite && file.warnings.length > 0,
-                            )
-                          }
-                          onClick={() => void applyBatchEdit()}
+                          onClick={() => {
+                            setTrackGenreFilter({
+                              name: genre.name,
+                              missing: genre.missing,
+                            });
+                            setTrackFormatFilter(undefined);
+                            setTrackFolderFilter(undefined);
+                            setLibraryView("tracks");
+                            setSearchText("");
+                            setQuery("");
+                            setPageOffset(0);
+                            setNotice(
+                              genre.missing
+                                ? "Showing tracks with no genre tag from the local catalog."
+                                : `Showing tracks tagged ${genre.name} from the local catalog.`,
+                            );
+                          }}
                         >
-                          Confirm and write selected tracks
+                          {genre.missing
+                            ? "Browse tracks with no genre tag"
+                            : `Browse ${genre.name} tracks`}
                         </button>
-                        <button onClick={() => setBatchPreview(undefined)}>
-                          Cancel
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </main>
+          ) : activeView === "library" && libraryView === "formats" ? (
+            <main className="formats" aria-labelledby="library-formats">
+              <h2 id="library-formats">Formats</h2>
+              {formats.length === 0 ? (
+                <p>
+                  {query
+                    ? "No formats match this search."
+                    : "The current catalog has no formats."}
+                </p>
+              ) : (
+                <ul>
+                  {formats.map((format) => (
+                    <li key={format.name}>
+                      <article>
+                        <h3>{format.name}</h3>
+                        <p>
+                          Status: {format.trackCount}{" "}
+                          {format.trackCount === 1 ? "track" : "tracks"}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setTrackFormatFilter(format.name);
+                            setTrackFolderFilter(undefined);
+                            setTrackGenreFilter(undefined);
+                            setLibraryView("tracks");
+                            setSearchText("");
+                            setQuery("");
+                            setPageOffset(0);
+                            setNotice(
+                              `Showing tracks in ${format.name} format from the local catalog.`,
+                            );
+                          }}
+                        >
+                          Browse {format.name} tracks
                         </button>
-                      </div>
-                    </div>
-                  )}
-                  {batchResult && (
-                    <div className="preview" aria-live="polite">
-                      <h4>Batch write results</h4>
-                      <ul>
-                        {batchResult.results.map((result) => (
-                          <li key={result.fileId}>
-                            {result.path}:{" "}
-                            {result.verified ? "verified" : "failed"}
-                            {result.error ? ` — ${result.error}` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <div
-                    className="preview"
-                    aria-label="Track number sequencing"
-                    ref={sequenceEditorRef}
-                    tabIndex={-1}
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </main>
+          ) : activeView === "library" && libraryView === "folders" ? (
+            <main className="folders" aria-labelledby="library-folders">
+              <h2 id="library-folders">Folders</h2>
+              {folders.length === 0 ? (
+                <p>
+                  {query
+                    ? "No folders match this search."
+                    : "The current catalog has no folders."}
+                </p>
+              ) : (
+                <ul>
+                  {folders.map((folder) => (
+                    <li key={folder.id}>
+                      <article>
+                        <h3>{folder.path}</h3>
+                        <p>
+                          Status: {folder.albumCount}{" "}
+                          {folder.albumCount === 1 ? "album" : "albums"} ·{" "}
+                          {folder.trackCount}{" "}
+                          {folder.trackCount === 1 ? "track" : "tracks"}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setTrackFolderFilter({
+                              id: folder.id,
+                              path: folder.path,
+                            });
+                            setTrackFormatFilter(undefined);
+                            setTrackGenreFilter(undefined);
+                            setLibraryView("tracks");
+                            setSearchText("");
+                            setQuery("");
+                            setPageOffset(0);
+                            setNotice(
+                              `Showing tracks in ${folder.path} from the local catalog.`,
+                            );
+                          }}
+                        >
+                          Browse tracks in {folder.path}
+                        </button>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </main>
+          ) : activeView === "library" && libraryView === "tracks" ? (
+            <main className="tracks" aria-labelledby="library-tracks">
+              <h2 id="library-tracks">Tracks</h2>
+              {tracks.length === 0 ? (
+                <p>
+                  {query
+                    ? "No tracks match this search."
+                    : trackFolderFilter
+                      ? `No tracks are cataloged in ${trackFolderFilter.path}.`
+                      : trackGenreFilter
+                        ? trackGenreFilter.missing
+                          ? "No tracks are missing a genre tag."
+                          : `No tracks use the ${trackGenreFilter.name} genre.`
+                        : trackFormatFilter
+                          ? `No tracks use ${trackFormatFilter} format.`
+                          : "The current catalog has no tracks."}
+                </p>
+              ) : (
+                <div className="track-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">Track</th>
+                        <th scope="col">Artist</th>
+                        <th scope="col">Album</th>
+                        <th scope="col">Number</th>
+                        <th scope="col">Technical details</th>
+                        <th scope="col">File</th>
+                        <th scope="col">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tracks.map((track) => (
+                        <tr key={track.id}>
+                          <td>{track.title}</td>
+                          <td>{track.artist}</td>
+                          <td>
+                            {track.albumTitle}
+                            <small>{track.albumArtist}</small>
+                          </td>
+                          <td>
+                            Disc {track.discNumber ?? 1}, track{" "}
+                            {track.trackNumber ?? "missing"}
+                          </td>
+                          <td>
+                            {track.format} · {track.codec ?? "Unknown codec"}
+                            <small>
+                              Duration {formatDuration(track.durationSeconds)} ·{" "}
+                              {formatBitrate(track.bitrate)} ·{" "}
+                              {formatSampleRate(track.sampleRate)} ·{" "}
+                              {formatBitDepth(track.bitDepth)} ·{" "}
+                              {formatChannels(track.channels)} ·{" "}
+                              {formatFileSize(track.size)}
+                            </small>
+                          </td>
+                          <td>{track.path}</td>
+                          <td>
+                            <button
+                              onClick={() => {
+                                setAlbumIdFilter(track.albumId);
+                                setTrackRouteLabel(track.title);
+                                setPendingTrackId(track.id);
+                                setTrackFormatFilter(undefined);
+                                setTrackFolderFilter(undefined);
+                                setTrackGenreFilter(undefined);
+                                setAlbumArtistFilter(undefined);
+                                setLibraryView("albums");
+                                setSearchText("");
+                                setQuery("");
+                                setPageOffset(0);
+                                setNotice(
+                                  `Opening ${track.title} in the existing preview-only track editor.`,
+                                );
+                              }}
+                            >
+                              Open {track.title} in Workbench
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </main>
+          ) : albums.length === 0 || !selectedAlbum ? (
+            <main className="empty">
+              <h2>
+                {activeView === "workbench"
+                  ? "Choose an album to begin"
+                  : query
+                    ? "No matching albums"
+                    : albumArtistFilter
+                      ? `No albums by ${albumArtistFilter}`
+                      : albumIdFilter
+                        ? "The selected track’s album is unavailable"
+                        : libraryView === "data-quality"
+                          ? "No albums need review"
+                          : "Your Library is empty"}
+              </h2>
+              <p>
+                {activeView === "workbench"
+                  ? "Select an album or track in Library, then open its contextual metadata workflow. No preview or write starts automatically."
+                  : query
+                    ? "Try a different album, artist, track, format, or path."
+                    : albumArtistFilter
+                      ? "Clear the album-artist filter to return to the full Library."
+                      : albumIdFilter
+                        ? "The track may have been removed or rescanned. Show all albums to continue browsing."
+                        : libraryView === "data-quality"
+                          ? qualityFilter === "all"
+                            ? "The current catalog has no album data-quality findings."
+                            : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                          : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+              </p>
+              {activeView === "workbench" && (
+                <button onClick={() => setActiveView("library")}>
+                  Browse Library
+                </button>
+              )}
+              {!query &&
+                activeView === "library" &&
+                !albumArtistFilter &&
+                !albumIdFilter &&
+                libraryView !== "data-quality" && (
+                  <button
+                    disabled={busy || scanActive}
+                    onClick={() => void chooseAndScan()}
                   >
-                    <h4>Sequence track numbers</h4>
-                    <p>
-                      Outgroove uses exactly the order below. Reorder it
-                      explicitly before previewing; file names and existing
-                      numbers are never used to guess a different order.
-                    </p>
-                    {batchTrackIds.length === 0 ? (
-                      <p>Select at least two tracks above.</p>
-                    ) : (
-                      <ol>
-                        {batchTrackIds.map((fileId, index) => {
-                          const track = selectedAlbum.tracks.find(
-                            (candidate) => candidate.id === fileId,
-                          );
-                          return (
-                            <li key={fileId}>
-                              <span>{track?.tags.title ?? fileId}</span>
-                              <button
-                                aria-label={`Move ${track?.tags.title ?? "track"} up`}
-                                disabled={busy || index === 0}
-                                onClick={() => moveBatchTrack(fileId, -1)}
-                              >
-                                Move up
-                              </button>
-                              <button
-                                aria-label={`Move ${track?.tags.title ?? "track"} down`}
-                                disabled={
-                                  busy || index === batchTrackIds.length - 1
-                                }
-                                onClick={() => moveBatchTrack(fileId, 1)}
-                              >
-                                Move down
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    )}
-                    <label>
-                      Starting track number
-                      <input
-                        type="number"
-                        min="1"
-                        max="9999"
-                        value={sequenceStart}
-                        onChange={(event) => {
-                          setSequenceStart(event.target.value);
-                          setSequencePreview(undefined);
+                    Choose a library folder
+                  </button>
+                )}
+            </main>
+          ) : (
+            <main
+              className={
+                activeView === "workbench"
+                  ? "workspace workbench-workspace"
+                  : "workspace"
+              }
+            >
+              {activeView === "library" && (
+                <aside aria-label="Albums">
+                  <h2>Albums</h2>
+                  <p className="album-quality-summary" aria-live="polite">
+                    Albums needing review on this page: {albumsWithDiagnostics}{" "}
+                    of {albums.length}.
+                  </p>
+                  {albums.map((album) => {
+                    const findings = diagnosticsByAlbum.get(album.id) ?? [];
+                    const needsAttention = findings.some(
+                      (finding) => finding.severity === "needs-attention",
+                    );
+                    return (
+                      <button
+                        aria-current={
+                          album.id === selectedAlbumId ? "true" : undefined
+                        }
+                        className={
+                          album.id === selectedAlbumId
+                            ? "album selected"
+                            : "album"
+                        }
+                        key={album.id}
+                        onClick={() => {
+                          setSelectedAlbumId(album.id);
+                          setEditPreview(undefined);
+                          setSyncPlan(undefined);
                         }}
-                      />
-                    </label>
-                    <div>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={sequenceDiscEnabled}
-                          onChange={(event) => {
-                            setSequenceDiscEnabled(event.target.checked);
-                            setSequencePreview(undefined);
-                          }}
-                        />
-                        Set one disc number for this sequence
-                      </label>
-                      <label>
-                        Sequence disc number
-                        <input
-                          type="number"
-                          min="1"
-                          max="999"
-                          disabled={!sequenceDiscEnabled}
-                          value={sequenceDiscNumber}
-                          onChange={(event) => {
-                            setSequenceDiscNumber(event.target.value);
-                            setSequencePreview(undefined);
-                          }}
-                        />
-                      </label>
-                    </div>
-                    <button
-                      disabled={
-                        busy ||
-                        batchTrackIds.length < 2 ||
-                        !Number.isInteger(Number(sequenceStart)) ||
-                        Number(sequenceStart) < 1 ||
-                        Number(sequenceStart) + batchTrackIds.length - 1 >
-                          9999 ||
-                        (sequenceDiscEnabled &&
-                          (!Number.isInteger(Number(sequenceDiscNumber)) ||
-                            Number(sequenceDiscNumber) < 1 ||
-                            Number(sequenceDiscNumber) > 999))
-                      }
-                      onClick={() => void previewTrackNumberSequence()}
-                    >
-                      Preview track-number sequence
-                    </button>
-                    {sequencePreview && (
-                      <div
-                        className="preview"
-                        aria-label="Track number sequence confirmation"
                       >
-                        <h5>Review exact sequence</h5>
-                        <ol>
-                          {sequencePreview.files.map((file) => (
-                            <li key={file.fileId}>
-                              <strong>{file.path}</strong>:{" "}
-                              {file.willWrite ? (
-                                <ul>
-                                  {file.changes.map((change) => (
-                                    <li key={change.field}>
-                                      {change.field}:{" "}
-                                      {change.before ?? "Not set"} →{" "}
-                                      {change.after ?? "Not set"}
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                "unchanged — skipped"
+                        {album.title}
+                        <small>
+                          {album.albumArtist} · {album.tracks.length} tracks
+                        </small>
+                        <small
+                          className={`album-quality-status ${
+                            findings.length === 0 ? "clean" : "review"
+                          }`}
+                        >
+                          {findings.length === 0
+                            ? "Status: No data-quality findings"
+                            : `Status: ${findings.length} data-quality ${findings.length === 1 ? "finding" : "findings"} — ${
+                                needsAttention
+                                  ? "needs attention"
+                                  : "review recommended"
+                              }`}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </aside>
+              )}
+              <section className="detail">
+                <>
+                  <div className="section-heading album-context">
+                    <div>
+                      <p className="eyebrow">
+                        {activeView === "workbench"
+                          ? "Current album context"
+                          : "Album detail"}
+                      </p>
+                      <h2>{selectedAlbum.title}</h2>
+                      <p>
+                        {selectedAlbum.albumArtist} ·{" "}
+                        {selectedAlbum.tracks.length} tracks
+                        {selectedTrack
+                          ? ` · Selected: ${selectedTrack.tags.title}`
+                          : ""}
+                      </p>
+                    </div>
+                    <div className="actions">
+                      {activeView === "library" ? (
+                        <>
+                          <button
+                            className="primary"
+                            onClick={() => {
+                              setWorkbenchTool("overview");
+                              setActiveView("workbench");
+                            }}
+                          >
+                            Open {selectedAlbum.title} in Workbench
+                          </button>
+                          <button
+                            disabled={
+                              busy ||
+                              (syncAlbums.length >= 100 &&
+                                !syncAlbums.some(
+                                  (album) => album.id === selectedAlbum.id,
+                                ))
+                            }
+                            onClick={() => {
+                              if (
+                                !syncAlbums.some(
+                                  (album) => album.id === selectedAlbum.id,
+                                )
+                              )
+                                toggleSyncAlbum(selectedAlbum);
+                              setSyncStage("setup");
+                              setActiveView("sync");
+                            }}
+                          >
+                            Add {selectedAlbum.title} to Sync
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setActiveView("library")}>
+                          Back to Library
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {activeView === "workbench" && (
+                    <WorkbenchNavigation
+                      activeTool={workbenchTool}
+                      selectedTrackTitle={selectedTrack?.tags.title}
+                      onSelect={setWorkbenchTool}
+                    />
+                  )}
+                  {(activeView === "library" ||
+                    workbenchTool === "overview") && (
+                    <section
+                      className="card diagnostics"
+                      aria-label="Album data quality"
+                    >
+                      <h3>
+                        {activeView === "library"
+                          ? "Album data quality"
+                          : "Album review"}
+                      </h3>
+                      <p>
+                        Findings come from the current local catalog. They
+                        select a review workflow but never infer, preview, or
+                        write a correction.
+                      </p>
+                      {albumDiagnostics.length === 0 ? (
+                        <p>Status: No data-quality findings for this album.</p>
+                      ) : (
+                        <ol className="diagnostic-list">
+                          {albumDiagnostics.map((finding) => {
+                            const affectedTracks =
+                              finding.affectedTrackIds.flatMap((fileId) => {
+                                const track = selectedAlbum.tracks.find(
+                                  (candidate) => candidate.id === fileId,
+                                );
+                                return track ? [track] : [];
+                              });
+                            return (
+                              <li key={finding.id}>
+                                <article
+                                  aria-labelledby={`diagnostic-${finding.id}`}
+                                >
+                                  <p className="diagnostic-status">
+                                    Status:{" "}
+                                    {finding.severity === "needs-attention"
+                                      ? "Needs attention"
+                                      : "Review recommended"}
+                                  </p>
+                                  <h4 id={`diagnostic-${finding.id}`}>
+                                    {finding.title}
+                                  </h4>
+                                  <p>{finding.explanation}</p>
+                                  <h5>Affected files</h5>
+                                  <ul>
+                                    {affectedTracks.map((track) => (
+                                      <li key={track.id}>{track.path}</li>
+                                    ))}
+                                  </ul>
+                                  <button
+                                    disabled={busy}
+                                    onClick={() => routeDiagnostic(finding)}
+                                  >
+                                    {diagnosticActionLabel(finding.workflow)}
+                                  </button>
+                                </article>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      )}
+                    </section>
+                  )}
+                  {(activeView === "library" ||
+                    workbenchTool === "overview" ||
+                    workbenchTool === "batch" ||
+                    workbenchTool === "sequence") && (
+                    <section
+                      className="album-tracks"
+                      aria-labelledby="album-tracks-title"
+                    >
+                      <div className="track-section-heading">
+                        <div>
+                          <h3 id="album-tracks-title">Tracks</h3>
+                          <p>
+                            Open a track for technical details. Raw tag data
+                            stays in its Advanced metadata disclosure.
+                          </p>
+                        </div>
+                        <span>{selectedAlbum.tracks.length} total</span>
+                      </div>
+                      <div className="track-list">
+                        {selectedAlbum.tracks.map((track) => (
+                          <LibraryTrackDetail
+                            busy={busy}
+                            key={track.id}
+                            mode={activeView}
+                            selectionPurpose={
+                              workbenchTool === "sequence"
+                                ? "track ordering"
+                                : workbenchTool === "batch"
+                                  ? "shared-field editing"
+                                  : "shared metadata or track ordering"
+                            }
+                            selectedForBatch={batchTrackIds.includes(track.id)}
+                            track={track}
+                            onEdit={() => editTrack(track)}
+                            onToggleBatch={() => toggleBatchTrack(track.id)}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
+                  {activeView === "workbench" &&
+                    (workbenchTool === "batch" ||
+                      workbenchTool === "sequence") && (
+                      <section
+                        className="selection-toolbar"
+                        aria-label="Selected tracks"
+                      >
+                        <div>
+                          <p className="eyebrow">Shared selection</p>
+                          <h3>
+                            {batchTrackIds.length} of{" "}
+                            {selectedAlbum.tracks.length} tracks selected
+                          </h3>
+                          <p>
+                            The same selection is kept when you switch between
+                            Shared fields and Track order.
+                          </p>
+                        </div>
+                        <div className="actions">
+                          <button
+                            disabled={busy}
+                            onClick={() => {
+                              setBatchTrackIds(
+                                selectedAlbum.tracks.map((track) => track.id),
+                              );
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                              setSequencePreview(undefined);
+                              setSequenceResult(undefined);
+                            }}
+                          >
+                            Select all tracks
+                          </button>
+                          <button
+                            disabled={busy || batchTrackIds.length === 0}
+                            onClick={() => {
+                              setBatchTrackIds([]);
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                              setSequencePreview(undefined);
+                              setSequenceResult(undefined);
+                            }}
+                          >
+                            Clear selection
+                          </button>
+                        </div>
+                      </section>
+                    )}
+                  {activeView === "workbench" && workbenchTool === "batch" && (
+                    <section
+                      className="card"
+                      aria-label="Batch metadata editor"
+                      ref={batchEditorRef}
+                      tabIndex={-1}
+                    >
+                      <p className="eyebrow">Shared-field workflow</p>
+                      <h3>Edit shared metadata</h3>
+                      <p>
+                        {batchTrackIds.length} tracks selected. Enable only the
+                        shared fields you intend to write. Track titles and
+                        track numbers stay in the single-track editor.
+                      </p>
+                      <div className="field-grid">
+                        <label>
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={batchEnabled.artist}
+                              onChange={(event) => {
+                                setBatchEnabled((enabled) => ({
+                                  ...enabled,
+                                  artist: event.target.checked,
+                                }));
+                                setBatchPreview(undefined);
+                                setBatchResult(undefined);
+                              }}
+                            />
+                            Change track artist
+                          </span>
+                          <input
+                            aria-label="Batch track artist value"
+                            disabled={!batchEnabled.artist}
+                            value={batchDraft.artist}
+                            onChange={(event) => {
+                              setBatchDraft((draft) => ({
+                                ...draft,
+                                artist: event.target.value,
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
+                          />
+                        </label>
+                        <label>
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={batchEnabled.albumArtist}
+                              onChange={(event) => {
+                                setBatchEnabled((enabled) => ({
+                                  ...enabled,
+                                  albumArtist: event.target.checked,
+                                }));
+                                setBatchPreview(undefined);
+                                setBatchResult(undefined);
+                              }}
+                            />
+                            Change album artist
+                          </span>
+                          <input
+                            aria-label="Batch album artist value"
+                            disabled={!batchEnabled.albumArtist}
+                            value={batchDraft.albumArtist}
+                            onChange={(event) => {
+                              setBatchDraft((draft) => ({
+                                ...draft,
+                                albumArtist: event.target.value,
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
+                          />
+                        </label>
+                        <label>
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={batchEnabled.discNumber}
+                              onChange={(event) => {
+                                setBatchEnabled((enabled) => ({
+                                  ...enabled,
+                                  discNumber: event.target.checked,
+                                }));
+                                setBatchPreview(undefined);
+                                setBatchResult(undefined);
+                              }}
+                            />
+                            Change disc number
+                          </span>
+                          <input
+                            aria-label="Batch disc number value"
+                            type="number"
+                            min="1"
+                            max="999"
+                            placeholder="Empty clears the value"
+                            disabled={!batchEnabled.discNumber}
+                            value={batchDraft.discNumber}
+                            onChange={(event) => {
+                              setBatchDraft((draft) => ({
+                                ...draft,
+                                discNumber: event.target.value,
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
+                          />
+                        </label>
+                        <label>
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={batchEnabled.year}
+                              onChange={(event) => {
+                                setBatchEnabled((enabled) => ({
+                                  ...enabled,
+                                  year: event.target.checked,
+                                }));
+                                setBatchPreview(undefined);
+                                setBatchResult(undefined);
+                              }}
+                            />
+                            Change release date
+                          </span>
+                          <input
+                            aria-label="Batch release date value"
+                            placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
+                            disabled={!batchEnabled.year}
+                            value={batchDraft.year}
+                            onChange={(event) => {
+                              setBatchDraft((draft) => ({
+                                ...draft,
+                                year: event.target.value,
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <button
+                        className="primary"
+                        disabled={
+                          busy ||
+                          batchTrackIds.length < 2 ||
+                          !Object.values(batchEnabled).some(Boolean)
+                        }
+                        onClick={() => void previewBatchEdit()}
+                      >
+                        Preview selected tracks
+                      </button>
+                      {batchPreview && (
+                        <div
+                          className="preview"
+                          aria-label="Batch confirmation"
+                        >
+                          <h4>Per-file review</h4>
+                          <p>
+                            No file has changed yet. Unchanged tracks will be
+                            skipped; every other track is checked again before
+                            its write.
+                          </p>
+                          {batchPreview.files.map((file) => (
+                            <div key={file.fileId}>
+                              <h5>{file.path}</h5>
+                              {!file.willWrite && (
+                                <p>Status: unchanged — skipped</p>
+                              )}
+                              {file.changes.length > 0 && (
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      <th>Field</th>
+                                      <th>Before</th>
+                                      <th>After</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {file.changes.map((change) => (
+                                      <tr key={change.field}>
+                                        <td>{change.field}</td>
+                                        <td>{change.before ?? "Not set"}</td>
+                                        <td>{change.after ?? "Not set"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
                               )}
                               {file.warnings.map((warning) => (
                                 <p key={warning} role="alert">
                                   {warning}
                                 </p>
                               ))}
-                            </li>
+                            </div>
                           ))}
-                        </ol>
-                        <div className="actions">
-                          <button
-                            className="primary"
-                            disabled={
-                              busy ||
-                              sequencePreview.files.some(
-                                (file) =>
-                                  file.willWrite && file.warnings.length > 0,
-                              )
-                            }
-                            onClick={() => void applyTrackNumberSequence()}
-                          >
-                            Confirm track-number sequence
-                          </button>
-                          <button onClick={() => setSequencePreview(undefined)}>
-                            Cancel sequence
-                          </button>
+                          <div className="actions">
+                            <button
+                              className="primary"
+                              disabled={
+                                busy ||
+                                batchPreview.files.some(
+                                  (file) =>
+                                    file.willWrite && file.warnings.length > 0,
+                                )
+                              }
+                              onClick={() => void applyBatchEdit()}
+                            >
+                              Confirm and write selected tracks
+                            </button>
+                            <button onClick={() => setBatchPreview(undefined)}>
+                              Cancel
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                    {sequenceResult && (
-                      <div className="preview" aria-live="polite">
-                        <h5>Track-number results</h5>
-                        <ul>
-                          {sequenceResult.results.map((result) => (
-                            <li key={result.fileId}>
-                              {result.path}:{" "}
-                              {result.verified ? "verified" : "failed"}
-                              {result.error ? ` — ${result.error}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </section>
-                {selectedTrack && (
-                  <section
-                    className="card"
-                    aria-label="Track metadata editor"
-                    ref={trackEditorRef}
-                    tabIndex={-1}
-                  >
-                    <h3>Workbench · track metadata</h3>
-                    <p>
-                      Editing {selectedTrack.tags.title}. Only fields that
-                      differ will be included in the write.
-                    </p>
-                    <div className="field-grid">
-                      <label>
-                        Track title
-                        <input
-                          value={trackDraft.title}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              title: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Track artist
-                        <input
-                          value={trackDraft.artist}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              artist: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Album artist
-                        <input
-                          value={trackDraft.albumArtist}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              albumArtist: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Track number
-                        <input
-                          type="number"
-                          min="1"
-                          max="9999"
-                          value={trackDraft.trackNumber}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              trackNumber: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Disc number
-                        <input
-                          type="number"
-                          min="1"
-                          max="999"
-                          value={trackDraft.discNumber}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              discNumber: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Release date
-                        <input
-                          placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
-                          value={trackDraft.year}
-                          onChange={(event) =>
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              year: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className="actions">
-                      <button
-                        disabled={busy}
-                        onClick={() => void previewTrackEdit()}
+                      )}
+                      {batchResult && (
+                        <div className="preview" aria-live="polite">
+                          <h4>Batch write results</h4>
+                          <ul>
+                            {batchResult.results.map((result) => (
+                              <li key={result.fileId}>
+                                {result.path}:{" "}
+                                {result.verified ? "verified" : "failed"}
+                                {result.error ? ` — ${result.error}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
+                  )}
+                  {activeView === "workbench" &&
+                    workbenchTool === "sequence" && (
+                      <section
+                        className="card sequence-editor"
+                        aria-label="Track number sequencing"
+                        ref={sequenceEditorRef}
+                        tabIndex={-1}
                       >
-                        Preview track changes
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={() => {
+                        <p className="eyebrow">Track-order workflow</p>
+                        <h3>Sequence track numbers</h3>
+                        <p>
+                          Outgroove uses exactly the order below. Reorder it
+                          explicitly before previewing; file names and existing
+                          numbers are never used to guess a different order.
+                        </p>
+                        {batchTrackIds.length === 0 ? (
+                          <p>Select at least two tracks above.</p>
+                        ) : (
+                          <ol>
+                            {batchTrackIds.map((fileId, index) => {
+                              const track = selectedAlbum.tracks.find(
+                                (candidate) => candidate.id === fileId,
+                              );
+                              return (
+                                <li key={fileId}>
+                                  <span>{track?.tags.title ?? fileId}</span>
+                                  <button
+                                    aria-label={`Move ${track?.tags.title ?? "track"} up`}
+                                    disabled={busy || index === 0}
+                                    onClick={() => moveBatchTrack(fileId, -1)}
+                                  >
+                                    Move up
+                                  </button>
+                                  <button
+                                    aria-label={`Move ${track?.tags.title ?? "track"} down`}
+                                    disabled={
+                                      busy || index === batchTrackIds.length - 1
+                                    }
+                                    onClick={() => moveBatchTrack(fileId, 1)}
+                                  >
+                                    Move down
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        )}
+                        <div className="sequence-settings">
+                          <label>
+                            Starting track number
+                            <input
+                              type="number"
+                              min="1"
+                              max="9999"
+                              value={sequenceStart}
+                              onChange={(event) => {
+                                setSequenceStart(event.target.value);
+                                setSequencePreview(undefined);
+                                setSequenceResult(undefined);
+                              }}
+                            />
+                          </label>
+                          <div className="disc-assignment">
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={sequenceDiscEnabled}
+                                onChange={(event) => {
+                                  setSequenceDiscEnabled(event.target.checked);
+                                  setSequencePreview(undefined);
+                                  setSequenceResult(undefined);
+                                }}
+                              />
+                              Set one disc number for this sequence
+                            </label>
+                            <label>
+                              Sequence disc number
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                disabled={!sequenceDiscEnabled}
+                                value={sequenceDiscNumber}
+                                onChange={(event) => {
+                                  setSequenceDiscNumber(event.target.value);
+                                  setSequencePreview(undefined);
+                                  setSequenceResult(undefined);
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        <button
+                          className="primary"
+                          disabled={
+                            busy ||
+                            batchTrackIds.length < 2 ||
+                            !Number.isInteger(Number(sequenceStart)) ||
+                            Number(sequenceStart) < 1 ||
+                            Number(sequenceStart) + batchTrackIds.length - 1 >
+                              9999 ||
+                            (sequenceDiscEnabled &&
+                              (!Number.isInteger(Number(sequenceDiscNumber)) ||
+                                Number(sequenceDiscNumber) < 1 ||
+                                Number(sequenceDiscNumber) > 999))
+                          }
+                          onClick={() => void previewTrackNumberSequence()}
+                        >
+                          Preview track-number sequence
+                        </button>
+                        {sequencePreview && (
+                          <div
+                            className="preview"
+                            aria-label="Track number sequence confirmation"
+                          >
+                            <h5>Review exact sequence</h5>
+                            <ol>
+                              {sequencePreview.files.map((file) => (
+                                <li key={file.fileId}>
+                                  <strong>{file.path}</strong>:{" "}
+                                  {file.willWrite ? (
+                                    <ul>
+                                      {file.changes.map((change) => (
+                                        <li key={change.field}>
+                                          {change.field}:{" "}
+                                          {change.before ?? "Not set"} →{" "}
+                                          {change.after ?? "Not set"}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    "unchanged — skipped"
+                                  )}
+                                  {file.warnings.map((warning) => (
+                                    <p key={warning} role="alert">
+                                      {warning}
+                                    </p>
+                                  ))}
+                                </li>
+                              ))}
+                            </ol>
+                            <div className="actions">
+                              <button
+                                className="primary"
+                                disabled={
+                                  busy ||
+                                  sequencePreview.files.some(
+                                    (file) =>
+                                      file.willWrite &&
+                                      file.warnings.length > 0,
+                                  )
+                                }
+                                onClick={() => void applyTrackNumberSequence()}
+                              >
+                                Confirm track-number sequence
+                              </button>
+                              <button
+                                onClick={() => setSequencePreview(undefined)}
+                              >
+                                Cancel sequence
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {sequenceResult && (
+                          <div className="preview" aria-live="polite">
+                            <h5>Track-number results</h5>
+                            <ul>
+                              {sequenceResult.results.map((result) => (
+                                <li key={result.fileId}>
+                                  {result.path}:{" "}
+                                  {result.verified ? "verified" : "failed"}
+                                  {result.error ? ` — ${result.error}` : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </section>
+                    )}
+                  {activeView === "workbench" &&
+                    workbenchTool === "track" &&
+                    selectedTrack && (
+                      <TrackMetadataEditor
+                        busy={busy}
+                        draft={trackDraft}
+                        error={trackEditError}
+                        onCancelPreview={() => {
+                          setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
+                        }}
+                        onClose={() => {
                           setSelectedTrackId(undefined);
                           setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
                         }}
-                      >
-                        Close editor
-                      </button>
-                    </div>
-                    {trackEditPreview && (
-                      <div
-                        className="preview"
-                        aria-label="Track metadata confirmation"
-                      >
-                        <h4>Review before writing</h4>
-                        <p>
-                          No file has changed yet. The proposal will be checked
-                          again immediately before the safe write.
-                        </p>
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Field</th>
-                              <th>Before</th>
-                              <th>After</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {trackEditPreview.changes.map((change) => (
-                              <tr key={change.field}>
-                                <td>{change.field}</td>
-                                <td>{change.before ?? "Not set"}</td>
-                                <td>{change.after ?? "Not set"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {trackEditPreview.warnings.map((warning) => (
-                          <p key={warning} role="alert">
-                            {warning}
+                        onConfirm={() => void applyTrackEdit()}
+                        onDraftChange={(field, value) => {
+                          setTrackDraft((draft) => ({
+                            ...draft,
+                            [field]: value,
+                          }));
+                          setTrackEditPreview(undefined);
+                          setTrackEditResult(undefined);
+                          setTrackEditError(undefined);
+                        }}
+                        onPreview={() => void previewTrackEdit()}
+                        preview={trackEditPreview}
+                        ref={trackEditorRef}
+                        result={trackEditResult}
+                        track={selectedTrack}
+                      />
+                    )}
+                  {activeView === "workbench" && workbenchTool === "album" && (
+                    <section
+                      className="card"
+                      aria-label="Album title editor"
+                      ref={albumTitleEditorRef}
+                      tabIndex={-1}
+                    >
+                      <h3>Workbench · album title</h3>
+                      <label htmlFor="album-title">Proposed title</label>
+                      <div className="inline">
+                        <input
+                          id="album-title"
+                          value={editTitle}
+                          onChange={(event) => setEditTitle(event.target.value)}
+                        />
+                        <button
+                          disabled={!editTitle.trim() || busy}
+                          onClick={() => void previewEdit()}
+                        >
+                          Preview per-file changes
+                        </button>
+                      </div>
+                      {editPreview && (
+                        <div
+                          className="preview"
+                          aria-label="Tag edit confirmation"
+                        >
+                          <h4>Review before writing</h4>
+                          <p>
+                            No file has changed yet. Confirming creates a
+                            snapshot, writes a same-volume temporary file,
+                            verifies it, and only then replaces the original.
                           </p>
-                        ))}
-                        <div className="actions">
-                          <button
-                            className="primary"
-                            disabled={
-                              busy || trackEditPreview.warnings.length > 0
-                            }
-                            onClick={() => void applyTrackEdit()}
-                          >
-                            Confirm and write track
-                          </button>
-                          <button
-                            onClick={() => setTrackEditPreview(undefined)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                )}
-                <section
-                  className="card"
-                  aria-label="Album title editor"
-                  ref={albumTitleEditorRef}
-                  tabIndex={-1}
-                >
-                  <h3>Workbench · album title</h3>
-                  <label htmlFor="album-title">Proposed title</label>
-                  <div className="inline">
-                    <input
-                      id="album-title"
-                      value={editTitle}
-                      onChange={(event) => setEditTitle(event.target.value)}
-                    />
-                    <button
-                      disabled={!editTitle.trim() || busy}
-                      onClick={() => void previewEdit()}
-                    >
-                      Preview per-file changes
-                    </button>
-                  </div>
-                  {editPreview && (
-                    <div className="preview" aria-label="Tag edit confirmation">
-                      <h4>Review before writing</h4>
-                      <p>
-                        No file has changed yet. Confirming creates a snapshot,
-                        writes a same-volume temporary file, verifies it, and
-                        only then replaces the original.
-                      </p>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>File</th>
-                            <th>Before</th>
-                            <th>After</th>
-                            <th>Warnings</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {editPreview.files.map((file) => (
-                            <tr key={file.fileId}>
-                              <td>{file.path}</td>
-                              <td>{file.before}</td>
-                              <td>{file.after}</td>
-                              <td>{file.warnings.join("; ") || "None"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="actions">
-                        <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            editPreview.files.some(
-                              (file) => file.warnings.length > 0,
-                            )
-                          }
-                          onClick={() => void applyEdit()}
-                        >
-                          Confirm and write {editPreview.files.length} files
-                        </button>
-                        <button onClick={() => setEditPreview(undefined)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <div className="history" aria-label="Metadata edit history">
-                    <h4>Edit history</h4>
-                    {editHistory.length === 0 ? (
-                      <p>No confirmed edits for this album yet.</p>
-                    ) : (
-                      <ol>
-                        {editHistory.map((item) => (
-                          <li key={item.operationId}>
-                            <div>
-                              <strong>
-                                {item.kind === "album-title-edit"
-                                  ? `Changed title to “${item.proposedTitle}”`
-                                  : item.kind === "album-title-undo"
-                                    ? `Restored “${item.proposedTitle}”`
-                                    : item.proposedTitle}
-                              </strong>
-                              <span>
-                                {item.state}; {item.verifiedFiles} verified
-                                {item.failedFiles > 0
-                                  ? `, ${item.failedFiles} failed`
-                                  : ""}{" "}
-                                ·{" "}
-                                <time
-                                  dateTime={item.completedAt ?? item.createdAt}
-                                >
-                                  {new Date(
-                                    item.completedAt ?? item.createdAt,
-                                  ).toLocaleString()}
-                                </time>
-                              </span>
-                            </div>
-                            {item.kind === "album-title-edit" &&
-                              item.verifiedFiles > 0 && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void previewUndo(item.operationId)
-                                  }
-                                >
-                                  Preview undo
-                                </button>
-                              )}
-                            {item.kind === "track-tags-edit" &&
-                              item.verifiedFiles > 0 && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void previewTrackUndo(item.operationId)
-                                  }
-                                >
-                                  Preview track undo
-                                </button>
-                              )}
-                            {item.kind === "track-tags-batch-edit" &&
-                              item.verifiedFiles > 0 && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void previewBatchUndo(item.operationId)
-                                  }
-                                >
-                                  Preview batch undo
-                                </button>
-                              )}
-                            {item.kind === "track-number-sequence-edit" &&
-                              item.verifiedFiles > 0 && (
-                                <button
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void previewBatchUndo(item.operationId)
-                                  }
-                                >
-                                  Preview sequence undo
-                                </button>
-                              )}
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-                  {undoPreview && (
-                    <div className="preview" aria-label="Tag undo confirmation">
-                      <h4>Review undo before writing</h4>
-                      <p>
-                        No file has changed yet. Undo only proceeds when the
-                        current album title still matches the verified edit.
-                        Each file is snapshotted, safely written, re-read, and
-                        verified again.
-                      </p>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>File</th>
-                            <th>Current</th>
-                            <th>Restore</th>
-                            <th>Conflicts</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {undoPreview.files.map((file) => (
-                            <tr key={file.fileId}>
-                              <td>{file.path}</td>
-                              <td>{file.before}</td>
-                              <td>{file.after}</td>
-                              <td>{file.warnings.join("; ") || "None"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <div className="actions">
-                        <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            undoPreview.files.some(
-                              (file) => file.warnings.length > 0,
-                            )
-                          }
-                          onClick={() => void applyUndo()}
-                        >
-                          Confirm and undo {undoPreview.files.length} files
-                        </button>
-                        <button onClick={() => setUndoPreview(undefined)}>
-                          Cancel undo
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {trackUndoPreview && (
-                    <div
-                      className="preview"
-                      aria-label="Track metadata undo confirmation"
-                    >
-                      <h4>Review track undo before writing</h4>
-                      <p>
-                        No file has changed yet. Only fields recorded by the
-                        original edit will be restored. Undo refuses to
-                        overwrite a field changed after that edit.
-                      </p>
-                      <p>{trackUndoPreview.path}</p>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Field</th>
-                            <th>Current</th>
-                            <th>Restore</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {trackUndoPreview.changes.map((change) => (
-                            <tr key={change.field}>
-                              <td>{change.field}</td>
-                              <td>{change.before ?? "Not set"}</td>
-                              <td>{change.after ?? "Not set"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {trackUndoPreview.warnings.map((warning) => (
-                        <p key={warning} role="alert">
-                          {warning}
-                        </p>
-                      ))}
-                      <div className="actions">
-                        <button
-                          className="primary"
-                          disabled={
-                            busy || trackUndoPreview.warnings.length > 0
-                          }
-                          onClick={() => void applyTrackUndo()}
-                        >
-                          Confirm and undo track fields
-                        </button>
-                        <button onClick={() => setTrackUndoPreview(undefined)}>
-                          Cancel track undo
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {batchUndoPreview && (
-                    <div
-                      className="preview"
-                      aria-label="Batch metadata undo confirmation"
-                    >
-                      <h4>Review batch undo before writing</h4>
-                      <p>
-                        Only fields written by the original batch are restored,
-                        and only for files whose original writes were verified.
-                        Conflicted files will be refused without stopping safe
-                        restores on other files.
-                      </p>
-                      {batchUndoPreview.files.map((file) => (
-                        <div key={file.fileId}>
-                          <h5>{file.path}</h5>
-                          {!file.willWrite && (
-                            <p>Status: already restored — skipped</p>
-                          )}
-                          {file.changes.length > 0 && (
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Field</th>
-                                  <th>Current</th>
-                                  <th>Restore</th>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>File</th>
+                                <th>Before</th>
+                                <th>After</th>
+                                <th>Warnings</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {editPreview.files.map((file) => (
+                                <tr key={file.fileId}>
+                                  <td>{file.path}</td>
+                                  <td>{file.before}</td>
+                                  <td>{file.after}</td>
+                                  <td>{file.warnings.join("; ") || "None"}</td>
                                 </tr>
-                              </thead>
-                              <tbody>
-                                {file.changes.map((change) => (
-                                  <tr key={change.field}>
-                                    <td>{change.field}</td>
-                                    <td>{change.before ?? "Not set"}</td>
-                                    <td>{change.after ?? "Not set"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                          {file.warnings.map((warning) => (
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="actions">
+                            <button
+                              className="primary"
+                              disabled={
+                                busy ||
+                                editPreview.files.some(
+                                  (file) => file.warnings.length > 0,
+                                )
+                              }
+                              onClick={() => void applyEdit()}
+                            >
+                              Confirm and write {editPreview.files.length} files
+                            </button>
+                            <button onClick={() => setEditPreview(undefined)}>
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div
+                        className="history"
+                        aria-label="Metadata edit history"
+                      >
+                        <h4>Edit history</h4>
+                        {editHistory.length === 0 ? (
+                          <p>No confirmed edits for this album yet.</p>
+                        ) : (
+                          <ol>
+                            {editHistory.map((item) => (
+                              <li key={item.operationId}>
+                                <div>
+                                  <strong>
+                                    {item.kind === "album-title-edit"
+                                      ? `Changed title to “${item.proposedTitle}”`
+                                      : item.kind === "album-title-undo"
+                                        ? `Restored “${item.proposedTitle}”`
+                                        : item.proposedTitle}
+                                  </strong>
+                                  <span>
+                                    {item.state}; {item.verifiedFiles} verified
+                                    {item.failedFiles > 0
+                                      ? `, ${item.failedFiles} failed`
+                                      : ""}{" "}
+                                    ·{" "}
+                                    <time
+                                      dateTime={
+                                        item.completedAt ?? item.createdAt
+                                      }
+                                    >
+                                      {new Date(
+                                        item.completedAt ?? item.createdAt,
+                                      ).toLocaleString()}
+                                    </time>
+                                  </span>
+                                </div>
+                                {item.kind === "album-title-edit" &&
+                                  item.verifiedFiles > 0 && (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        void previewUndo(item.operationId)
+                                      }
+                                    >
+                                      Preview undo
+                                    </button>
+                                  )}
+                                {item.kind === "track-tags-edit" &&
+                                  item.verifiedFiles > 0 && (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        void previewTrackUndo(item.operationId)
+                                      }
+                                    >
+                                      Preview track undo
+                                    </button>
+                                  )}
+                                {item.kind === "track-tags-batch-edit" &&
+                                  item.verifiedFiles > 0 && (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        void previewBatchUndo(item.operationId)
+                                      }
+                                    >
+                                      Preview batch undo
+                                    </button>
+                                  )}
+                                {item.kind === "track-number-sequence-edit" &&
+                                  item.verifiedFiles > 0 && (
+                                    <button
+                                      disabled={busy}
+                                      onClick={() =>
+                                        void previewBatchUndo(item.operationId)
+                                      }
+                                    >
+                                      Preview sequence undo
+                                    </button>
+                                  )}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                      {undoPreview && (
+                        <div
+                          className="preview"
+                          aria-label="Tag undo confirmation"
+                        >
+                          <h4>Review undo before writing</h4>
+                          <p>
+                            No file has changed yet. Undo only proceeds when the
+                            current album title still matches the verified edit.
+                            Each file is snapshotted, safely written, re-read,
+                            and verified again.
+                          </p>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>File</th>
+                                <th>Current</th>
+                                <th>Restore</th>
+                                <th>Conflicts</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {undoPreview.files.map((file) => (
+                                <tr key={file.fileId}>
+                                  <td>{file.path}</td>
+                                  <td>{file.before}</td>
+                                  <td>{file.after}</td>
+                                  <td>{file.warnings.join("; ") || "None"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="actions">
+                            <button
+                              className="primary"
+                              disabled={
+                                busy ||
+                                undoPreview.files.some(
+                                  (file) => file.warnings.length > 0,
+                                )
+                              }
+                              onClick={() => void applyUndo()}
+                            >
+                              Confirm and undo {undoPreview.files.length} files
+                            </button>
+                            <button onClick={() => setUndoPreview(undefined)}>
+                              Cancel undo
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {trackUndoPreview && (
+                        <div
+                          className="preview"
+                          aria-label="Track metadata undo confirmation"
+                        >
+                          <h4>Review track undo before writing</h4>
+                          <p>
+                            No file has changed yet. Only fields recorded by the
+                            original edit will be restored. Undo refuses to
+                            overwrite a field changed after that edit.
+                          </p>
+                          <p>{trackUndoPreview.path}</p>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Field</th>
+                                <th>Current</th>
+                                <th>Restore</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {trackUndoPreview.changes.map((change) => (
+                                <tr key={change.field}>
+                                  <td>{change.field}</td>
+                                  <td>{change.before ?? "Not set"}</td>
+                                  <td>{change.after ?? "Not set"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {trackUndoPreview.warnings.map((warning) => (
                             <p key={warning} role="alert">
                               {warning}
                             </p>
                           ))}
+                          <div className="actions">
+                            <button
+                              className="primary"
+                              disabled={
+                                busy || trackUndoPreview.warnings.length > 0
+                              }
+                              onClick={() => void applyTrackUndo()}
+                            >
+                              Confirm and undo track fields
+                            </button>
+                            <button
+                              onClick={() => setTrackUndoPreview(undefined)}
+                            >
+                              Cancel track undo
+                            </button>
+                          </div>
                         </div>
-                      ))}
-                      <div className="actions">
-                        <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            !batchUndoPreview.files.some(
-                              (file) =>
-                                file.willWrite && file.warnings.length === 0,
-                            )
-                          }
-                          onClick={() => void applyBatchUndo()}
+                      )}
+                      {batchUndoPreview && (
+                        <div
+                          className="preview"
+                          aria-label="Batch metadata undo confirmation"
                         >
-                          Confirm safe batch undo writes
-                        </button>
-                        <button onClick={() => setBatchUndoPreview(undefined)}>
-                          Cancel batch undo
-                        </button>
-                      </div>
-                    </div>
+                          <h4>Review batch undo before writing</h4>
+                          <p>
+                            Only fields written by the original batch are
+                            restored, and only for files whose original writes
+                            were verified. Conflicted files will be refused
+                            without stopping safe restores on other files.
+                          </p>
+                          {batchUndoPreview.files.map((file) => (
+                            <div key={file.fileId}>
+                              <h5>{file.path}</h5>
+                              {!file.willWrite && (
+                                <p>Status: already restored — skipped</p>
+                              )}
+                              {file.changes.length > 0 && (
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      <th>Field</th>
+                                      <th>Current</th>
+                                      <th>Restore</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {file.changes.map((change) => (
+                                      <tr key={change.field}>
+                                        <td>{change.field}</td>
+                                        <td>{change.before ?? "Not set"}</td>
+                                        <td>{change.after ?? "Not set"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                              {file.warnings.map((warning) => (
+                                <p key={warning} role="alert">
+                                  {warning}
+                                </p>
+                              ))}
+                            </div>
+                          ))}
+                          <div className="actions">
+                            <button
+                              className="primary"
+                              disabled={
+                                busy ||
+                                !batchUndoPreview.files.some(
+                                  (file) =>
+                                    file.willWrite &&
+                                    file.warnings.length === 0,
+                                )
+                              }
+                              onClick={() => void applyBatchUndo()}
+                            >
+                              Confirm safe batch undo writes
+                            </button>
+                            <button
+                              onClick={() => setBatchUndoPreview(undefined)}
+                            >
+                              Cancel batch undo
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {batchUndoResult && (
+                        <div className="preview" aria-live="polite">
+                          <h4>Batch undo results</h4>
+                          <ul>
+                            {batchUndoResult.results.map((result) => (
+                              <li key={result.fileId}>
+                                {result.path}:{" "}
+                                {result.verified
+                                  ? "verified"
+                                  : "refused or failed"}
+                                {result.error ? ` — ${result.error}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </section>
                   )}
-                  {batchUndoResult && (
-                    <div className="preview" aria-live="polite">
-                      <h4>Batch undo results</h4>
-                      <ul>
-                        {batchUndoResult.results.map((result) => (
-                          <li key={result.fileId}>
-                            {result.path}:{" "}
-                            {result.verified ? "verified" : "refused or failed"}
-                            {result.error ? ` — ${result.error}` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </section>
-                <section className="card">
-                  <h3>Sync · folder-backed DAP</h3>
+                </>
+              </section>
+            </main>
+          )}
+          {activeView === "library" && totalItems > PAGE_SIZE && (
+            <nav className="pagination" aria-label="Library pages">
+              <button
+                disabled={pageOffset === 0}
+                onClick={() =>
+                  setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))
+                }
+              >
+                Previous page
+              </button>
+              <span>
+                {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)}{" "}
+                of {totalItems}
+              </span>
+              <button
+                disabled={pageOffset + PAGE_SIZE >= totalItems}
+                onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+              >
+                Next page
+              </button>
+            </nav>
+          )}
+        </>
+      )}
+      {activeView === "sync" && (
+        <main className="sync-view">
+          <section className="sync-workflow-header">
+            <div>
+              <p className="eyebrow">Folder-backed DAP sync</p>
+              <h2>Prepare, review, then copy</h2>
+              <p>
+                Source audio is never modified. Every target plan remains
+                preview-only until you explicitly confirm it.
+              </p>
+            </div>
+            <SyncNavigation
+              activeStage={syncStage}
+              hasActiveProfile={Boolean(profile)}
+              recoveryCount={syncRecoveries.length}
+              onSelect={setSyncStage}
+            />
+          </section>
+          {syncRecoveries.length > 0 && syncStage !== "recovery" && (
+            <section className="sync-recovery-alert" role="alert">
+              <div>
+                <strong>
+                  {syncRecoveries.length} interrupted{" "}
+                  {syncRecoveries.length === 1 ? "sync needs" : "syncs need"}{" "}
+                  review
+                </strong>
+                <span>
+                  Database restore remains blocked until pending recovery is
+                  completed.
+                </span>
+              </div>
+              <button
+                className="primary"
+                onClick={() => setSyncStage("recovery")}
+              >
+                Review recovery
+              </button>
+            </section>
+          )}
+          {syncStage === "setup" && (
+            <section
+              className="card selection-card"
+              aria-labelledby="sync-selection"
+            >
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Copy selection</p>
+                  <h2 id="sync-selection">Albums for the next DAP plan</h2>
                   <p>
-                    Copies only. This slice never deletes target files or
-                    modifies source audio.
+                    Source audio is never modified. Selecting albums does not
+                    inspect or change a target.
                   </p>
+                </div>
+                {selectedAlbum && (
                   <button
                     disabled={
                       busy ||
@@ -3211,496 +3425,634 @@ export function App(): React.JSX.Element {
                     onClick={() => toggleSyncAlbum(selectedAlbum)}
                   >
                     {syncAlbums.some((album) => album.id === selectedAlbum.id)
-                      ? `Remove ${selectedAlbum.title} from DAP selection`
-                      : `Add ${selectedAlbum.title} to DAP selection`}
+                      ? `Remove ${selectedAlbum.title}`
+                      : `Add ${selectedAlbum.title}`}
                   </button>
-                  <p aria-live="polite">
-                    {syncAlbums.length} of 100 albums selected for{" "}
-                    {editingSyncProfile
-                      ? `the ${editingSyncProfile.name} revision.`
-                      : "the next DAP profile."}
-                  </p>
-                  {syncAlbums.length > 0 && (
-                    <ul aria-label="Albums selected for DAP sync">
-                      {syncAlbums.map((album) => (
-                        <li key={album.id}>
-                          {album.albumArtist} — {album.title}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div className="actions">
-                    {editingSyncProfile ? (
-                      <>
-                        <button
-                          disabled={busy || syncAlbums.length === 0}
-                          onClick={() => void saveSyncProfileAlbums()}
-                        >
-                          Save album selection for {editingSyncProfile.name}
-                        </button>
-                        <button
-                          disabled={busy}
-                          onClick={cancelSyncProfileAlbumEdit}
-                        >
-                          Cancel album selection changes
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          disabled={busy || syncAlbums.length === 0}
-                          onClick={() => void chooseTarget()}
-                        >
-                          Choose DAP target for selected albums
-                        </button>
-                        <button
-                          disabled={busy || syncAlbums.length === 0}
-                          onClick={() => {
-                            setSyncAlbums([]);
-                            setNotice("Cleared the DAP album selection.");
-                          }}
-                        >
-                          Clear DAP album selection
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </section>
-              </>
-            )}
-          </section>
-        </main>
-      )}
-      {totalItems > PAGE_SIZE && (
-        <nav className="pagination" aria-label="Library pages">
-          <button
-            disabled={pageOffset === 0}
-            onClick={() => setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))}
-          >
-            Previous page
-          </button>
-          <span>
-            {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)} of{" "}
-            {totalItems}
-          </span>
-          <button
-            disabled={pageOffset + PAGE_SIZE >= totalItems}
-            onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
-          >
-            Next page
-          </button>
-        </nav>
-      )}
-      <section className="card settings" aria-labelledby="dap-profiles">
-        <h2 id="dap-profiles">DAP profiles</h2>
-        <p>
-          Saved profiles can be reopened after restarting Outgroove. Opening a
-          profile only restores its selection; it does not read or change the
-          target until you request a preview. Interrupted syncs are detected at
-          startup, but the target is inspected read-only only when you review a
-          recovery.
-        </p>
-        {syncRecoveries.length > 0 && (
-          <section aria-labelledby="sync-recovery-title" className="preview">
-            <h3 id="sync-recovery-title">Interrupted sync recovery</h3>
-            <p>
-              Review every action before confirming. Recovery never changes
-              source audio and leaves target files with unexpected contents
-              untouched.
-            </p>
-            <ul aria-label="Interrupted sync recoveries">
-              {syncRecoveries.map((recovery) => (
-                <li key={recovery.runId}>
-                  <strong>{recovery.profileName}</strong>
+                )}
+              </div>
+              <p aria-live="polite">
+                {syncAlbums.length} of 100 albums selected
+                {editingSyncProfile
+                  ? ` for the ${editingSyncProfile.name} revision.`
+                  : "."}
+              </p>
+              {syncAlbums.length === 0 ? (
+                <div className="empty compact">
+                  <h3>No albums selected</h3>
                   <p>
-                    Status:{" "}
-                    {recovery.mode === "committed-cleanup"
-                      ? "Sync committed; internal cleanup was interrupted"
-                      : `Interrupted during ${recovery.phase}`}
+                    Choose an album in Library, then use its contextual Sync
+                    action.
                   </p>
-                  <p>{recovery.targetPath}</p>
+                  <button onClick={() => setActiveView("library")}>
+                    Browse Library
+                  </button>
+                </div>
+              ) : (
+                <ul aria-label="Albums selected for DAP sync">
+                  {syncAlbums.map((album) => (
+                    <li key={album.id}>
+                      {album.albumArtist} — {album.title}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="actions">
+                {editingSyncProfile ? (
+                  <>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => void saveSyncProfileAlbums()}
+                    >
+                      Save album selection for {editingSyncProfile.name}
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={cancelSyncProfileAlbumEdit}
+                    >
+                      Cancel album selection changes
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => void chooseTarget()}
+                    >
+                      Choose DAP target
+                    </button>
+                    <button
+                      disabled={busy || syncAlbums.length === 0}
+                      onClick={() => {
+                        setSyncAlbums([]);
+                        setNotice("Cleared the DAP album selection.");
+                      }}
+                    >
+                      Clear selection
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+          {syncStage === "setup" && (
+            <section className="card settings" aria-labelledby="dap-profiles">
+              <h2 id="dap-profiles">DAP profiles</h2>
+              <p>
+                Saved profiles can be reopened after restarting Outgroove.
+                Opening a profile only restores its selection; it does not read
+                or change the target until you request a preview. Interrupted
+                syncs are detected at startup, but the target is inspected
+                read-only only when you review a recovery.
+              </p>
+              {syncProfiles.length === 0 ? (
+                <p>No DAP profiles have been saved yet.</p>
+              ) : (
+                <ul
+                  className="library-root-list"
+                  aria-label="Saved DAP profiles"
+                >
+                  {syncProfiles.map((saved) => (
+                    <li key={saved.id}>
+                      <div>
+                        <strong>{saved.name}</strong>
+                        <span>{saved.targetPath}</span>
+                        <span>
+                          {saved.albums.length} saved{" "}
+                          {saved.albums.length === 1 ? "album" : "albums"}:{" "}
+                          {saved.albums
+                            .map(
+                              (album) =>
+                                `${album.albumArtist} — ${album.title}`,
+                            )
+                            .join("; ")}
+                        </span>
+                      </div>
+                      <div className="library-root-actions">
+                        <button
+                          disabled={busy || Boolean(renamingSyncProfileId)}
+                          aria-pressed={profile?.id === saved.id}
+                          onClick={() => openSyncProfile(saved)}
+                        >
+                          Open DAP profile {saved.name}
+                        </button>
+                        <button
+                          disabled={busy || Boolean(renamingSyncProfileId)}
+                          onClick={() => editSyncProfileAlbums(saved)}
+                        >
+                          Edit albums in DAP profile {saved.name}
+                        </button>
+                        <button
+                          disabled={
+                            busy ||
+                            Boolean(editingSyncProfileId) ||
+                            Boolean(renamingSyncProfileId)
+                          }
+                          onClick={() => void chooseSyncProfileTarget(saved)}
+                        >
+                          Change DAP target for {saved.name}
+                        </button>
+                        {renamingSyncProfileId === saved.id ? (
+                          <form
+                            aria-label={`Rename DAP profile ${saved.name}`}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void renameSyncProfile(saved);
+                            }}
+                          >
+                            <label htmlFor={`sync-profile-name-${saved.id}`}>
+                              New name for {saved.name}
+                            </label>
+                            <input
+                              autoFocus
+                              id={`sync-profile-name-${saved.id}`}
+                              maxLength={100}
+                              value={syncProfileNameDraft}
+                              onChange={(event) =>
+                                setSyncProfileNameDraft(event.target.value)
+                              }
+                            />
+                            <button
+                              disabled={
+                                busy || syncProfileNameDraft.trim().length === 0
+                              }
+                              type="submit"
+                            >
+                              Save DAP profile name
+                            </button>
+                            <button
+                              disabled={busy}
+                              type="button"
+                              onClick={cancelSyncProfileRename}
+                            >
+                              Cancel DAP profile rename
+                            </button>
+                          </form>
+                        ) : (
+                          <button
+                            disabled={
+                              busy ||
+                              Boolean(editingSyncProfileId) ||
+                              Boolean(renamingSyncProfileId)
+                            }
+                            onClick={() => startSyncProfileRename(saved)}
+                          >
+                            Rename DAP profile {saved.name}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {syncTargetPreview && (
+                <section
+                  className="preview"
+                  aria-label="DAP target confirmation"
+                >
+                  <h3>Review DAP target change</h3>
+                  <p>
+                    <strong>{syncTargetPreview.profileName}</strong>
+                  </p>
+                  <p>Current target: {syncTargetPreview.currentTargetPath}</p>
+                  <p>New target: {syncTargetPreview.proposedTargetPath}</p>
+                  <p>
+                    This changes only the saved profile. No source audio or
+                    target files will be read, copied, replaced, or deleted.
+                    Existing sync history stays attached to the profile. A fresh
+                    sync preview will treat ownership separately for this
+                    target.
+                  </p>
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => void applySyncProfileTarget()}
+                  >
+                    Confirm DAP target change
+                  </button>
                   <button
                     disabled={busy}
-                    onClick={() => void reviewSyncRecovery(recovery)}
+                    onClick={() => {
+                      setSyncTargetPreview(undefined);
+                      setNotice("Discarded the DAP target change preview.");
+                    }}
                   >
-                    Review recovery for {recovery.profileName}
+                    Cancel DAP target change
                   </button>
-                  {syncRecoveryPreview?.runId === recovery.runId && (
-                    <div className="preview">
-                      {syncRecoveryPreview.actions.length === 0 ? (
-                        <p>No target changes can currently be applied.</p>
-                      ) : (
-                        <ul
-                          aria-label={`Recovery actions for ${recovery.profileName}`}
-                        >
-                          {syncRecoveryPreview.actions.map((action) => (
-                            <li key={`${action.action}:${action.path}`}>
-                              {action.action === "restore"
-                                ? "Restore"
-                                : "Remove"}
-                              : {action.path}. {action.explanation}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {syncRecoveryPreview.warnings.map((warning) => (
-                        <p key={warning}>Warning: {warning}</p>
-                      ))}
-                      <button
-                        disabled={busy || !syncRecoveryPreview.canRecover}
-                        onClick={() =>
-                          void applySyncRecovery(syncRecoveryPreview)
-                        }
+                </section>
+              )}
+            </section>
+          )}
+          {syncStage === "review" && (
+            <section
+              className="card settings sync-review"
+              aria-labelledby="sync-review-title"
+            >
+              <p className="eyebrow">Preview and apply</p>
+              <h2 id="sync-review-title">Review the active DAP profile</h2>
+              {profile && (
+                <div
+                  className="sync-profile-summary"
+                  aria-label="Active DAP profile"
+                >
+                  <p>
+                    <strong>{profile.name}</strong>
+                    <br />
+                    {profile.targetPath}
+                  </p>
+                  <p>
+                    Status: {profile.albumIds.length} selected{" "}
+                    {profile.albumIds.length === 1 ? "album" : "albums"} saved
+                    in this profile.
+                  </p>
+                  {editingSyncProfile?.id === profile.id && (
+                    <p>Status: Album-selection changes are not saved yet.</p>
+                  )}
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={busy || editingSyncProfile?.id === profile.id}
+                      onClick={() => void planSync()}
+                    >
+                      Preview sync plan
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setSyncStage("setup")}
+                    >
+                      Manage {profile.name}
+                    </button>
+                  </div>
+                  <section
+                    aria-labelledby={`sync-history-${profile.id}`}
+                    className="sync-history"
+                  >
+                    <h3 id={`sync-history-${profile.id}`}>
+                      Successful sync history
+                    </h3>
+                    <p>
+                      Shows only runs whose manifest was committed successfully.
+                      The 20 newest runs are shown in this view.
+                    </p>
+                    {syncHistoryProfileId !== profile.id ||
+                    syncHistoryLoading ? (
+                      <p aria-live="polite">Loading successful sync history…</p>
+                    ) : syncHistory.length === 0 ? (
+                      <p>No successful sync runs have been recorded yet.</p>
+                    ) : (
+                      <ul
+                        aria-label={`Successful sync history for ${profile.name}`}
                       >
-                        Confirm recovery for {recovery.profileName}
+                        {syncHistory.map((item) => (
+                          <li key={item.id}>
+                            <time dateTime={item.completedAt}>
+                              {new Date(item.completedAt).toLocaleString()}
+                            </time>
+                            {" — "}
+                            {item.entryCount}{" "}
+                            {item.entryCount === 1 ? "file" : "files"}
+                            {" — "}
+                            {item.targetPath}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+              )}
+              {syncPlan && (
+                <div className="preview" aria-label="Sync confirmation">
+                  <h3>Sync preview</h3>
+                  <PlanGroup
+                    title="Copies"
+                    items={syncPlan.copies.map(
+                      (item) => item.relativeDestination,
+                    )}
+                  />
+                  <PlanGroup
+                    title="Unchanged / skipped"
+                    items={syncPlan.unchanged.map(
+                      (item) => item.relativeDestination,
+                    )}
+                  />
+                  <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
+                  <PlanGroup title="Errors" items={syncPlan.errors} />
+                  <p>{syncPlan.requiredBytes} bytes required.</p>
+                  <button
+                    className="primary"
+                    disabled={
+                      busy ||
+                      syncPlan.conflicts.length > 0 ||
+                      syncPlan.errors.length > 0
+                    }
+                    onClick={() => void applySync()}
+                  >
+                    Confirm and apply copy plan
+                  </button>
+                  {syncApplyingPlanId === syncPlan.id && (
+                    <div aria-live="polite">
+                      <p>
+                        Status:{" "}
+                        {syncCancellationRequested
+                          ? "Cancelling safely"
+                          : "Sync in progress"}
+                      </p>
+                      <button
+                        disabled={syncCancellationRequested}
+                        onClick={() => void cancelSync()}
+                      >
+                        Cancel active sync
                       </button>
                     </div>
                   )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {syncProfiles.length === 0 ? (
-          <p>No DAP profiles have been saved yet.</p>
-        ) : (
-          <ul className="library-root-list" aria-label="Saved DAP profiles">
-            {syncProfiles.map((saved) => (
-              <li key={saved.id}>
-                <div>
-                  <strong>{saved.name}</strong>
-                  <span>{saved.targetPath}</span>
-                  <span>
-                    {saved.albums.length} saved{" "}
-                    {saved.albums.length === 1 ? "album" : "albums"}:{" "}
-                    {saved.albums
-                      .map((album) => `${album.albumArtist} — ${album.title}`)
-                      .join("; ")}
-                  </span>
                 </div>
-                <div className="library-root-actions">
-                  <button
-                    disabled={busy || Boolean(renamingSyncProfileId)}
-                    aria-pressed={profile?.id === saved.id}
-                    onClick={() => openSyncProfile(saved)}
-                  >
-                    Open DAP profile {saved.name}
+              )}
+            </section>
+          )}
+          {syncStage === "recovery" && (
+            <section
+              className="card settings sync-recovery"
+              aria-labelledby="sync-recovery-title"
+            >
+              <p className="eyebrow">Restart safety</p>
+              <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
+              <p>
+                Review every target action before confirming. Recovery never
+                changes source audio and leaves files with unexpected contents
+                untouched.
+              </p>
+              {syncRecoveries.length === 0 ? (
+                <div className="empty compact">
+                  <h3>No recovery is pending</h3>
+                  <p>
+                    Outgroove has no interrupted target changes requiring
+                    review.
+                  </p>
+                  <button onClick={() => setSyncStage("setup")}>
+                    Return to albums and profiles
                   </button>
-                  <button
-                    disabled={busy || Boolean(renamingSyncProfileId)}
-                    onClick={() => editSyncProfileAlbums(saved)}
-                  >
-                    Edit albums in DAP profile {saved.name}
-                  </button>
-                  {renamingSyncProfileId === saved.id ? (
-                    <form
-                      aria-label={`Rename DAP profile ${saved.name}`}
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void renameSyncProfile(saved);
-                      }}
-                    >
-                      <label htmlFor={`sync-profile-name-${saved.id}`}>
-                        New name for {saved.name}
-                      </label>
-                      <input
-                        autoFocus
-                        id={`sync-profile-name-${saved.id}`}
-                        maxLength={100}
-                        value={syncProfileNameDraft}
-                        onChange={(event) =>
-                          setSyncProfileNameDraft(event.target.value)
-                        }
-                      />
-                      <button
-                        disabled={
-                          busy || syncProfileNameDraft.trim().length === 0
-                        }
-                        type="submit"
-                      >
-                        Save DAP profile name
-                      </button>
+                </div>
+              ) : (
+                <ul
+                  className="sync-recovery-list"
+                  aria-label="Interrupted sync recoveries"
+                >
+                  {syncRecoveries.map((recovery) => (
+                    <li key={recovery.runId}>
+                      <div>
+                        <strong>{recovery.profileName}</strong>
+                        <span>
+                          {recovery.mode === "committed-cleanup"
+                            ? "Sync committed; internal cleanup was interrupted"
+                            : `Interrupted during ${recovery.phase}`}
+                        </span>
+                        <span>{recovery.targetPath}</span>
+                      </div>
                       <button
                         disabled={busy}
-                        type="button"
-                        onClick={cancelSyncProfileRename}
+                        onClick={() => void reviewSyncRecovery(recovery)}
                       >
-                        Cancel DAP profile rename
+                        Review recovery for {recovery.profileName}
                       </button>
-                    </form>
-                  ) : (
-                    <button
-                      disabled={
-                        busy ||
-                        Boolean(editingSyncProfileId) ||
-                        Boolean(renamingSyncProfileId)
-                      }
-                      onClick={() => startSyncProfileRename(saved)}
-                    >
-                      Rename DAP profile {saved.name}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {profile && (
-          <div aria-label="Active DAP profile">
-            <p>
-              <strong>{profile.name}</strong>
-              <br />
-              {profile.targetPath}
-            </p>
-            <p>
-              Status: {profile.albumIds.length} selected{" "}
-              {profile.albumIds.length === 1 ? "album" : "albums"} saved in this
-              profile.
-            </p>
-            {editingSyncProfile?.id === profile.id && (
-              <p>Status: Album-selection changes are not saved yet.</p>
-            )}
-            <button
-              disabled={busy || editingSyncProfile?.id === profile.id}
-              onClick={() => void planSync()}
-            >
-              Preview sync plan
-            </button>
-            <section
-              aria-labelledby={`sync-history-${profile.id}`}
-              className="preview"
-            >
-              <h3 id={`sync-history-${profile.id}`}>Successful sync history</h3>
-              <p>
-                Shows only runs whose manifest was committed successfully. The
-                20 newest runs are shown in this view.
-              </p>
-              {syncHistoryProfileId !== profile.id || syncHistoryLoading ? (
-                <p aria-live="polite">Loading successful sync history…</p>
-              ) : syncHistory.length === 0 ? (
-                <p>No successful sync runs have been recorded yet.</p>
-              ) : (
-                <ul aria-label={`Successful sync history for ${profile.name}`}>
-                  {syncHistory.map((item) => (
-                    <li key={item.id}>
-                      <time dateTime={item.completedAt}>
-                        {new Date(item.completedAt).toLocaleString()}
-                      </time>
-                      {" — "}
-                      {item.entryCount}{" "}
-                      {item.entryCount === 1 ? "file" : "files"}
-                      {" — "}
-                      {item.targetPath}
+                      {syncRecoveryPreview?.runId === recovery.runId && (
+                        <section
+                          className="preview"
+                          aria-label={`Recovery confirmation for ${recovery.profileName}`}
+                        >
+                          <h3>Exact recovery actions</h3>
+                          {syncRecoveryPreview.actions.length === 0 ? (
+                            <p>No target changes can currently be applied.</p>
+                          ) : (
+                            <ul
+                              aria-label={`Recovery actions for ${recovery.profileName}`}
+                            >
+                              {syncRecoveryPreview.actions.map((action) => (
+                                <li key={`${action.action}:${action.path}`}>
+                                  {action.action === "restore"
+                                    ? "Restore"
+                                    : "Remove"}
+                                  : {action.path}. {action.explanation}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {syncRecoveryPreview.warnings.map((warning) => (
+                            <p key={warning} role="alert">
+                              Warning: {warning}
+                            </p>
+                          ))}
+                          <button
+                            className="primary"
+                            disabled={busy || !syncRecoveryPreview.canRecover}
+                            onClick={() =>
+                              void applySyncRecovery(syncRecoveryPreview)
+                            }
+                          >
+                            Confirm recovery for {recovery.profileName}
+                          </button>
+                        </section>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </section>
-          </div>
-        )}
-        {syncPlan && (
-          <div className="preview" aria-label="Sync confirmation">
-            <h3>Sync preview</h3>
-            <PlanGroup
-              title="Copies"
-              items={syncPlan.copies.map((item) => item.relativeDestination)}
+          )}
+        </main>
+      )}
+      {activeView === "settings" && (
+        <main className="settings-view">
+          <section className="settings-workflow-header">
+            <div>
+              <p className="eyebrow">Local application settings</p>
+              <h2>Choose what to manage</h2>
+              <p>
+                Library roots and database replacement are separate safety
+                workflows. Audio and DAP files are never included in a database
+                backup or restore.
+              </p>
+            </div>
+            <SettingsNavigation
+              activeSection={settingsSection}
+              hasRestorePreview={Boolean(restorePreview)}
+              onSelect={setSettingsSection}
             />
-            <PlanGroup
-              title="Unchanged / skipped"
-              items={syncPlan.unchanged.map((item) => item.relativeDestination)}
-            />
-            <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-            <PlanGroup title="Errors" items={syncPlan.errors} />
-            <p>{syncPlan.requiredBytes} bytes required.</p>
-            <button
-              className="primary"
-              disabled={
-                busy ||
-                syncPlan.conflicts.length > 0 ||
-                syncPlan.errors.length > 0
-              }
-              onClick={() => void applySync()}
+          </section>
+          {settingsSection === "library-folders" && (
+            <section
+              className="card settings"
+              aria-labelledby="watched-library-folders"
             >
-              Confirm and apply copy plan
-            </button>
-            {syncApplyingPlanId === syncPlan.id && (
-              <div aria-live="polite">
-                <p>
-                  Status:{" "}
-                  {syncCancellationRequested
-                    ? "Cancelling safely"
-                    : "Sync in progress"}
-                </p>
-                <button
-                  disabled={syncCancellationRequested}
-                  onClick={() => void cancelSync()}
+              <h2 id="watched-library-folders">Watched Library folders</h2>
+              <p>
+                Outgroove scans only folders you explicitly choose. Rescanning
+                reads that folder through the existing incremental scan and
+                never changes audio files.
+              </p>
+              {libraryRoots.length === 0 ? (
+                <p>No Library folders have been chosen yet.</p>
+              ) : (
+                <ul className="library-root-list">
+                  {libraryRoots.map((root) => {
+                    const isCurrent = root.id === rootId;
+                    const isScanning = scanActive && scanJob.rootId === root.id;
+                    return (
+                      <li key={root.id}>
+                        <div>
+                          <strong>{root.path}</strong>
+                          <span>
+                            Status: {isScanning ? "Scan in progress" : null}
+                            {isScanning && root.lastScanAt ? " · " : null}
+                            {root.lastScanAt ? (
+                              <>
+                                Last scanned{" "}
+                                <time dateTime={root.lastScanAt}>
+                                  {new Date(root.lastScanAt).toLocaleString()}
+                                </time>
+                              </>
+                            ) : isScanning ? null : (
+                              "Never scanned"
+                            )}
+                          </span>
+                          {isCurrent && <span>Current scan target</span>}
+                        </div>
+                        <div className="library-root-actions">
+                          <button
+                            disabled={busy || scanActive}
+                            onClick={() => void startScan(root.id)}
+                          >
+                            Scan folder {root.path}
+                          </button>
+                          <button
+                            disabled={busy || scanActive}
+                            onClick={() => void previewRootRemoval(root.id)}
+                          >
+                            Stop watching {root.path}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {rootRemovalPreview && (
+                <div
+                  className="preview"
+                  aria-label="Library folder removal preview"
                 >
-                  Cancel active sync
+                  <h3>Stop watching this Library folder?</h3>
+                  <p>
+                    <strong>{rootRemovalPreview.path}</strong>
+                  </p>
+                  <dl>
+                    <dt>Visible tracks hidden</dt>
+                    <dd>{rootRemovalPreview.visibleTracks}</dd>
+                    <dt>Albums no longer visible</dt>
+                    <dd>{rootRemovalPreview.albumsHidden}</dd>
+                    <dt>Scan problems hidden</dt>
+                    <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
+                  </dl>
+                  <p>
+                    <strong>No audio or DAP files will be deleted.</strong>{" "}
+                    Catalog identities, edit history, DAP profiles, sync
+                    manifests, and scan history are retained. Choosing this
+                    folder again reuses its catalog identity and requires a
+                    rescan before tracks reappear.
+                  </p>
+                  <div className="actions">
+                    <button
+                      className="primary"
+                      disabled={busy || scanActive}
+                      onClick={() => void applyRootRemoval()}
+                    >
+                      Confirm stop watching
+                    </button>
+                    <button
+                      disabled={busy}
+                      onClick={() => setRootRemovalPreview(undefined)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+          {settingsSection === "database" && (
+            <section
+              className="card settings"
+              aria-labelledby="database-safety"
+            >
+              <h2 id="database-safety">Database safety</h2>
+              <p>
+                Backups contain the local catalog, edit history, and DAP
+                profiles, but never copy or change audio files.
+              </p>
+              <div className="actions">
+                <button
+                  disabled={busy || scanActive}
+                  onClick={() => void createBackup()}
+                >
+                  Create database backup
+                </button>
+                <button
+                  disabled={busy || scanActive}
+                  onClick={() => void chooseRestore()}
+                >
+                  Restore from backup
                 </button>
               </div>
-            )}
-          </div>
-        )}
-      </section>
-      <section
-        className="card settings"
-        aria-labelledby="watched-library-folders"
-      >
-        <h2 id="watched-library-folders">Watched Library folders</h2>
-        <p>
-          Outgroove scans only folders you explicitly choose. Rescanning reads
-          that folder through the existing incremental scan and never changes
-          audio files.
-        </p>
-        {libraryRoots.length === 0 ? (
-          <p>No Library folders have been chosen yet.</p>
-        ) : (
-          <ul className="library-root-list">
-            {libraryRoots.map((root) => {
-              const isCurrent = root.id === rootId;
-              const isScanning = scanActive && scanJob.rootId === root.id;
-              return (
-                <li key={root.id}>
-                  <div>
-                    <strong>{root.path}</strong>
-                    <span>
-                      Status: {isScanning ? "Scan in progress" : null}
-                      {isScanning && root.lastScanAt ? " · " : null}
-                      {root.lastScanAt ? (
-                        <>
-                          Last scanned{" "}
-                          <time dateTime={root.lastScanAt}>
-                            {new Date(root.lastScanAt).toLocaleString()}
-                          </time>
-                        </>
-                      ) : isScanning ? null : (
-                        "Never scanned"
-                      )}
-                    </span>
-                    {isCurrent && <span>Current scan target</span>}
-                  </div>
-                  <div className="library-root-actions">
+              {restorePreview && (
+                <div
+                  className="preview"
+                  aria-label="Database restore confirmation"
+                >
+                  <h3>Review database replacement</h3>
+                  <p>
+                    <strong>{restorePreview.sourceName}</strong> passed
+                    integrity and schema checks. Restoring replaces the current
+                    Outgroove database and restarts the app. Source audio and
+                    DAP files are untouched.
+                  </p>
+                  <dl>
+                    <dt>Library roots</dt>
+                    <dd>{restorePreview.summary.libraryRoots}</dd>
+                    <dt>Albums</dt>
+                    <dd>{restorePreview.summary.albums}</dd>
+                    <dt>Tracks</dt>
+                    <dd>{restorePreview.summary.tracks}</dd>
+                    <dt>DAP profiles</dt>
+                    <dd>{restorePreview.summary.syncProfiles}</dd>
+                    <dt>Saved Library filters</dt>
+                    <dd>{restorePreview.summary.savedLibraryFilters}</dd>
+                    <dt>Schema</dt>
+                    <dd>Version {restorePreview.schemaVersion}</dd>
+                  </dl>
+                  <p>
+                    Outgroove creates and verifies an automatic rollback backup
+                    before replacing anything.
+                  </p>
+                  <div className="actions">
                     <button
+                      className="primary"
                       disabled={busy || scanActive}
-                      onClick={() => void startScan(root.id)}
+                      onClick={() => void applyRestore()}
                     >
-                      Scan folder {root.path}
+                      Confirm restore and restart
                     </button>
                     <button
-                      disabled={busy || scanActive}
-                      onClick={() => void previewRootRemoval(root.id)}
+                      disabled={busy}
+                      onClick={() => setRestorePreview(undefined)}
                     >
-                      Stop watching {root.path}
+                      Cancel restore
                     </button>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {rootRemovalPreview && (
-          <div className="preview" aria-label="Library folder removal preview">
-            <h3>Stop watching this Library folder?</h3>
-            <p>
-              <strong>{rootRemovalPreview.path}</strong>
-            </p>
-            <dl>
-              <dt>Visible tracks hidden</dt>
-              <dd>{rootRemovalPreview.visibleTracks}</dd>
-              <dt>Albums no longer visible</dt>
-              <dd>{rootRemovalPreview.albumsHidden}</dd>
-              <dt>Scan problems hidden</dt>
-              <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
-            </dl>
-            <p>
-              <strong>No audio or DAP files will be deleted.</strong> Catalog
-              identities, edit history, DAP profiles, sync manifests, and scan
-              history are retained. Choosing this folder again reuses its
-              catalog identity and requires a rescan before tracks reappear.
-            </p>
-            <div className="actions">
-              <button
-                className="primary"
-                disabled={busy || scanActive}
-                onClick={() => void applyRootRemoval()}
-              >
-                Confirm stop watching
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => setRootRemovalPreview(undefined)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-      <section className="card settings" aria-labelledby="database-safety">
-        <h2 id="database-safety">Database safety</h2>
-        <p>
-          Backups contain the local catalog, edit history, and DAP profiles, but
-          never copy or change audio files.
-        </p>
-        <div className="actions">
-          <button
-            disabled={busy || scanActive}
-            onClick={() => void createBackup()}
-          >
-            Create database backup
-          </button>
-          <button
-            disabled={busy || scanActive}
-            onClick={() => void chooseRestore()}
-          >
-            Restore from backup
-          </button>
-        </div>
-        {restorePreview && (
-          <div className="preview" aria-label="Database restore confirmation">
-            <h3>Review database replacement</h3>
-            <p>
-              <strong>{restorePreview.sourceName}</strong> passed integrity and
-              schema checks. Restoring replaces the current Outgroove database
-              and restarts the app. Source audio and DAP files are untouched.
-            </p>
-            <dl>
-              <dt>Library roots</dt>
-              <dd>{restorePreview.summary.libraryRoots}</dd>
-              <dt>Albums</dt>
-              <dd>{restorePreview.summary.albums}</dd>
-              <dt>Tracks</dt>
-              <dd>{restorePreview.summary.tracks}</dd>
-              <dt>DAP profiles</dt>
-              <dd>{restorePreview.summary.syncProfiles}</dd>
-              <dt>Saved Library filters</dt>
-              <dd>{restorePreview.summary.savedLibraryFilters}</dd>
-              <dt>Schema</dt>
-              <dd>Version {restorePreview.schemaVersion}</dd>
-            </dl>
-            <p>
-              Outgroove creates and verifies an automatic rollback backup before
-              replacing anything.
-            </p>
-            <div className="actions">
-              <button
-                className="primary"
-                disabled={busy || scanActive}
-                onClick={() => void applyRestore()}
-              >
-                Confirm restore and restart
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => setRestorePreview(undefined)}
-              >
-                Cancel restore
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
+                </div>
+              )}
+            </section>
+          )}
+        </main>
+      )}
+    </ApplicationShell>
   );
 }
 
