@@ -792,7 +792,7 @@ export function App(): React.JSX.Element {
       }
       case "sequence":
         target = "sequence";
-        setWorkbenchTool("batch");
+        setWorkbenchTool("sequence");
         break;
       case "batch-track-artist":
         setBatchEnabled({
@@ -2427,7 +2427,8 @@ export function App(): React.JSX.Element {
                   )}
                   {(activeView === "library" ||
                     workbenchTool === "overview" ||
-                    workbenchTool === "batch") && (
+                    workbenchTool === "batch" ||
+                    workbenchTool === "sequence") && (
                     <section
                       className="album-tracks"
                       aria-labelledby="album-tracks-title"
@@ -2448,6 +2449,13 @@ export function App(): React.JSX.Element {
                             busy={busy}
                             key={track.id}
                             mode={activeView}
+                            selectionPurpose={
+                              workbenchTool === "sequence"
+                                ? "track ordering"
+                                : workbenchTool === "batch"
+                                  ? "shared-field editing"
+                                  : "shared metadata or track ordering"
+                            }
                             selectedForBatch={batchTrackIds.includes(track.id)}
                             track={track}
                             onEdit={() => editTrack(track)}
@@ -2457,6 +2465,54 @@ export function App(): React.JSX.Element {
                       </div>
                     </section>
                   )}
+                  {activeView === "workbench" &&
+                    (workbenchTool === "batch" ||
+                      workbenchTool === "sequence") && (
+                      <section
+                        className="selection-toolbar"
+                        aria-label="Selected tracks"
+                      >
+                        <div>
+                          <p className="eyebrow">Shared selection</p>
+                          <h3>
+                            {batchTrackIds.length} of{" "}
+                            {selectedAlbum.tracks.length} tracks selected
+                          </h3>
+                          <p>
+                            The same selection is kept when you switch between
+                            Shared fields and Track order.
+                          </p>
+                        </div>
+                        <div className="actions">
+                          <button
+                            disabled={busy}
+                            onClick={() => {
+                              setBatchTrackIds(
+                                selectedAlbum.tracks.map((track) => track.id),
+                              );
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                              setSequencePreview(undefined);
+                              setSequenceResult(undefined);
+                            }}
+                          >
+                            Select all tracks
+                          </button>
+                          <button
+                            disabled={busy || batchTrackIds.length === 0}
+                            onClick={() => {
+                              setBatchTrackIds([]);
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                              setSequencePreview(undefined);
+                              setSequenceResult(undefined);
+                            }}
+                          >
+                            Clear selection
+                          </button>
+                        </div>
+                      </section>
+                    )}
                   {activeView === "workbench" && workbenchTool === "batch" && (
                     <section
                       className="card"
@@ -2464,38 +2520,13 @@ export function App(): React.JSX.Element {
                       ref={batchEditorRef}
                       tabIndex={-1}
                     >
-                      <h3>Workbench · batch metadata</h3>
+                      <p className="eyebrow">Shared-field workflow</p>
+                      <h3>Edit shared metadata</h3>
                       <p>
                         {batchTrackIds.length} tracks selected. Enable only the
                         shared fields you intend to write. Track titles and
                         track numbers stay in the single-track editor.
                       </p>
-                      <div className="actions">
-                        <button
-                          disabled={busy}
-                          onClick={() => {
-                            setBatchTrackIds(
-                              selectedAlbum.tracks.map((track) => track.id),
-                            );
-                            setBatchPreview(undefined);
-                            setSequencePreview(undefined);
-                            setSequenceResult(undefined);
-                          }}
-                        >
-                          Select all tracks
-                        </button>
-                        <button
-                          disabled={busy || batchTrackIds.length === 0}
-                          onClick={() => {
-                            setBatchTrackIds([]);
-                            setBatchPreview(undefined);
-                            setSequencePreview(undefined);
-                            setSequenceResult(undefined);
-                          }}
-                        >
-                          Clear selection
-                        </button>
-                      </div>
                       <div className="field-grid">
                         <label>
                           <span>
@@ -2508,6 +2539,7 @@ export function App(): React.JSX.Element {
                                   artist: event.target.checked,
                                 }));
                                 setBatchPreview(undefined);
+                                setBatchResult(undefined);
                               }}
                             />
                             Change track artist
@@ -2516,12 +2548,14 @@ export function App(): React.JSX.Element {
                             aria-label="Batch track artist value"
                             disabled={!batchEnabled.artist}
                             value={batchDraft.artist}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setBatchDraft((draft) => ({
                                 ...draft,
                                 artist: event.target.value,
-                              }))
-                            }
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
                           />
                         </label>
                         <label>
@@ -2535,6 +2569,7 @@ export function App(): React.JSX.Element {
                                   albumArtist: event.target.checked,
                                 }));
                                 setBatchPreview(undefined);
+                                setBatchResult(undefined);
                               }}
                             />
                             Change album artist
@@ -2543,12 +2578,14 @@ export function App(): React.JSX.Element {
                             aria-label="Batch album artist value"
                             disabled={!batchEnabled.albumArtist}
                             value={batchDraft.albumArtist}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setBatchDraft((draft) => ({
                                 ...draft,
                                 albumArtist: event.target.value,
-                              }))
-                            }
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
                           />
                         </label>
                         <label>
@@ -2562,6 +2599,7 @@ export function App(): React.JSX.Element {
                                   discNumber: event.target.checked,
                                 }));
                                 setBatchPreview(undefined);
+                                setBatchResult(undefined);
                               }}
                             />
                             Change disc number
@@ -2574,12 +2612,14 @@ export function App(): React.JSX.Element {
                             placeholder="Empty clears the value"
                             disabled={!batchEnabled.discNumber}
                             value={batchDraft.discNumber}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setBatchDraft((draft) => ({
                                 ...draft,
                                 discNumber: event.target.value,
-                              }))
-                            }
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
                           />
                         </label>
                         <label>
@@ -2593,6 +2633,7 @@ export function App(): React.JSX.Element {
                                   year: event.target.checked,
                                 }));
                                 setBatchPreview(undefined);
+                                setBatchResult(undefined);
                               }}
                             />
                             Change release date
@@ -2602,16 +2643,19 @@ export function App(): React.JSX.Element {
                             placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
                             disabled={!batchEnabled.year}
                             value={batchDraft.year}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setBatchDraft((draft) => ({
                                 ...draft,
                                 year: event.target.value,
-                              }))
-                            }
+                              }));
+                              setBatchPreview(undefined);
+                              setBatchResult(undefined);
+                            }}
                           />
                         </label>
                       </div>
                       <button
+                        className="primary"
                         disabled={
                           busy ||
                           batchTrackIds.length < 2 ||
@@ -2699,13 +2743,18 @@ export function App(): React.JSX.Element {
                           </ul>
                         </div>
                       )}
-                      <div
-                        className="preview"
+                    </section>
+                  )}
+                  {activeView === "workbench" &&
+                    workbenchTool === "sequence" && (
+                      <section
+                        className="card sequence-editor"
                         aria-label="Track number sequencing"
                         ref={sequenceEditorRef}
                         tabIndex={-1}
                       >
-                        <h4>Sequence track numbers</h4>
+                        <p className="eyebrow">Track-order workflow</p>
+                        <h3>Sequence track numbers</h3>
                         <p>
                           Outgroove uses exactly the order below. Reorder it
                           explicitly before previewing; file names and existing
@@ -2743,47 +2792,53 @@ export function App(): React.JSX.Element {
                             })}
                           </ol>
                         )}
-                        <label>
-                          Starting track number
-                          <input
-                            type="number"
-                            min="1"
-                            max="9999"
-                            value={sequenceStart}
-                            onChange={(event) => {
-                              setSequenceStart(event.target.value);
-                              setSequencePreview(undefined);
-                            }}
-                          />
-                        </label>
-                        <div>
+                        <div className="sequence-settings">
                           <label>
-                            <input
-                              type="checkbox"
-                              checked={sequenceDiscEnabled}
-                              onChange={(event) => {
-                                setSequenceDiscEnabled(event.target.checked);
-                                setSequencePreview(undefined);
-                              }}
-                            />
-                            Set one disc number for this sequence
-                          </label>
-                          <label>
-                            Sequence disc number
+                            Starting track number
                             <input
                               type="number"
                               min="1"
-                              max="999"
-                              disabled={!sequenceDiscEnabled}
-                              value={sequenceDiscNumber}
+                              max="9999"
+                              value={sequenceStart}
                               onChange={(event) => {
-                                setSequenceDiscNumber(event.target.value);
+                                setSequenceStart(event.target.value);
                                 setSequencePreview(undefined);
+                                setSequenceResult(undefined);
                               }}
                             />
                           </label>
+                          <div className="disc-assignment">
+                            <label className="checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={sequenceDiscEnabled}
+                                onChange={(event) => {
+                                  setSequenceDiscEnabled(event.target.checked);
+                                  setSequencePreview(undefined);
+                                  setSequenceResult(undefined);
+                                }}
+                              />
+                              Set one disc number for this sequence
+                            </label>
+                            <label>
+                              Sequence disc number
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                disabled={!sequenceDiscEnabled}
+                                value={sequenceDiscNumber}
+                                onChange={(event) => {
+                                  setSequenceDiscNumber(event.target.value);
+                                  setSequencePreview(undefined);
+                                  setSequenceResult(undefined);
+                                }}
+                              />
+                            </label>
+                          </div>
                         </div>
                         <button
+                          className="primary"
                           disabled={
                             busy ||
                             batchTrackIds.length < 2 ||
@@ -2868,9 +2923,8 @@ export function App(): React.JSX.Element {
                             </ul>
                           </div>
                         )}
-                      </div>
-                    </section>
-                  )}
+                      </section>
+                    )}
                   {activeView === "workbench" &&
                     workbenchTool === "track" &&
                     selectedTrack && (

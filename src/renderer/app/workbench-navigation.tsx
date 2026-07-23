@@ -1,4 +1,5 @@
-export type WorkbenchTool = "overview" | "album" | "track" | "batch";
+export type WorkbenchTool =
+  "overview" | "album" | "track" | "batch" | "sequence";
 
 const tools: readonly {
   readonly id: Exclude<WorkbenchTool, "track">;
@@ -6,7 +7,8 @@ const tools: readonly {
 }[] = [
   { id: "overview", label: "Album overview" },
   { id: "album", label: "Album title" },
-  { id: "batch", label: "Batch and sequencing" },
+  { id: "batch", label: "Shared fields" },
+  { id: "sequence", label: "Track order" },
 ];
 
 export function WorkbenchNavigation({

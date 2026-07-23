@@ -25,7 +25,7 @@ async function openPrimaryView(
 
 async function openWorkbenchTool(
   user: ReturnType<typeof userEvent.setup>,
-  name: "Album title" | "Batch and sequencing",
+  name: "Album title" | "Shared fields" | "Track order",
 ): Promise<void> {
   await openPrimaryView(user, "Workbench");
   await user.click(screen.getByRole("button", { name }));
@@ -685,7 +685,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
-    await openWorkbenchTool(user, "Batch and sequencing");
+    await openWorkbenchTool(user, "Shared fields");
     await user.click(screen.getByRole("button", { name: "Select all tracks" }));
     const previewButton = screen.getByRole("button", {
       name: "Preview selected tracks",
@@ -711,8 +711,40 @@ describe("tag edit UI safety states", () => {
       fileIds: batchAlbum.tracks.map((track) => track.id),
       changes: { artist: "Batch Artist" },
     });
+    await user.type(
+      screen.getByLabelText("Batch track artist value"),
+      " revised",
+    );
+    expect(
+      screen.queryByLabelText("Batch confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(previewButton);
+    expect(preview).toHaveBeenLastCalledWith({
+      fileIds: batchAlbum.tracks.map((track) => track.id),
+      changes: { artist: "Batch Artist revised" },
+    });
+    expect(
+      screen.queryByLabelText("Track number sequencing"),
+    ).not.toBeInTheDocument();
+    const trackOrder = screen.getByRole("button", { name: "Track order" });
+    trackOrder.focus();
+    await user.keyboard("{Enter}");
+    expect(trackOrder).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("Track number sequencing")).toBeVisible();
+    expect(screen.getByLabelText("Selected tracks")).toHaveTextContent(
+      "2 of 2 tracks selected",
+    );
+    expect(
+      screen.queryByLabelText("Batch metadata editor"),
+    ).not.toBeInTheDocument();
+    const sharedFields = screen.getByRole("button", { name: "Shared fields" });
+    sharedFields.focus();
+    await user.keyboard("{Enter}");
+    expect(sharedFields).toHaveAttribute("aria-current", "page");
+    const restoredConfirmation = screen.getByLabelText("Batch confirmation");
+    expect(restoredConfirmation).toBeVisible();
     await user.click(
-      within(confirmation).getByRole("button", {
+      within(restoredConfirmation).getByRole("button", {
         name: "Confirm and write selected tracks",
       }),
     );
@@ -819,7 +851,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
-    await openWorkbenchTool(user, "Batch and sequencing");
+    await openWorkbenchTool(user, "Track order");
     await user.click(screen.getByRole("button", { name: "Select all tracks" }));
     await user.click(
       screen.getByRole("button", { name: "Move Second Track up" }),
@@ -917,16 +949,16 @@ describe("tag edit UI safety states", () => {
 
     expect(
       screen.getByRole("checkbox", {
-        name: "Select Duplicate A for batch edit",
+        name: "Select Duplicate A for track ordering",
       }),
     ).toBeChecked();
     expect(
       screen.getByRole("checkbox", {
-        name: "Select Duplicate B for batch edit",
+        name: "Select Duplicate B for track ordering",
       }),
     ).toBeChecked();
     expect(
-      screen.getByRole("checkbox", { name: "Select Track for batch edit" }),
+      screen.getByRole("checkbox", { name: "Select Track for track ordering" }),
     ).not.toBeChecked();
     expect(screen.getByLabelText("Track number sequencing")).toHaveFocus();
     expect(previewSequence).not.toHaveBeenCalled();
@@ -995,7 +1027,7 @@ describe("tag edit UI safety states", () => {
     ).toBeChecked();
     expect(screen.getByLabelText("Batch album artist value")).toHaveValue("");
     expect(
-      screen.getAllByRole("checkbox", { name: /for batch edit/u }),
+      screen.getAllByRole("checkbox", { name: /for shared-field editing/u }),
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ checked: true }),
