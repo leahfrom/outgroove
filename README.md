@@ -4,6 +4,7 @@ Outgroove is a local-first Electron application for understanding a local music 
 
 ## What works
 
+- Use a persistent desktop shell to move between contextual Library, Workbench, Sync, Activity, and Settings views without losing the current Library search, album/track context, edit draft or unconfirmed preview, or DAP selection. Library offers contextual entry points; Workbench discloses one metadata workflow at a time; Sync owns DAP selection and review.
 - Choose Library folders with a native dialog, see every watched folder and its last successful scan, explicitly rescan one folder, or preview and confirm that Outgroove should stop watching it without deleting audio or durable history.
 - Observe a persisted scan job, cancel it safely from the UI, and retry completed, cancelled, failed, or restart-interrupted scans through the incremental path.
 - Store normalized and native tag views, technical properties, per-file failures, incremental scan signatures, and restart-safe sync recovery journals in schema-v17 migrated SQLite.
@@ -27,7 +28,7 @@ No provider calls, telemetry, source moves, transcoding, target deletions, mirro
 
 - Node.js 24 or newer
 - npm 11 or newer
-- macOS, Windows, or Linux for development; only macOS arm64 has been packaged and smoke-tested locally so far
+- macOS, Windows, or Linux for development; v0.8.0 was packaged and smoke-tested on macOS arm64 and native Windows x64, with Linux x64 verified under Debian container emulation
 
 Install exactly from the lockfile:
 
@@ -171,7 +172,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
 - Scan jobs run high-volume discovery/stat, metadata parsing, and SQLite classification/write batches outside Electron main, show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. The scan-scoped database worker closes after finish/abandon so backup restore does not race an idle SQLite handle. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
-- macOS arm64 is the only packaged platform verified locally. Windows and Linux package jobs run in CI; manual packaged Windows locking/rename behavior, macOS Intel, Linux storage behavior, and real exFAT/DAP tests remain unverified.
+- The current UI shell is verified locally on macOS arm64. Its native Windows and Linux font, input, accessibility, and narrow-window behavior remain to be checked in a future cross-platform UI milestone. Manual macOS Intel, Linux storage behavior, and real exFAT/DAP tests also remain unverified.
 - Packages are unsigned and not notarized.
 
 ## Repository boundaries

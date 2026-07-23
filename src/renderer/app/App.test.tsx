@@ -11,6 +11,26 @@ import type {
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import { App } from "./App";
 
+async function openPrimaryView(
+  user: ReturnType<typeof userEvent.setup>,
+  name: "Library" | "Workbench" | "Sync" | "Activity" | "Settings",
+): Promise<void> {
+  const navigation = screen.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  await user.click(
+    within(navigation).getByRole("button", { name: new RegExp(`^${name}`) }),
+  );
+}
+
+async function openWorkbenchTool(
+  user: ReturnType<typeof userEvent.setup>,
+  name: "Album title" | "Batch and sequencing",
+): Promise<void> {
+  await openPrimaryView(user, "Workbench");
+  await user.click(screen.getByRole("button", { name }));
+}
+
 const album: CatalogAlbum = {
   id: "4438e3e0-a489-4be4-b75c-1fb0d62c435a",
   title: "Fixture Album",
@@ -202,6 +222,83 @@ describe("tag edit UI safety states", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses keyboard-operable primary navigation with one current view", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    expect(
+      within(navigation).getByRole("button", { name: /^Library/u }),
+    ).toHaveAttribute("aria-current", "page");
+
+    const activity = within(navigation).getByRole("button", {
+      name: /^Activity/u,
+    });
+    activity.focus();
+    await user.keyboard("{Enter}");
+
+    expect(activity).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Activity" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+  });
+
+  it("preserves Library search and view state across navigation", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const search = await screen.findByRole("searchbox", {
+      name: "Search Library",
+    });
+    await user.type(search, "Fixture");
+    await user.selectOptions(screen.getByLabelText("View"), "tracks");
+
+    await openPrimaryView(user, "Settings");
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+    await openPrimaryView(user, "Library");
+
+    expect(
+      screen.getByRole("searchbox", { name: "Search Library" }),
+    ).toHaveValue("Fixture");
+    expect(screen.getByLabelText("View")).toHaveValue("tracks");
+  });
+
+  it("preserves an unconfirmed Workbench preview across navigation", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
+    await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
+    await user.click(
+      screen.getByRole("button", { name: "Preview per-file changes" }),
+    );
+    expect(await screen.findByLabelText("Tag edit confirmation")).toBeVisible();
+
+    await openPrimaryView(user, "Settings");
+    expect(
+      screen.queryByLabelText("Tag edit confirmation"),
+    ).not.toBeInTheDocument();
+    await openPrimaryView(user, "Workbench");
+
+    expect(screen.getByLabelText("Tag edit confirmation")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Confirm and write 1 files" }),
+    ).toBeEnabled();
+  });
+
   it("shows complete technical details with keyboard-accessible disclosure", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,
@@ -235,6 +332,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
     await user.click(
       screen.getByRole("button", { name: "Preview per-file changes" }),
@@ -257,6 +355,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openPrimaryView(user, "Workbench");
     await user.click(
       screen.getByRole("button", { name: "Edit track metadata" }),
     );
@@ -302,6 +401,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openPrimaryView(user, "Workbench");
     await user.click(
       screen.getByRole("button", { name: "Edit track metadata" }),
     );
@@ -462,6 +562,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Batch and sequencing");
     await user.click(screen.getByRole("button", { name: "Select all tracks" }));
     const previewButton = screen.getByRole("button", {
       name: "Preview selected tracks",
@@ -496,6 +597,7 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByText(/1 writes verified; 1 failed/u),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Album title" }));
     await user.click(
       screen.getByRole("button", { name: "Preview batch undo" }),
     );
@@ -594,6 +696,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Batch and sequencing");
     await user.click(screen.getByRole("button", { name: "Select all tracks" }));
     await user.click(
       screen.getByRole("button", { name: "Move Second Track up" }),
@@ -872,6 +975,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
     await user.click(
       screen.getByRole("button", { name: "Preview per-file changes" }),
@@ -950,6 +1054,8 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     const history = await screen.findByLabelText("Metadata edit history");
     expect(
       await within(history).findByText("Changed title to “Renamed Album”"),
@@ -1049,6 +1155,8 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     const history = await screen.findByLabelText("Metadata edit history");
     await user.click(
       await within(history).findByRole("button", {
@@ -1128,6 +1236,8 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     const history = await screen.findByLabelText("Metadata edit history");
     await user.click(
       await within(history).findByRole("button", {
@@ -1195,6 +1305,8 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Album title");
     await user.click(
       await screen.findByRole("button", { name: "Preview undo" }),
     );
@@ -1240,7 +1352,9 @@ describe("tag edit UI safety states", () => {
       configurable: true,
       value: mockApi,
     });
+    const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Activity");
     expect(await screen.findByText("Library scan: interrupted")).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
@@ -1287,6 +1401,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
 
     const roots = await screen.findByRole("region", {
       name: "Watched Library folders",
@@ -1339,7 +1454,9 @@ describe("tag edit UI safety states", () => {
       configurable: true,
       value: mockApi,
     });
+    const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
     expect(await screen.findByText("Status: Never scanned")).toBeVisible();
 
     act(() => {
@@ -1406,6 +1523,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
 
     const stop = await screen.findByRole("button", {
       name: "Stop watching /fixture",
@@ -1475,6 +1593,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
     await user.click(
       await screen.findByRole("button", { name: "Stop watching /fixture" }),
     );
@@ -1523,6 +1642,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Activity");
     await user.click(
       await screen.findByRole("button", { name: "Cancel scan" }),
     );
@@ -1560,7 +1680,9 @@ describe("tag edit UI safety states", () => {
       configurable: true,
       value: mockApi,
     });
+    const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Activity");
     expect(
       await screen.findByText(
         "Discovering: 17 audio files found, 2 folder problems.",
@@ -2344,6 +2466,7 @@ describe("tag edit UI safety states", () => {
       firstTrack.tags.title,
     );
     expect(previewTrackTagEdit).not.toHaveBeenCalled();
+    await openPrimaryView(user, "Library");
     expect(
       screen.getByRole("button", { name: "Show all albums" }),
     ).toBeVisible();
@@ -2705,13 +2828,14 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     const addFirst = await screen.findByRole("button", {
-      name: "Add Fixture Album to DAP selection",
+      name: "Add Fixture Album to Sync",
     });
     addFirst.focus();
     await user.keyboard("{Enter}");
+    await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: /^Second Album/u }));
     const addSecond = screen.getByRole("button", {
-      name: "Add Second Album to DAP selection",
+      name: "Add Second Album to Sync",
     });
     addSecond.focus();
     await user.keyboard("{Enter}");
@@ -2726,7 +2850,7 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
 
     const chooseTarget = screen.getByRole("button", {
-      name: "Choose DAP target for selected albums",
+      name: "Choose DAP target",
     });
     chooseTarget.focus();
     await user.keyboard("{Enter}");
@@ -2863,6 +2987,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Sync");
 
     const recoveries = await screen.findByRole("list", {
       name: "Interrupted sync recoveries",
@@ -2969,6 +3094,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Sync");
 
     const profiles = await screen.findByRole("list", {
       name: "Saved DAP profiles",
@@ -3060,6 +3186,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Sync");
 
     await user.click(
       await screen.findByRole("button", {
@@ -3175,6 +3302,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Sync");
 
     const change = await screen.findByRole("button", {
       name: "Change DAP target for Road DAP",
@@ -3288,6 +3416,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Sync");
 
     const open = await screen.findByRole("button", {
       name: "Open DAP profile Road DAP",
@@ -3307,9 +3436,10 @@ describe("tag edit UI safety states", () => {
       screen.getByText("Status: Album-selection changes are not saved yet."),
     ).toBeVisible();
 
+    await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: /^Second Album/u }));
     const addSecond = screen.getByRole("button", {
-      name: "Add Second Album to DAP selection",
+      name: "Add Second Album to Sync",
     });
     addSecond.focus();
     await user.keyboard("{Enter}");
@@ -3344,7 +3474,7 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(
       screen.getByRole("button", {
-        name: "Remove Second Album from DAP selection",
+        name: "Remove Second Album",
       }),
     );
     const cancel = screen.getByRole("button", {
@@ -3394,6 +3524,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
     await user.click(
       await screen.findByRole("button", { name: "Restore from backup" }),
     );
@@ -3429,6 +3560,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openPrimaryView(user, "Settings");
     await user.click(
       await screen.findByRole("button", { name: "Create database backup" }),
     );
