@@ -433,22 +433,36 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Preview track changes" }),
-    );
+    const reviewButton = screen.getByRole("button", {
+      name: "Review exact changes",
+    });
+    reviewButton.focus();
+    await user.keyboard("{Enter}");
     const preview = await screen.findByLabelText("Track metadata confirmation");
     expect(within(preview).getByText("Renamed Track")).toBeInTheDocument();
     expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
-    await user.click(
-      within(preview).getByRole("button", {
-        name: "Confirm and write track",
-      }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Track metadata write was re-read and verified.",
-      ),
-    );
+    const confirmButton = within(preview).getByRole("button", {
+      name: "Confirm and write track",
+    });
+    expect(confirmButton).toHaveFocus();
+    await user.keyboard("{Enter}");
+    const outcome = await screen.findByLabelText("Track metadata result");
+    expect(outcome).toHaveTextContent("Write re-read and verified");
+    expect(outcome).toHaveFocus();
+    expect(screen.getByLabelText("Track metadata editor")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Track metadata confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((status) =>
+          status.textContent.includes(
+            "Track metadata write was re-read and verified.",
+          ),
+        ),
+    ).toBe(true);
+    await waitFor(() => expect(applySpy).toHaveBeenCalledTimes(1));
     expect(previewSpy).toHaveBeenCalledTimes(1);
     expect(previewSpy.mock.calls[0]?.[0]).toMatchObject({
       fileId: album.tracks[0]?.id,
@@ -457,7 +471,6 @@ describe("tag edit UI safety states", () => {
         artist: "Different Artist",
       },
     });
-    expect(applySpy).toHaveBeenCalledTimes(1);
   });
 
   it("keeps a failed track edit preview visible with its stale-write error", async () => {
@@ -475,7 +488,7 @@ describe("tag edit UI safety states", () => {
     await user.clear(screen.getByLabelText("Track title"));
     await user.type(screen.getByLabelText("Track title"), "Renamed Track");
     await user.click(
-      screen.getByRole("button", { name: "Preview track changes" }),
+      screen.getByRole("button", { name: "Review exact changes" }),
     );
     const preview = await screen.findByLabelText("Track metadata confirmation");
     await user.click(
@@ -491,6 +504,49 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByLabelText("Track metadata confirmation"),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
+      "Track was not changed",
+    );
+    expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
+      "stale preview",
+    );
+  });
+
+  it("preserves a track draft across navigation and invalidates a stale preview when the draft changes", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openPrimaryView(user, "Workbench");
+    await user.click(
+      screen.getByRole("button", { name: "Edit track metadata" }),
+    );
+    await user.clear(screen.getByLabelText("Track title"));
+    await user.type(screen.getByLabelText("Track title"), "Draft title");
+
+    await openPrimaryView(user, "Activity");
+    await openPrimaryView(user, "Workbench");
+    expect(screen.getByLabelText("Track title")).toHaveValue("Draft title");
+
+    await user.click(
+      screen.getByRole("button", { name: "Review exact changes" }),
+    );
+    expect(
+      await screen.findByLabelText("Track metadata confirmation"),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Track title"), " revised");
+    expect(screen.getByLabelText("Track title")).toHaveValue(
+      "Draft title revised",
+    );
+    expect(
+      screen.queryByLabelText("Track metadata confirmation"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Confirm and write track" }),
+    ).not.toBeInTheDocument();
   });
 
   it("requires explicit batch fields, previews each file, and reports partial failure", async () => {
