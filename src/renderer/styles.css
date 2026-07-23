@@ -315,15 +315,51 @@ h1 {
   align-items: center;
   margin-bottom: 1rem;
 }
+.activity-center {
+  display: grid;
+  gap: 1rem;
+}
+.activity-introduction,
+.activity-section {
+  margin-top: 0;
+}
+.activity-introduction > p:last-child,
+.activity-section > p:last-child {
+  margin-bottom: 0;
+}
+.activity-progress {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 48rem;
+}
+.activity-progress p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.activity-progress progress {
+  width: min(100%, 32rem);
+}
+.activity-results {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.activity-results > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 7px;
+  background: white;
+}
 .scan-job {
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  margin-bottom: 1rem;
-  padding: 0.8rem 1rem;
+  padding: 1rem;
   border: 1px solid #aab5ad;
   border-radius: 9px;
-  background: white;
+  background: #f7faf7;
 }
 .scan-job div {
   display: flex;
@@ -982,6 +1018,13 @@ td {
   .sync-recovery-alert {
     align-items: stretch;
     flex-direction: column;
+  }
+  .scan-job {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .scan-job progress {
+    width: 100%;
   }
   .workspace {
     grid-template-columns: 1fr;
