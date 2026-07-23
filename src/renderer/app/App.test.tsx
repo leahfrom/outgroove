@@ -31,6 +31,18 @@ async function openWorkbenchTool(
   await user.click(screen.getByRole("button", { name }));
 }
 
+async function openAlbumHistory(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  const historyButton = screen.getByRole("button", {
+    name: /^History & undo/u,
+  });
+  historyButton.focus();
+  await user.keyboard("{Enter}");
+  expect(historyButton).toHaveAttribute("aria-current", "page");
+  return screen.findByLabelText("Metadata edit history");
+}
+
 const album: CatalogAlbum = {
   id: "4438e3e0-a489-4be4-b75c-1fb0d62c435a",
   title: "Fixture Album",
@@ -531,9 +543,19 @@ describe("tag edit UI safety states", () => {
     await openWorkbenchTool(user, "Album title");
     await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
     await user.click(
-      screen.getByRole("button", { name: "Preview per-file changes" }),
+      screen.getByRole("button", { name: "Review per-file changes" }),
     );
     expect(await screen.findByLabelText("Tag edit confirmation")).toBeVisible();
+
+    await openAlbumHistory(user);
+    expect(
+      screen.queryByLabelText("Tag edit confirmation"),
+    ).not.toBeInTheDocument();
+    const editButton = screen.getByRole("button", { name: /^Edit title/u });
+    editButton.focus();
+    await user.keyboard("{Enter}");
+    expect(editButton).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText("Tag edit confirmation")).toBeVisible();
 
     await openPrimaryView(user, "Settings");
     expect(
@@ -543,7 +565,7 @@ describe("tag edit UI safety states", () => {
 
     expect(screen.getByLabelText("Tag edit confirmation")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Confirm and write 1 files" }),
+      screen.getByRole("button", { name: "Confirm and write 1 file" }),
     ).toBeEnabled();
   });
 
@@ -650,12 +672,13 @@ describe("tag edit UI safety states", () => {
     await openWorkbenchTool(user, "Album title");
     await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
     await user.click(
-      screen.getByRole("button", { name: "Preview per-file changes" }),
+      screen.getByRole("button", { name: "Review per-file changes" }),
     );
-    expect(await screen.findByRole("table")).toHaveTextContent("Fixture Album");
-    expect(screen.getByRole("table")).toHaveTextContent("Renamed Album");
+    const confirmation = await screen.findByLabelText("Tag edit confirmation");
+    expect(confirmation).toHaveTextContent("Fixture Album");
+    expect(confirmation).toHaveTextContent("Renamed Album");
     expect(
-      screen.getByRole("button", { name: "Confirm and write 1 files" }),
+      screen.getByRole("button", { name: "Confirm and write 1 file" }),
     ).toBeEnabled();
   });
 
@@ -1017,6 +1040,7 @@ describe("tag edit UI safety states", () => {
       "A failed item is never reported as verified",
     );
     await user.click(screen.getByRole("button", { name: "Album title" }));
+    await openAlbumHistory(user);
     await user.click(
       screen.getByRole("button", { name: "Preview batch undo" }),
     );
@@ -1404,10 +1428,10 @@ describe("tag edit UI safety states", () => {
     await openWorkbenchTool(user, "Album title");
     await user.type(screen.getByLabelText("Proposed title"), "Renamed Album");
     await user.click(
-      screen.getByRole("button", { name: "Preview per-file changes" }),
+      screen.getByRole("button", { name: "Review per-file changes" }),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Confirm and write 1 files" }),
+      await screen.findByRole("button", { name: "Confirm and write 1 file" }),
     );
     expect(await screen.findByRole("status")).toHaveTextContent(
       "1 writes failed verification",
@@ -1482,7 +1506,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
     await openWorkbenchTool(user, "Album title");
-    const history = await screen.findByLabelText("Metadata edit history");
+    const history = await openAlbumHistory(user);
     expect(
       await within(history).findByText("Changed title to “Renamed Album”"),
     ).toBeVisible();
@@ -1494,7 +1518,7 @@ describe("tag edit UI safety states", () => {
     expect(preview).toHaveTextContent("Fixture Album");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 files",
+        name: "Confirm and undo 1 file",
       }),
     ).toBeEnabled();
     expect(previewAlbumTitleUndo).toHaveBeenCalledWith({
@@ -1502,16 +1526,16 @@ describe("tag edit UI safety states", () => {
     });
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 files",
+        name: "Confirm and undo 1 file",
       }),
     );
     expect(applyAlbumTitleUndo).toHaveBeenCalledWith({
       operationId: "fba25f9c-51ad-41c7-a838-4dcdf20a587a",
       confirmationToken: "undo-confirmation-token-long-enough",
     });
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Verified undo for 1 files",
-    );
+    expect(
+      await screen.findByLabelText("Album title undo result"),
+    ).toHaveTextContent("Album-title undo re-read and verified");
   });
 
   it("previews and confirms field-scoped track metadata undo from history", async () => {
@@ -1583,7 +1607,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
     await openWorkbenchTool(user, "Album title");
-    const history = await screen.findByLabelText("Metadata edit history");
+    const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
         name: "Preview track undo",
@@ -1608,9 +1632,9 @@ describe("tag edit UI safety states", () => {
       operationId: "13308fb8-81b4-4cf0-b437-9602468873e3",
       confirmationToken: "track-undo-confirmation-token-long-enough",
     });
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Track metadata undo was re-read and verified.",
-    );
+    expect(
+      await screen.findByLabelText("Track metadata undo result"),
+    ).toHaveTextContent("Track metadata undo re-read and verified");
   });
 
   it("disables track undo confirmation when the preview reports a conflict", async () => {
@@ -1664,7 +1688,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
     await openWorkbenchTool(user, "Album title");
-    const history = await screen.findByLabelText("Metadata edit history");
+    const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
         name: "Preview track undo",
@@ -1673,9 +1697,9 @@ describe("tag edit UI safety states", () => {
     const preview = await screen.findByLabelText(
       "Track metadata undo confirmation",
     );
-    expect(within(preview).getByRole("alert")).toHaveTextContent(
-      "undo will not overwrite it",
-    );
+    expect(
+      within(preview).getByText(/undo will not overwrite it/u),
+    ).toBeVisible();
     expect(
       within(preview).getByRole("button", {
         name: "Confirm and undo track fields",
@@ -1733,6 +1757,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "Fixture Album" });
     await openWorkbenchTool(user, "Album title");
+    await openAlbumHistory(user);
     await user.click(
       await screen.findByRole("button", { name: "Preview undo" }),
     );
@@ -1740,7 +1765,7 @@ describe("tag edit UI safety states", () => {
     expect(preview).toHaveTextContent("will not overwrite it");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 files",
+        name: "Confirm and undo 1 file",
       }),
     ).toBeDisabled();
   });
