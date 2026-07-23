@@ -66,6 +66,7 @@ import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
+import { WorkbenchTrackContext } from "./workbench-track-context";
 
 const PAGE_SIZE = 20;
 
@@ -1063,6 +1064,23 @@ export function App(): React.JSX.Element {
         ? selected.filter((id) => id !== fileId)
         : [...selected, fileId],
     );
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const selectAllBatchTracks = (): void => {
+    if (!selectedAlbum) return;
+    setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const clearBatchTracks = (): void => {
+    setBatchTrackIds([]);
     setBatchPreview(undefined);
     setBatchResult(undefined);
     setSequencePreview(undefined);
@@ -2611,9 +2629,7 @@ export function App(): React.JSX.Element {
                     </section>
                   )}
                   {(activeView === "library" ||
-                    workbenchTool === "overview" ||
-                    workbenchTool === "batch" ||
-                    workbenchTool === "sequence") && (
+                    workbenchTool === "overview") && (
                     <section
                       className="album-tracks"
                       aria-labelledby="album-tracks-title"
@@ -2653,50 +2669,20 @@ export function App(): React.JSX.Element {
                   {activeView === "workbench" &&
                     (workbenchTool === "batch" ||
                       workbenchTool === "sequence") && (
-                      <section
-                        className="selection-toolbar"
-                        aria-label="Selected tracks"
-                      >
-                        <div>
-                          <p className="eyebrow">Shared selection</p>
-                          <h3>
-                            {batchTrackIds.length} of{" "}
-                            {selectedAlbum.tracks.length} tracks selected
-                          </h3>
-                          <p>
-                            The same selection is kept when you switch between
-                            Shared fields and Track order.
-                          </p>
-                        </div>
-                        <div className="actions">
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setBatchTrackIds(
-                                selectedAlbum.tracks.map((track) => track.id),
-                              );
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                              setSequencePreview(undefined);
-                              setSequenceResult(undefined);
-                            }}
-                          >
-                            Select all tracks
-                          </button>
-                          <button
-                            disabled={busy || batchTrackIds.length === 0}
-                            onClick={() => {
-                              setBatchTrackIds([]);
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                              setSequencePreview(undefined);
-                              setSequenceResult(undefined);
-                            }}
-                          >
-                            Clear selection
-                          </button>
-                        </div>
-                      </section>
+                      <WorkbenchTrackContext
+                        busy={busy}
+                        selectedTrackIds={batchTrackIds}
+                        selectionPurpose={
+                          workbenchTool === "sequence"
+                            ? "track ordering"
+                            : "shared-field editing"
+                        }
+                        tracks={selectedAlbum.tracks}
+                        onClearSelection={clearBatchTracks}
+                        onEditTrack={editTrack}
+                        onSelectAll={selectAllBatchTracks}
+                        onToggleTrack={toggleBatchTrack}
+                      />
                     )}
                   {activeView === "workbench" && workbenchTool === "batch" && (
                     <SharedFieldEditor

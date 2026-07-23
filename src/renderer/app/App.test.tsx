@@ -818,6 +818,84 @@ describe("tag edit UI safety states", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("preserves compact Workbench track context and routes an inspected track without previewing", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      format: "FLAC",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const contextAlbum = { ...album, tracks: [firstTrack, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [contextAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const previewTrack = vi.spyOn(mockApi, "previewTrackTagEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openWorkbenchTool(user, "Shared fields");
+
+    const chooserSummary = screen.getByText("Choose or inspect tracks");
+    const chooser = chooserSummary.closest("details");
+    if (!chooser) throw new Error("Track chooser missing");
+    expect(chooser).toHaveAttribute("open");
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Select Track for shared-field editing",
+      }),
+    );
+    expect(screen.getByLabelText("Selected tracks")).toHaveTextContent(
+      "1 of 2 tracks selected",
+    );
+    await user.click(chooserSummary);
+    expect(chooser).not.toHaveAttribute("open");
+
+    await openPrimaryView(user, "Activity");
+    await openPrimaryView(user, "Workbench");
+    expect(screen.getByLabelText("Selected tracks")).toHaveTextContent(
+      "1 of 2 tracks selected",
+    );
+    const restoredChooserSummary = screen.getByText("Choose or inspect tracks");
+    const restoredChooser = restoredChooserSummary.closest("details");
+    if (!restoredChooser) throw new Error("Restored track chooser missing");
+    expect(restoredChooser).not.toHaveAttribute("open");
+    expect(
+      screen.getByRole("list", { name: "Selected track names" }),
+    ).toHaveTextContent("Track");
+
+    await user.click(restoredChooserSummary);
+    const editSecond = screen.getByRole("button", {
+      name: "Edit metadata for Second Track",
+    });
+    editSecond.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByLabelText("Track metadata editor")).toBeVisible();
+    expect(screen.getByLabelText("Track title")).toHaveValue("Second Track");
+    expect(previewTrack).not.toHaveBeenCalled();
+    expect(
+      screen.queryByLabelText("Track metadata confirmation"),
+    ).not.toBeInTheDocument();
+  });
+
   it("requires explicit batch fields, previews each file, and reports partial failure", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
