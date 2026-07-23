@@ -21,6 +21,8 @@ import {
   syncApplyRequestSchema,
   syncCancelRequestSchema,
   syncHistoryRequestSchema,
+  syncProfileTargetApplyRequestSchema,
+  syncProfileTargetPreviewRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
   syncPlanRequestSchema,
@@ -412,6 +414,33 @@ export function registerIpc(
     channels.renameSyncProfile,
     createValidatedHandler(renameSyncProfileRequestSchema, ({ id, name }) =>
       dependencies.database.renameSyncProfile(id, name),
+    ),
+  );
+  ipcMain.handle(
+    channels.chooseSyncProfileTarget,
+    createValidatedHandler(
+      syncProfileTargetPreviewRequestSchema,
+      async ({ profileId }) => {
+        const selected = await dialog.showOpenDialog(dependencies.window, {
+          title: "Choose a new folder-backed DAP target",
+          properties: ["openDirectory", "createDirectory"],
+        });
+        const targetPath = selected.filePaths[0];
+        return selected.canceled || !targetPath
+          ? null
+          : dependencies.sync.previewProfileTarget(
+              profileId,
+              normalize(resolve(targetPath)),
+            );
+      },
+    ),
+  );
+  ipcMain.handle(
+    channels.applySyncProfileTarget,
+    createValidatedHandler(
+      syncProfileTargetApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.sync.applyProfileTarget(operationId, confirmationToken),
     ),
   );
   ipcMain.handle(

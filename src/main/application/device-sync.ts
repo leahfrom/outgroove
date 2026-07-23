@@ -20,6 +20,7 @@ import type {
   SyncPlanDto,
   SyncPlanItemDto,
   SyncProfileDto,
+  SyncProfileTargetPreviewDto,
   SyncRecoveryPreviewDto,
   SyncRecoveryResultDto,
   SyncRecoverySummaryDto,
@@ -158,6 +159,10 @@ export class DeviceSync {
   private readonly profileRevisions = new Map<string, number>();
   private readonly applyingProfiles = new Set<string>();
   private readonly activeApplies = new Map<string, ActiveApply>();
+  private readonly targetPreviews = new Map<
+    string,
+    SyncProfileTargetPreviewDto
+  >();
 
   constructor(
     private readonly database: CatalogDatabase,
@@ -180,11 +185,80 @@ export class DeviceSync {
     return profile;
   }
 
+  previewProfileTarget(
+    profileId: string,
+    proposedTargetPath: string,
+  ): SyncProfileTargetPreviewDto {
+    const profile = this.database
+      .listSyncProfiles()
+      .find((candidate) => candidate.id === profileId);
+    if (!profile) throw new Error("Sync profile does not exist.");
+    if (profile.targetPath === proposedTargetPath)
+      throw new Error("This DAP profile already uses the selected target.");
+    const operationId = randomUUID();
+    const stable = JSON.stringify({
+      operationId,
+      profileId,
+      currentTargetPath: profile.targetPath,
+      proposedTargetPath,
+    });
+    const preview = {
+      operationId,
+      confirmationToken: createHash("sha256")
+        .update(`outgroove-sync-target:${stable}`)
+        .digest("base64url"),
+      profileId,
+      profileName: profile.name,
+      currentTargetPath: profile.targetPath,
+      proposedTargetPath,
+    };
+    this.targetPreviews.set(operationId, preview);
+    return preview;
+  }
+
+  applyProfileTarget(
+    operationId: string,
+    confirmationToken: string,
+  ): SyncProfileDto {
+    const preview = this.targetPreviews.get(operationId);
+    if (!preview) throw new Error("DAP target preview does not exist.");
+    if (preview.confirmationToken !== confirmationToken)
+      throw new Error("DAP target confirmation no longer matches the preview.");
+    if (this.applyingProfiles.has(preview.profileId))
+      throw new Error("Wait for the active sync before changing this profile.");
+    if (this.database.getSyncRunForProfile(preview.profileId))
+      throw new Error(
+        "Recover this profile's interrupted sync before changing its target.",
+      );
+    const current = this.database.getSyncProfile(preview.profileId);
+    if (current?.target_path !== preview.currentTargetPath)
+      throw new Error(
+        "The DAP profile changed after preview. Choose its target again.",
+      );
+    const profile = this.database.updateSyncProfileTarget(
+      preview.profileId,
+      preview.proposedTargetPath,
+    );
+    this.profileRevisions.set(
+      preview.profileId,
+      (this.profileRevisions.get(preview.profileId) ?? 0) + 1,
+    );
+    for (const [planId, plan] of this.plans)
+      if (plan.profileId === preview.profileId) this.plans.delete(planId);
+    for (const [id, candidate] of this.targetPreviews)
+      if (candidate.profileId === preview.profileId)
+        this.targetPreviews.delete(id);
+    return profile;
+  }
+
   async plan(profileId: string): Promise<SyncPlanDto> {
     const profileRevision = this.profileRevisions.get(profileId) ?? 0;
     const profile = this.database.getSyncProfile(profileId);
     if (!profile) throw new Error("Sync profile does not exist.");
-    const previous = this.database.getLatestManifest(profileId);
+    const previous = this.database.getLatestManifest(
+      profileId,
+      profile.target_path,
+    );
     const previousManifest = previous
       ? (JSON.parse(previous.manifest_json) as Manifest)
       : undefined;
@@ -256,6 +330,25 @@ export class DeviceSync {
       } catch (error) {
         errors.push(
           `${track.path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    for (const relativeArtifact of [
+      "Outgroove.m3u8",
+      join(".outgroove", "manifest.json"),
+    ]) {
+      try {
+        const artifact = await safeRecordedPath(
+          profile.target_path,
+          relativeArtifact,
+        );
+        if ((await pathExists(artifact)) && !previous)
+          conflicts.push(
+            `Unknown target file would be replaced: ${relativeArtifact}`,
+          );
+      } catch (error) {
+        errors.push(
+          `${relativeArtifact}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
@@ -724,7 +817,10 @@ export class DeviceSync {
     try {
       const errors: string[] = [];
       const installed: InstalledCopy[] = [];
-      const previous = this.database.getLatestManifest(plan.profileId);
+      const previous = this.database.getLatestManifest(
+        plan.profileId,
+        plan.targetPath,
+      );
       const ownedDestinations = new Set(
         previous
           ? (JSON.parse(previous.manifest_json) as Manifest).entries.map(

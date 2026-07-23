@@ -14,6 +14,8 @@ import {
   renameSyncProfileRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
+  syncProfileTargetApplyRequestSchema,
+  syncProfileTargetPreviewRequestSchema,
   syncHistoryRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
@@ -161,6 +163,50 @@ describe("validated IPC handlers", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+  });
+
+  it("validates both stages of a DAP profile target change without accepting paths", async () => {
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const chooseTarget = createValidatedHandler(
+      syncProfileTargetPreviewRequestSchema,
+      vi.fn(),
+    );
+    await expect(chooseTarget({}, { profileId })).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(
+      chooseTarget({}, { profileId, targetPath: "/Volumes/DAP" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+
+    const applyTarget = createValidatedHandler(
+      syncProfileTargetApplyRequestSchema,
+      vi.fn(),
+    );
+    await expect(
+      applyTarget(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "confirmation-token-long-enough",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      applyTarget(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "short",
+          targetPath: "/Volumes/DAP",
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
   });
 
   it("validates both stages of watched-root removal without accepting paths", async () => {

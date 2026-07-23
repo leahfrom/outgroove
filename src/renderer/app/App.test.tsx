@@ -183,6 +183,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     listSyncProfiles: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     updateSyncProfileAlbums: vi.fn(),
     renameSyncProfile: vi.fn(),
+    chooseSyncProfileTarget: vi.fn(),
+    applySyncProfileTarget: vi.fn(),
     listSyncHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -3115,6 +3117,104 @@ describe("tag edit UI safety states", () => {
     expect(renameSyncProfile).toHaveBeenCalledTimes(1);
     expect(profiles).toHaveTextContent("Pocket DAP");
     expect(profiles).not.toHaveTextContent("Discarded name");
+  });
+
+  it("previews and keyboard-confirms changing a saved DAP target without touching files", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const initialProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/old-dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    const retargetedProfile = {
+      ...initialProfile,
+      targetPath: "/fixture/new-dap",
+    };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [initialProfile] })
+      .mockResolvedValue({ ok: true, value: [retargetedProfile] });
+    const chooseTarget = vi
+      .spyOn(mockApi, "chooseSyncProfileTarget")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "853a8e28-560a-4261-b152-1fe31c26dc42",
+          confirmationToken: "sync-target-confirmation-token-long-enough",
+          profileId,
+          profileName: "Road DAP",
+          currentTargetPath: "/fixture/old-dap",
+          proposedTargetPath: "/fixture/new-dap",
+        },
+      });
+    const applyTarget = vi
+      .spyOn(mockApi, "applySyncProfileTarget")
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "SYNC_TARGET_UNAVAILABLE",
+          message: "The selected DAP target is unavailable.",
+          recoverable: true,
+        },
+      })
+      .mockResolvedValue({ ok: true, value: retargetedProfile });
+    const planSync = vi.spyOn(mockApi, "planSync");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const change = await screen.findByRole("button", {
+      name: "Change DAP target for Road DAP",
+    });
+    change.focus();
+    await user.keyboard("{Enter}");
+    expect(chooseTarget).toHaveBeenCalledWith({ profileId });
+    const preview = await screen.findByLabelText("DAP target confirmation");
+    expect(preview).toHaveTextContent("Current target: /fixture/old-dap");
+    expect(preview).toHaveTextContent("New target: /fixture/new-dap");
+    expect(preview).toHaveTextContent(
+      "No source audio or target files will be read, copied, replaced, or deleted.",
+    );
+    expect(applyTarget).not.toHaveBeenCalled();
+
+    const confirm = within(preview).getByRole("button", {
+      name: "Confirm DAP target change",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyTarget).toHaveBeenCalledWith({
+        operationId: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        confirmationToken: "sync-target-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await screen.findByText("The selected DAP target is unavailable."),
+    ).toBeVisible();
+    expect(preview).toBeVisible();
+
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(applyTarget).toHaveBeenCalledTimes(2));
+    expect(screen.queryByLabelText("DAP target confirmation")).toBeNull();
+    expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
+      "/fixture/new-dap",
+    );
+    expect(planSync).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
   });
 
   it("revises a saved profile selection without reselecting its target and requires a fresh preview", async () => {

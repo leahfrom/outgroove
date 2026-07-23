@@ -2219,6 +2219,20 @@ export class CatalogDatabase {
     return profile;
   }
 
+  updateSyncProfileTarget(id: string, targetPath: string): SyncProfileDto {
+    const updated = this.connection
+      .prepare("UPDATE sync_profiles SET target_path=? WHERE id=?")
+      .run(targetPath, id);
+    if (updated.changes === 0)
+      throw new Error("Sync profile no longer exists.");
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile)
+      throw new Error("Retargeted sync profile could not be loaded.");
+    return profile;
+  }
+
   listSyncProfiles(): readonly SyncProfileDto[] {
     const rows = this.connection
       .prepare(
@@ -2311,12 +2325,17 @@ export class CatalogDatabase {
     };
   }
 
-  getLatestManifest(profileId: string): { manifest_json: string } | undefined {
+  getLatestManifest(
+    profileId: string,
+    targetPath: string,
+  ): { manifest_json: string } | undefined {
     return this.connection
       .prepare(
-        "SELECT manifest_json FROM sync_manifests WHERE profile_id=? ORDER BY created_at DESC, id DESC LIMIT 1",
+        `SELECT manifest_json FROM sync_manifests
+         WHERE profile_id=? AND target_path=?
+         ORDER BY created_at DESC, id DESC LIMIT 1`,
       )
-      .get(profileId) as { manifest_json: string } | undefined;
+      .get(profileId, targetPath) as { manifest_json: string } | undefined;
   }
 
   createSyncRun(

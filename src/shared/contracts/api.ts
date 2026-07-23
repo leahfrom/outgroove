@@ -220,6 +220,12 @@ export const updateSyncProfileAlbumsRequestSchema = z
 export const renameSyncProfileRequestSchema = z
   .object({ id: z.uuid(), name: z.string().trim().min(1).max(100) })
   .strict();
+export const syncProfileTargetPreviewRequestSchema = z
+  .object({ profileId: z.uuid() })
+  .strict();
+export const syncProfileTargetApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 export const syncHistoryRequestSchema = z
   .object({ profileId: z.uuid() })
   .strict();
@@ -454,6 +460,14 @@ export interface SyncHistoryItemDto {
   readonly completedAt: string;
   readonly entryCount: number;
 }
+export interface SyncProfileTargetPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly currentTargetPath: string;
+  readonly proposedTargetPath: string;
+}
 export interface SyncPlanDto {
   readonly id: string;
   readonly profileId: string;
@@ -607,6 +621,12 @@ export interface OutgrooveApi {
   ): Promise<Result<SyncProfileDto>>;
   renameSyncProfile(
     request: z.infer<typeof renameSyncProfileRequestSchema>,
+  ): Promise<Result<SyncProfileDto>>;
+  chooseSyncProfileTarget(
+    request: z.infer<typeof syncProfileTargetPreviewRequestSchema>,
+  ): Promise<Result<SyncProfileTargetPreviewDto | null>>;
+  applySyncProfileTarget(
+    request: z.infer<typeof syncProfileTargetApplyRequestSchema>,
   ): Promise<Result<SyncProfileDto>>;
   listSyncHistory(
     request: z.infer<typeof syncHistoryRequestSchema>,

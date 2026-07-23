@@ -80,6 +80,60 @@ async function firstRecovery(
 }
 
 describe("deterministic manifest-based sync", () => {
+  it("retargets only after confirmation and scopes manifest ownership to that target", async () => {
+    const { directory, database, target, profileId } = await setup();
+    const sync = new DeviceSync(database);
+    const initialPlan = await sync.plan(profileId);
+    await sync.apply(initialPlan.id, initialPlan.confirmationToken);
+    const firstRelative = initialPlan.copies[0]?.relativeDestination;
+    if (!firstRelative) throw new Error("Sync fixture destination missing.");
+
+    const replacement = join(directory, "replacement-target");
+    await mkdir(dirname(join(replacement, firstRelative)), { recursive: true });
+    await copyFile(
+      join(target, firstRelative),
+      join(replacement, firstRelative),
+    );
+    await writeFile(join(replacement, "Outgroove.m3u8"), "user playlist\n");
+    const preview = sync.previewProfileTarget(profileId, replacement);
+    expect(preview).toMatchObject({
+      profileId,
+      currentTargetPath: target,
+      proposedTargetPath: replacement,
+    });
+    expect(() =>
+      sync.applyProfileTarget(preview.operationId, "wrong-confirmation-token"),
+    ).toThrow("no longer matches");
+    const retargeted = sync.applyProfileTarget(
+      preview.operationId,
+      preview.confirmationToken,
+    );
+    expect(retargeted.targetPath).toBe(replacement);
+    await expect(
+      sync.apply(initialPlan.id, initialPlan.confirmationToken),
+    ).rejects.toThrow("current preview");
+
+    const replacementPlan = await sync.plan(profileId);
+    expect(replacementPlan.conflicts).toContain(
+      `Unknown target file would be replaced: ${firstRelative}`,
+    );
+    expect(replacementPlan.conflicts).toContain(
+      "Unknown target file would be replaced: Outgroove.m3u8",
+    );
+    expect(replacementPlan.unchanged).toEqual([]);
+
+    const returnPreview = sync.previewProfileTarget(profileId, target);
+    sync.applyProfileTarget(
+      returnPreview.operationId,
+      returnPreview.confirmationToken,
+    );
+    const returnPlan = await sync.plan(profileId);
+    expect(returnPlan.copies).toEqual([]);
+    expect(returnPlan.conflicts).toEqual([]);
+    expect(returnPlan.unchanged).toHaveLength(initialPlan.copies.length);
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
   it("detects a copy-stage process interruption and recovers after reconnect", async () => {
     const { directory, database, target, profileId } = await setup();
     let markInstalled: () => void = () => undefined;
@@ -905,7 +959,7 @@ describe("deterministic manifest-based sync", () => {
     await expect(
       access(join(target, ".outgroove", "manifest.json")),
     ).rejects.toThrow();
-    expect(database.getLatestManifest(profileId)).toBeUndefined();
+    expect(database.getLatestManifest(profileId, target)).toBeUndefined();
     database.close();
   });
 });
