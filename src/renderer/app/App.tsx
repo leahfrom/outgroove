@@ -43,6 +43,11 @@ import {
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
+import {
+  AlbumTitleWorkbench,
+  type AlbumTitleSection,
+  type BatchUndoKind,
+} from "./album-title-workbench";
 import { ApplicationShell, type AppView } from "./application-shell";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
@@ -190,12 +195,18 @@ export function App(): React.JSX.Element {
   const [rootRemovalPreview, setRootRemovalPreview] =
     useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
+  const [albumTitleSection, setAlbumTitleSection] =
+    useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
+  const [editResult, setEditResult] = useState<TagEditResultDto>();
+  const [editError, setEditError] = useState<string>();
   const [editHistory, setEditHistory] = useState<
     readonly TagEditHistoryItemDto[]
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
+  const [undoResult, setUndoResult] = useState<TagEditResultDto>();
+  const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
   const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
@@ -211,6 +222,7 @@ export function App(): React.JSX.Element {
   const [trackEditError, setTrackEditError] = useState<string>();
   const [trackUndoPreview, setTrackUndoPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [trackUndoResult, setTrackUndoResult] = useState<TagEditResultDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
   const [batchEnabled, setBatchEnabled] = useState({
     artist: false,
@@ -235,6 +247,8 @@ export function App(): React.JSX.Element {
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
+  const [batchUndoKind, setBatchUndoKind] =
+    useState<BatchUndoKind>("shared-fields");
   const [syncAlbums, setSyncAlbums] = useState<
     readonly Pick<CatalogAlbum, "id" | "title" | "albumArtist">[]
   >([]);
@@ -529,12 +543,19 @@ export function App(): React.JSX.Element {
     }
     let current = true;
     setEditPreview(undefined);
+    setEditResult(undefined);
+    setEditError(undefined);
     setUndoPreview(undefined);
+    setUndoResult(undefined);
+    setHistoryError(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
+    setTrackUndoResult(undefined);
+    setBatchUndoPreview(undefined);
+    setBatchUndoResult(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
@@ -738,6 +759,8 @@ export function App(): React.JSX.Element {
 
   const previewEdit = async (): Promise<void> => {
     if (!selectedAlbum) return;
+    setEditResult(undefined);
+    setEditError(undefined);
     const result = await window.outgroove.previewAlbumTitleEdit({
       albumId: selectedAlbum.id,
       proposedTitle: editTitle,
@@ -745,7 +768,10 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setUndoPreview(undefined);
       setEditPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setEditError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyEdit = async (): Promise<void> => {
@@ -757,6 +783,8 @@ export function App(): React.JSX.Element {
         confirmationToken: editPreview.confirmationToken,
       });
       if (result.ok) {
+        setEditResult(result.value);
+        setEditError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
@@ -767,20 +795,32 @@ export function App(): React.JSX.Element {
         setEditTitle("");
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setEditError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const previewUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewAlbumTitleUndo({
       operationId,
     });
     if (result.ok) {
       setEditPreview(undefined);
+      setUndoResult(undefined);
+      setTrackUndoPreview(undefined);
+      setTrackUndoResult(undefined);
+      setBatchUndoPreview(undefined);
+      setBatchUndoResult(undefined);
       setUndoPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyUndo = async (): Promise<void> => {
@@ -792,6 +832,8 @@ export function App(): React.JSX.Element {
         confirmationToken: undoPreview.confirmationToken,
       });
       if (result.ok) {
+        setUndoResult(result.value);
+        setHistoryError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
@@ -801,7 +843,10 @@ export function App(): React.JSX.Element {
         setUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -877,6 +922,7 @@ export function App(): React.JSX.Element {
         break;
       case "album-title":
         target = "album-title";
+        setAlbumTitleSection("edit");
         setWorkbenchTool("album");
         break;
     }
@@ -947,15 +993,23 @@ export function App(): React.JSX.Element {
   };
 
   const previewTrackUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewTrackTagUndo({ operationId });
     if (result.ok) {
       setEditPreview(undefined);
       setUndoPreview(undefined);
+      setUndoResult(undefined);
       setTrackEditPreview(undefined);
       setTrackEditResult(undefined);
       setTrackEditError(undefined);
+      setTrackUndoResult(undefined);
+      setBatchUndoPreview(undefined);
+      setBatchUndoResult(undefined);
       setTrackUndoPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyTrackUndo = async (): Promise<void> => {
@@ -967,6 +1021,8 @@ export function App(): React.JSX.Element {
         confirmationToken: trackUndoPreview.confirmationToken,
       });
       if (result.ok) {
+        setTrackUndoResult(result.value);
+        setHistoryError(undefined);
         const written = result.value.results[0];
         setNotice(
           written?.verified
@@ -978,7 +1034,10 @@ export function App(): React.JSX.Element {
           await refreshCatalog();
           if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
         }
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -1100,17 +1159,27 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const previewBatchUndo = async (operationId: string): Promise<void> => {
+  const previewBatchUndo = async (
+    operationId: string,
+    kind: BatchUndoKind = "shared-fields",
+  ): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewTrackBatchUndo({
       operationId,
     });
     if (result.ok) {
       setUndoPreview(undefined);
+      setUndoResult(undefined);
       setTrackUndoPreview(undefined);
+      setTrackUndoResult(undefined);
       setBatchResult(undefined);
+      setBatchUndoKind(kind);
       setBatchUndoPreview(result.value);
       setBatchUndoResult(undefined);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message);
+    }
   };
 
   const applyBatchUndo = async (): Promise<void> => {
@@ -1123,6 +1192,7 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setBatchUndoResult(result.value);
+        setHistoryError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
@@ -1132,7 +1202,10 @@ export function App(): React.JSX.Element {
         setBatchUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -3037,351 +3110,62 @@ export function App(): React.JSX.Element {
                       />
                     )}
                   {activeView === "workbench" && workbenchTool === "album" && (
-                    <section
-                      className="card"
-                      aria-label="Album title editor"
+                    <AlbumTitleWorkbench
+                      albumTitle={selectedAlbum.title}
+                      batchUndoKind={batchUndoKind}
+                      batchUndoPreview={batchUndoPreview}
+                      batchUndoResult={batchUndoResult}
+                      busy={busy}
+                      draftTitle={editTitle}
+                      editError={editError}
+                      editHistory={editHistory}
+                      editPreview={editPreview}
+                      editResult={editResult}
+                      historyError={historyError}
+                      onCancelBatchUndo={() => {
+                        setBatchUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onCancelEditPreview={() => {
+                        setEditPreview(undefined);
+                        setEditError(undefined);
+                      }}
+                      onCancelTrackUndo={() => {
+                        setTrackUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onCancelUndo={() => {
+                        setUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onConfirmBatchUndo={() => void applyBatchUndo()}
+                      onConfirmEdit={() => void applyEdit()}
+                      onConfirmTrackUndo={() => void applyTrackUndo()}
+                      onConfirmUndo={() => void applyUndo()}
+                      onDraftTitleChange={(title) => {
+                        setEditTitle(title);
+                        setEditPreview(undefined);
+                        setEditResult(undefined);
+                        setEditError(undefined);
+                      }}
+                      onPreviewBatchUndo={(operationId, kind) =>
+                        void previewBatchUndo(operationId, kind)
+                      }
+                      onPreviewEdit={() => void previewEdit()}
+                      onPreviewTrackUndo={(operationId) =>
+                        void previewTrackUndo(operationId)
+                      }
+                      onPreviewUndo={(operationId) =>
+                        void previewUndo(operationId)
+                      }
+                      onSectionChange={setAlbumTitleSection}
                       ref={albumTitleEditorRef}
-                      tabIndex={-1}
-                    >
-                      <h3>Workbench · album title</h3>
-                      <label htmlFor="album-title">Proposed title</label>
-                      <div className="inline">
-                        <input
-                          id="album-title"
-                          value={editTitle}
-                          onChange={(event) => setEditTitle(event.target.value)}
-                        />
-                        <button
-                          disabled={!editTitle.trim() || busy}
-                          onClick={() => void previewEdit()}
-                        >
-                          Preview per-file changes
-                        </button>
-                      </div>
-                      {editPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Tag edit confirmation"
-                        >
-                          <h4>Review before writing</h4>
-                          <p>
-                            No file has changed yet. Confirming creates a
-                            snapshot, writes a same-volume temporary file,
-                            verifies it, and only then replaces the original.
-                          </p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>File</th>
-                                <th>Before</th>
-                                <th>After</th>
-                                <th>Warnings</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {editPreview.files.map((file) => (
-                                <tr key={file.fileId}>
-                                  <td>{file.path}</td>
-                                  <td>{file.before}</td>
-                                  <td>{file.after}</td>
-                                  <td>{file.warnings.join("; ") || "None"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                editPreview.files.some(
-                                  (file) => file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyEdit()}
-                            >
-                              Confirm and write {editPreview.files.length} files
-                            </button>
-                            <button onClick={() => setEditPreview(undefined)}>
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div
-                        className="history"
-                        aria-label="Metadata edit history"
-                      >
-                        <h4>Edit history</h4>
-                        {editHistory.length === 0 ? (
-                          <p>No confirmed edits for this album yet.</p>
-                        ) : (
-                          <ol>
-                            {editHistory.map((item) => (
-                              <li key={item.operationId}>
-                                <div>
-                                  <strong>
-                                    {item.kind === "album-title-edit"
-                                      ? `Changed title to “${item.proposedTitle}”`
-                                      : item.kind === "album-title-undo"
-                                        ? `Restored “${item.proposedTitle}”`
-                                        : item.proposedTitle}
-                                  </strong>
-                                  <span>
-                                    {item.state}; {item.verifiedFiles} verified
-                                    {item.failedFiles > 0
-                                      ? `, ${item.failedFiles} failed`
-                                      : ""}{" "}
-                                    ·{" "}
-                                    <time
-                                      dateTime={
-                                        item.completedAt ?? item.createdAt
-                                      }
-                                    >
-                                      {new Date(
-                                        item.completedAt ?? item.createdAt,
-                                      ).toLocaleString()}
-                                    </time>
-                                  </span>
-                                </div>
-                                {item.kind === "album-title-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-tags-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewTrackUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview track undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-tags-batch-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewBatchUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview batch undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-number-sequence-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewBatchUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview sequence undo
-                                    </button>
-                                  )}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                      </div>
-                      {undoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Tag undo confirmation"
-                        >
-                          <h4>Review undo before writing</h4>
-                          <p>
-                            No file has changed yet. Undo only proceeds when the
-                            current album title still matches the verified edit.
-                            Each file is snapshotted, safely written, re-read,
-                            and verified again.
-                          </p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>File</th>
-                                <th>Current</th>
-                                <th>Restore</th>
-                                <th>Conflicts</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {undoPreview.files.map((file) => (
-                                <tr key={file.fileId}>
-                                  <td>{file.path}</td>
-                                  <td>{file.before}</td>
-                                  <td>{file.after}</td>
-                                  <td>{file.warnings.join("; ") || "None"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                undoPreview.files.some(
-                                  (file) => file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyUndo()}
-                            >
-                              Confirm and undo {undoPreview.files.length} files
-                            </button>
-                            <button onClick={() => setUndoPreview(undefined)}>
-                              Cancel undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {trackUndoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Track metadata undo confirmation"
-                        >
-                          <h4>Review track undo before writing</h4>
-                          <p>
-                            No file has changed yet. Only fields recorded by the
-                            original edit will be restored. Undo refuses to
-                            overwrite a field changed after that edit.
-                          </p>
-                          <p>{trackUndoPreview.path}</p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Field</th>
-                                <th>Current</th>
-                                <th>Restore</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {trackUndoPreview.changes.map((change) => (
-                                <tr key={change.field}>
-                                  <td>{change.field}</td>
-                                  <td>{change.before ?? "Not set"}</td>
-                                  <td>{change.after ?? "Not set"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {trackUndoPreview.warnings.map((warning) => (
-                            <p key={warning} role="alert">
-                              {warning}
-                            </p>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy || trackUndoPreview.warnings.length > 0
-                              }
-                              onClick={() => void applyTrackUndo()}
-                            >
-                              Confirm and undo track fields
-                            </button>
-                            <button
-                              onClick={() => setTrackUndoPreview(undefined)}
-                            >
-                              Cancel track undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {batchUndoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Batch metadata undo confirmation"
-                        >
-                          <h4>Review batch undo before writing</h4>
-                          <p>
-                            Only fields written by the original batch are
-                            restored, and only for files whose original writes
-                            were verified. Conflicted files will be refused
-                            without stopping safe restores on other files.
-                          </p>
-                          {batchUndoPreview.files.map((file) => (
-                            <div key={file.fileId}>
-                              <h5>{file.path}</h5>
-                              {!file.willWrite && (
-                                <p>Status: already restored — skipped</p>
-                              )}
-                              {file.changes.length > 0 && (
-                                <table>
-                                  <thead>
-                                    <tr>
-                                      <th>Field</th>
-                                      <th>Current</th>
-                                      <th>Restore</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {file.changes.map((change) => (
-                                      <tr key={change.field}>
-                                        <td>{change.field}</td>
-                                        <td>{change.before ?? "Not set"}</td>
-                                        <td>{change.after ?? "Not set"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                              {file.warnings.map((warning) => (
-                                <p key={warning} role="alert">
-                                  {warning}
-                                </p>
-                              ))}
-                            </div>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                !batchUndoPreview.files.some(
-                                  (file) =>
-                                    file.willWrite &&
-                                    file.warnings.length === 0,
-                                )
-                              }
-                              onClick={() => void applyBatchUndo()}
-                            >
-                              Confirm safe batch undo writes
-                            </button>
-                            <button
-                              onClick={() => setBatchUndoPreview(undefined)}
-                            >
-                              Cancel batch undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {batchUndoResult && (
-                        <div className="preview" aria-live="polite">
-                          <h4>Batch undo results</h4>
-                          <ul>
-                            {batchUndoResult.results.map((result) => (
-                              <li key={result.fileId}>
-                                {result.path}:{" "}
-                                {result.verified
-                                  ? "verified"
-                                  : "refused or failed"}
-                                {result.error ? ` — ${result.error}` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </section>
+                      section={albumTitleSection}
+                      trackUndoPreview={trackUndoPreview}
+                      trackUndoResult={trackUndoResult}
+                      undoPreview={undoPreview}
+                      undoResult={undoResult}
+                    />
                   )}
                 </>
               </section>

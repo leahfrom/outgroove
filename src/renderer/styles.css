@@ -222,6 +222,60 @@ button:disabled {
   border-color: #245c39;
   background: #eef8f1;
 }
+.album-title-navigation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+.album-title-navigation button {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+}
+.album-title-navigation button span {
+  font-weight: 750;
+}
+.album-title-navigation button small {
+  color: #526159;
+  line-height: 1.35;
+}
+.album-title-navigation button[aria-current="page"] {
+  border-color: #245c39;
+  background: #eef8f1;
+}
+.album-title-section > label {
+  display: block;
+  margin-top: 1.25rem;
+}
+.album-title-section .inline {
+  align-items: stretch;
+}
+.change-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0.75rem 0 0;
+}
+.change-summary > div {
+  min-width: 0;
+}
+.change-summary dd {
+  overflow-wrap: anywhere;
+}
+.workflow-empty {
+  padding: 1.5rem;
+  border: 1px dashed #aab5ad;
+  border-radius: 10px;
+  background: #f7f9f7;
+}
+.workflow-empty h4,
+.workflow-empty p {
+  margin: 0;
+}
+.workflow-empty p {
+  margin-top: 0.35rem;
+  color: #526159;
+}
 .sync-workflow-header > div > p:last-child {
   margin-bottom: 0;
   color: #526159;
@@ -1205,6 +1259,9 @@ td {
   .settings-navigation {
     grid-template-columns: 1fr;
   }
+  .album-title-navigation {
+    grid-template-columns: 1fr;
+  }
   .sync-recovery-alert {
     align-items: stretch;
     flex-direction: column;
@@ -1280,6 +1337,16 @@ td {
   }
   .workflow-result-list span:last-child {
     grid-column: 1;
+  }
+  .history li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .history li button {
+    width: 100%;
+  }
+  .change-summary {
+    grid-template-columns: 1fr;
   }
   .sequence-settings {
     grid-template-columns: 1fr;
