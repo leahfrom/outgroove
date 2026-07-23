@@ -705,7 +705,7 @@ describe("tag edit UI safety states", () => {
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review exact changes",
+      name: "Review 2 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -718,7 +718,9 @@ describe("tag edit UI safety states", () => {
     expect(confirmButton).toHaveFocus();
     await user.keyboard("{Enter}");
     const outcome = await screen.findByLabelText("Track metadata result");
-    expect(outcome).toHaveTextContent("Write re-read and verified");
+    expect(outcome).toHaveTextContent(
+      "Track metadata write re-read and verified",
+    );
     expect(outcome).toHaveFocus();
     expect(screen.getByLabelText("Track metadata editor")).toBeInTheDocument();
     expect(
@@ -758,9 +760,7 @@ describe("tag edit UI safety states", () => {
     );
     await user.clear(screen.getByLabelText("Track title"));
     await user.type(screen.getByLabelText("Track title"), "Renamed Track");
-    await user.click(
-      screen.getByRole("button", { name: "Review exact changes" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Review 1 change" }));
     const preview = await screen.findByLabelText("Track metadata confirmation");
     await user.click(
       within(preview).getByRole("button", {
@@ -776,7 +776,7 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Track metadata confirmation"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
-      "Track was not changed",
+      "0 verified; 1 need attention",
     );
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
       "stale preview",
@@ -802,9 +802,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Workbench");
     expect(screen.getByLabelText("Track title")).toHaveValue("Draft title");
 
-    await user.click(
-      screen.getByRole("button", { name: "Review exact changes" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Review 1 change" }));
     expect(
       await screen.findByLabelText("Track metadata confirmation"),
     ).toBeInTheDocument();

@@ -928,23 +928,107 @@ pre {
 .track-editor {
   max-width: 980px;
 }
-.track-editor fieldset {
-  min-width: 0;
-  margin: 1.25rem 0 0;
-  padding: 1rem;
+.track-editor-context {
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
   border: 1px solid #d8ddd8;
   border-radius: 10px;
-  background: white;
+  background: #f7f9f7;
 }
-.track-editor legend {
-  padding: 0 0.35rem;
+.track-editor-context > div {
+  display: contents;
+}
+.track-editor-context dt {
   font-weight: 750;
 }
-.track-editor fieldset .field-grid {
-  margin-bottom: 0;
+.track-editor-context dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-.track-editor > .actions {
+.tag-comparison {
+  overflow: hidden;
+  border: 1px solid #b8c3bb;
+  border-radius: 12px;
+  background: white;
+}
+.tag-comparison-header,
+.tag-comparison-row {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 0.8fr) minmax(150px, 1fr) minmax(220px, 1.35fr)
+    minmax(88px, auto);
+  gap: 0.75rem;
+  align-items: center;
+}
+.tag-comparison-header {
+  padding: 0.7rem 0.85rem;
+  background: #edf1ed;
+  color: #425149;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tag-comparison-row {
+  position: relative;
+  padding: 0.75rem 0.85rem;
+  border-top: 1px solid #d8ddd8;
+}
+.tag-comparison-row[data-changed="true"] {
+  background: #fff9eb;
+  box-shadow: inset 3px 0 #9a6822;
+}
+.tag-comparison-field label {
+  font-weight: 750;
+}
+.tag-comparison-current,
+.tag-comparison-proposed {
+  min-width: 0;
+}
+.tag-comparison-current > span:last-child {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #425149;
+}
+.tag-comparison-proposed input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.comparison-status {
+  justify-self: start;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.comparison-status.changed {
+  border: 1px solid #b07b2d;
+  background: #fff0c7;
+  color: #704611;
+}
+.comparison-status.unchanged {
+  border: 1px solid #c5cec7;
+  background: #f3f5f3;
+  color: #526159;
+}
+.comparison-mobile-label {
+  display: none;
+}
+.track-comparison-summary {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
   margin-top: 1rem;
+}
+.track-comparison-summary > p {
+  margin: 0;
+  color: #526159;
+  font-weight: 650;
 }
 .workflow-heading {
   display: flex;
@@ -1321,6 +1405,43 @@ td {
   .track-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+  .tag-comparison-header {
+    display: none;
+  }
+  .tag-comparison-row {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+    padding: 1rem;
+  }
+  .comparison-mobile-label {
+    display: block;
+    margin-bottom: 0.15rem;
+    color: #526159;
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .comparison-status {
+    justify-self: start;
+  }
+  .track-comparison-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .track-comparison-summary .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .track-editor-context {
+    grid-template-columns: 1fr;
+  }
+  .track-editor-context > div {
+    display: block;
+  }
+  .track-editor-context dd + dt {
+    margin-top: 0.5rem;
   }
   .selection-toolbar {
     align-items: stretch;

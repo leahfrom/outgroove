@@ -1,16 +1,15 @@
-import {
-  forwardRef,
-  useEffect,
-  useRef,
-  type ChangeEvent,
-  type Ref,
-} from "react";
+import { forwardRef, type ChangeEvent, type Ref } from "react";
 
 import type {
   TagEditResultDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  WorkbenchConfirmation,
+  WorkbenchDraftHeading,
+  WorkbenchWriteResult,
+} from "./workbench-review-stage";
 
 export interface TrackMetadataDraft {
   title: string;
@@ -19,6 +18,67 @@ export interface TrackMetadataDraft {
   trackNumber: string;
   discNumber: string;
   year: string;
+}
+
+type TrackMetadataField = keyof TrackMetadataDraft;
+
+interface ComparisonField {
+  readonly field: TrackMetadataField;
+  readonly label: string;
+  readonly inputType?: "number";
+  readonly max?: number;
+  readonly placeholder?: string;
+}
+
+const comparisonFields: readonly ComparisonField[] = [
+  { field: "title", label: "Track title" },
+  { field: "artist", label: "Track artist" },
+  { field: "albumArtist", label: "Album artist" },
+  {
+    field: "trackNumber",
+    label: "Track number",
+    inputType: "number",
+    max: 9999,
+  },
+  { field: "discNumber", label: "Disc number", inputType: "number", max: 999 },
+  {
+    field: "year",
+    label: "Release date",
+    placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD",
+  },
+];
+
+const previewFieldLabels: Record<string, string> = {
+  title: "Track title",
+  artist: "Track artist",
+  albumArtist: "Album artist",
+  trackNumber: "Track number",
+  discNumber: "Disc number",
+  year: "Release date",
+};
+
+function currentValue(
+  track: CatalogAlbum["tracks"][number],
+  field: TrackMetadataField,
+): string {
+  switch (field) {
+    case "title":
+      return track.tags.title;
+    case "artist":
+      return track.tags.artist;
+    case "albumArtist":
+      return track.tags.albumArtist;
+    case "trackNumber":
+      return track.tags.trackNumber?.toString() ?? "";
+    case "discNumber":
+      return track.tags.discNumber?.toString() ?? "";
+    case "year":
+      return track.tags.year ?? "";
+  }
+}
+
+function displayValue(value: string | number | null): string {
+  return value === null || value === "" ? "Not set" : String(value);
 }
 
 interface TrackMetadataEditorProps {
@@ -50,18 +110,10 @@ function TrackMetadataEditorComponent(
     onClose,
   }: TrackMetadataEditorProps,
   ref: Ref<HTMLElement>,
-) {
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const resultRef = useRef<HTMLDivElement>(null);
-  const written = result?.results[0];
-
-  useEffect(() => {
-    if (preview) confirmRef.current?.focus();
-  }, [preview]);
-
-  useEffect(() => {
-    if (result) resultRef.current?.focus();
-  }, [result]);
+): React.JSX.Element {
+  const changedFields = comparisonFields.filter(
+    ({ field }) => draft[field] !== currentValue(track, field),
+  );
 
   const change =
     (field: keyof TrackMetadataDraft) =>
@@ -76,86 +128,100 @@ function TrackMetadataEditorComponent(
       ref={ref}
       tabIndex={-1}
     >
-      <div className="workflow-heading">
-        <div>
-          <p className="eyebrow">Step 1 · Draft</p>
-          <h3>Edit track metadata</h3>
-          <p>
+      <WorkbenchDraftHeading
+        context="Tag comparison"
+        title="Edit track metadata"
+        description={
+          <>
             Editing <strong>{track.tags.title}</strong>
-            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Only fields
-            that differ will be proposed.
-          </p>
+            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Current
+            catalog values remain visible beside the editable proposal.
+          </>
+        }
+      />
+
+      <dl className="track-editor-context">
+        <div>
+          <dt>Format</dt>
+          <dd>{track.format}</dd>
         </div>
-        <span className="safety-badge">Source file unchanged</span>
+        <div>
+          <dt>Source file</dt>
+          <dd>{track.path}</dd>
+        </div>
+      </dl>
+
+      <div className="tag-comparison" aria-label="Track tag comparison">
+        <div className="tag-comparison-header" aria-hidden="true">
+          <span>Tag</span>
+          <span>Current value</span>
+          <span>Proposed value</span>
+          <span>State</span>
+        </div>
+        {comparisonFields.map((item) => {
+          const current = currentValue(track, item.field);
+          const changed = draft[item.field] !== current;
+          const currentId = `track-${item.field}-current`;
+          const statusId = `track-${item.field}-status`;
+          return (
+            <div
+              className="tag-comparison-row"
+              data-changed={changed ? "true" : "false"}
+              key={item.field}
+            >
+              <div className="tag-comparison-field">
+                <span className="comparison-mobile-label">Tag</span>
+                <label htmlFor={`track-${item.field}`}>{item.label}</label>
+              </div>
+              <div className="tag-comparison-current">
+                <span className="comparison-mobile-label">Current value</span>
+                <span id={currentId}>{displayValue(current)}</span>
+              </div>
+              <div className="tag-comparison-proposed">
+                <span className="comparison-mobile-label">Proposed value</span>
+                <input
+                  aria-describedby={`${currentId} ${statusId}`}
+                  aria-label={`${item.label} proposed value`}
+                  id={`track-${item.field}`}
+                  max={item.max}
+                  min={item.inputType ? 1 : undefined}
+                  placeholder={item.placeholder}
+                  type={item.inputType}
+                  value={draft[item.field]}
+                  onChange={change(item.field)}
+                />
+              </div>
+              <span
+                className={`comparison-status ${changed ? "changed" : "unchanged"}`}
+                id={statusId}
+              >
+                {changed ? "Changed" : "Unchanged"}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="safety-note">
-        <strong>Preview required</strong>
-        <span>
-          Drafting does not touch the file. You will review every exact change
-          before confirmation.
-        </span>
-      </div>
-
-      <fieldset>
-        <legend>Identity</legend>
-        <div className="field-grid">
-          <label>
-            Track title
-            <input value={draft.title} onChange={change("title")} />
-          </label>
-          <label>
-            Track artist
-            <input value={draft.artist} onChange={change("artist")} />
-          </label>
-          <label>
-            Album artist
-            <input value={draft.albumArtist} onChange={change("albumArtist")} />
-          </label>
+      <div className="track-comparison-summary">
+        <p aria-live="polite">
+          {changedFields.length === 0
+            ? "No tag changes drafted."
+            : `${changedFields.length} ${changedFields.length === 1 ? "field" : "fields"} changed.`}
+        </p>
+        <div className="actions">
+          <button
+            className="primary"
+            disabled={busy || changedFields.length === 0}
+            onClick={onPreview}
+            type="button"
+          >
+            Review {changedFields.length || "exact"}{" "}
+            {changedFields.length === 1 ? "change" : "changes"}
+          </button>
+          <button disabled={busy} onClick={onClose} type="button">
+            Close editor
+          </button>
         </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Sequence and release</legend>
-        <div className="field-grid">
-          <label>
-            Track number
-            <input
-              type="number"
-              min="1"
-              max="9999"
-              value={draft.trackNumber}
-              onChange={change("trackNumber")}
-            />
-          </label>
-          <label>
-            Disc number
-            <input
-              type="number"
-              min="1"
-              max="999"
-              value={draft.discNumber}
-              onChange={change("discNumber")}
-            />
-          </label>
-          <label>
-            Release date
-            <input
-              placeholder="YYYY, YYYY-MM, or YYYY-MM-DD"
-              value={draft.year}
-              onChange={change("year")}
-            />
-          </label>
-        </div>
-      </fieldset>
-
-      <div className="actions">
-        <button className="primary" disabled={busy} onClick={onPreview}>
-          Review exact changes
-        </button>
-        <button disabled={busy} onClick={onClose}>
-          Close editor
-        </button>
       </div>
 
       {error && (
@@ -166,36 +232,32 @@ function TrackMetadataEditorComponent(
       )}
 
       {preview && (
-        <section
-          className="preview confirmation-panel"
-          aria-label="Track metadata confirmation"
+        <WorkbenchConfirmation
+          blocked={preview.warnings.length > 0}
+          busy={busy}
+          cancelLabel="Return to track draft"
+          confirmLabel="Confirm and write track"
+          description="Outgroove will validate this proposal again, snapshot the current tags, safely replace the file, then re-read and verify every requested field."
+          label="Track metadata confirmation"
+          title="Review exact track changes"
+          onCancel={onCancelPreview}
+          onConfirm={onConfirm}
         >
-          <div className="workflow-heading">
-            <div>
-              <p className="eyebrow">Step 2 · Confirmation</p>
-              <h4>Review exact changes</h4>
-              <p>
-                This proposal will be checked again immediately before the safe
-                write.
-              </p>
-            </div>
-            <span className="safety-badge">No file changed yet</span>
-          </div>
           <div className="preview-table-scroll">
             <table>
               <thead>
                 <tr>
                   <th>Field</th>
-                  <th>Before</th>
-                  <th>After</th>
+                  <th>Current</th>
+                  <th>Proposed</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.changes.map((item) => (
                   <tr key={item.field}>
-                    <td>{item.field}</td>
-                    <td>{item.before ?? "Not set"}</td>
-                    <td>{item.after ?? "Not set"}</td>
+                    <td>{previewFieldLabels[item.field] ?? item.field}</td>
+                    <td>{displayValue(item.before)}</td>
+                    <td>{displayValue(item.after)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -206,49 +268,15 @@ function TrackMetadataEditorComponent(
               {warning}
             </p>
           ))}
-          <div className="actions">
-            <button
-              className="primary"
-              ref={confirmRef}
-              disabled={busy || preview.warnings.length > 0}
-              onClick={onConfirm}
-            >
-              Confirm and write track
-            </button>
-            <button disabled={busy} onClick={onCancelPreview}>
-              Return to draft
-            </button>
-          </div>
-        </section>
+        </WorkbenchConfirmation>
       )}
 
-      {written && (
-        <div
-          className={`workflow-result ${written.verified ? "verified" : "failed"}`}
-          aria-label="Track metadata result"
-          ref={resultRef}
-          role={written.verified ? "status" : "alert"}
-          tabIndex={-1}
-        >
-          <p className="eyebrow">Step 3 · Result</p>
-          <h4>
-            {written.verified
-              ? "Write re-read and verified"
-              : "Track was not changed"}
-          </h4>
-          <p>
-            {written.verified
-              ? "Outgroove re-read the file and confirmed the requested metadata."
-              : (written.error ??
-                "The safe write or its verification did not complete.")}
-          </p>
-          {!written.verified && (
-            <p>
-              The exact preview remains available above so you can review it or
-              return to the draft.
-            </p>
-          )}
-        </div>
+      {result && (
+        <WorkbenchWriteResult
+          label="Track metadata result"
+          results={result.results}
+          subject="Track metadata write"
+        />
       )}
     </section>
   );
