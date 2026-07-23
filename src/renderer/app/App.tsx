@@ -51,6 +51,7 @@ import {
 import { ApplicationShell, type AppView } from "./application-shell";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
+import { SharedFieldEditor } from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
@@ -307,6 +308,13 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const selectedBatchTracks = useMemo(
+    () =>
+      selectedAlbum?.tracks.filter((track) =>
+        batchTrackIds.includes(track.id),
+      ) ?? [],
+    [batchTrackIds, selectedAlbum],
   );
   const editingSyncProfile = useMemo(
     () =>
@@ -2685,231 +2693,34 @@ export function App(): React.JSX.Element {
                       </section>
                     )}
                   {activeView === "workbench" && workbenchTool === "batch" && (
-                    <section
-                      className="card"
-                      aria-label="Batch metadata editor"
+                    <SharedFieldEditor
+                      busy={busy}
+                      draft={batchDraft}
+                      enabled={batchEnabled}
+                      preview={batchPreview}
                       ref={batchEditorRef}
-                      tabIndex={-1}
-                    >
-                      <WorkbenchDraftHeading
-                        context="Draft"
-                        title="Edit shared metadata"
-                        description={
-                          <>
-                            {batchTrackIds.length} tracks selected. Enable only
-                            the shared fields you intend to write. Track titles
-                            and track numbers stay in the single-track editor.
-                          </>
-                        }
-                      />
-                      <div className="field-grid">
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.artist}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  artist: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change track artist
-                          </span>
-                          <input
-                            aria-label="Batch track artist value"
-                            disabled={!batchEnabled.artist}
-                            value={batchDraft.artist}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                artist: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.albumArtist}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  albumArtist: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change album artist
-                          </span>
-                          <input
-                            aria-label="Batch album artist value"
-                            disabled={!batchEnabled.albumArtist}
-                            value={batchDraft.albumArtist}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                albumArtist: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.discNumber}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  discNumber: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change disc number
-                          </span>
-                          <input
-                            aria-label="Batch disc number value"
-                            type="number"
-                            min="1"
-                            max="999"
-                            placeholder="Empty clears the value"
-                            disabled={!batchEnabled.discNumber}
-                            value={batchDraft.discNumber}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                discNumber: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.year}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  year: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change release date
-                          </span>
-                          <input
-                            aria-label="Batch release date value"
-                            placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
-                            disabled={!batchEnabled.year}
-                            value={batchDraft.year}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                year: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                      </div>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          batchTrackIds.length < 2 ||
-                          !Object.values(batchEnabled).some(Boolean)
-                        }
-                        onClick={() => void previewBatchEdit()}
-                      >
-                        Preview selected tracks
-                      </button>
-                      {batchPreview && (
-                        <WorkbenchConfirmation
-                          blocked={batchPreview.files.some(
-                            (file) =>
-                              file.willWrite && file.warnings.length > 0,
-                          )}
-                          busy={busy}
-                          cancelLabel="Return to shared-field draft"
-                          confirmLabel="Confirm and write selected tracks"
-                          description="Unchanged tracks will be skipped. Every proposed write is checked again immediately before Outgroove creates a snapshot and writes."
-                          label="Batch confirmation"
-                          title="Review every selected file"
-                          onCancel={() => setBatchPreview(undefined)}
-                          onConfirm={() => void applyBatchEdit()}
-                        >
-                          <div className="workbench-file-reviews">
-                            {batchPreview.files.map((file) => (
-                              <article key={file.fileId}>
-                                <h5>{file.path}</h5>
-                                {!file.willWrite && (
-                                  <p className="review-status">
-                                    Status: unchanged — skipped
-                                  </p>
-                                )}
-                                {file.changes.length > 0 && (
-                                  <div className="preview-table-scroll">
-                                    <table>
-                                      <thead>
-                                        <tr>
-                                          <th>Field</th>
-                                          <th>Before</th>
-                                          <th>After</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {file.changes.map((change) => (
-                                          <tr key={change.field}>
-                                            <td>{change.field}</td>
-                                            <td>
-                                              {change.before ?? "Not set"}
-                                            </td>
-                                            <td>{change.after ?? "Not set"}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                                {file.warnings.map((warning) => (
-                                  <p
-                                    className="workflow-error"
-                                    key={warning}
-                                    role="alert"
-                                  >
-                                    {warning}
-                                  </p>
-                                ))}
-                              </article>
-                            ))}
-                          </div>
-                        </WorkbenchConfirmation>
-                      )}
-                      {batchResult && (
-                        <WorkbenchWriteResult
-                          label="Batch metadata result"
-                          results={batchResult.results}
-                          subject="Shared-field write"
-                        />
-                      )}
-                    </section>
+                      result={batchResult}
+                      tracks={selectedBatchTracks}
+                      onCancelPreview={() => setBatchPreview(undefined)}
+                      onConfirm={() => void applyBatchEdit()}
+                      onDraftChange={(field, value) => {
+                        setBatchDraft((draft) => ({
+                          ...draft,
+                          [field]: value,
+                        }));
+                        setBatchPreview(undefined);
+                        setBatchResult(undefined);
+                      }}
+                      onEnabledChange={(field, enabled) => {
+                        setBatchEnabled((current) => ({
+                          ...current,
+                          [field]: enabled,
+                        }));
+                        setBatchPreview(undefined);
+                        setBatchResult(undefined);
+                      }}
+                      onPreview={() => void previewBatchEdit()}
+                    />
                   )}
                   {activeView === "workbench" &&
                     workbenchTool === "sequence" && (
