@@ -998,6 +998,36 @@ pre {
   min-width: 0;
   margin: 0;
 }
+.mixed-values summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #704611;
+  font-weight: 750;
+}
+.mixed-values ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mixed-values li {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding-left: 0.65rem;
+  border-left: 2px solid #d7c69f;
+}
+.mixed-values li strong,
+.mixed-values li span {
+  overflow-wrap: anywhere;
+}
+.mixed-values li strong {
+  font-size: 0.8rem;
+}
+.mixed-values li span {
+  color: #526159;
+}
 .comparison-status {
   justify-self: start;
   padding: 0.25rem 0.45rem;
@@ -1029,6 +1059,9 @@ pre {
   margin: 0;
   color: #526159;
   font-weight: 650;
+}
+.shared-field-editor {
+  max-width: 1040px;
 }
 .workflow-heading {
   display: flex;
