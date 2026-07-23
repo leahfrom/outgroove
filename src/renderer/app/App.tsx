@@ -18,6 +18,7 @@ import type {
   SyncRecoverySummaryDto,
   SyncPlanDto,
   SyncProfileDto,
+  SyncProfileTargetPreviewDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
@@ -228,6 +229,8 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [syncTargetPreview, setSyncTargetPreview] =
+    useState<SyncProfileTargetPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -1224,6 +1227,7 @@ export function App(): React.JSX.Element {
     setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncTargetPreview(undefined);
     void refreshSyncHistory(saved.id);
     setNotice(
       `Opened DAP profile “${saved.name}”. Preview its copy plan before applying anything.`,
@@ -1311,6 +1315,55 @@ export function App(): React.JSX.Element {
           setNotice(
             `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
           );
+      } else setNotice(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseSyncProfileTarget = async (
+    saved: SyncProfileDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.chooseSyncProfileTarget({
+        profileId: saved.id,
+      });
+      if (result.ok && result.value) {
+        setProfile(saved);
+        setSyncPlan(undefined);
+        setSyncTargetPreview(result.value);
+        setNotice(
+          `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+        );
+      } else if (!result.ok) setNotice(result.error.message);
+      else setNotice("DAP target selection cancelled.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applySyncProfileTarget = async (): Promise<void> => {
+    if (!syncTargetPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncProfileTarget({
+        operationId: syncTargetPreview.operationId,
+        confirmationToken: syncTargetPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setProfile(result.value);
+        setSyncPlan(undefined);
+        setSyncTargetPreview(undefined);
+        setSyncProfiles((current) =>
+          current.map((candidate) =>
+            candidate.id === result.value.id ? result.value : candidate,
+          ),
+        );
+        await refreshSyncProfiles();
+        setNotice(
+          `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+        );
       } else setNotice(result.error.message);
     } finally {
       setBusy(false);
@@ -3392,6 +3445,16 @@ export function App(): React.JSX.Element {
                   >
                     Edit albums in DAP profile {saved.name}
                   </button>
+                  <button
+                    disabled={
+                      busy ||
+                      Boolean(editingSyncProfileId) ||
+                      Boolean(renamingSyncProfileId)
+                    }
+                    onClick={() => void chooseSyncProfileTarget(saved)}
+                  >
+                    Change DAP target for {saved.name}
+                  </button>
                   {renamingSyncProfileId === saved.id ? (
                     <form
                       aria-label={`Rename DAP profile ${saved.name}`}
@@ -3444,6 +3507,38 @@ export function App(): React.JSX.Element {
               </li>
             ))}
           </ul>
+        )}
+        {syncTargetPreview && (
+          <section className="preview" aria-label="DAP target confirmation">
+            <h3>Review DAP target change</h3>
+            <p>
+              <strong>{syncTargetPreview.profileName}</strong>
+            </p>
+            <p>Current target: {syncTargetPreview.currentTargetPath}</p>
+            <p>New target: {syncTargetPreview.proposedTargetPath}</p>
+            <p>
+              This changes only the saved profile. No source audio or target
+              files will be read, copied, replaced, or deleted. Existing sync
+              history stays attached to the profile. A fresh sync preview will
+              treat ownership separately for this target.
+            </p>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() => void applySyncProfileTarget()}
+            >
+              Confirm DAP target change
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setSyncTargetPreview(undefined);
+                setNotice("Discarded the DAP target change preview.");
+              }}
+            >
+              Cancel DAP target change
+            </button>
+          </section>
         )}
         {profile && (
           <div aria-label="Active DAP profile">

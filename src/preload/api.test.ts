@@ -91,6 +91,22 @@ describe("preload saved-filter allowlist", () => {
       rename,
     );
 
+    await api.chooseSyncProfileTarget({ profileId: update.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.chooseSyncProfileTarget,
+      { profileId: update.id },
+    );
+
+    const targetChange = {
+      operationId: update.id,
+      confirmationToken: "confirmation-token-long-enough",
+    };
+    await api.applySyncProfileTarget(targetChange);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.applySyncProfileTarget,
+      targetChange,
+    );
+
     const history = { profileId: update.id };
     await api.listSyncHistory(history);
     expect(electron.invoke).toHaveBeenLastCalledWith(

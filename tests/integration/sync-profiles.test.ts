@@ -99,7 +99,10 @@ describe("saved DAP profiles", () => {
         },
       ],
     });
-    const previousManifest = database.getLatestManifest(older.id);
+    const previousManifest = database.getLatestManifest(
+      older.id,
+      "/targets/older",
+    );
     expect(() =>
       database.updateSyncProfileAlbums(older.id, [zetaId, zetaId]),
     ).toThrow("distinct albums");
@@ -116,7 +119,29 @@ describe("saved DAP profiles", () => {
       albumIds: [alphaId, zetaId],
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
+    expect(database.getLatestManifest(older.id, "/targets/older")).toEqual(
+      previousManifest,
+    );
+    expect(
+      database.updateSyncProfileTarget(older.id, "/targets/replacement"),
+    ).toMatchObject({
+      id: older.id,
+      targetPath: "/targets/replacement",
+      albumIds: [alphaId, zetaId],
+    });
+    expect(
+      database.getLatestManifest(older.id, "/targets/replacement"),
+    ).toBeUndefined();
+    expect(database.getLatestManifest(older.id, "/targets/older")).toEqual(
+      previousManifest,
+    );
+    expect(database.listSyncHistory(older.id)).toHaveLength(1);
+    expect(() =>
+      database.updateSyncProfileTarget(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "/targets/missing",
+      ),
+    ).toThrow("no longer exists");
     expect(() => database.renameSyncProfile(older.id, "   ")).toThrow(
       "between 1 and 100",
     );
@@ -131,11 +156,13 @@ describe("saved DAP profiles", () => {
     ).toMatchObject({
       id: older.id,
       name: "Pocket DAP",
-      targetPath: "/targets/older",
+      targetPath: "/targets/replacement",
       albumIds: [alphaId, zetaId],
       createdAt: "2026-01-01T00:00:00.000Z",
     });
-    expect(database.getLatestManifest(older.id)).toEqual(previousManifest);
+    expect(database.getLatestManifest(older.id, "/targets/older")).toEqual(
+      previousManifest,
+    );
     database.saveManifest(older.id, "/targets/second", {
       entries: [
         {
