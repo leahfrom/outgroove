@@ -299,7 +299,7 @@ describe("tag edit UI safety states", () => {
     ).toBeEnabled();
   });
 
-  it("shows complete technical details with keyboard-accessible disclosure", async () => {
+  it("shows summary-first technical details with a separate advanced metadata disclosure", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,
       value: api(true),
@@ -318,10 +318,77 @@ describe("tag edit UI safety states", () => {
     expect(within(details).getByText("128 kbps")).toBeVisible();
     expect(within(details).getByText("44.1 kHz")).toBeVisible();
     expect(within(details).getByText("Mono (1 channel)")).toBeVisible();
-    expect(within(details).getByText("100 B")).toBeVisible();
+    expect(
+      within(details).getByText("File size").nextElementSibling,
+    ).toHaveTextContent("100 B");
     expect(
       within(details).getByText("Bit depth").nextElementSibling,
     ).toHaveTextContent("Unknown");
+    expect(
+      within(details).queryByRole("button", { name: "Edit track metadata" }),
+    ).not.toBeInTheDocument();
+
+    const advancedLabel = within(details).getByText("Advanced metadata");
+    const advanced = advancedLabel.closest("details");
+    const advancedSummary = advancedLabel.closest("summary");
+    if (!advanced || !advancedSummary)
+      throw new Error("Advanced metadata disclosure missing");
+    expect(advanced).not.toHaveAttribute("open");
+    advancedSummary.focus();
+    expect(advancedSummary).toHaveFocus();
+    await user.click(advancedSummary);
+    expect(advanced).toHaveAttribute("open");
+    expect(
+      within(advanced).getByRole("region", { name: "Normalized track tags" }),
+    ).toHaveTextContent('"title": "Track"');
+    expect(
+      within(advanced).getByRole("region", { name: "Native track tags" }),
+    ).toHaveTextContent("ID3v2:TALB");
+  });
+
+  it("marks the selected album without exposing Workbench controls in Library", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [album, secondAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 2,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const albums = await screen.findByLabelText("Albums");
+    const first = within(albums).getByRole("button", {
+      name: /^Fixture Album/u,
+    });
+    const second = within(albums).getByRole("button", {
+      name: /^Second Album/u,
+    });
+
+    expect(first).toHaveAttribute("aria-current", "true");
+    expect(second).not.toHaveAttribute("aria-current");
+    expect(
+      screen.queryByRole("button", { name: "Edit track metadata" }),
+    ).not.toBeInTheDocument();
+
+    second.focus();
+    await user.keyboard("{Enter}");
+    expect(second).toHaveAttribute("aria-current", "true");
+    expect(first).not.toHaveAttribute("aria-current");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Second Album" }),
+    ).toBeVisible();
   });
 
   it("shows per-file before/after preview before exposing explicit confirmation", async () => {

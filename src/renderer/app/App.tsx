@@ -44,6 +44,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView } from "./activity-view";
 import { ApplicationShell, type AppView } from "./application-shell";
+import { LibraryTrackDetail } from "./library-track-detail";
 import {
   WorkbenchNavigation,
   type WorkbenchTool,
@@ -2236,6 +2237,9 @@ export function App(): React.JSX.Element {
                     );
                     return (
                       <button
+                        aria-current={
+                          album.id === selectedAlbumId ? "true" : undefined
+                        }
                         className={
                           album.id === selectedAlbumId
                             ? "album selected"
@@ -2292,6 +2296,7 @@ export function App(): React.JSX.Element {
                       {activeView === "library" ? (
                         <>
                           <button
+                            className="primary"
                             onClick={() => {
                               setWorkbenchTool("overview");
                               setActiveView("workbench");
@@ -2340,7 +2345,11 @@ export function App(): React.JSX.Element {
                       className="card diagnostics"
                       aria-label="Album data quality"
                     >
-                      <h3>Workbench · album data quality</h3>
+                      <h3>
+                        {activeView === "library"
+                          ? "Album data quality"
+                          : "Album review"}
+                      </h3>
                       <p>
                         Findings come from the current local catalog. They
                         select a review workflow but never infer, preview, or
@@ -2396,70 +2405,34 @@ export function App(): React.JSX.Element {
                   {(activeView === "library" ||
                     workbenchTool === "overview" ||
                     workbenchTool === "batch") && (
-                    <div className="track-list">
-                      {selectedAlbum.tracks.map((track) => (
-                        <details key={track.id}>
-                          <summary>
-                            <span>
-                              {track.tags.discNumber ?? 1}.
-                              {track.tags.trackNumber ?? "—"} {track.tags.title}
-                            </span>
-                            <span>
-                              {track.format} · {track.codec ?? "Unknown codec"}{" "}
-                              · {formatDuration(track.durationSeconds)}
-                            </span>
-                          </summary>
-                          <dl>
-                            <dt>Container/format</dt>
-                            <dd>{track.format}</dd>
-                            <dt>Codec</dt>
-                            <dd>{track.codec ?? "Unknown"}</dd>
-                            <dt>Duration</dt>
-                            <dd>{formatDuration(track.durationSeconds)}</dd>
-                            <dt>Bitrate</dt>
-                            <dd>{formatBitrate(track.bitrate)}</dd>
-                            <dt>Sample rate</dt>
-                            <dd>{formatSampleRate(track.sampleRate)}</dd>
-                            <dt>Bit depth</dt>
-                            <dd>{formatBitDepth(track.bitDepth)}</dd>
-                            <dt>Channels</dt>
-                            <dd>{formatChannels(track.channels)}</dd>
-                            <dt>File size</dt>
-                            <dd>{formatFileSize(track.size)}</dd>
-                            <dt>Path</dt>
-                            <dd>{track.path}</dd>
-                            <dt>Normalized tags</dt>
-                            <dd>
-                              <pre>{JSON.stringify(track.tags, null, 2)}</pre>
-                            </dd>
-                            <dt>Native tags</dt>
-                            <dd>
-                              <pre>
-                                {JSON.stringify(track.nativeTags, null, 2)}
-                              </pre>
-                            </dd>
-                          </dl>
-                          {activeView === "workbench" && (
-                            <label>
-                              <input
-                                type="checkbox"
-                                checked={batchTrackIds.includes(track.id)}
-                                onChange={() => toggleBatchTrack(track.id)}
-                              />
-                              Select {track.tags.title} for batch edit
-                            </label>
-                          )}
-                          {activeView === "workbench" && (
-                            <button
-                              disabled={busy}
-                              onClick={() => editTrack(track)}
-                            >
-                              Edit track metadata
-                            </button>
-                          )}
-                        </details>
-                      ))}
-                    </div>
+                    <section
+                      className="album-tracks"
+                      aria-labelledby="album-tracks-title"
+                    >
+                      <div className="track-section-heading">
+                        <div>
+                          <h3 id="album-tracks-title">Tracks</h3>
+                          <p>
+                            Open a track for technical details. Raw tag data
+                            stays in its Advanced metadata disclosure.
+                          </p>
+                        </div>
+                        <span>{selectedAlbum.tracks.length} total</span>
+                      </div>
+                      <div className="track-list">
+                        {selectedAlbum.tracks.map((track) => (
+                          <LibraryTrackDetail
+                            busy={busy}
+                            key={track.id}
+                            mode={activeView}
+                            selectedForBatch={batchTrackIds.includes(track.id)}
+                            track={track}
+                            onEdit={() => editTrack(track)}
+                            onToggleBatch={() => toggleBatchTrack(track.id)}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   )}
                   {activeView === "workbench" && workbenchTool === "batch" && (
                     <section
