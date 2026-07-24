@@ -9,6 +9,12 @@ export const appViews = [
 ] as const;
 
 export type AppView = (typeof appViews)[number];
+export type NoticeTone = "info" | "success" | "error";
+
+export interface AppNotice {
+  readonly message: string;
+  readonly tone: NoticeTone;
+}
 
 const viewCopy: Record<
   AppView,
@@ -39,11 +45,13 @@ const viewCopy: Record<
 export function ApplicationShell({
   activeView,
   notice,
+  onDismissNotice,
   onNavigate,
   children,
 }: {
   readonly activeView: AppView;
-  readonly notice: string;
+  readonly notice: AppNotice | undefined;
+  readonly onDismissNotice: () => void;
   readonly onNavigate: (view: AppView) => void;
   readonly children: ReactNode;
 }): React.JSX.Element {
@@ -82,9 +90,32 @@ export function ApplicationShell({
             <p>{current.description}</p>
           </div>
         </header>
-        <p className="notice" role="status">
-          {notice}
-        </p>
+        {notice && (
+          <div
+            aria-atomic="true"
+            aria-live={notice.tone === "error" ? "assertive" : "polite"}
+            className={`notice ${notice.tone}`}
+            role="status"
+          >
+            <p>
+              <strong className="notice-label">
+                {notice.tone === "error"
+                  ? "Needs attention"
+                  : notice.tone === "success"
+                    ? "Completed"
+                    : "Update"}
+              </strong>
+              <span>{notice.message}</span>
+            </p>
+            <button
+              aria-label="Dismiss notification"
+              onClick={onDismissNotice}
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {children}
       </div>
     </div>

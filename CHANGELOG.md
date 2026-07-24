@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.10.0 — 2026-07-24
+
+- Complete the desktop UI foundation with persistent Library, Workbench, Sync,
+  Activity, and Settings workspaces that preserve searches, album and track
+  context, drafts, previews, confirmations, and DAP selections while
+  navigating.
+- Add a guided first-Library experience that separates folder selection from
+  the explicit read-only scan, explains local/offline safety, and keeps scan
+  cancellation, interruption, empty results, and retry recoverable.
+- Restructure metadata work into focused draft, exact-change review,
+  confirmation, verified-result, and history stages. Single-track,
+  shared-field, and track-order editors compare current and proposed values
+  without hiding mixed selections or long source paths.
+- Rework album-title history and undo so confirmed operations, refused stale
+  writes, per-file verification, and the next safe recovery action remain
+  visible without presenting every control at once.
+- Split DAP Sync into progressively disclosed album/profile setup, deterministic
+  plan review and apply, and interrupted-run recovery workspaces. Source audio,
+  target ownership checks, confirmations, manifests, cancellation, and recovery
+  behavior are unchanged.
+- Add contextual Activity and Settings workspaces for running jobs, scan
+  results, watched folders, database backup, and verified restore without
+  duplicating durable history or burying safety actions.
+- Give global updates, completed work, and failures distinct non-color-only
+  feedback with appropriate live announcements, then refine shared spacing,
+  typography, focus visibility, long-content handling, and narrow-window
+  behavior across the packaged app.
+
 ## 0.9.0 — 2026-07-23
 
 - Replace the single-page development workbench with a persistent desktop

@@ -43,21 +43,42 @@ import {
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
-import { ApplicationShell, type AppView } from "./application-shell";
+import {
+  AlbumTitleWorkbench,
+  type AlbumTitleSection,
+  type BatchUndoKind,
+} from "./album-title-workbench";
+import {
+  ApplicationShell,
+  type AppNotice,
+  type AppView,
+  type NoticeTone,
+} from "./application-shell";
+import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
+import { SharedFieldEditor } from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
+import { SyncPlanReview } from "./sync-plan-review";
 import {
-  SettingsNavigation,
-  type SettingsSection,
-} from "./settings-navigation";
+  SyncRecoveryWorkspace,
+  type SyncRecoveryFeedback,
+} from "./sync-recovery-workspace";
+import {
+  SyncSetupWorkspace,
+  type SyncSetupSection,
+} from "./sync-setup-workspace";
+import type { SettingsSection } from "./settings-navigation";
+import { SettingsView } from "./settings-view";
 import {
   WorkbenchNavigation,
   type WorkbenchTool,
 } from "./workbench-navigation";
+import { WorkbenchTrackContext } from "./workbench-track-context";
 
 const PAGE_SIZE = 20;
 
@@ -130,12 +151,17 @@ export function App(): React.JSX.Element {
   const [activeView, setActiveView] = useState<AppView>("library");
   const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
+  const [syncSetupSection, setSyncSetupSection] =
+    useState<SyncSetupSection>("selection");
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("library-folders");
   const [rootId, setRootId] = useState<string>();
   const [libraryRoots, setLibraryRoots] = useState<readonly LibraryRootDto[]>(
     [],
   );
+  const [libraryRootsLoaded, setLibraryRootsLoaded] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
+  const [librarySetupError, setLibrarySetupError] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [genres, setGenres] = useState<readonly LibraryGenreDto[]>([]);
@@ -181,12 +207,18 @@ export function App(): React.JSX.Element {
   const [rootRemovalPreview, setRootRemovalPreview] =
     useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
+  const [albumTitleSection, setAlbumTitleSection] =
+    useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
   const [editPreview, setEditPreview] = useState<TagEditPreviewDto>();
+  const [editResult, setEditResult] = useState<TagEditResultDto>();
+  const [editError, setEditError] = useState<string>();
   const [editHistory, setEditHistory] = useState<
     readonly TagEditHistoryItemDto[]
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
+  const [undoResult, setUndoResult] = useState<TagEditResultDto>();
+  const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
   const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
@@ -202,6 +234,7 @@ export function App(): React.JSX.Element {
   const [trackEditError, setTrackEditError] = useState<string>();
   const [trackUndoPreview, setTrackUndoPreview] =
     useState<TrackTagEditPreviewDto>();
+  const [trackUndoResult, setTrackUndoResult] = useState<TagEditResultDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
   const [batchEnabled, setBatchEnabled] = useState({
     artist: false,
@@ -226,6 +259,8 @@ export function App(): React.JSX.Element {
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
+  const [batchUndoKind, setBatchUndoKind] =
+    useState<BatchUndoKind>("shared-fields");
   const [syncAlbums, setSyncAlbums] = useState<
     readonly Pick<CatalogAlbum, "id" | "title" | "albumArtist">[]
   >([]);
@@ -245,6 +280,8 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [syncRecoveryFeedback, setSyncRecoveryFeedback] =
+    useState<SyncRecoveryFeedback>();
   const [syncTargetPreview, setSyncTargetPreview] =
     useState<SyncProfileTargetPreviewDto>();
   const [profile, setProfile] = useState<{
@@ -259,8 +296,12 @@ export function App(): React.JSX.Element {
     useState(false);
   const [progress, setProgress] = useState<ActivityProgress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
-  const [notice, setNotice] = useState(
-    "Choose a fixture or test library folder to begin.",
+  const [notice, setNoticeState] = useState<AppNotice>();
+  const setNotice = useCallback(
+    (message: string, tone: NoticeTone = "info"): void => {
+      setNoticeState(message ? { message, tone } : undefined);
+    },
+    [],
   );
   const [busy, setBusy] = useState(false);
   const [diagnosticDestination, setDiagnosticDestination] = useState<{
@@ -269,8 +310,12 @@ export function App(): React.JSX.Element {
   }>();
   const trackEditorRef = useRef<HTMLElement>(null);
   const batchEditorRef = useRef<HTMLElement>(null);
-  const sequenceEditorRef = useRef<HTMLDivElement>(null);
+  const sequenceEditorRef = useRef<HTMLElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
+  const syncPlanHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncTargetPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
@@ -284,6 +329,23 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const selectedBatchTracks = useMemo(
+    () =>
+      selectedAlbum?.tracks.filter((track) =>
+        batchTrackIds.includes(track.id),
+      ) ?? [],
+    [batchTrackIds, selectedAlbum],
+  );
+  const orderedSequenceTracks = useMemo(
+    () =>
+      batchTrackIds.flatMap((fileId) => {
+        const track = selectedAlbum?.tracks.find(
+          (candidate) => candidate.id === fileId,
+        );
+        return track ? [track] : [];
+      }),
+    [batchTrackIds, selectedAlbum],
   );
   const editingSyncProfile = useMemo(
     () =>
@@ -351,6 +413,7 @@ export function App(): React.JSX.Element {
         : {}),
     });
     if (requestId !== libraryRequestId.current) return;
+    setCatalogLoaded(true);
     if (result.ok) {
       if (result.value.totalItems <= pageOffset && pageOffset > 0) {
         setPageOffset(
@@ -373,7 +436,7 @@ export function App(): React.JSX.Element {
           ? current
           : result.value.albums[0]?.id,
       );
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   }, [
     albumArtistFilter,
     albumIdFilter,
@@ -390,7 +453,7 @@ export function App(): React.JSX.Element {
     async (albumId: string): Promise<void> => {
       const result = await window.outgroove.listAlbumEditHistory({ albumId });
       if (result.ok) setEditHistory(result.value);
-      else setNotice(result.error.message);
+      else setNotice(result.error.message, "error");
     },
     [],
   );
@@ -404,7 +467,8 @@ export function App(): React.JSX.Element {
           ? current
           : result.value[0]?.id,
       );
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
+    setLibraryRootsLoaded(true);
   }, []);
 
   const refreshSavedFilters = useCallback(async (): Promise<boolean> => {
@@ -416,7 +480,7 @@ export function App(): React.JSX.Element {
       );
       return true;
     }
-    setNotice(result.error.message);
+    setNotice(result.error.message, "error");
     return false;
   }, []);
 
@@ -428,7 +492,7 @@ export function App(): React.JSX.Element {
       setSyncProfiles(result.value);
       return result.value;
     }
-    setNotice(result.error.message);
+    setNotice(result.error.message, "error");
     return undefined;
   }, []);
 
@@ -445,7 +509,7 @@ export function App(): React.JSX.Element {
         setSyncHistory(result.value);
         return true;
       }
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
       return false;
     },
     [],
@@ -456,7 +520,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSyncRecoveries(result.value);
       setSyncRecoveryPreview(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   }, []);
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
@@ -466,12 +530,13 @@ export function App(): React.JSX.Element {
       if (job.state === "completed" && job.result) {
         setNotice(
           `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+          job.result.errors === 0 ? "success" : "error",
         );
         void refreshLibraryRoots();
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
-        setNotice(job.error ?? job.detail);
+        setNotice(job.error ?? job.detail, "error");
     });
     void Promise.all([
       window.outgroove.listLibraryRoots(),
@@ -486,14 +551,15 @@ export function App(): React.JSX.Element {
             ? latest.value.rootId
             : undefined;
         setRootId(latestRootId ?? roots.value[0]?.id);
-      } else setNotice(roots.error.message);
+      } else setNotice(roots.error.message, "error");
+      setLibraryRootsLoaded(true);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
         if (
           latest.value.state === "failed" ||
           latest.value.state === "interrupted"
         )
-          setNotice(latest.value.error ?? latest.value.detail);
+          setNotice(latest.value.error ?? latest.value.detail, "error");
       }
     });
     return unsubscribe;
@@ -510,6 +576,19 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSyncRecoveries();
   }, [refreshSyncRecoveries]);
+
+  useEffect(() => {
+    if (syncPlan) syncPlanHeadingRef.current?.focus();
+  }, [syncPlan]);
+  useEffect(() => {
+    if (syncTargetPreview) syncTargetPreviewHeadingRef.current?.focus();
+  }, [syncTargetPreview]);
+  useEffect(() => {
+    if (syncRecoveryPreview) syncRecoveryPreviewHeadingRef.current?.focus();
+  }, [syncRecoveryPreview]);
+  useEffect(() => {
+    if (syncRecoveryFeedback) syncRecoveryFeedbackHeadingRef.current?.focus();
+  }, [syncRecoveryFeedback]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -517,18 +596,25 @@ export function App(): React.JSX.Element {
     }
     let current = true;
     setEditPreview(undefined);
+    setEditResult(undefined);
+    setEditError(undefined);
     setUndoPreview(undefined);
+    setUndoResult(undefined);
+    setHistoryError(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
+    setTrackUndoResult(undefined);
+    setBatchUndoPreview(undefined);
+    setBatchUndoResult(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
         if (!current) return;
         if (result.ok) setEditHistory(result.value);
-        else setNotice(result.error.message);
+        else setNotice(result.error.message, "error");
       });
     return () => {
       current = false;
@@ -556,7 +642,8 @@ export function App(): React.JSX.Element {
     }));
   }, [pendingTrackId, selectedAlbum]);
 
-  const startScan = async (selectedRootId: string): Promise<void> => {
+  const startScan = async (selectedRootId: string): Promise<boolean> => {
+    setLibrarySetupError(undefined);
     setRootId(selectedRootId);
     const started = await window.outgroove.scanLibrary({
       rootId: selectedRootId,
@@ -566,31 +653,57 @@ export function App(): React.JSX.Element {
       setNotice(
         "Scan started. You can cancel it without losing the previous catalog.",
       );
-    } else setNotice(started.error.message);
+      return true;
+    }
+    setLibrarySetupError(started.error.message);
+    setNotice(started.error.message, "error");
+    return false;
+  };
+
+  const selectLibraryFolder = async (): Promise<LibraryRootDto | undefined> => {
+    setLibrarySetupError(undefined);
+    const selected = await window.outgroove.chooseLibraryFolder();
+    if (!selected.ok) {
+      setLibrarySetupError(selected.error.message);
+      setNotice(selected.error.message, "error");
+      return undefined;
+    }
+    if (!selected.value) {
+      setNotice("Folder selection cancelled.");
+      return undefined;
+    }
+    const selectedRoot = selected.value;
+    setLibraryRoots((current) => {
+      const existing = current.find((root) => root.id === selectedRoot.id);
+      return existing
+        ? current.map((root) =>
+            root.id === selectedRoot.id ? selectedRoot : root,
+          )
+        : [...current, selectedRoot];
+    });
+    setLibraryRootsLoaded(true);
+    setRootId(selectedRoot.id);
+    setNotice(
+      "Library folder added. Start its read-only scan when you're ready.",
+      "success",
+    );
+    return selectedRoot;
+  };
+
+  const chooseFirstLibraryFolder = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await selectLibraryFolder();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const chooseAndScan = async (): Promise<void> => {
     setBusy(true);
     try {
-      const selected = await window.outgroove.chooseLibraryFolder();
-      if (!selected.ok) {
-        setNotice(selected.error.message);
-        return;
-      }
-      if (!selected.value) {
-        setNotice("Folder selection cancelled.");
-        return;
-      }
-      const selectedRoot = selected.value;
-      setLibraryRoots((current) => {
-        const existing = current.find((root) => root.id === selectedRoot.id);
-        return existing
-          ? current.map((root) =>
-              root.id === selectedRoot.id ? selectedRoot : root,
-            )
-          : [...current, selectedRoot];
-      });
-      await startScan(selectedRoot.id);
+      const selectedRoot = await selectLibraryFolder();
+      if (selectedRoot) await startScan(selectedRoot.id);
     } finally {
       setBusy(false);
     }
@@ -601,6 +714,15 @@ export function App(): React.JSX.Element {
     await startScan(rootId);
   };
 
+  const startFirstScan = async (selectedRootId: string): Promise<void> => {
+    setBusy(true);
+    try {
+      if (await startScan(selectedRootId)) setActiveView("activity");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const previewRootRemoval = async (rootId: string): Promise<void> => {
     setBusy(true);
     try {
@@ -608,7 +730,7 @@ export function App(): React.JSX.Element {
         rootId,
       });
       if (result.ok) setRootRemovalPreview(result.value);
-      else setNotice(result.error.message);
+      else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -623,7 +745,7 @@ export function App(): React.JSX.Element {
         confirmationToken: rootRemovalPreview.confirmationToken,
       });
       if (!result.ok) {
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
         return;
       }
       setRootRemovalPreview(undefined);
@@ -631,6 +753,7 @@ export function App(): React.JSX.Element {
       await Promise.all([refreshLibraryRoots(), refreshCatalog()]);
       setNotice(
         `Stopped watching ${rootRemovalPreview.path}. ${result.value.visibleTracksHidden} visible tracks hidden; no audio files deleted.`,
+        "success",
       );
     } finally {
       setBusy(false);
@@ -641,17 +764,20 @@ export function App(): React.JSX.Element {
     if (!scanJob || !scanActive) return;
     const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
     if (cancelled.ok) setScanJob(cancelled.value);
-    else setNotice(cancelled.error.message);
+    else setNotice(cancelled.error.message, "error");
   };
 
   const createBackup = async (): Promise<void> => {
     setBusy(true);
     try {
       const result = await window.outgroove.createDatabaseBackup();
-      if (!result.ok) setNotice(result.error.message);
+      if (!result.ok) setNotice(result.error.message, "error");
       else if (!result.value) setNotice("Database backup cancelled.");
       else
-        setNotice(`Database backup verified and saved to ${result.value.path}`);
+        setNotice(
+          `Database backup verified and saved to ${result.value.path}`,
+          "success",
+        );
     } finally {
       setBusy(false);
     }
@@ -661,7 +787,7 @@ export function App(): React.JSX.Element {
     setBusy(true);
     try {
       const result = await window.outgroove.chooseDatabaseRestore();
-      if (!result.ok) setNotice(result.error.message);
+      if (!result.ok) setNotice(result.error.message, "error");
       else if (!result.value) setNotice("Database restore cancelled.");
       else {
         setRestorePreview(result.value);
@@ -682,15 +808,18 @@ export function App(): React.JSX.Element {
     if (result.ok)
       setNotice(
         `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+        "success",
       );
     else {
       setBusy(false);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
   const previewEdit = async (): Promise<void> => {
     if (!selectedAlbum) return;
+    setEditResult(undefined);
+    setEditError(undefined);
     const result = await window.outgroove.previewAlbumTitleEdit({
       albumId: selectedAlbum.id,
       proposedTitle: editTitle,
@@ -698,7 +827,10 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setUndoPreview(undefined);
       setEditPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setEditError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
   };
 
   const applyEdit = async (): Promise<void> => {
@@ -710,30 +842,45 @@ export function App(): React.JSX.Element {
         confirmationToken: editPreview.confirmationToken,
       });
       if (result.ok) {
+        setEditResult(result.value);
+        setEditError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
             ? `Verified ${result.value.results.length} tag writes.`
             : `${failures.length} writes failed verification. Originals were retained or restored.`,
+          failures.length === 0 ? "success" : "error",
         );
         setEditPreview(undefined);
         setEditTitle("");
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const previewUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewAlbumTitleUndo({
       operationId,
     });
     if (result.ok) {
       setEditPreview(undefined);
+      setUndoResult(undefined);
+      setTrackUndoPreview(undefined);
+      setTrackUndoResult(undefined);
+      setBatchUndoPreview(undefined);
+      setBatchUndoResult(undefined);
       setUndoPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
   };
 
   const applyUndo = async (): Promise<void> => {
@@ -745,16 +892,22 @@ export function App(): React.JSX.Element {
         confirmationToken: undoPreview.confirmationToken,
       });
       if (result.ok) {
+        setUndoResult(result.value);
+        setHistoryError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
             ? `Verified undo for ${result.value.results.length} files.`
             : `${failures.length} files were not undone. Conflicts or verification failures remain visible in history.`,
+          failures.length === 0 ? "success" : "error",
         );
         setUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
     } finally {
       setBusy(false);
     }
@@ -830,6 +983,7 @@ export function App(): React.JSX.Element {
         break;
       case "album-title":
         target = "album-title";
+        setAlbumTitleSection("edit");
         setWorkbenchTool("album");
         break;
     }
@@ -864,7 +1018,7 @@ export function App(): React.JSX.Element {
     if (result.ok) setTrackEditPreview(result.value);
     else {
       setTrackEditError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -884,6 +1038,7 @@ export function App(): React.JSX.Element {
           written?.verified
             ? "Track metadata write was re-read and verified."
             : `Track metadata was not changed: ${written?.error ?? "verification failed"}`,
+          written?.verified ? "success" : "error",
         );
         if (written?.verified) {
           setTrackEditPreview(undefined);
@@ -892,7 +1047,7 @@ export function App(): React.JSX.Element {
         }
       } else {
         setTrackEditError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -900,15 +1055,23 @@ export function App(): React.JSX.Element {
   };
 
   const previewTrackUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewTrackTagUndo({ operationId });
     if (result.ok) {
       setEditPreview(undefined);
       setUndoPreview(undefined);
+      setUndoResult(undefined);
       setTrackEditPreview(undefined);
       setTrackEditResult(undefined);
       setTrackEditError(undefined);
+      setTrackUndoResult(undefined);
+      setBatchUndoPreview(undefined);
+      setBatchUndoResult(undefined);
       setTrackUndoPreview(result.value);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
   };
 
   const applyTrackUndo = async (): Promise<void> => {
@@ -920,18 +1083,24 @@ export function App(): React.JSX.Element {
         confirmationToken: trackUndoPreview.confirmationToken,
       });
       if (result.ok) {
+        setTrackUndoResult(result.value);
+        setHistoryError(undefined);
         const written = result.value.results[0];
         setNotice(
           written?.verified
             ? "Track metadata undo was re-read and verified."
             : `Track metadata was not undone: ${written?.error ?? "verification failed"}`,
+          written?.verified ? "success" : "error",
         );
         if (written?.verified) {
           setTrackUndoPreview(undefined);
           await refreshCatalog();
           if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
         }
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
     } finally {
       setBusy(false);
     }
@@ -943,6 +1112,23 @@ export function App(): React.JSX.Element {
         ? selected.filter((id) => id !== fileId)
         : [...selected, fileId],
     );
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const selectAllBatchTracks = (): void => {
+    if (!selectedAlbum) return;
+    setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+  };
+
+  const clearBatchTracks = (): void => {
+    setBatchTrackIds([]);
     setBatchPreview(undefined);
     setBatchResult(undefined);
     setSequencePreview(undefined);
@@ -986,7 +1172,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setBatchPreview(result.value);
       setBatchResult(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   };
 
   const applyBatchEdit = async (): Promise<void> => {
@@ -1004,11 +1190,12 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} track writes.`
             : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
+          failures.length === 0 ? "success" : "error",
         );
         setBatchPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1025,7 +1212,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSequencePreview(result.value);
       setSequenceResult(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   };
 
   const applyTrackNumberSequence = async (): Promise<void> => {
@@ -1043,27 +1230,38 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} track-number writes.`
             : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
+          failures.length === 0 ? "success" : "error",
         );
         setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
   };
 
-  const previewBatchUndo = async (operationId: string): Promise<void> => {
+  const previewBatchUndo = async (
+    operationId: string,
+    kind: BatchUndoKind = "shared-fields",
+  ): Promise<void> => {
+    setHistoryError(undefined);
     const result = await window.outgroove.previewTrackBatchUndo({
       operationId,
     });
     if (result.ok) {
       setUndoPreview(undefined);
+      setUndoResult(undefined);
       setTrackUndoPreview(undefined);
+      setTrackUndoResult(undefined);
       setBatchResult(undefined);
+      setBatchUndoKind(kind);
       setBatchUndoPreview(result.value);
       setBatchUndoResult(undefined);
-    } else setNotice(result.error.message);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
   };
 
   const applyBatchUndo = async (): Promise<void> => {
@@ -1076,16 +1274,21 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setBatchUndoResult(result.value);
+        setHistoryError(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} batch undo writes.`
             : `${result.value.results.length - failures.length} undo writes verified; ${failures.length} refused or failed without stopping the others.`,
+          failures.length === 0 ? "success" : "error",
         );
         setBatchUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
     } finally {
       setBusy(false);
     }
@@ -1111,12 +1314,14 @@ export function App(): React.JSX.Element {
           (candidate) => candidate.id === result.value?.id,
         );
         if (saved) setProfile(saved);
-        setNotice(`DAP target selected: ${result.value.targetPath}`);
+        setNotice(`DAP target selected: ${result.value.targetPath}`, "success");
       }
-    } else if (!result.ok) setNotice(result.error.message);
+    } else if (!result.ok) setNotice(result.error.message, "error");
   };
 
-  const toggleSyncAlbum = (album: CatalogAlbum): void => {
+  const toggleSyncAlbum = (
+    album: Pick<CatalogAlbum, "id" | "title" | "albumArtist">,
+  ): void => {
     const selected = syncAlbums.some((candidate) => candidate.id === album.id);
     if (!selected && syncAlbums.length >= 100) {
       setNotice("A DAP profile can contain up to 100 albums.");
@@ -1184,8 +1389,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setSavedFilterName("");
         if (await refreshSavedFilters())
-          setNotice(`Saved Library filter “${result.value.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(`Saved Library filter “${result.value.name}”.`, "success");
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1206,8 +1411,11 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         if (await refreshSavedFilters())
-          setNotice(`${action} saved Library filter “${result.value.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(
+            `${action} saved Library filter “${result.value.name}”.`,
+            "success",
+          );
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1253,8 +1461,8 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         if (await refreshSavedFilters())
-          setNotice(`Deleted saved Library filter “${saved.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(`Deleted saved Library filter “${saved.name}”.`, "success");
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1264,7 +1472,7 @@ export function App(): React.JSX.Element {
     if (!profile) return;
     const result = await window.outgroove.planSync({ profileId: profile.id });
     if (result.ok) setSyncPlan(result.value);
-    else setNotice(result.error.message);
+    else setNotice(result.error.message, "error");
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
@@ -1284,6 +1492,7 @@ export function App(): React.JSX.Element {
   const editSyncProfileAlbums = (saved: SyncProfileDto): void => {
     setActiveView("sync");
     setSyncStage("setup");
+    setSyncSetupSection("selection");
     setProfile(saved);
     setSyncPlan(undefined);
     setEditingSyncProfileId(saved.id);
@@ -1298,6 +1507,7 @@ export function App(): React.JSX.Element {
     const name = editingSyncProfile?.name ?? "DAP profile";
     setEditingSyncProfileId(undefined);
     setSyncAlbums([]);
+    setSyncSetupSection("profiles");
     setNotice(`Discarded unsaved album-selection changes for “${name}”.`);
   };
 
@@ -1323,15 +1533,17 @@ export function App(): React.JSX.Element {
           if (saved) setProfile(saved);
           setNotice(
             `Saved ${result.value.albumIds.length} albums in “${result.value.name}”. Its previous sync preview is invalid; create a fresh preview before applying.`,
+            "success",
           );
         }
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
   };
 
   const startSyncProfileRename = (saved: SyncProfileDto): void => {
+    setSyncSetupSection("profiles");
     setRenamingSyncProfileId(saved.id);
     setSyncProfileNameDraft(saved.name);
     setNotice(`Renaming DAP profile “${saved.name}”.`);
@@ -1364,8 +1576,9 @@ export function App(): React.JSX.Element {
         if (await refreshSyncProfiles())
           setNotice(
             `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+            "success",
           );
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1380,13 +1593,14 @@ export function App(): React.JSX.Element {
         profileId: saved.id,
       });
       if (result.ok && result.value) {
+        setSyncSetupSection("profiles");
         setProfile(saved);
         setSyncPlan(undefined);
         setSyncTargetPreview(result.value);
         setNotice(
           `Review the DAP target change for “${saved.name}”. No files have been changed.`,
         );
-      } else if (!result.ok) setNotice(result.error.message);
+      } else if (!result.ok) setNotice(result.error.message, "error");
       else setNotice("DAP target selection cancelled.");
     } finally {
       setBusy(false);
@@ -1414,8 +1628,9 @@ export function App(): React.JSX.Element {
         await refreshSyncProfiles();
         setNotice(
           `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          "success",
         );
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1436,23 +1651,26 @@ export function App(): React.JSX.Element {
         if (result.value.outcome === "completed")
           setNotice(
             `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+            result.value.errors.length === 0 ? "success" : "error",
           );
         else if (result.value.outcome === "cancelled")
           setNotice(
             result.value.errors.length === 0
               ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
               : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
+            result.value.errors.length === 0 ? "info" : "error",
           );
         else
           setNotice(
             `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
+            "error",
           );
         if (result.value.outcome === "completed") {
           await planSync();
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setProgress((current) => (current?.job === "sync" ? undefined : current));
       setSyncApplyingPlanId(undefined);
@@ -1467,7 +1685,7 @@ export function App(): React.JSX.Element {
       planId: syncApplyingPlanId,
     });
     if (!result.ok) {
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
       return;
     }
     if (result.value.accepted) {
@@ -1492,21 +1710,44 @@ export function App(): React.JSX.Element {
         confirmationToken: recovery.confirmationToken,
       });
       if (!result.ok) {
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
         await refreshSyncRecoveries();
+        setSyncRecoveryFeedback({
+          runId: recovery.runId,
+          profileName: recovery.profileName,
+          status: "failed",
+          recovered: 0,
+          messages: [result.error.message],
+        });
         return;
       }
       await refreshSyncRecoveries();
+      setSyncRecoveryFeedback({
+        runId: recovery.runId,
+        profileName: recovery.profileName,
+        status: result.value.complete ? "complete" : "incomplete",
+        recovered: result.value.recovered,
+        messages:
+          result.value.errors.length > 0
+            ? result.value.errors
+            : result.value.complete
+              ? ["You can generate a fresh sync plan for this profile."]
+              : [
+                  "Reconnect the target or resolve the reported files, then review recovery again.",
+                ],
+      });
       if (result.value.complete) {
         await refreshSyncHistory(recovery.profileId);
         setNotice(
           result.value.errors.length === 0
             ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
             : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
+          result.value.errors.length === 0 ? "success" : "error",
         );
       } else
         setNotice(
           `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
+          "error",
         );
     } finally {
       setBusy(false);
@@ -1516,22 +1757,46 @@ export function App(): React.JSX.Element {
   const reviewSyncRecovery = async (
     recovery: SyncRecoverySummaryDto,
   ): Promise<void> => {
+    setSyncRecoveryFeedback(undefined);
+    setSyncRecoveryPreview(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.previewSyncRecovery({
         runId: recovery.runId,
       });
       if (result.ok) setSyncRecoveryPreview(result.value);
-      else setNotice(result.error.message);
+      else {
+        setNotice(result.error.message, "error");
+        setSyncRecoveryFeedback({
+          runId: recovery.runId,
+          profileName: recovery.profileName,
+          status: "failed",
+          recovered: 0,
+          messages: [result.error.message],
+        });
+      }
     } finally {
       setBusy(false);
     }
   };
 
+  const libraryOnboardingVisible =
+    activeView === "library" &&
+    (!libraryRootsLoaded ||
+      !catalogLoaded ||
+      (albums.length === 0 &&
+        totalItems === 0 &&
+        (libraryRoots.length === 0 ||
+          (libraryView === "albums" &&
+            !query &&
+            !albumArtistFilter &&
+            !albumIdFilter))));
+
   return (
     <ApplicationShell
       activeView={activeView}
       notice={notice}
+      onDismissNotice={() => setNoticeState(undefined)}
       onNavigate={setActiveView}
     >
       {progress &&
@@ -1552,6 +1817,8 @@ export function App(): React.JSX.Element {
           scanJob={scanJob}
           onCancel={() => void cancelScan()}
           onChooseFolder={() => void chooseAndScan()}
+          onOpenLibrary={() => setActiveView("library")}
+          onOpenSync={() => setActiveView("sync")}
           onReviewScanProblems={() => {
             setLibraryView("scan-errors");
             setAlbumArtistFilter(undefined);
@@ -1569,7 +1836,7 @@ export function App(): React.JSX.Element {
       )}
       {(activeView === "library" || activeView === "workbench") && (
         <>
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <section className="view-actions" aria-label="Library actions">
               <div>
                 <p className="eyebrow">Local collection</p>
@@ -1595,7 +1862,7 @@ export function App(): React.JSX.Element {
               </div>
             </section>
           )}
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <>
               <form
                 className="library-toolbar"
@@ -1872,7 +2139,7 @@ export function App(): React.JSX.Element {
               </section>
             </>
           )}
-          {activeView === "library" && (
+          {activeView === "library" && !libraryOnboardingVisible && (
             <p className="result-count" aria-live="polite">
               {totalItems}{" "}
               {libraryView === "scan-errors"
@@ -1929,7 +2196,23 @@ export function App(): React.JSX.Element {
                 : ""}
             </p>
           )}
-          {activeView === "library" && libraryView === "scan-errors" ? (
+          {libraryOnboardingVisible ? (
+            <LibraryOnboarding
+              busy={busy}
+              catalogLoaded={catalogLoaded}
+              libraryRoots={libraryRoots}
+              rootsLoaded={libraryRootsLoaded}
+              scanActive={scanActive}
+              scanJob={scanJob}
+              selectedRootId={rootId}
+              setupError={librarySetupError}
+              onChooseFolder={() => void chooseFirstLibraryFolder()}
+              onOpenActivity={() => setActiveView("activity")}
+              onStartScan={(selectedRootId) =>
+                void startFirstScan(selectedRootId)
+              }
+            />
+          ) : activeView === "library" && libraryView === "scan-errors" ? (
             <main className="errors" aria-labelledby="scan-errors">
               <h2 id="scan-errors">Scan problems</h2>
               {scanErrors.length === 0 ? (
@@ -2364,6 +2647,7 @@ export function App(): React.JSX.Element {
                               )
                                 toggleSyncAlbum(selectedAlbum);
                               setSyncStage("setup");
+                              setSyncSetupSection("selection");
                               setActiveView("sync");
                             }}
                           >
@@ -2448,9 +2732,7 @@ export function App(): React.JSX.Element {
                     </section>
                   )}
                   {(activeView === "library" ||
-                    workbenchTool === "overview" ||
-                    workbenchTool === "batch" ||
-                    workbenchTool === "sequence") && (
+                    workbenchTool === "overview") && (
                     <section
                       className="album-tracks"
                       aria-labelledby="album-tracks-title"
@@ -2490,462 +2772,82 @@ export function App(): React.JSX.Element {
                   {activeView === "workbench" &&
                     (workbenchTool === "batch" ||
                       workbenchTool === "sequence") && (
-                      <section
-                        className="selection-toolbar"
-                        aria-label="Selected tracks"
-                      >
-                        <div>
-                          <p className="eyebrow">Shared selection</p>
-                          <h3>
-                            {batchTrackIds.length} of{" "}
-                            {selectedAlbum.tracks.length} tracks selected
-                          </h3>
-                          <p>
-                            The same selection is kept when you switch between
-                            Shared fields and Track order.
-                          </p>
-                        </div>
-                        <div className="actions">
-                          <button
-                            disabled={busy}
-                            onClick={() => {
-                              setBatchTrackIds(
-                                selectedAlbum.tracks.map((track) => track.id),
-                              );
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                              setSequencePreview(undefined);
-                              setSequenceResult(undefined);
-                            }}
-                          >
-                            Select all tracks
-                          </button>
-                          <button
-                            disabled={busy || batchTrackIds.length === 0}
-                            onClick={() => {
-                              setBatchTrackIds([]);
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                              setSequencePreview(undefined);
-                              setSequenceResult(undefined);
-                            }}
-                          >
-                            Clear selection
-                          </button>
-                        </div>
-                      </section>
+                      <WorkbenchTrackContext
+                        busy={busy}
+                        selectedTrackIds={batchTrackIds}
+                        selectionPurpose={
+                          workbenchTool === "sequence"
+                            ? "track ordering"
+                            : "shared-field editing"
+                        }
+                        tracks={selectedAlbum.tracks}
+                        onClearSelection={clearBatchTracks}
+                        onEditTrack={editTrack}
+                        onSelectAll={selectAllBatchTracks}
+                        onToggleTrack={toggleBatchTrack}
+                      />
                     )}
                   {activeView === "workbench" && workbenchTool === "batch" && (
-                    <section
-                      className="card"
-                      aria-label="Batch metadata editor"
+                    <SharedFieldEditor
+                      busy={busy}
+                      draft={batchDraft}
+                      enabled={batchEnabled}
+                      preview={batchPreview}
                       ref={batchEditorRef}
-                      tabIndex={-1}
-                    >
-                      <p className="eyebrow">Shared-field workflow</p>
-                      <h3>Edit shared metadata</h3>
-                      <p>
-                        {batchTrackIds.length} tracks selected. Enable only the
-                        shared fields you intend to write. Track titles and
-                        track numbers stay in the single-track editor.
-                      </p>
-                      <div className="field-grid">
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.artist}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  artist: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change track artist
-                          </span>
-                          <input
-                            aria-label="Batch track artist value"
-                            disabled={!batchEnabled.artist}
-                            value={batchDraft.artist}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                artist: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.albumArtist}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  albumArtist: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change album artist
-                          </span>
-                          <input
-                            aria-label="Batch album artist value"
-                            disabled={!batchEnabled.albumArtist}
-                            value={batchDraft.albumArtist}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                albumArtist: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.discNumber}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  discNumber: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change disc number
-                          </span>
-                          <input
-                            aria-label="Batch disc number value"
-                            type="number"
-                            min="1"
-                            max="999"
-                            placeholder="Empty clears the value"
-                            disabled={!batchEnabled.discNumber}
-                            value={batchDraft.discNumber}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                discNumber: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                        <label>
-                          <span>
-                            <input
-                              type="checkbox"
-                              checked={batchEnabled.year}
-                              onChange={(event) => {
-                                setBatchEnabled((enabled) => ({
-                                  ...enabled,
-                                  year: event.target.checked,
-                                }));
-                                setBatchPreview(undefined);
-                                setBatchResult(undefined);
-                              }}
-                            />
-                            Change release date
-                          </span>
-                          <input
-                            aria-label="Batch release date value"
-                            placeholder="YYYY, YYYY-MM, YYYY-MM-DD; empty clears"
-                            disabled={!batchEnabled.year}
-                            value={batchDraft.year}
-                            onChange={(event) => {
-                              setBatchDraft((draft) => ({
-                                ...draft,
-                                year: event.target.value,
-                              }));
-                              setBatchPreview(undefined);
-                              setBatchResult(undefined);
-                            }}
-                          />
-                        </label>
-                      </div>
-                      <button
-                        className="primary"
-                        disabled={
-                          busy ||
-                          batchTrackIds.length < 2 ||
-                          !Object.values(batchEnabled).some(Boolean)
-                        }
-                        onClick={() => void previewBatchEdit()}
-                      >
-                        Preview selected tracks
-                      </button>
-                      {batchPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Batch confirmation"
-                        >
-                          <h4>Per-file review</h4>
-                          <p>
-                            No file has changed yet. Unchanged tracks will be
-                            skipped; every other track is checked again before
-                            its write.
-                          </p>
-                          {batchPreview.files.map((file) => (
-                            <div key={file.fileId}>
-                              <h5>{file.path}</h5>
-                              {!file.willWrite && (
-                                <p>Status: unchanged — skipped</p>
-                              )}
-                              {file.changes.length > 0 && (
-                                <table>
-                                  <thead>
-                                    <tr>
-                                      <th>Field</th>
-                                      <th>Before</th>
-                                      <th>After</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {file.changes.map((change) => (
-                                      <tr key={change.field}>
-                                        <td>{change.field}</td>
-                                        <td>{change.before ?? "Not set"}</td>
-                                        <td>{change.after ?? "Not set"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                              {file.warnings.map((warning) => (
-                                <p key={warning} role="alert">
-                                  {warning}
-                                </p>
-                              ))}
-                            </div>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                batchPreview.files.some(
-                                  (file) =>
-                                    file.willWrite && file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyBatchEdit()}
-                            >
-                              Confirm and write selected tracks
-                            </button>
-                            <button onClick={() => setBatchPreview(undefined)}>
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {batchResult && (
-                        <div className="preview" aria-live="polite">
-                          <h4>Batch write results</h4>
-                          <ul>
-                            {batchResult.results.map((result) => (
-                              <li key={result.fileId}>
-                                {result.path}:{" "}
-                                {result.verified ? "verified" : "failed"}
-                                {result.error ? ` — ${result.error}` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </section>
+                      result={batchResult}
+                      tracks={selectedBatchTracks}
+                      onCancelPreview={() => setBatchPreview(undefined)}
+                      onConfirm={() => void applyBatchEdit()}
+                      onDraftChange={(field, value) => {
+                        setBatchDraft((draft) => ({
+                          ...draft,
+                          [field]: value,
+                        }));
+                        setBatchPreview(undefined);
+                        setBatchResult(undefined);
+                      }}
+                      onEnabledChange={(field, enabled) => {
+                        setBatchEnabled((current) => ({
+                          ...current,
+                          [field]: enabled,
+                        }));
+                        setBatchPreview(undefined);
+                        setBatchResult(undefined);
+                      }}
+                      onPreview={() => void previewBatchEdit()}
+                    />
                   )}
                   {activeView === "workbench" &&
                     workbenchTool === "sequence" && (
-                      <section
-                        className="card sequence-editor"
-                        aria-label="Track number sequencing"
+                      <TrackOrderEditor
+                        busy={busy}
+                        discDraft={sequenceDiscNumber}
+                        discEnabled={sequenceDiscEnabled}
+                        preview={sequencePreview}
                         ref={sequenceEditorRef}
-                        tabIndex={-1}
-                      >
-                        <p className="eyebrow">Track-order workflow</p>
-                        <h3>Sequence track numbers</h3>
-                        <p>
-                          Outgroove uses exactly the order below. Reorder it
-                          explicitly before previewing; file names and existing
-                          numbers are never used to guess a different order.
-                        </p>
-                        {batchTrackIds.length === 0 ? (
-                          <p>Select at least two tracks above.</p>
-                        ) : (
-                          <ol>
-                            {batchTrackIds.map((fileId, index) => {
-                              const track = selectedAlbum.tracks.find(
-                                (candidate) => candidate.id === fileId,
-                              );
-                              return (
-                                <li key={fileId}>
-                                  <span>{track?.tags.title ?? fileId}</span>
-                                  <button
-                                    aria-label={`Move ${track?.tags.title ?? "track"} up`}
-                                    disabled={busy || index === 0}
-                                    onClick={() => moveBatchTrack(fileId, -1)}
-                                  >
-                                    Move up
-                                  </button>
-                                  <button
-                                    aria-label={`Move ${track?.tags.title ?? "track"} down`}
-                                    disabled={
-                                      busy || index === batchTrackIds.length - 1
-                                    }
-                                    onClick={() => moveBatchTrack(fileId, 1)}
-                                  >
-                                    Move down
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ol>
-                        )}
-                        <div className="sequence-settings">
-                          <label>
-                            Starting track number
-                            <input
-                              type="number"
-                              min="1"
-                              max="9999"
-                              value={sequenceStart}
-                              onChange={(event) => {
-                                setSequenceStart(event.target.value);
-                                setSequencePreview(undefined);
-                                setSequenceResult(undefined);
-                              }}
-                            />
-                          </label>
-                          <div className="disc-assignment">
-                            <label className="checkbox-label">
-                              <input
-                                type="checkbox"
-                                checked={sequenceDiscEnabled}
-                                onChange={(event) => {
-                                  setSequenceDiscEnabled(event.target.checked);
-                                  setSequencePreview(undefined);
-                                  setSequenceResult(undefined);
-                                }}
-                              />
-                              Set one disc number for this sequence
-                            </label>
-                            <label>
-                              Sequence disc number
-                              <input
-                                type="number"
-                                min="1"
-                                max="999"
-                                disabled={!sequenceDiscEnabled}
-                                value={sequenceDiscNumber}
-                                onChange={(event) => {
-                                  setSequenceDiscNumber(event.target.value);
-                                  setSequencePreview(undefined);
-                                  setSequenceResult(undefined);
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                        <button
-                          className="primary"
-                          disabled={
-                            busy ||
-                            batchTrackIds.length < 2 ||
-                            !Number.isInteger(Number(sequenceStart)) ||
-                            Number(sequenceStart) < 1 ||
-                            Number(sequenceStart) + batchTrackIds.length - 1 >
-                              9999 ||
-                            (sequenceDiscEnabled &&
-                              (!Number.isInteger(Number(sequenceDiscNumber)) ||
-                                Number(sequenceDiscNumber) < 1 ||
-                                Number(sequenceDiscNumber) > 999))
-                          }
-                          onClick={() => void previewTrackNumberSequence()}
-                        >
-                          Preview track-number sequence
-                        </button>
-                        {sequencePreview && (
-                          <div
-                            className="preview"
-                            aria-label="Track number sequence confirmation"
-                          >
-                            <h5>Review exact sequence</h5>
-                            <ol>
-                              {sequencePreview.files.map((file) => (
-                                <li key={file.fileId}>
-                                  <strong>{file.path}</strong>:{" "}
-                                  {file.willWrite ? (
-                                    <ul>
-                                      {file.changes.map((change) => (
-                                        <li key={change.field}>
-                                          {change.field}:{" "}
-                                          {change.before ?? "Not set"} →{" "}
-                                          {change.after ?? "Not set"}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    "unchanged — skipped"
-                                  )}
-                                  {file.warnings.map((warning) => (
-                                    <p key={warning} role="alert">
-                                      {warning}
-                                    </p>
-                                  ))}
-                                </li>
-                              ))}
-                            </ol>
-                            <div className="actions">
-                              <button
-                                className="primary"
-                                disabled={
-                                  busy ||
-                                  sequencePreview.files.some(
-                                    (file) =>
-                                      file.willWrite &&
-                                      file.warnings.length > 0,
-                                  )
-                                }
-                                onClick={() => void applyTrackNumberSequence()}
-                              >
-                                Confirm track-number sequence
-                              </button>
-                              <button
-                                onClick={() => setSequencePreview(undefined)}
-                              >
-                                Cancel sequence
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                        {sequenceResult && (
-                          <div className="preview" aria-live="polite">
-                            <h5>Track-number results</h5>
-                            <ul>
-                              {sequenceResult.results.map((result) => (
-                                <li key={result.fileId}>
-                                  {result.path}:{" "}
-                                  {result.verified ? "verified" : "failed"}
-                                  {result.error ? ` — ${result.error}` : ""}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </section>
+                        result={sequenceResult}
+                        startDraft={sequenceStart}
+                        tracks={orderedSequenceTracks}
+                        onCancelPreview={() => setSequencePreview(undefined)}
+                        onConfirm={() => void applyTrackNumberSequence()}
+                        onDiscChange={(value) => {
+                          setSequenceDiscNumber(value);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                        onDiscEnabledChange={(enabled) => {
+                          setSequenceDiscEnabled(enabled);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                        onMove={moveBatchTrack}
+                        onPreview={() => void previewTrackNumberSequence()}
+                        onStartChange={(value) => {
+                          setSequenceStart(value);
+                          setSequencePreview(undefined);
+                          setSequenceResult(undefined);
+                        }}
+                      />
                     )}
                   {activeView === "workbench" &&
                     workbenchTool === "track" &&
@@ -2983,378 +2885,91 @@ export function App(): React.JSX.Element {
                       />
                     )}
                   {activeView === "workbench" && workbenchTool === "album" && (
-                    <section
-                      className="card"
-                      aria-label="Album title editor"
+                    <AlbumTitleWorkbench
+                      albumTitle={selectedAlbum.title}
+                      batchUndoKind={batchUndoKind}
+                      batchUndoPreview={batchUndoPreview}
+                      batchUndoResult={batchUndoResult}
+                      busy={busy}
+                      draftTitle={editTitle}
+                      editError={editError}
+                      editHistory={editHistory}
+                      editPreview={editPreview}
+                      editResult={editResult}
+                      historyError={historyError}
+                      onCancelBatchUndo={() => {
+                        setBatchUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onCancelEditPreview={() => {
+                        setEditPreview(undefined);
+                        setEditError(undefined);
+                      }}
+                      onCancelTrackUndo={() => {
+                        setTrackUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onCancelUndo={() => {
+                        setUndoPreview(undefined);
+                        setHistoryError(undefined);
+                      }}
+                      onConfirmBatchUndo={() => void applyBatchUndo()}
+                      onConfirmEdit={() => void applyEdit()}
+                      onConfirmTrackUndo={() => void applyTrackUndo()}
+                      onConfirmUndo={() => void applyUndo()}
+                      onDraftTitleChange={(title) => {
+                        setEditTitle(title);
+                        setEditPreview(undefined);
+                        setEditResult(undefined);
+                        setEditError(undefined);
+                      }}
+                      onPreviewBatchUndo={(operationId, kind) =>
+                        void previewBatchUndo(operationId, kind)
+                      }
+                      onPreviewEdit={() => void previewEdit()}
+                      onPreviewTrackUndo={(operationId) =>
+                        void previewTrackUndo(operationId)
+                      }
+                      onPreviewUndo={(operationId) =>
+                        void previewUndo(operationId)
+                      }
+                      onSectionChange={setAlbumTitleSection}
                       ref={albumTitleEditorRef}
-                      tabIndex={-1}
-                    >
-                      <h3>Workbench · album title</h3>
-                      <label htmlFor="album-title">Proposed title</label>
-                      <div className="inline">
-                        <input
-                          id="album-title"
-                          value={editTitle}
-                          onChange={(event) => setEditTitle(event.target.value)}
-                        />
-                        <button
-                          disabled={!editTitle.trim() || busy}
-                          onClick={() => void previewEdit()}
-                        >
-                          Preview per-file changes
-                        </button>
-                      </div>
-                      {editPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Tag edit confirmation"
-                        >
-                          <h4>Review before writing</h4>
-                          <p>
-                            No file has changed yet. Confirming creates a
-                            snapshot, writes a same-volume temporary file,
-                            verifies it, and only then replaces the original.
-                          </p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>File</th>
-                                <th>Before</th>
-                                <th>After</th>
-                                <th>Warnings</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {editPreview.files.map((file) => (
-                                <tr key={file.fileId}>
-                                  <td>{file.path}</td>
-                                  <td>{file.before}</td>
-                                  <td>{file.after}</td>
-                                  <td>{file.warnings.join("; ") || "None"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                editPreview.files.some(
-                                  (file) => file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyEdit()}
-                            >
-                              Confirm and write {editPreview.files.length} files
-                            </button>
-                            <button onClick={() => setEditPreview(undefined)}>
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div
-                        className="history"
-                        aria-label="Metadata edit history"
-                      >
-                        <h4>Edit history</h4>
-                        {editHistory.length === 0 ? (
-                          <p>No confirmed edits for this album yet.</p>
-                        ) : (
-                          <ol>
-                            {editHistory.map((item) => (
-                              <li key={item.operationId}>
-                                <div>
-                                  <strong>
-                                    {item.kind === "album-title-edit"
-                                      ? `Changed title to “${item.proposedTitle}”`
-                                      : item.kind === "album-title-undo"
-                                        ? `Restored “${item.proposedTitle}”`
-                                        : item.proposedTitle}
-                                  </strong>
-                                  <span>
-                                    {item.state}; {item.verifiedFiles} verified
-                                    {item.failedFiles > 0
-                                      ? `, ${item.failedFiles} failed`
-                                      : ""}{" "}
-                                    ·{" "}
-                                    <time
-                                      dateTime={
-                                        item.completedAt ?? item.createdAt
-                                      }
-                                    >
-                                      {new Date(
-                                        item.completedAt ?? item.createdAt,
-                                      ).toLocaleString()}
-                                    </time>
-                                  </span>
-                                </div>
-                                {item.kind === "album-title-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-tags-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewTrackUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview track undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-tags-batch-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewBatchUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview batch undo
-                                    </button>
-                                  )}
-                                {item.kind === "track-number-sequence-edit" &&
-                                  item.verifiedFiles > 0 && (
-                                    <button
-                                      disabled={busy}
-                                      onClick={() =>
-                                        void previewBatchUndo(item.operationId)
-                                      }
-                                    >
-                                      Preview sequence undo
-                                    </button>
-                                  )}
-                              </li>
-                            ))}
-                          </ol>
-                        )}
-                      </div>
-                      {undoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Tag undo confirmation"
-                        >
-                          <h4>Review undo before writing</h4>
-                          <p>
-                            No file has changed yet. Undo only proceeds when the
-                            current album title still matches the verified edit.
-                            Each file is snapshotted, safely written, re-read,
-                            and verified again.
-                          </p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>File</th>
-                                <th>Current</th>
-                                <th>Restore</th>
-                                <th>Conflicts</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {undoPreview.files.map((file) => (
-                                <tr key={file.fileId}>
-                                  <td>{file.path}</td>
-                                  <td>{file.before}</td>
-                                  <td>{file.after}</td>
-                                  <td>{file.warnings.join("; ") || "None"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                undoPreview.files.some(
-                                  (file) => file.warnings.length > 0,
-                                )
-                              }
-                              onClick={() => void applyUndo()}
-                            >
-                              Confirm and undo {undoPreview.files.length} files
-                            </button>
-                            <button onClick={() => setUndoPreview(undefined)}>
-                              Cancel undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {trackUndoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Track metadata undo confirmation"
-                        >
-                          <h4>Review track undo before writing</h4>
-                          <p>
-                            No file has changed yet. Only fields recorded by the
-                            original edit will be restored. Undo refuses to
-                            overwrite a field changed after that edit.
-                          </p>
-                          <p>{trackUndoPreview.path}</p>
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Field</th>
-                                <th>Current</th>
-                                <th>Restore</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {trackUndoPreview.changes.map((change) => (
-                                <tr key={change.field}>
-                                  <td>{change.field}</td>
-                                  <td>{change.before ?? "Not set"}</td>
-                                  <td>{change.after ?? "Not set"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {trackUndoPreview.warnings.map((warning) => (
-                            <p key={warning} role="alert">
-                              {warning}
-                            </p>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy || trackUndoPreview.warnings.length > 0
-                              }
-                              onClick={() => void applyTrackUndo()}
-                            >
-                              Confirm and undo track fields
-                            </button>
-                            <button
-                              onClick={() => setTrackUndoPreview(undefined)}
-                            >
-                              Cancel track undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {batchUndoPreview && (
-                        <div
-                          className="preview"
-                          aria-label="Batch metadata undo confirmation"
-                        >
-                          <h4>Review batch undo before writing</h4>
-                          <p>
-                            Only fields written by the original batch are
-                            restored, and only for files whose original writes
-                            were verified. Conflicted files will be refused
-                            without stopping safe restores on other files.
-                          </p>
-                          {batchUndoPreview.files.map((file) => (
-                            <div key={file.fileId}>
-                              <h5>{file.path}</h5>
-                              {!file.willWrite && (
-                                <p>Status: already restored — skipped</p>
-                              )}
-                              {file.changes.length > 0 && (
-                                <table>
-                                  <thead>
-                                    <tr>
-                                      <th>Field</th>
-                                      <th>Current</th>
-                                      <th>Restore</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {file.changes.map((change) => (
-                                      <tr key={change.field}>
-                                        <td>{change.field}</td>
-                                        <td>{change.before ?? "Not set"}</td>
-                                        <td>{change.after ?? "Not set"}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
-                              {file.warnings.map((warning) => (
-                                <p key={warning} role="alert">
-                                  {warning}
-                                </p>
-                              ))}
-                            </div>
-                          ))}
-                          <div className="actions">
-                            <button
-                              className="primary"
-                              disabled={
-                                busy ||
-                                !batchUndoPreview.files.some(
-                                  (file) =>
-                                    file.willWrite &&
-                                    file.warnings.length === 0,
-                                )
-                              }
-                              onClick={() => void applyBatchUndo()}
-                            >
-                              Confirm safe batch undo writes
-                            </button>
-                            <button
-                              onClick={() => setBatchUndoPreview(undefined)}
-                            >
-                              Cancel batch undo
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      {batchUndoResult && (
-                        <div className="preview" aria-live="polite">
-                          <h4>Batch undo results</h4>
-                          <ul>
-                            {batchUndoResult.results.map((result) => (
-                              <li key={result.fileId}>
-                                {result.path}:{" "}
-                                {result.verified
-                                  ? "verified"
-                                  : "refused or failed"}
-                                {result.error ? ` — ${result.error}` : ""}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </section>
+                      section={albumTitleSection}
+                      trackUndoPreview={trackUndoPreview}
+                      trackUndoResult={trackUndoResult}
+                      undoPreview={undoPreview}
+                      undoResult={undoResult}
+                    />
                   )}
                 </>
               </section>
             </main>
           )}
-          {activeView === "library" && totalItems > PAGE_SIZE && (
-            <nav className="pagination" aria-label="Library pages">
-              <button
-                disabled={pageOffset === 0}
-                onClick={() =>
-                  setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))
-                }
-              >
-                Previous page
-              </button>
-              <span>
-                {pageOffset + 1}–{Math.min(pageOffset + PAGE_SIZE, totalItems)}{" "}
-                of {totalItems}
-              </span>
-              <button
-                disabled={pageOffset + PAGE_SIZE >= totalItems}
-                onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
-              >
-                Next page
-              </button>
-            </nav>
-          )}
+          {activeView === "library" &&
+            !libraryOnboardingVisible &&
+            totalItems > PAGE_SIZE && (
+              <nav className="pagination" aria-label="Library pages">
+                <button
+                  disabled={pageOffset === 0}
+                  onClick={() =>
+                    setPageOffset(Math.max(0, pageOffset - PAGE_SIZE))
+                  }
+                >
+                  Previous page
+                </button>
+                <span>
+                  {pageOffset + 1}–
+                  {Math.min(pageOffset + PAGE_SIZE, totalItems)} of {totalItems}
+                </span>
+                <button
+                  disabled={pageOffset + PAGE_SIZE >= totalItems}
+                  onClick={() => setPageOffset(pageOffset + PAGE_SIZE)}
+                >
+                  Next page
+                </button>
+              </nav>
+            )}
         </>
       )}
       {activeView === "sync" && (
@@ -3397,686 +3012,109 @@ export function App(): React.JSX.Element {
             </section>
           )}
           {syncStage === "setup" && (
-            <section
-              className="card selection-card"
-              aria-labelledby="sync-selection"
-            >
-              <div className="section-heading">
-                <div>
-                  <p className="eyebrow">Copy selection</p>
-                  <h2 id="sync-selection">Albums for the next DAP plan</h2>
-                  <p>
-                    Source audio is never modified. Selecting albums does not
-                    inspect or change a target.
-                  </p>
-                </div>
-                {selectedAlbum && (
-                  <button
-                    disabled={
-                      busy ||
-                      (syncAlbums.length >= 100 &&
-                        !syncAlbums.some(
-                          (album) => album.id === selectedAlbum.id,
-                        ))
-                    }
-                    aria-pressed={syncAlbums.some(
-                      (album) => album.id === selectedAlbum.id,
-                    )}
-                    onClick={() => toggleSyncAlbum(selectedAlbum)}
-                  >
-                    {syncAlbums.some((album) => album.id === selectedAlbum.id)
-                      ? `Remove ${selectedAlbum.title}`
-                      : `Add ${selectedAlbum.title}`}
-                  </button>
-                )}
-              </div>
-              <p aria-live="polite">
-                {syncAlbums.length} of 100 albums selected
-                {editingSyncProfile
-                  ? ` for the ${editingSyncProfile.name} revision.`
-                  : "."}
-              </p>
-              {syncAlbums.length === 0 ? (
-                <div className="empty compact">
-                  <h3>No albums selected</h3>
-                  <p>
-                    Choose an album in Library, then use its contextual Sync
-                    action.
-                  </p>
-                  <button onClick={() => setActiveView("library")}>
-                    Browse Library
-                  </button>
-                </div>
-              ) : (
-                <ul aria-label="Albums selected for DAP sync">
-                  {syncAlbums.map((album) => (
-                    <li key={album.id}>
-                      {album.albumArtist} — {album.title}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="actions">
-                {editingSyncProfile ? (
-                  <>
-                    <button
-                      disabled={busy || syncAlbums.length === 0}
-                      onClick={() => void saveSyncProfileAlbums()}
-                    >
-                      Save album selection for {editingSyncProfile.name}
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={cancelSyncProfileAlbumEdit}
-                    >
-                      Cancel album selection changes
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      disabled={busy || syncAlbums.length === 0}
-                      onClick={() => void chooseTarget()}
-                    >
-                      Choose DAP target
-                    </button>
-                    <button
-                      disabled={busy || syncAlbums.length === 0}
-                      onClick={() => {
-                        setSyncAlbums([]);
-                        setNotice("Cleared the DAP album selection.");
-                      }}
-                    >
-                      Clear selection
-                    </button>
-                  </>
-                )}
-              </div>
-            </section>
+            <SyncSetupWorkspace
+              activeProfileId={profile?.id}
+              activeSection={syncSetupSection}
+              busy={busy}
+              editingProfile={editingSyncProfile}
+              profileNameDraft={syncProfileNameDraft}
+              profiles={syncProfiles}
+              renamingProfileId={renamingSyncProfileId}
+              selectedAlbum={selectedAlbum}
+              selectedAlbums={syncAlbums}
+              targetPreview={syncTargetPreview}
+              targetPreviewHeadingRef={syncTargetPreviewHeadingRef}
+              onBrowseLibrary={() => setActiveView("library")}
+              onCancelAlbumSelection={cancelSyncProfileAlbumEdit}
+              onCancelRename={cancelSyncProfileRename}
+              onCancelTarget={() => {
+                setSyncTargetPreview(undefined);
+                setNotice("Discarded the DAP target change preview.");
+              }}
+              onChooseProfileTarget={(saved) =>
+                void chooseSyncProfileTarget(saved)
+              }
+              onChooseTarget={() => void chooseTarget()}
+              onClearSelection={() => {
+                setSyncAlbums([]);
+                setNotice("Cleared the DAP album selection.");
+              }}
+              onConfirmTarget={() => void applySyncProfileTarget()}
+              onEditProfileAlbums={editSyncProfileAlbums}
+              onOpenProfile={openSyncProfile}
+              onProfileNameDraftChange={setSyncProfileNameDraft}
+              onRenameProfile={(saved) => void renameSyncProfile(saved)}
+              onSaveAlbumSelection={() => void saveSyncProfileAlbums()}
+              onSelectSection={setSyncSetupSection}
+              onStartRename={startSyncProfileRename}
+              onToggleAlbum={toggleSyncAlbum}
+            />
           )}
-          {syncStage === "setup" && (
-            <section className="card settings" aria-labelledby="dap-profiles">
-              <h2 id="dap-profiles">DAP profiles</h2>
-              <p>
-                Saved profiles can be reopened after restarting Outgroove.
-                Opening a profile only restores its selection; it does not read
-                or change the target until you request a preview. Interrupted
-                syncs are detected at startup, but the target is inspected
-                read-only only when you review a recovery.
-              </p>
-              {syncProfiles.length === 0 ? (
-                <p>No DAP profiles have been saved yet.</p>
-              ) : (
-                <ul
-                  className="library-root-list"
-                  aria-label="Saved DAP profiles"
-                >
-                  {syncProfiles.map((saved) => (
-                    <li key={saved.id}>
-                      <div>
-                        <strong>{saved.name}</strong>
-                        <span>{saved.targetPath}</span>
-                        <span>
-                          {saved.albums.length} saved{" "}
-                          {saved.albums.length === 1 ? "album" : "albums"}:{" "}
-                          {saved.albums
-                            .map(
-                              (album) =>
-                                `${album.albumArtist} — ${album.title}`,
-                            )
-                            .join("; ")}
-                        </span>
-                      </div>
-                      <div className="library-root-actions">
-                        <button
-                          disabled={busy || Boolean(renamingSyncProfileId)}
-                          aria-pressed={profile?.id === saved.id}
-                          onClick={() => openSyncProfile(saved)}
-                        >
-                          Open DAP profile {saved.name}
-                        </button>
-                        <button
-                          disabled={busy || Boolean(renamingSyncProfileId)}
-                          onClick={() => editSyncProfileAlbums(saved)}
-                        >
-                          Edit albums in DAP profile {saved.name}
-                        </button>
-                        <button
-                          disabled={
-                            busy ||
-                            Boolean(editingSyncProfileId) ||
-                            Boolean(renamingSyncProfileId)
-                          }
-                          onClick={() => void chooseSyncProfileTarget(saved)}
-                        >
-                          Change DAP target for {saved.name}
-                        </button>
-                        {renamingSyncProfileId === saved.id ? (
-                          <form
-                            aria-label={`Rename DAP profile ${saved.name}`}
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void renameSyncProfile(saved);
-                            }}
-                          >
-                            <label htmlFor={`sync-profile-name-${saved.id}`}>
-                              New name for {saved.name}
-                            </label>
-                            <input
-                              autoFocus
-                              id={`sync-profile-name-${saved.id}`}
-                              maxLength={100}
-                              value={syncProfileNameDraft}
-                              onChange={(event) =>
-                                setSyncProfileNameDraft(event.target.value)
-                              }
-                            />
-                            <button
-                              disabled={
-                                busy || syncProfileNameDraft.trim().length === 0
-                              }
-                              type="submit"
-                            >
-                              Save DAP profile name
-                            </button>
-                            <button
-                              disabled={busy}
-                              type="button"
-                              onClick={cancelSyncProfileRename}
-                            >
-                              Cancel DAP profile rename
-                            </button>
-                          </form>
-                        ) : (
-                          <button
-                            disabled={
-                              busy ||
-                              Boolean(editingSyncProfileId) ||
-                              Boolean(renamingSyncProfileId)
-                            }
-                            onClick={() => startSyncProfileRename(saved)}
-                          >
-                            Rename DAP profile {saved.name}
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {syncTargetPreview && (
-                <section
-                  className="preview"
-                  aria-label="DAP target confirmation"
-                >
-                  <h3>Review DAP target change</h3>
-                  <p>
-                    <strong>{syncTargetPreview.profileName}</strong>
-                  </p>
-                  <p>Current target: {syncTargetPreview.currentTargetPath}</p>
-                  <p>New target: {syncTargetPreview.proposedTargetPath}</p>
-                  <p>
-                    This changes only the saved profile. No source audio or
-                    target files will be read, copied, replaced, or deleted.
-                    Existing sync history stays attached to the profile. A fresh
-                    sync preview will treat ownership separately for this
-                    target.
-                  </p>
-                  <button
-                    className="primary"
-                    disabled={busy}
-                    onClick={() => void applySyncProfileTarget()}
-                  >
-                    Confirm DAP target change
-                  </button>
-                  <button
-                    disabled={busy}
-                    onClick={() => {
-                      setSyncTargetPreview(undefined);
-                      setNotice("Discarded the DAP target change preview.");
-                    }}
-                  >
-                    Cancel DAP target change
-                  </button>
-                </section>
-              )}
-            </section>
-          )}
-          {syncStage === "review" && (
-            <section
-              className="card settings sync-review"
-              aria-labelledby="sync-review-title"
-            >
-              <p className="eyebrow">Preview and apply</p>
-              <h2 id="sync-review-title">Review the active DAP profile</h2>
-              {profile && (
-                <div
-                  className="sync-profile-summary"
-                  aria-label="Active DAP profile"
-                >
-                  <p>
-                    <strong>{profile.name}</strong>
-                    <br />
-                    {profile.targetPath}
-                  </p>
-                  <p>
-                    Status: {profile.albumIds.length} selected{" "}
-                    {profile.albumIds.length === 1 ? "album" : "albums"} saved
-                    in this profile.
-                  </p>
-                  {editingSyncProfile?.id === profile.id && (
-                    <p>Status: Album-selection changes are not saved yet.</p>
-                  )}
-                  <div className="actions">
-                    <button
-                      className="primary"
-                      disabled={busy || editingSyncProfile?.id === profile.id}
-                      onClick={() => void planSync()}
-                    >
-                      Preview sync plan
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setSyncStage("setup")}
-                    >
-                      Manage {profile.name}
-                    </button>
-                  </div>
-                  <section
-                    aria-labelledby={`sync-history-${profile.id}`}
-                    className="sync-history"
-                  >
-                    <h3 id={`sync-history-${profile.id}`}>
-                      Successful sync history
-                    </h3>
-                    <p>
-                      Shows only runs whose manifest was committed successfully.
-                      The 20 newest runs are shown in this view.
-                    </p>
-                    {syncHistoryProfileId !== profile.id ||
-                    syncHistoryLoading ? (
-                      <p aria-live="polite">Loading successful sync history…</p>
-                    ) : syncHistory.length === 0 ? (
-                      <p>No successful sync runs have been recorded yet.</p>
-                    ) : (
-                      <ul
-                        aria-label={`Successful sync history for ${profile.name}`}
-                      >
-                        {syncHistory.map((item) => (
-                          <li key={item.id}>
-                            <time dateTime={item.completedAt}>
-                              {new Date(item.completedAt).toLocaleString()}
-                            </time>
-                            {" — "}
-                            {item.entryCount}{" "}
-                            {item.entryCount === 1 ? "file" : "files"}
-                            {" — "}
-                            {item.targetPath}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                </div>
-              )}
-              {syncPlan && (
-                <div className="preview" aria-label="Sync confirmation">
-                  <h3>Sync preview</h3>
-                  <PlanGroup
-                    title="Copies"
-                    items={syncPlan.copies.map(
-                      (item) => item.relativeDestination,
-                    )}
-                  />
-                  <PlanGroup
-                    title="Unchanged / skipped"
-                    items={syncPlan.unchanged.map(
-                      (item) => item.relativeDestination,
-                    )}
-                  />
-                  <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-                  <PlanGroup title="Errors" items={syncPlan.errors} />
-                  <p>{syncPlan.requiredBytes} bytes required.</p>
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      syncPlan.conflicts.length > 0 ||
-                      syncPlan.errors.length > 0
-                    }
-                    onClick={() => void applySync()}
-                  >
-                    Confirm and apply copy plan
-                  </button>
-                  {syncApplyingPlanId === syncPlan.id && (
-                    <div aria-live="polite">
-                      <p>
-                        Status:{" "}
-                        {syncCancellationRequested
-                          ? "Cancelling safely"
-                          : "Sync in progress"}
-                      </p>
-                      <button
-                        disabled={syncCancellationRequested}
-                        onClick={() => void cancelSync()}
-                      >
-                        Cancel active sync
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
+          {syncStage === "review" && profile && (
+            <SyncPlanReview
+              applyingPlanId={syncApplyingPlanId}
+              busy={busy}
+              cancellationRequested={syncCancellationRequested}
+              editingProfile={editingSyncProfile?.id === profile.id}
+              history={syncHistory}
+              historyLoading={syncHistoryLoading}
+              historyProfileId={syncHistoryProfileId}
+              plan={syncPlan}
+              planHeadingRef={syncPlanHeadingRef}
+              profile={profile}
+              onApply={() => void applySync()}
+              onCancel={() => void cancelSync()}
+              onManage={() => {
+                setSyncSetupSection("profiles");
+                setSyncStage("setup");
+              }}
+              onPreview={() => void planSync()}
+            />
           )}
           {syncStage === "recovery" && (
-            <section
-              className="card settings sync-recovery"
-              aria-labelledby="sync-recovery-title"
-            >
-              <p className="eyebrow">Restart safety</p>
-              <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
-              <p>
-                Review every target action before confirming. Recovery never
-                changes source audio and leaves files with unexpected contents
-                untouched.
-              </p>
-              {syncRecoveries.length === 0 ? (
-                <div className="empty compact">
-                  <h3>No recovery is pending</h3>
-                  <p>
-                    Outgroove has no interrupted target changes requiring
-                    review.
-                  </p>
-                  <button onClick={() => setSyncStage("setup")}>
-                    Return to albums and profiles
-                  </button>
-                </div>
-              ) : (
-                <ul
-                  className="sync-recovery-list"
-                  aria-label="Interrupted sync recoveries"
-                >
-                  {syncRecoveries.map((recovery) => (
-                    <li key={recovery.runId}>
-                      <div>
-                        <strong>{recovery.profileName}</strong>
-                        <span>
-                          {recovery.mode === "committed-cleanup"
-                            ? "Sync committed; internal cleanup was interrupted"
-                            : `Interrupted during ${recovery.phase}`}
-                        </span>
-                        <span>{recovery.targetPath}</span>
-                      </div>
-                      <button
-                        disabled={busy}
-                        onClick={() => void reviewSyncRecovery(recovery)}
-                      >
-                        Review recovery for {recovery.profileName}
-                      </button>
-                      {syncRecoveryPreview?.runId === recovery.runId && (
-                        <section
-                          className="preview"
-                          aria-label={`Recovery confirmation for ${recovery.profileName}`}
-                        >
-                          <h3>Exact recovery actions</h3>
-                          {syncRecoveryPreview.actions.length === 0 ? (
-                            <p>No target changes can currently be applied.</p>
-                          ) : (
-                            <ul
-                              aria-label={`Recovery actions for ${recovery.profileName}`}
-                            >
-                              {syncRecoveryPreview.actions.map((action) => (
-                                <li key={`${action.action}:${action.path}`}>
-                                  {action.action === "restore"
-                                    ? "Restore"
-                                    : "Remove"}
-                                  : {action.path}. {action.explanation}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                          {syncRecoveryPreview.warnings.map((warning) => (
-                            <p key={warning} role="alert">
-                              Warning: {warning}
-                            </p>
-                          ))}
-                          <button
-                            className="primary"
-                            disabled={busy || !syncRecoveryPreview.canRecover}
-                            onClick={() =>
-                              void applySyncRecovery(syncRecoveryPreview)
-                            }
-                          >
-                            Confirm recovery for {recovery.profileName}
-                          </button>
-                        </section>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <SyncRecoveryWorkspace
+              busy={busy}
+              feedback={syncRecoveryFeedback}
+              feedbackHeadingRef={syncRecoveryFeedbackHeadingRef}
+              preview={syncRecoveryPreview}
+              previewHeadingRef={syncRecoveryPreviewHeadingRef}
+              recoveries={syncRecoveries}
+              onClosePreview={() => {
+                setSyncRecoveryPreview(undefined);
+                setNotice("Closed the recovery review without changing files.");
+              }}
+              onConfirm={(recovery) => void applySyncRecovery(recovery)}
+              onDismissFeedback={() => setSyncRecoveryFeedback(undefined)}
+              onReturn={() => setSyncStage("setup")}
+              onReview={(recovery) => void reviewSyncRecovery(recovery)}
+            />
           )}
         </main>
       )}
       {activeView === "settings" && (
-        <main className="settings-view">
-          <section className="settings-workflow-header">
-            <div>
-              <p className="eyebrow">Local application settings</p>
-              <h2>Choose what to manage</h2>
-              <p>
-                Library roots and database replacement are separate safety
-                workflows. Audio and DAP files are never included in a database
-                backup or restore.
-              </p>
-            </div>
-            <SettingsNavigation
-              activeSection={settingsSection}
-              hasRestorePreview={Boolean(restorePreview)}
-              onSelect={setSettingsSection}
-            />
-          </section>
-          {settingsSection === "library-folders" && (
-            <section
-              className="card settings"
-              aria-labelledby="watched-library-folders"
-            >
-              <h2 id="watched-library-folders">Watched Library folders</h2>
-              <p>
-                Outgroove scans only folders you explicitly choose. Rescanning
-                reads that folder through the existing incremental scan and
-                never changes audio files.
-              </p>
-              {libraryRoots.length === 0 ? (
-                <p>No Library folders have been chosen yet.</p>
-              ) : (
-                <ul className="library-root-list">
-                  {libraryRoots.map((root) => {
-                    const isCurrent = root.id === rootId;
-                    const isScanning = scanActive && scanJob.rootId === root.id;
-                    return (
-                      <li key={root.id}>
-                        <div>
-                          <strong>{root.path}</strong>
-                          <span>
-                            Status: {isScanning ? "Scan in progress" : null}
-                            {isScanning && root.lastScanAt ? " · " : null}
-                            {root.lastScanAt ? (
-                              <>
-                                Last scanned{" "}
-                                <time dateTime={root.lastScanAt}>
-                                  {new Date(root.lastScanAt).toLocaleString()}
-                                </time>
-                              </>
-                            ) : isScanning ? null : (
-                              "Never scanned"
-                            )}
-                          </span>
-                          {isCurrent && <span>Current scan target</span>}
-                        </div>
-                        <div className="library-root-actions">
-                          <button
-                            disabled={busy || scanActive}
-                            onClick={() => void startScan(root.id)}
-                          >
-                            Scan folder {root.path}
-                          </button>
-                          <button
-                            disabled={busy || scanActive}
-                            onClick={() => void previewRootRemoval(root.id)}
-                          >
-                            Stop watching {root.path}
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              {rootRemovalPreview && (
-                <div
-                  className="preview"
-                  aria-label="Library folder removal preview"
-                >
-                  <h3>Stop watching this Library folder?</h3>
-                  <p>
-                    <strong>{rootRemovalPreview.path}</strong>
-                  </p>
-                  <dl>
-                    <dt>Visible tracks hidden</dt>
-                    <dd>{rootRemovalPreview.visibleTracks}</dd>
-                    <dt>Albums no longer visible</dt>
-                    <dd>{rootRemovalPreview.albumsHidden}</dd>
-                    <dt>Scan problems hidden</dt>
-                    <dd>{rootRemovalPreview.scanProblemsHidden}</dd>
-                  </dl>
-                  <p>
-                    <strong>No audio or DAP files will be deleted.</strong>{" "}
-                    Catalog identities, edit history, DAP profiles, sync
-                    manifests, and scan history are retained. Choosing this
-                    folder again reuses its catalog identity and requires a
-                    rescan before tracks reappear.
-                  </p>
-                  <div className="actions">
-                    <button
-                      className="primary"
-                      disabled={busy || scanActive}
-                      onClick={() => void applyRootRemoval()}
-                    >
-                      Confirm stop watching
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setRootRemovalPreview(undefined)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-          {settingsSection === "database" && (
-            <section
-              className="card settings"
-              aria-labelledby="database-safety"
-            >
-              <h2 id="database-safety">Database safety</h2>
-              <p>
-                Backups contain the local catalog, edit history, and DAP
-                profiles, but never copy or change audio files.
-              </p>
-              <div className="actions">
-                <button
-                  disabled={busy || scanActive}
-                  onClick={() => void createBackup()}
-                >
-                  Create database backup
-                </button>
-                <button
-                  disabled={busy || scanActive}
-                  onClick={() => void chooseRestore()}
-                >
-                  Restore from backup
-                </button>
-              </div>
-              {restorePreview && (
-                <div
-                  className="preview"
-                  aria-label="Database restore confirmation"
-                >
-                  <h3>Review database replacement</h3>
-                  <p>
-                    <strong>{restorePreview.sourceName}</strong> passed
-                    integrity and schema checks. Restoring replaces the current
-                    Outgroove database and restarts the app. Source audio and
-                    DAP files are untouched.
-                  </p>
-                  <dl>
-                    <dt>Library roots</dt>
-                    <dd>{restorePreview.summary.libraryRoots}</dd>
-                    <dt>Albums</dt>
-                    <dd>{restorePreview.summary.albums}</dd>
-                    <dt>Tracks</dt>
-                    <dd>{restorePreview.summary.tracks}</dd>
-                    <dt>DAP profiles</dt>
-                    <dd>{restorePreview.summary.syncProfiles}</dd>
-                    <dt>Saved Library filters</dt>
-                    <dd>{restorePreview.summary.savedLibraryFilters}</dd>
-                    <dt>Schema</dt>
-                    <dd>Version {restorePreview.schemaVersion}</dd>
-                  </dl>
-                  <p>
-                    Outgroove creates and verifies an automatic rollback backup
-                    before replacing anything.
-                  </p>
-                  <div className="actions">
-                    <button
-                      className="primary"
-                      disabled={busy || scanActive}
-                      onClick={() => void applyRestore()}
-                    >
-                      Confirm restore and restart
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setRestorePreview(undefined)}
-                    >
-                      Cancel restore
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-        </main>
+        <SettingsView
+          activeSection={settingsSection}
+          busy={busy}
+          libraryRoots={libraryRoots}
+          restorePreview={restorePreview}
+          rootId={rootId}
+          rootRemovalPreview={rootRemovalPreview}
+          scanActive={scanActive}
+          scanJob={scanJob}
+          onAddLibraryFolder={() => void chooseFirstLibraryFolder()}
+          onCancelRestore={() => setRestorePreview(undefined)}
+          onCancelRootRemoval={() => setRootRemovalPreview(undefined)}
+          onConfirmRestore={() => void applyRestore()}
+          onConfirmRootRemoval={() => void applyRootRemoval()}
+          onCreateBackup={() => void createBackup()}
+          onPreviewRootRemoval={(selectedRootId) =>
+            void previewRootRemoval(selectedRootId)
+          }
+          onRestoreBackup={() => void chooseRestore()}
+          onScanRoot={(selectedRootId) => void startScan(selectedRootId)}
+          onSelectSection={setSettingsSection}
+        />
       )}
     </ApplicationShell>
-  );
-}
-
-function PlanGroup({
-  title,
-  items,
-}: {
-  title: string;
-  items: readonly string[];
-}): React.JSX.Element {
-  return (
-    <section>
-      <h5>
-        {title} ({items.length})
-      </h5>
-      {items.length === 0 ? (
-        <p>None</p>
-      ) : (
-        <ul>
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
