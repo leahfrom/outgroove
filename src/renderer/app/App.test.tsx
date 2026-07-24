@@ -23,6 +23,27 @@ async function openPrimaryView(
   );
 }
 
+async function openSyncSetupSection(
+  user: ReturnType<typeof userEvent.setup>,
+  name: "Selection draft" | "Saved profiles",
+): Promise<void> {
+  const navigation = screen.getByRole("navigation", {
+    name: "Albums and profiles setup",
+  });
+  await user.click(
+    within(navigation).getByRole("button", {
+      name: new RegExp(`^${name}`),
+    }),
+  );
+}
+
+async function openSyncProfileManagement(
+  user: ReturnType<typeof userEvent.setup>,
+  profileName: string,
+): Promise<void> {
+  await user.click(screen.getByText(`Manage ${profileName}`));
+}
+
 async function openWorkbenchTool(
   user: ReturnType<typeof userEvent.setup>,
   name: "Album title" | "Shared fields" | "Track order",
@@ -3416,15 +3437,23 @@ describe("tag edit UI safety states", () => {
     const selection = screen.getByRole("list", {
       name: "Albums selected for DAP sync",
     });
-    expect(
-      within(selection).getByText("Fixture Artist — Fixture Album"),
-    ).toBeVisible();
-    expect(
-      within(selection).getByText("Other Artist — Second Album"),
-    ).toBeVisible();
+    expect(selection).toHaveTextContent("Fixture Album");
+    expect(selection).toHaveTextContent("Fixture Artist");
+    expect(selection).toHaveTextContent("Second Album");
+    expect(selection).toHaveTextContent("Other Artist");
     expect(
       screen.getByRole("button", { name: "Preview & apply" }),
     ).toBeDisabled();
+    await openPrimaryView(user, "Activity");
+    await openPrimaryView(user, "Sync");
+    expect(
+      screen.getByRole("button", {
+        name: "Selection draft, 2 of 100 albums",
+      }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("list", { name: "Albums selected for DAP sync" }),
+    ).toHaveTextContent("Second Album");
 
     const chooseTarget = screen.getByRole("button", {
       name: "Choose DAP target",
@@ -3750,13 +3779,16 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Sync");
+    await openSyncSetupSection(user, "Saved profiles");
 
     const profiles = await screen.findByRole("list", {
       name: "Saved DAP profiles",
     });
     expect(profiles).toHaveTextContent("/fixture/dap");
-    expect(profiles).toHaveTextContent("Fixture Artist — Fixture Album");
-    expect(profiles).toHaveTextContent("Other Artist — Second Album");
+    expect(profiles).toHaveTextContent("Fixture Album");
+    expect(profiles).toHaveTextContent("Fixture Artist");
+    expect(profiles).toHaveTextContent("Second Album");
+    expect(profiles).toHaveTextContent("Other Artist");
     const open = within(profiles).getByRole("button", {
       name: "Open DAP profile Road DAP",
     });
@@ -3863,6 +3895,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Sync");
+    await openSyncSetupSection(user, "Saved profiles");
 
     await user.click(
       await screen.findByRole("button", {
@@ -3872,6 +3905,7 @@ describe("tag edit UI safety states", () => {
     await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
     await screen.findByLabelText("Sync confirmation");
     await user.click(screen.getByRole("button", { name: "Manage Road DAP" }));
+    await openSyncProfileManagement(user, "Road DAP");
     const rename = screen.getByRole("button", {
       name: "Rename DAP profile Road DAP",
     });
@@ -3904,6 +3938,7 @@ describe("tag edit UI safety states", () => {
     expect(planSync).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Albums & profiles" }));
+    await openSyncProfileManagement(user, "Pocket DAP");
     await user.click(
       screen.getByRole("button", {
         name: "Rename DAP profile Pocket DAP",
@@ -3983,6 +4018,8 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Sync");
+    await openSyncSetupSection(user, "Saved profiles");
+    await openSyncProfileManagement(user, "Road DAP");
 
     const change = await screen.findByRole("button", {
       name: "Change DAP target for Road DAP",
@@ -3991,10 +4028,15 @@ describe("tag edit UI safety states", () => {
     await user.keyboard("{Enter}");
     expect(chooseTarget).toHaveBeenCalledWith({ profileId });
     const preview = await screen.findByLabelText("DAP target confirmation");
-    expect(preview).toHaveTextContent("Current target: /fixture/old-dap");
-    expect(preview).toHaveTextContent("New target: /fixture/new-dap");
+    expect(
+      within(preview).getByRole("heading", {
+        name: "Review target for Road DAP",
+      }),
+    ).toHaveFocus();
+    expect(within(preview).getByText("/fixture/old-dap")).toBeVisible();
+    expect(within(preview).getByText("/fixture/new-dap")).toBeVisible();
     expect(preview).toHaveTextContent(
-      "No source audio or target files will be read, copied, replaced, or deleted.",
+      "No source audio or target files are read, copied, replaced, or deleted.",
     );
     expect(applyTarget).not.toHaveBeenCalled();
 
@@ -4097,6 +4139,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Sync");
+    await openSyncSetupSection(user, "Saved profiles");
 
     const open = await screen.findByRole("button", {
       name: "Open DAP profile Road DAP",
@@ -4105,6 +4148,7 @@ describe("tag edit UI safety states", () => {
     await user.click(screen.getByRole("button", { name: "Preview sync plan" }));
     expect(await screen.findByLabelText("Sync confirmation")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Manage Road DAP" }));
+    await openSyncProfileManagement(user, "Road DAP");
     const edit = screen.getByRole("button", {
       name: "Edit albums in DAP profile Road DAP",
     });
@@ -4113,7 +4157,9 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.queryByLabelText("Sync confirmation"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/for the Road DAP revision/u)).toBeVisible();
+    expect(screen.getByLabelText("Profile draft")).toHaveTextContent(
+      "Unsaved selection for Road DAP",
+    );
 
     await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: /^Second Album/u }));
@@ -4143,19 +4189,21 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Preview sync plan" }),
     ).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Albums & profiles" }));
+    await openSyncSetupSection(user, "Saved profiles");
     expect(
       screen.getByRole("list", { name: "Saved DAP profiles" }),
-    ).toHaveTextContent("Other Artist — Second Album");
+    ).toHaveTextContent("Second Album");
 
+    await openSyncProfileManagement(user, "Road DAP");
     await user.click(
       screen.getByRole("button", {
         name: "Edit albums in DAP profile Road DAP",
       }),
     );
     await user.click(
-      screen.getByRole("button", {
-        name: "Remove Second Album",
-      }),
+      within(
+        screen.getByRole("list", { name: "Albums selected for DAP sync" }),
+      ).getByRole("button", { name: "Remove Second Album" }),
     );
     const cancel = screen.getByRole("button", {
       name: "Cancel album selection changes",
@@ -4165,7 +4213,7 @@ describe("tag edit UI safety states", () => {
     expect(updateSyncProfileAlbums).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("list", { name: "Saved DAP profiles" }),
-    ).toHaveTextContent("Other Artist — Second Album");
+    ).toHaveTextContent("Second Album");
   });
 
   it("shows a database restore preview before explicit confirmation", async () => {

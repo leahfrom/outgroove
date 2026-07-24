@@ -289,6 +289,8 @@ button:disabled {
   display: grid;
   gap: 0.25rem;
   min-width: 0;
+  border-color: transparent;
+  background: #f3f5f3;
   text-align: left;
 }
 .sync-navigation button span {
@@ -301,6 +303,279 @@ button:disabled {
 .sync-navigation button[aria-current="step"] {
   border-color: #245c39;
   background: #eef8f1;
+}
+.sync-setup-workspace {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 0;
+  border-radius: 14px;
+  background: white;
+}
+.sync-setup-workspace > .workflow-heading p:last-child,
+.sync-setup-section-heading p:last-child {
+  margin-bottom: 0;
+  color: #526159;
+}
+.sync-setup-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  padding: 0.3rem;
+  border-radius: 11px;
+  background: #edf1ed;
+}
+.sync-setup-nav button {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+.sync-setup-nav button[aria-current="page"] {
+  border-color: transparent;
+  background: white;
+  box-shadow: 0 1px 3px rgb(23 33 28 / 16%);
+}
+.sync-setup-nav button span {
+  font-weight: 750;
+}
+.sync-setup-nav button small {
+  color: #526159;
+}
+.sync-selection-workspace,
+.sync-profiles-workspace {
+  display: grid;
+  gap: 1rem;
+}
+.sync-setup-section-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.sync-selection-count {
+  display: grid;
+  flex: 0 0 auto;
+  min-width: 7rem;
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 9px;
+  background: #eef8f1;
+  text-align: center;
+}
+.sync-selection-count strong {
+  font-size: 1.45rem;
+}
+.sync-selection-count span {
+  color: #526159;
+  font-size: 0.82rem;
+}
+.sync-editing-profile,
+.sync-current-album {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+}
+.sync-editing-profile {
+  border: 1px solid #c59852;
+  background: #fff9eb;
+}
+.sync-editing-profile > div,
+.sync-current-album > div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.sync-editing-profile > span {
+  max-width: 18rem;
+  color: #704611;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-align: right;
+}
+.sync-current-album {
+  border: 1px solid #cad8cd;
+  background: #f7faf7;
+}
+.sync-current-album p {
+  margin: 0;
+}
+.sync-current-album span {
+  color: #526159;
+}
+.sync-current-album button {
+  flex: 0 0 auto;
+}
+.sync-draft-albums {
+  display: grid;
+  gap: 0.75rem;
+}
+.sync-draft-albums > div {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.sync-draft-albums h4 {
+  margin: 0;
+}
+.sync-draft-albums > div > span {
+  color: #526159;
+  font-size: 0.88rem;
+  text-align: right;
+}
+.sync-draft-albums ul,
+.sync-profile-list,
+.sync-profile-albums ul {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sync-draft-albums li {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 9px;
+}
+.sync-draft-albums li > div {
+  display: grid;
+  min-width: 0;
+}
+.sync-draft-albums li span {
+  color: #526159;
+}
+.sync-draft-albums li strong,
+.sync-draft-albums li span {
+  overflow-wrap: anywhere;
+}
+.sync-draft-albums li button {
+  flex: 0 0 auto;
+}
+.sync-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d8ddd8;
+}
+.sync-profile-list > li {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 11px;
+}
+.sync-profile-list > li[data-active="true"] {
+  border-color: #4e7b5d;
+  box-shadow: inset 0 0 0 1px #4e7b5d;
+}
+.sync-profile-heading,
+.sync-profile-primary-action {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.sync-profile-heading > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.sync-profile-album-count,
+.sync-profile-primary-action > span {
+  flex: 0 0 auto;
+  color: #526159;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.sync-profile-primary-action {
+  align-items: center;
+}
+.sync-profile-albums,
+.sync-profile-management {
+  padding-top: 0.7rem;
+  border-top: 1px solid #d8ddd8;
+}
+.sync-profile-albums > summary,
+.sync-profile-management > summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+.sync-profile-albums ul {
+  margin-top: 0.75rem;
+}
+.sync-profile-albums li {
+  display: grid;
+  gap: 0.1rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid #cad8cd;
+}
+.sync-profile-albums li strong,
+.sync-profile-albums li span {
+  overflow-wrap: anywhere;
+}
+.sync-profile-albums li span {
+  color: #526159;
+}
+.sync-profile-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.sync-profile-management form {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 0.5rem;
+  max-width: 38rem;
+  padding: 0.85rem;
+  border-radius: 9px;
+  background: #f7f9f7;
+}
+.sync-profile-management form .actions {
+  margin: 0;
+}
+.sync-target-preview {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 2px solid #496e56;
+  border-radius: 12px;
+  background: #fbfdfb;
+}
+.sync-target-preview h4,
+.sync-target-preview p:last-child {
+  margin-bottom: 0;
+}
+.sync-target-preview > div:first-child > p:last-child,
+.sync-target-preview > p {
+  color: #526159;
+}
+.sync-target-preview dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+.sync-target-preview dl > div {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 9px;
+  background: white;
+}
+.sync-target-preview dd {
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
 }
 .sync-recovery-alert {
   display: flex;
@@ -1912,6 +2187,9 @@ td {
   .sync-navigation {
     grid-template-columns: 1fr;
   }
+  .sync-target-preview dl {
+    grid-template-columns: 1fr;
+  }
   .settings-navigation {
     grid-template-columns: 1fr;
   }
@@ -1982,9 +2260,30 @@ td {
   .track-section-heading,
   .track-list summary,
   .workflow-heading,
+  .sync-setup-section-heading,
+  .sync-editing-profile,
+  .sync-current-album,
+  .sync-draft-albums li,
+  .sync-profile-heading,
   .sync-plan-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .sync-setup-nav {
+    grid-template-columns: 1fr;
+  }
+  .sync-selection-count {
+    justify-items: start;
+    text-align: left;
+  }
+  .sync-editing-profile > span,
+  .sync-draft-albums > div > span {
+    max-width: none;
+    text-align: left;
+  }
+  .sync-current-album button,
+  .sync-draft-albums li button {
+    align-self: flex-start;
   }
   .sync-plan-status {
     align-self: flex-start;
