@@ -1,4 +1,4 @@
-import type { ScanJobDto } from "../../shared/contracts/api";
+import type { ScanJobDto, ScanJobState } from "../../shared/contracts/api";
 
 export interface ActivityProgress {
   readonly job: "scan" | "tag-edit" | "sync" | "library-quality";
@@ -14,6 +14,25 @@ const progressLabels: Record<ActivityProgress["job"], string> = {
   "library-quality": "Library quality review",
 };
 
+const scanStateLabels: Record<ScanJobState, string> = {
+  queued: "Preparing",
+  running: "Scanning",
+  cancelling: "Cancelling safely",
+  completed: "Complete",
+  cancelled: "Cancelled safely",
+  failed: "Failed",
+  interrupted: "Interrupted",
+};
+
+function needsScanAttention(scanJob: ScanJobDto | undefined): boolean {
+  if (!scanJob) return false;
+  return (
+    scanJob.state === "failed" ||
+    scanJob.state === "interrupted" ||
+    (scanJob.result?.errors ?? 0) > 0
+  );
+}
+
 export function ActivityView({
   busy,
   progress,
@@ -22,6 +41,7 @@ export function ActivityView({
   onCancel,
   onChooseFolder,
   onOpenLibrary,
+  onOpenSync,
   onReviewScanProblems,
   onRetry,
 }: {
@@ -32,6 +52,7 @@ export function ActivityView({
   readonly onCancel: () => void;
   readonly onChooseFolder: () => void;
   readonly onOpenLibrary: () => void;
+  readonly onOpenSync: () => void;
   readonly onReviewScanProblems: () => void;
   readonly onRetry: (rootId: string) => void;
 }): React.JSX.Element {
@@ -41,136 +62,282 @@ export function ActivityView({
     activeProgress && (activeProgress.job !== "scan" || !scanJob)
       ? activeProgress
       : undefined;
-
-  if (!scanJob && !separateProgress)
-    return (
-      <main className="empty" aria-labelledby="activity-empty-title">
-        <p className="eyebrow">Activity center</p>
-        <h2 id="activity-empty-title">Nothing is running yet</h2>
-        <p>
-          Current metadata and DAP work will appear here while it runs, and the
-          latest Library scan remains available afterward. Start by choosing a
-          Library folder.
-        </p>
-        <button
-          disabled={busy || scanActive}
-          onClick={onChooseFolder}
-          type="button"
-        >
-          Choose a Library folder
-        </button>
-      </main>
-    );
+  const attentionRequired = needsScanAttention(scanJob);
+  const activeWorkCount =
+    Number(scanActive) + Number(Boolean(separateProgress));
 
   return (
     <main className="activity-center" aria-labelledby="activity-center-title">
-      <section className="card activity-introduction">
-        <p className="eyebrow">Activity center</p>
-        <h2 id="activity-center-title">Current and recent work</h2>
-        <p>
-          Follow work already running in Outgroove. Leaving this view does not
-          cancel it.
-        </p>
+      <section className="activity-introduction">
+        <div>
+          <p className="eyebrow">Activity center</p>
+          <h2 id="activity-center-title">Work, results, and recovery</h2>
+          <p>
+            Follow work in Outgroove without keeping the originating view open.
+            Leaving Activity never cancels a running operation.
+          </p>
+        </div>
+        <dl className="activity-overview" aria-label="Activity overview">
+          <div>
+            <dt>Active</dt>
+            <dd>{activeWorkCount}</dd>
+          </div>
+          <div className={attentionRequired ? "activity-status-attention" : ""}>
+            <dt>Needs attention</dt>
+            <dd>{attentionRequired ? "Yes" : "No"}</dd>
+          </div>
+          <div>
+            <dt>Latest scan</dt>
+            <dd>{scanJob ? scanStateLabels[scanJob.state] : "Not run"}</dd>
+          </div>
+        </dl>
       </section>
-      {separateProgress && (
+
+      {activeWorkCount > 0 ? (
         <section
-          className="card activity-section"
-          aria-labelledby="current-operation-title"
+          className="activity-workspace"
+          aria-labelledby="active-work-title"
         >
-          <p className="eyebrow">In progress</p>
-          <h2 id="current-operation-title">
-            {progressLabels[separateProgress.job]}
-          </h2>
-          <div className="activity-progress">
-            <p>{separateProgress.detail || "Waiting for an update…"}</p>
-            <progress
-              aria-label={`${progressLabels[separateProgress.job]} progress`}
-              value={separateProgress.completed}
-              max={separateProgress.total}
-            />
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Active work</p>
+              <h2 id="active-work-title">
+                {activeWorkCount === 1
+                  ? "One operation is running"
+                  : `${activeWorkCount} operations are running`}
+              </h2>
+            </div>
             <p aria-live="polite">
-              {separateProgress.completed} of {separateProgress.total} complete
+              It is safe to navigate elsewhere while this work continues.
             </p>
           </div>
-        </section>
-      )}
-      {scanJob && (
-        <section
-          className="card activity-section"
-          aria-labelledby="library-scan-activity-title"
-        >
-          <p className="eyebrow">
-            {scanActive ? "In progress" : "Latest Library scan"}
-          </p>
-          <h2 id="library-scan-activity-title">
-            Library scan: {scanJob.state}
-          </h2>
-          <div className="scan-job" aria-label="Scan activity">
-            <div>
-              <span>{scanJob.detail || "Waiting to start…"}</span>
-              {scanJob.error && <span role="alert">{scanJob.error}</span>}
-            </div>
-            {scanJob.state === "running" && scanJob.total === 0 ? (
-              <progress aria-label="Discovering audio files" />
-            ) : scanJob.total > 0 ? (
-              <progress
-                aria-label="Reading audio metadata"
-                value={scanJob.completed}
-                max={scanJob.total}
+
+          <div className="activity-operation-list">
+            {separateProgress && (
+              <article
+                className="activity-operation"
+                aria-labelledby="current-operation-title"
+              >
+                <div className="activity-operation-heading">
+                  <div>
+                    <p className="activity-state">In progress</p>
+                    <h3 id="current-operation-title">
+                      {progressLabels[separateProgress.job]}
+                    </h3>
+                  </div>
+                  <strong>
+                    {separateProgress.completed} of {separateProgress.total}
+                  </strong>
+                </div>
+                <div className="activity-progress">
+                  <p>{separateProgress.detail || "Waiting for an update…"}</p>
+                  <progress
+                    aria-label={`${progressLabels[separateProgress.job]} progress`}
+                    value={separateProgress.completed}
+                    max={separateProgress.total}
+                  />
+                </div>
+              </article>
+            )}
+
+            {scanActive && scanJob && (
+              <ScanActivity
+                scanJob={scanJob}
+                onCancel={onCancel}
+                onOpenLibrary={onOpenLibrary}
+                onReviewScanProblems={onReviewScanProblems}
+                onRetry={onRetry}
               />
-            ) : null}
-            {scanJob.result && (
-              <dl className="activity-results">
-                <div>
-                  <dt>Parsed</dt>
-                  <dd>{scanJob.result.parsed}</dd>
-                </div>
-                <div>
-                  <dt>Unchanged</dt>
-                  <dd>{scanJob.result.unchanged}</dd>
-                </div>
-                <div>
-                  <dt>Problems</dt>
-                  <dd>{scanJob.result.errors}</dd>
-                </div>
-              </dl>
-            )}
-            {scanActive && (
-              <button
-                disabled={scanJob.state === "cancelling"}
-                onClick={onCancel}
-                type="button"
-              >
-                {scanJob.state === "cancelling" ? "Cancelling…" : "Cancel scan"}
-              </button>
-            )}
-            {(scanJob.state === "cancelled" ||
-              scanJob.state === "failed" ||
-              scanJob.state === "interrupted") && (
-              <button
-                disabled={!scanJob.rootId}
-                onClick={() => {
-                  if (scanJob.rootId) onRetry(scanJob.rootId);
-                }}
-                type="button"
-              >
-                Retry scan
-              </button>
-            )}
-            {scanJob.result && scanJob.result.errors > 0 && (
-              <button onClick={onReviewScanProblems} type="button">
-                Review {scanJob.result.errors} scan{" "}
-                {scanJob.result.errors === 1 ? "problem" : "problems"}
-              </button>
-            )}
-            {scanJob.state === "completed" && (
-              <button onClick={onOpenLibrary} type="button">
-                Browse Library
-              </button>
             )}
           </div>
+        </section>
+      ) : !scanJob ? (
+        <section
+          className="activity-quiet-state"
+          aria-labelledby="quiet-activity-title"
+        >
+          <div>
+            <p className="eyebrow">All quiet</p>
+            <h2 id="quiet-activity-title">No work is running</h2>
+            <p>
+              Start with your local collection or prepare a reviewed DAP copy.
+              New progress will appear here automatically.
+            </p>
+          </div>
+          <div className="actions">
+            <button onClick={onOpenLibrary} type="button">
+              Browse Library
+            </button>
+            <button className="secondary" onClick={onOpenSync} type="button">
+              Open Sync
+            </button>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={onChooseFolder}
+              type="button"
+            >
+              Choose Library folder
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {scanJob && !scanActive && (
+        <section
+          className={`activity-workspace activity-scan-result ${
+            attentionRequired ? "needs-attention" : ""
+          }`}
+          aria-labelledby="latest-scan-title"
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">
+                {attentionRequired ? "Needs attention" : "Latest Library scan"}
+              </p>
+              <h2 id="latest-scan-title">{scanStateLabels[scanJob.state]}</h2>
+            </div>
+            <p>
+              {attentionRequired
+                ? "Your existing catalog remains available while you review the result."
+                : "Your Library is ready to browse."}
+            </p>
+          </div>
+          <ScanActivity
+            scanJob={scanJob}
+            showHeading={false}
+            onCancel={onCancel}
+            onOpenLibrary={onOpenLibrary}
+            onReviewScanProblems={onReviewScanProblems}
+            onRetry={onRetry}
+          />
         </section>
       )}
     </main>
+  );
+}
+
+function ScanActivity({
+  scanJob,
+  onCancel,
+  onOpenLibrary,
+  onReviewScanProblems,
+  onRetry,
+  showHeading = true,
+}: {
+  readonly scanJob: ScanJobDto;
+  readonly onCancel: () => void;
+  readonly onOpenLibrary: () => void;
+  readonly onReviewScanProblems: () => void;
+  readonly onRetry: (rootId: string) => void;
+  readonly showHeading?: boolean;
+}): React.JSX.Element {
+  const scanActive =
+    scanJob.state === "queued" ||
+    scanJob.state === "running" ||
+    scanJob.state === "cancelling";
+  const retryable =
+    scanJob.state === "cancelled" ||
+    scanJob.state === "failed" ||
+    scanJob.state === "interrupted";
+  const showDetail =
+    Boolean(scanJob.error) ||
+    (Boolean(scanJob.detail) &&
+      !(scanJob.state === "completed" && scanJob.detail === "Scan complete"));
+
+  return (
+    <article className="activity-operation" aria-label="Library scan activity">
+      {showHeading && (
+        <div className="activity-operation-heading">
+          <div>
+            <p className="activity-state">{scanStateLabels[scanJob.state]}</p>
+            <h3>Library scan</h3>
+          </div>
+          {scanJob.total > 0 && scanActive && (
+            <strong>
+              {scanJob.completed} of {scanJob.total}
+            </strong>
+          )}
+        </div>
+      )}
+
+      {(showDetail || scanActive) && (
+        <div className="activity-progress">
+          {showDetail && <p>{scanJob.detail || "Waiting to start…"}</p>}
+          {scanJob.error && <p role="alert">{scanJob.error}</p>}
+          {scanJob.state === "running" && scanJob.total === 0 ? (
+            <progress aria-label="Discovering audio files" />
+          ) : scanJob.total > 0 && scanActive ? (
+            <progress
+              aria-label="Reading audio metadata"
+              value={scanJob.completed}
+              max={scanJob.total}
+            />
+          ) : null}
+        </div>
+      )}
+
+      {scanJob.result && (
+        <dl className="activity-results">
+          <div>
+            <dt>Parsed</dt>
+            <dd>{scanJob.result.parsed}</dd>
+          </div>
+          <div>
+            <dt>Unchanged</dt>
+            <dd>{scanJob.result.unchanged}</dd>
+          </div>
+          <div
+            className={
+              scanJob.result.errors > 0 ? "activity-status-attention" : ""
+            }
+          >
+            <dt>Problems</dt>
+            <dd>{scanJob.result.errors}</dd>
+          </div>
+        </dl>
+      )}
+
+      <div className="actions">
+        {scanActive && (
+          <button
+            className="secondary"
+            disabled={scanJob.state === "cancelling"}
+            onClick={onCancel}
+            type="button"
+          >
+            {scanJob.state === "cancelling" ? "Cancelling…" : "Cancel scan"}
+          </button>
+        )}
+        {retryable && (
+          <button
+            disabled={!scanJob.rootId}
+            onClick={() => {
+              if (scanJob.rootId) onRetry(scanJob.rootId);
+            }}
+            type="button"
+          >
+            Retry scan
+          </button>
+        )}
+        {scanJob.result && scanJob.result.errors > 0 && (
+          <button onClick={onReviewScanProblems} type="button">
+            Review {scanJob.result.errors} scan{" "}
+            {scanJob.result.errors === 1 ? "problem" : "problems"}
+          </button>
+        )}
+        {scanJob.state === "completed" && (
+          <button
+            className={
+              scanJob.result && scanJob.result.errors > 0 ? "secondary" : ""
+            }
+            onClick={onOpenLibrary}
+            type="button"
+          >
+            Browse Library
+          </button>
+        )}
+      </div>
+    </article>
   );
 }

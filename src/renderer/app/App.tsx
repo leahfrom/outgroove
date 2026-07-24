@@ -1785,6 +1785,7 @@ export function App(): React.JSX.Element {
           onCancel={() => void cancelScan()}
           onChooseFolder={() => void chooseAndScan()}
           onOpenLibrary={() => setActiveView("library")}
+          onOpenSync={() => setActiveView("sync")}
           onReviewScanProblems={() => {
             setLibraryView("scan-errors");
             setAlbumArtistFilter(undefined);
