@@ -9,6 +9,12 @@ export const appViews = [
 ] as const;
 
 export type AppView = (typeof appViews)[number];
+export type NoticeTone = "info" | "success" | "error";
+
+export interface AppNotice {
+  readonly message: string;
+  readonly tone: NoticeTone;
+}
 
 const viewCopy: Record<
   AppView,
@@ -44,7 +50,7 @@ export function ApplicationShell({
   children,
 }: {
   readonly activeView: AppView;
-  readonly notice: string;
+  readonly notice: AppNotice | undefined;
   readonly onDismissNotice: () => void;
   readonly onNavigate: (view: AppView) => void;
   readonly children: ReactNode;
@@ -85,10 +91,24 @@ export function ApplicationShell({
           </div>
         </header>
         {notice && (
-          <div className="notice" role="status">
-            <p>{notice}</p>
+          <div
+            aria-atomic="true"
+            aria-live={notice.tone === "error" ? "assertive" : "polite"}
+            className={`notice ${notice.tone}`}
+            role="status"
+          >
+            <p>
+              <strong className="notice-label">
+                {notice.tone === "error"
+                  ? "Needs attention"
+                  : notice.tone === "success"
+                    ? "Completed"
+                    : "Update"}
+              </strong>
+              <span>{notice.message}</span>
+            </p>
             <button
-              aria-label="Dismiss status message"
+              aria-label="Dismiss notification"
               onClick={onDismissNotice}
               type="button"
             >
