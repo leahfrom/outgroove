@@ -391,7 +391,14 @@ describe("tag edit UI safety states", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Activity" }),
     ).toBeVisible();
-    expect(screen.getByText("Library scan: queued")).toBeVisible();
+    const scanActivity = screen.getByLabelText("Library scan activity");
+    expect(
+      within(scanActivity).getByRole("heading", {
+        level: 3,
+        name: "Library scan",
+      }),
+    ).toBeVisible();
+    expect(within(scanActivity).getByText("Preparing")).toBeVisible();
   });
 
   it("keeps first-run folder-picker and scan failures recoverable", async () => {
@@ -1909,7 +1916,9 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Activity");
-    expect(await screen.findByText("Library scan: interrupted")).toBeVisible();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Interrupted" }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
 
