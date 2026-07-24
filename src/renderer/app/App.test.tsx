@@ -305,6 +305,36 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByLabelText("View")).toHaveValue("tracks");
   });
 
+  it("shows global feedback only after an event and dismisses it from the keyboard", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "chooseLibraryFolder").mockResolvedValue({
+      ok: true,
+      value: null,
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await openPrimaryView(user, "Settings");
+    await user.click(
+      screen.getByRole("button", { name: "Add Library folder" }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Folder selection cancelled.",
+    );
+
+    const dismiss = screen.getByRole("button", {
+      name: "Dismiss status message",
+    });
+    dismiss.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("separates first folder selection from the keyboard-started scan and preserves it across navigation", async () => {
     const mockApi = api(true);
     const root = {
@@ -2011,9 +2041,10 @@ describe("tag edit UI safety states", () => {
       name: "Watched Library folders",
     });
     expect(within(roots).getByText("/fixture/never-scanned")).toBeVisible();
-    expect(within(roots).getByText("Status: Never scanned")).toBeVisible();
+    expect(within(roots).getByText("Never scanned")).toBeVisible();
     expect(within(roots).getByText("/fixture/scanned")).toBeVisible();
-    expect(within(roots).getByText(/Status: Last scanned/)).toBeVisible();
+    expect(within(roots).getByText("Scanned")).toBeVisible();
+    expect(within(roots).getByText(/Last completed/)).toBeVisible();
 
     const secondScan = within(roots).getByRole("button", {
       name: "Scan folder /fixture/scanned",
@@ -2061,7 +2092,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
-    expect(await screen.findByText("Status: Never scanned")).toBeVisible();
+    expect(await screen.findByText("Never scanned")).toBeVisible();
 
     act(() => {
       emitScanJob?.({
@@ -2079,9 +2110,9 @@ describe("tag edit UI safety states", () => {
       });
     });
 
-    const lastScanned = await screen.findByText(/Status: Last scanned/);
-    expect(lastScanned).toContainElement(
-      screen.getByText(new Date(scannedAt).toLocaleString()),
+    expect(await screen.findByText("Scanned")).toBeVisible();
+    expect(screen.getByText(/Last completed/)).toHaveTextContent(
+      new Date(scannedAt).toLocaleString(),
     );
     expect(listLibraryRoots).toHaveBeenCalledTimes(2);
   });
@@ -2137,6 +2168,11 @@ describe("tag edit UI safety states", () => {
     const preview = await screen.findByLabelText(
       "Library folder removal preview",
     );
+    expect(
+      within(preview).getByRole("heading", {
+        name: "Stop watching this folder?",
+      }),
+    ).toHaveFocus();
     expect(preview).toHaveTextContent("/fixture");
     expect(within(preview).getByText("Visible tracks hidden")).toBeVisible();
     expect(within(preview).getByText("12")).toBeVisible();
@@ -2157,7 +2193,7 @@ describe("tag edit UI safety states", () => {
       confirmationToken: "root-removal-confirmation-token",
     });
     expect(
-      await screen.findByText("No Library folders have been chosen yet."),
+      await screen.findByRole("heading", { name: "No Library folders yet" }),
     ).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(
       "12 visible tracks hidden; no audio files deleted",
@@ -4274,6 +4310,11 @@ describe("tag edit UI safety states", () => {
     const preview = await screen.findByLabelText(
       "Database restore confirmation",
     );
+    expect(
+      within(preview).getByRole("heading", {
+        name: "Replace the current Outgroove database?",
+      }),
+    ).toHaveFocus();
     expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
     expect(preview).toHaveTextContent("300");
     expect(
