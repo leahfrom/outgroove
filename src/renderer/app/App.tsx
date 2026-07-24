@@ -48,7 +48,12 @@ import {
   type AlbumTitleSection,
   type BatchUndoKind,
 } from "./album-title-workbench";
-import { ApplicationShell, type AppView } from "./application-shell";
+import {
+  ApplicationShell,
+  type AppNotice,
+  type AppView,
+  type NoticeTone,
+} from "./application-shell";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { SharedFieldEditor } from "./shared-field-editor";
@@ -291,7 +296,13 @@ export function App(): React.JSX.Element {
     useState(false);
   const [progress, setProgress] = useState<ActivityProgress>();
   const [scanJob, setScanJob] = useState<ScanJobDto>();
-  const [notice, setNotice] = useState("");
+  const [notice, setNoticeState] = useState<AppNotice>();
+  const setNotice = useCallback(
+    (message: string, tone: NoticeTone = "info"): void => {
+      setNoticeState(message ? { message, tone } : undefined);
+    },
+    [],
+  );
   const [busy, setBusy] = useState(false);
   const [diagnosticDestination, setDiagnosticDestination] = useState<{
     target: "track" | "batch" | "sequence" | "album-title";
@@ -425,7 +436,7 @@ export function App(): React.JSX.Element {
           ? current
           : result.value.albums[0]?.id,
       );
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   }, [
     albumArtistFilter,
     albumIdFilter,
@@ -442,7 +453,7 @@ export function App(): React.JSX.Element {
     async (albumId: string): Promise<void> => {
       const result = await window.outgroove.listAlbumEditHistory({ albumId });
       if (result.ok) setEditHistory(result.value);
-      else setNotice(result.error.message);
+      else setNotice(result.error.message, "error");
     },
     [],
   );
@@ -456,7 +467,7 @@ export function App(): React.JSX.Element {
           ? current
           : result.value[0]?.id,
       );
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
     setLibraryRootsLoaded(true);
   }, []);
 
@@ -469,7 +480,7 @@ export function App(): React.JSX.Element {
       );
       return true;
     }
-    setNotice(result.error.message);
+    setNotice(result.error.message, "error");
     return false;
   }, []);
 
@@ -481,7 +492,7 @@ export function App(): React.JSX.Element {
       setSyncProfiles(result.value);
       return result.value;
     }
-    setNotice(result.error.message);
+    setNotice(result.error.message, "error");
     return undefined;
   }, []);
 
@@ -498,7 +509,7 @@ export function App(): React.JSX.Element {
         setSyncHistory(result.value);
         return true;
       }
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
       return false;
     },
     [],
@@ -509,7 +520,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSyncRecoveries(result.value);
       setSyncRecoveryPreview(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   }, []);
 
   useEffect(() => window.outgroove.onJobProgress(setProgress), []);
@@ -519,12 +530,13 @@ export function App(): React.JSX.Element {
       if (job.state === "completed" && job.result) {
         setNotice(
           `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+          job.result.errors === 0 ? "success" : "error",
         );
         void refreshLibraryRoots();
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
-        setNotice(job.error ?? job.detail);
+        setNotice(job.error ?? job.detail, "error");
     });
     void Promise.all([
       window.outgroove.listLibraryRoots(),
@@ -539,7 +551,7 @@ export function App(): React.JSX.Element {
             ? latest.value.rootId
             : undefined;
         setRootId(latestRootId ?? roots.value[0]?.id);
-      } else setNotice(roots.error.message);
+      } else setNotice(roots.error.message, "error");
       setLibraryRootsLoaded(true);
       if (latest.ok && latest.value) {
         setScanJob(latest.value);
@@ -547,7 +559,7 @@ export function App(): React.JSX.Element {
           latest.value.state === "failed" ||
           latest.value.state === "interrupted"
         )
-          setNotice(latest.value.error ?? latest.value.detail);
+          setNotice(latest.value.error ?? latest.value.detail, "error");
       }
     });
     return unsubscribe;
@@ -602,7 +614,7 @@ export function App(): React.JSX.Element {
       .then((result) => {
         if (!current) return;
         if (result.ok) setEditHistory(result.value);
-        else setNotice(result.error.message);
+        else setNotice(result.error.message, "error");
       });
     return () => {
       current = false;
@@ -644,7 +656,7 @@ export function App(): React.JSX.Element {
       return true;
     }
     setLibrarySetupError(started.error.message);
-    setNotice(started.error.message);
+    setNotice(started.error.message, "error");
     return false;
   };
 
@@ -653,7 +665,7 @@ export function App(): React.JSX.Element {
     const selected = await window.outgroove.chooseLibraryFolder();
     if (!selected.ok) {
       setLibrarySetupError(selected.error.message);
-      setNotice(selected.error.message);
+      setNotice(selected.error.message, "error");
       return undefined;
     }
     if (!selected.value) {
@@ -673,6 +685,7 @@ export function App(): React.JSX.Element {
     setRootId(selectedRoot.id);
     setNotice(
       "Library folder added. Start its read-only scan when you're ready.",
+      "success",
     );
     return selectedRoot;
   };
@@ -717,7 +730,7 @@ export function App(): React.JSX.Element {
         rootId,
       });
       if (result.ok) setRootRemovalPreview(result.value);
-      else setNotice(result.error.message);
+      else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -732,7 +745,7 @@ export function App(): React.JSX.Element {
         confirmationToken: rootRemovalPreview.confirmationToken,
       });
       if (!result.ok) {
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
         return;
       }
       setRootRemovalPreview(undefined);
@@ -740,6 +753,7 @@ export function App(): React.JSX.Element {
       await Promise.all([refreshLibraryRoots(), refreshCatalog()]);
       setNotice(
         `Stopped watching ${rootRemovalPreview.path}. ${result.value.visibleTracksHidden} visible tracks hidden; no audio files deleted.`,
+        "success",
       );
     } finally {
       setBusy(false);
@@ -750,17 +764,20 @@ export function App(): React.JSX.Element {
     if (!scanJob || !scanActive) return;
     const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
     if (cancelled.ok) setScanJob(cancelled.value);
-    else setNotice(cancelled.error.message);
+    else setNotice(cancelled.error.message, "error");
   };
 
   const createBackup = async (): Promise<void> => {
     setBusy(true);
     try {
       const result = await window.outgroove.createDatabaseBackup();
-      if (!result.ok) setNotice(result.error.message);
+      if (!result.ok) setNotice(result.error.message, "error");
       else if (!result.value) setNotice("Database backup cancelled.");
       else
-        setNotice(`Database backup verified and saved to ${result.value.path}`);
+        setNotice(
+          `Database backup verified and saved to ${result.value.path}`,
+          "success",
+        );
     } finally {
       setBusy(false);
     }
@@ -770,7 +787,7 @@ export function App(): React.JSX.Element {
     setBusy(true);
     try {
       const result = await window.outgroove.chooseDatabaseRestore();
-      if (!result.ok) setNotice(result.error.message);
+      if (!result.ok) setNotice(result.error.message, "error");
       else if (!result.value) setNotice("Database restore cancelled.");
       else {
         setRestorePreview(result.value);
@@ -791,10 +808,11 @@ export function App(): React.JSX.Element {
     if (result.ok)
       setNotice(
         `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+        "success",
       );
     else {
       setBusy(false);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -811,7 +829,7 @@ export function App(): React.JSX.Element {
       setEditPreview(result.value);
     } else {
       setEditError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -831,6 +849,7 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Verified ${result.value.results.length} tag writes.`
             : `${failures.length} writes failed verification. Originals were retained or restored.`,
+          failures.length === 0 ? "success" : "error",
         );
         setEditPreview(undefined);
         setEditTitle("");
@@ -838,7 +857,7 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setEditError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -860,7 +879,7 @@ export function App(): React.JSX.Element {
       setUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -880,13 +899,14 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Verified undo for ${result.value.results.length} files.`
             : `${failures.length} files were not undone. Conflicts or verification failures remain visible in history.`,
+          failures.length === 0 ? "success" : "error",
         );
         setUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -998,7 +1018,7 @@ export function App(): React.JSX.Element {
     if (result.ok) setTrackEditPreview(result.value);
     else {
       setTrackEditError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -1018,6 +1038,7 @@ export function App(): React.JSX.Element {
           written?.verified
             ? "Track metadata write was re-read and verified."
             : `Track metadata was not changed: ${written?.error ?? "verification failed"}`,
+          written?.verified ? "success" : "error",
         );
         if (written?.verified) {
           setTrackEditPreview(undefined);
@@ -1026,7 +1047,7 @@ export function App(): React.JSX.Element {
         }
       } else {
         setTrackEditError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -1049,7 +1070,7 @@ export function App(): React.JSX.Element {
       setTrackUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -1069,6 +1090,7 @@ export function App(): React.JSX.Element {
           written?.verified
             ? "Track metadata undo was re-read and verified."
             : `Track metadata was not undone: ${written?.error ?? "verification failed"}`,
+          written?.verified ? "success" : "error",
         );
         if (written?.verified) {
           setTrackUndoPreview(undefined);
@@ -1077,7 +1099,7 @@ export function App(): React.JSX.Element {
         }
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -1150,7 +1172,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setBatchPreview(result.value);
       setBatchResult(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   };
 
   const applyBatchEdit = async (): Promise<void> => {
@@ -1168,11 +1190,12 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} track writes.`
             : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
+          failures.length === 0 ? "success" : "error",
         );
         setBatchPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1189,7 +1212,7 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSequencePreview(result.value);
       setSequenceResult(undefined);
-    } else setNotice(result.error.message);
+    } else setNotice(result.error.message, "error");
   };
 
   const applyTrackNumberSequence = async (): Promise<void> => {
@@ -1207,11 +1230,12 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} track-number writes.`
             : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
+          failures.length === 0 ? "success" : "error",
         );
         setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1236,7 +1260,7 @@ export function App(): React.JSX.Element {
       setBatchUndoResult(undefined);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
     }
   };
 
@@ -1256,13 +1280,14 @@ export function App(): React.JSX.Element {
           failures.length === 0
             ? `Re-read and verified ${result.value.results.length} batch undo writes.`
             : `${result.value.results.length - failures.length} undo writes verified; ${failures.length} refused or failed without stopping the others.`,
+          failures.length === 0 ? "success" : "error",
         );
         setBatchUndoPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -1289,9 +1314,9 @@ export function App(): React.JSX.Element {
           (candidate) => candidate.id === result.value?.id,
         );
         if (saved) setProfile(saved);
-        setNotice(`DAP target selected: ${result.value.targetPath}`);
+        setNotice(`DAP target selected: ${result.value.targetPath}`, "success");
       }
-    } else if (!result.ok) setNotice(result.error.message);
+    } else if (!result.ok) setNotice(result.error.message, "error");
   };
 
   const toggleSyncAlbum = (
@@ -1364,8 +1389,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setSavedFilterName("");
         if (await refreshSavedFilters())
-          setNotice(`Saved Library filter “${result.value.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(`Saved Library filter “${result.value.name}”.`, "success");
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1386,8 +1411,11 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         if (await refreshSavedFilters())
-          setNotice(`${action} saved Library filter “${result.value.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(
+            `${action} saved Library filter “${result.value.name}”.`,
+            "success",
+          );
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1433,8 +1461,8 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         if (await refreshSavedFilters())
-          setNotice(`Deleted saved Library filter “${saved.name}”.`);
-      } else setNotice(result.error.message);
+          setNotice(`Deleted saved Library filter “${saved.name}”.`, "success");
+      } else setNotice(result.error.message, "error");
     } finally {
       setSavedFilterBusy(false);
     }
@@ -1444,7 +1472,7 @@ export function App(): React.JSX.Element {
     if (!profile) return;
     const result = await window.outgroove.planSync({ profileId: profile.id });
     if (result.ok) setSyncPlan(result.value);
-    else setNotice(result.error.message);
+    else setNotice(result.error.message, "error");
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
@@ -1505,9 +1533,10 @@ export function App(): React.JSX.Element {
           if (saved) setProfile(saved);
           setNotice(
             `Saved ${result.value.albumIds.length} albums in “${result.value.name}”. Its previous sync preview is invalid; create a fresh preview before applying.`,
+            "success",
           );
         }
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1547,8 +1576,9 @@ export function App(): React.JSX.Element {
         if (await refreshSyncProfiles())
           setNotice(
             `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+            "success",
           );
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1570,7 +1600,7 @@ export function App(): React.JSX.Element {
         setNotice(
           `Review the DAP target change for “${saved.name}”. No files have been changed.`,
         );
-      } else if (!result.ok) setNotice(result.error.message);
+      } else if (!result.ok) setNotice(result.error.message, "error");
       else setNotice("DAP target selection cancelled.");
     } finally {
       setBusy(false);
@@ -1598,8 +1628,9 @@ export function App(): React.JSX.Element {
         await refreshSyncProfiles();
         setNotice(
           `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          "success",
         );
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setBusy(false);
     }
@@ -1620,23 +1651,26 @@ export function App(): React.JSX.Element {
         if (result.value.outcome === "completed")
           setNotice(
             `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+            result.value.errors.length === 0 ? "success" : "error",
           );
         else if (result.value.outcome === "cancelled")
           setNotice(
             result.value.errors.length === 0
               ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
               : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
+            result.value.errors.length === 0 ? "info" : "error",
           );
         else
           setNotice(
             `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
+            "error",
           );
         if (result.value.outcome === "completed") {
           await planSync();
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
-      } else setNotice(result.error.message);
+      } else setNotice(result.error.message, "error");
     } finally {
       setProgress((current) => (current?.job === "sync" ? undefined : current));
       setSyncApplyingPlanId(undefined);
@@ -1651,7 +1685,7 @@ export function App(): React.JSX.Element {
       planId: syncApplyingPlanId,
     });
     if (!result.ok) {
-      setNotice(result.error.message);
+      setNotice(result.error.message, "error");
       return;
     }
     if (result.value.accepted) {
@@ -1676,7 +1710,7 @@ export function App(): React.JSX.Element {
         confirmationToken: recovery.confirmationToken,
       });
       if (!result.ok) {
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
         await refreshSyncRecoveries();
         setSyncRecoveryFeedback({
           runId: recovery.runId,
@@ -1708,10 +1742,12 @@ export function App(): React.JSX.Element {
           result.value.errors.length === 0
             ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
             : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
+          result.value.errors.length === 0 ? "success" : "error",
         );
       } else
         setNotice(
           `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
+          "error",
         );
     } finally {
       setBusy(false);
@@ -1730,7 +1766,7 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) setSyncRecoveryPreview(result.value);
       else {
-        setNotice(result.error.message);
+        setNotice(result.error.message, "error");
         setSyncRecoveryFeedback({
           runId: recovery.runId,
           profileName: recovery.profileName,
@@ -1760,7 +1796,7 @@ export function App(): React.JSX.Element {
     <ApplicationShell
       activeView={activeView}
       notice={notice}
-      onDismissNotice={() => setNotice("")}
+      onDismissNotice={() => setNoticeState(undefined)}
       onNavigate={setActiveView}
     >
       {progress &&

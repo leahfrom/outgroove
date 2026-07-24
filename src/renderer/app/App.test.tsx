@@ -305,7 +305,7 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByLabelText("View")).toHaveValue("tracks");
   });
 
-  it("shows global feedback only after an event and dismisses it from the keyboard", async () => {
+  it("shows labelled global feedback only after an event and dismisses it from the keyboard", async () => {
     const mockApi = api(true);
     vi.spyOn(mockApi, "chooseLibraryFolder").mockResolvedValue({
       ok: true,
@@ -324,11 +324,12 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Add Library folder" }),
     );
     expect(await screen.findByRole("status")).toHaveTextContent(
-      "Folder selection cancelled.",
+      "UpdateFolder selection cancelled.",
     );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     const dismiss = screen.getByRole("button", {
-      name: "Dismiss status message",
+      name: "Dismiss notification",
     });
     dismiss.focus();
     await user.keyboard("{Enter}");
@@ -405,6 +406,10 @@ describe("tag edit UI safety states", () => {
 
     expect(await screen.findByText(root.path)).toBeVisible();
     expect(scanLibrary).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "CompletedLibrary folder added.",
+    );
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
     expect(
       screen.getByRole("heading", { name: "Review your first scan" }),
     ).toBeVisible();
@@ -491,6 +496,13 @@ describe("tag edit UI safety states", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The selected folder is no longer available.",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Needs attentionThe selected folder is no longer available.",
+    );
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "aria-live",
+      "assertive",
     );
     expect(
       screen.getByRole("button", { name: "Start first scan" }),

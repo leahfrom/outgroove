@@ -1231,21 +1231,38 @@ h1 {
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
-  background: #152c20;
-  color: white;
+  background: #e9efeb;
+  border: 1px solid #9ca9a1;
+  color: #17211b;
   padding: 0.8rem 1rem;
   border-radius: 9px;
   margin: 1.25rem 0;
 }
 .notice p {
+  display: grid;
+  gap: 0.18rem;
   margin: 0;
   overflow-wrap: anywhere;
 }
+.notice.success {
+  background: #e2f1e8;
+  border-color: #568268;
+}
+.notice.error {
+  background: #f9e9e6;
+  border-color: #a65d50;
+  color: #4f201b;
+}
+.notice-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .notice button {
   flex: 0 0 auto;
-  border-color: rgb(255 255 255 / 65%);
+  border-color: currentcolor;
   background: transparent;
-  color: white;
+  color: inherit;
 }
 .progress {
   display: flex;
@@ -2411,6 +2428,14 @@ td {
 .errors li span {
   display: block;
   color: #71352f;
+}
+@media (max-width: 1200px) {
+  .library-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .library-toolbar button {
+    justify-self: start;
+  }
 }
 @media (max-width: 900px) {
   .application-shell {
