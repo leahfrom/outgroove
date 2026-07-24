@@ -128,8 +128,7 @@ button:disabled {
   padding: 1.5rem clamp(1rem, 3vw, 2.5rem) 3rem;
 }
 .view-header {
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid #cbd3cc;
+  margin-bottom: 1.25rem;
 }
 .view-header > div {
   min-width: 0;
@@ -171,6 +170,11 @@ button:disabled {
   border-color: #245c39;
   background: #eef8f1;
   font-weight: 750;
+}
+.workbench-tools + .card {
+  margin-top: 1.5rem;
+  padding-top: 0;
+  border-top: 0;
 }
 .workspace.workbench-workspace {
   grid-template-columns: minmax(0, 1fr);
