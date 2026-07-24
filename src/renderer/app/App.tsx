@@ -58,6 +58,7 @@ import {
 } from "./track-metadata-editor";
 import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
+import { SyncPlanReview } from "./sync-plan-review";
 import {
   SettingsNavigation,
   type SettingsSection,
@@ -292,6 +293,7 @@ export function App(): React.JSX.Element {
   const batchEditorRef = useRef<HTMLElement>(null);
   const sequenceEditorRef = useRef<HTMLElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
+  const syncPlanHeadingRef = useRef<HTMLHeadingElement>(null);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
@@ -551,6 +553,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSyncRecoveries();
   }, [refreshSyncRecoveries]);
+
+  useEffect(() => {
+    if (syncPlan) syncPlanHeadingRef.current?.focus();
+  }, [syncPlan]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -3154,131 +3160,23 @@ export function App(): React.JSX.Element {
               )}
             </section>
           )}
-          {syncStage === "review" && (
-            <section
-              className="card settings sync-review"
-              aria-labelledby="sync-review-title"
-            >
-              <p className="eyebrow">Preview and apply</p>
-              <h2 id="sync-review-title">Review the active DAP profile</h2>
-              {profile && (
-                <div
-                  className="sync-profile-summary"
-                  aria-label="Active DAP profile"
-                >
-                  <p>
-                    <strong>{profile.name}</strong>
-                    <br />
-                    {profile.targetPath}
-                  </p>
-                  <p>
-                    Status: {profile.albumIds.length} selected{" "}
-                    {profile.albumIds.length === 1 ? "album" : "albums"} saved
-                    in this profile.
-                  </p>
-                  {editingSyncProfile?.id === profile.id && (
-                    <p>Status: Album-selection changes are not saved yet.</p>
-                  )}
-                  <div className="actions">
-                    <button
-                      className="primary"
-                      disabled={busy || editingSyncProfile?.id === profile.id}
-                      onClick={() => void planSync()}
-                    >
-                      Preview sync plan
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setSyncStage("setup")}
-                    >
-                      Manage {profile.name}
-                    </button>
-                  </div>
-                  <section
-                    aria-labelledby={`sync-history-${profile.id}`}
-                    className="sync-history"
-                  >
-                    <h3 id={`sync-history-${profile.id}`}>
-                      Successful sync history
-                    </h3>
-                    <p>
-                      Shows only runs whose manifest was committed successfully.
-                      The 20 newest runs are shown in this view.
-                    </p>
-                    {syncHistoryProfileId !== profile.id ||
-                    syncHistoryLoading ? (
-                      <p aria-live="polite">Loading successful sync history…</p>
-                    ) : syncHistory.length === 0 ? (
-                      <p>No successful sync runs have been recorded yet.</p>
-                    ) : (
-                      <ul
-                        aria-label={`Successful sync history for ${profile.name}`}
-                      >
-                        {syncHistory.map((item) => (
-                          <li key={item.id}>
-                            <time dateTime={item.completedAt}>
-                              {new Date(item.completedAt).toLocaleString()}
-                            </time>
-                            {" — "}
-                            {item.entryCount}{" "}
-                            {item.entryCount === 1 ? "file" : "files"}
-                            {" — "}
-                            {item.targetPath}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                </div>
-              )}
-              {syncPlan && (
-                <div className="preview" aria-label="Sync confirmation">
-                  <h3>Sync preview</h3>
-                  <PlanGroup
-                    title="Copies"
-                    items={syncPlan.copies.map(
-                      (item) => item.relativeDestination,
-                    )}
-                  />
-                  <PlanGroup
-                    title="Unchanged / skipped"
-                    items={syncPlan.unchanged.map(
-                      (item) => item.relativeDestination,
-                    )}
-                  />
-                  <PlanGroup title="Conflicts" items={syncPlan.conflicts} />
-                  <PlanGroup title="Errors" items={syncPlan.errors} />
-                  <p>{syncPlan.requiredBytes} bytes required.</p>
-                  <button
-                    className="primary"
-                    disabled={
-                      busy ||
-                      syncPlan.conflicts.length > 0 ||
-                      syncPlan.errors.length > 0
-                    }
-                    onClick={() => void applySync()}
-                  >
-                    Confirm and apply copy plan
-                  </button>
-                  {syncApplyingPlanId === syncPlan.id && (
-                    <div aria-live="polite">
-                      <p>
-                        Status:{" "}
-                        {syncCancellationRequested
-                          ? "Cancelling safely"
-                          : "Sync in progress"}
-                      </p>
-                      <button
-                        disabled={syncCancellationRequested}
-                        onClick={() => void cancelSync()}
-                      >
-                        Cancel active sync
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
+          {syncStage === "review" && profile && (
+            <SyncPlanReview
+              applyingPlanId={syncApplyingPlanId}
+              busy={busy}
+              cancellationRequested={syncCancellationRequested}
+              editingProfile={editingSyncProfile?.id === profile.id}
+              history={syncHistory}
+              historyLoading={syncHistoryLoading}
+              historyProfileId={syncHistoryProfileId}
+              plan={syncPlan}
+              planHeadingRef={syncPlanHeadingRef}
+              profile={profile}
+              onApply={() => void applySync()}
+              onCancel={() => void cancelSync()}
+              onManage={() => setSyncStage("setup")}
+              onPreview={() => void planSync()}
+            />
           )}
           {syncStage === "recovery" && (
             <section
@@ -3565,30 +3463,5 @@ export function App(): React.JSX.Element {
         </main>
       )}
     </ApplicationShell>
-  );
-}
-
-function PlanGroup({
-  title,
-  items,
-}: {
-  title: string;
-  items: readonly string[];
-}): React.JSX.Element {
-  return (
-    <section>
-      <h5>
-        {title} ({items.length})
-      </h5>
-      {items.length === 0 ? (
-        <p>None</p>
-      ) : (
-        <ul>
-          {items.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
