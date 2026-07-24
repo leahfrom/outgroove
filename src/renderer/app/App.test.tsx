@@ -3533,6 +3533,20 @@ describe("tag edit UI safety states", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [
+          {
+            runId,
+            profileId,
+            profileName: "Road DAP",
+            targetPath: "/fixture/dap",
+            interruptedAt: "2026-07-22T10:00:00.000Z",
+            phase: "copying",
+            mode: "rollback",
+          },
+        ],
+      })
       .mockResolvedValue({ ok: true, value: [] });
     const previewSyncRecovery = vi
       .spyOn(mockApi, "previewSyncRecovery")
@@ -3560,6 +3574,14 @@ describe("tag edit UI safety states", () => {
       });
     const applySyncRecovery = vi
       .spyOn(mockApi, "applySyncRecovery")
+      .mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "SYNC_RECOVERY_STALE",
+          message: "The recovery preview changed. Review it again.",
+          recoverable: true,
+        },
+      })
       .mockResolvedValue({
         ok: true,
         value: { runId, recovered: 1, errors: [], complete: true },
@@ -3593,10 +3615,18 @@ describe("tag edit UI safety states", () => {
     review.focus();
     await user.keyboard("{Enter}");
     expect(previewSyncRecovery).toHaveBeenCalledWith({ runId });
-    expect(recoveries).toHaveTextContent(
-      "Remove: /fixture/dap/Artist/Album/01 Track.flac",
+    const recoveryPreview = screen.getByLabelText(
+      "Recovery confirmation for Road DAP",
     );
-    const confirm = within(recoveries).getByRole("button", {
+    expect(
+      within(recoveryPreview).getByRole("heading", {
+        name: "Recovery plan for Road DAP",
+      }),
+    ).toHaveFocus();
+    expect(recoveryPreview).toHaveTextContent(
+      "/fixture/dap/Artist/Album/01 Track.flac",
+    );
+    const confirm = within(recoveryPreview).getByRole("button", {
       name: "Confirm recovery for Road DAP",
     });
     confirm.focus();
@@ -3605,10 +3635,40 @@ describe("tag edit UI safety states", () => {
       runId,
       confirmationToken,
     });
+    const failure = await screen.findByLabelText(
+      "Recovery result for Road DAP",
+    );
+    expect(failure).toHaveTextContent(
+      "The recovery preview changed. Review it again.",
+    );
     expect(
-      await screen.findByText(/Interrupted sync recovery complete/u),
-    ).toHaveTextContent("1 change restored or removed");
-    await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(2));
+      within(failure).getByRole("heading", {
+        name: "Recovery could not be applied",
+      }),
+    ).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Review recovery for Road DAP" }),
+    ).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Review recovery for Road DAP" }),
+    );
+    const retryPreview = screen.getByLabelText(
+      "Recovery confirmation for Road DAP",
+    );
+    const retryConfirm = within(retryPreview).getByRole("button", {
+      name: "Confirm recovery for Road DAP",
+    });
+    retryConfirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applySyncRecovery).toHaveBeenCalledTimes(2);
+    expect(
+      await screen.findByRole("heading", { name: "Recovery complete" }),
+    ).toHaveFocus();
+    expect(
+      screen.getByLabelText("Recovery result for Road DAP"),
+    ).toHaveTextContent("1 reviewed change was restored or removed");
+    await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(3));
   });
 
   it("reopens a saved DAP profile with the keyboard into the preview-only workflow", async () => {

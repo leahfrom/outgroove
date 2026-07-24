@@ -60,6 +60,10 @@ import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import { SyncPlanReview } from "./sync-plan-review";
 import {
+  SyncRecoveryWorkspace,
+  type SyncRecoveryFeedback,
+} from "./sync-recovery-workspace";
+import {
   SettingsNavigation,
   type SettingsSection,
 } from "./settings-navigation";
@@ -267,6 +271,8 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [syncRecoveryFeedback, setSyncRecoveryFeedback] =
+    useState<SyncRecoveryFeedback>();
   const [syncTargetPreview, setSyncTargetPreview] =
     useState<SyncProfileTargetPreviewDto>();
   const [profile, setProfile] = useState<{
@@ -294,6 +300,8 @@ export function App(): React.JSX.Element {
   const sequenceEditorRef = useRef<HTMLElement>(null);
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const syncPlanHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
@@ -557,6 +565,12 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (syncPlan) syncPlanHeadingRef.current?.focus();
   }, [syncPlan]);
+  useEffect(() => {
+    if (syncRecoveryPreview) syncRecoveryPreviewHeadingRef.current?.focus();
+  }, [syncRecoveryPreview]);
+  useEffect(() => {
+    if (syncRecoveryFeedback) syncRecoveryFeedbackHeadingRef.current?.focus();
+  }, [syncRecoveryFeedback]);
   useEffect(() => {
     if (!selectedAlbumId) {
       setEditHistory([]);
@@ -1652,9 +1666,30 @@ export function App(): React.JSX.Element {
       if (!result.ok) {
         setNotice(result.error.message);
         await refreshSyncRecoveries();
+        setSyncRecoveryFeedback({
+          runId: recovery.runId,
+          profileName: recovery.profileName,
+          status: "failed",
+          recovered: 0,
+          messages: [result.error.message],
+        });
         return;
       }
       await refreshSyncRecoveries();
+      setSyncRecoveryFeedback({
+        runId: recovery.runId,
+        profileName: recovery.profileName,
+        status: result.value.complete ? "complete" : "incomplete",
+        recovered: result.value.recovered,
+        messages:
+          result.value.errors.length > 0
+            ? result.value.errors
+            : result.value.complete
+              ? ["You can generate a fresh sync plan for this profile."]
+              : [
+                  "Reconnect the target or resolve the reported files, then review recovery again.",
+                ],
+      });
       if (result.value.complete) {
         await refreshSyncHistory(recovery.profileId);
         setNotice(
@@ -1674,13 +1709,24 @@ export function App(): React.JSX.Element {
   const reviewSyncRecovery = async (
     recovery: SyncRecoverySummaryDto,
   ): Promise<void> => {
+    setSyncRecoveryFeedback(undefined);
+    setSyncRecoveryPreview(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.previewSyncRecovery({
         runId: recovery.runId,
       });
       if (result.ok) setSyncRecoveryPreview(result.value);
-      else setNotice(result.error.message);
+      else {
+        setNotice(result.error.message);
+        setSyncRecoveryFeedback({
+          runId: recovery.runId,
+          profileName: recovery.profileName,
+          status: "failed",
+          recovered: 0,
+          messages: [result.error.message],
+        });
+      }
     } finally {
       setBusy(false);
     }
@@ -3179,93 +3225,22 @@ export function App(): React.JSX.Element {
             />
           )}
           {syncStage === "recovery" && (
-            <section
-              className="card settings sync-recovery"
-              aria-labelledby="sync-recovery-title"
-            >
-              <p className="eyebrow">Restart safety</p>
-              <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
-              <p>
-                Review every target action before confirming. Recovery never
-                changes source audio and leaves files with unexpected contents
-                untouched.
-              </p>
-              {syncRecoveries.length === 0 ? (
-                <div className="empty compact">
-                  <h3>No recovery is pending</h3>
-                  <p>
-                    Outgroove has no interrupted target changes requiring
-                    review.
-                  </p>
-                  <button onClick={() => setSyncStage("setup")}>
-                    Return to albums and profiles
-                  </button>
-                </div>
-              ) : (
-                <ul
-                  className="sync-recovery-list"
-                  aria-label="Interrupted sync recoveries"
-                >
-                  {syncRecoveries.map((recovery) => (
-                    <li key={recovery.runId}>
-                      <div>
-                        <strong>{recovery.profileName}</strong>
-                        <span>
-                          {recovery.mode === "committed-cleanup"
-                            ? "Sync committed; internal cleanup was interrupted"
-                            : `Interrupted during ${recovery.phase}`}
-                        </span>
-                        <span>{recovery.targetPath}</span>
-                      </div>
-                      <button
-                        disabled={busy}
-                        onClick={() => void reviewSyncRecovery(recovery)}
-                      >
-                        Review recovery for {recovery.profileName}
-                      </button>
-                      {syncRecoveryPreview?.runId === recovery.runId && (
-                        <section
-                          className="preview"
-                          aria-label={`Recovery confirmation for ${recovery.profileName}`}
-                        >
-                          <h3>Exact recovery actions</h3>
-                          {syncRecoveryPreview.actions.length === 0 ? (
-                            <p>No target changes can currently be applied.</p>
-                          ) : (
-                            <ul
-                              aria-label={`Recovery actions for ${recovery.profileName}`}
-                            >
-                              {syncRecoveryPreview.actions.map((action) => (
-                                <li key={`${action.action}:${action.path}`}>
-                                  {action.action === "restore"
-                                    ? "Restore"
-                                    : "Remove"}
-                                  : {action.path}. {action.explanation}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                          {syncRecoveryPreview.warnings.map((warning) => (
-                            <p key={warning} role="alert">
-                              Warning: {warning}
-                            </p>
-                          ))}
-                          <button
-                            className="primary"
-                            disabled={busy || !syncRecoveryPreview.canRecover}
-                            onClick={() =>
-                              void applySyncRecovery(syncRecoveryPreview)
-                            }
-                          >
-                            Confirm recovery for {recovery.profileName}
-                          </button>
-                        </section>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <SyncRecoveryWorkspace
+              busy={busy}
+              feedback={syncRecoveryFeedback}
+              feedbackHeadingRef={syncRecoveryFeedbackHeadingRef}
+              preview={syncRecoveryPreview}
+              previewHeadingRef={syncRecoveryPreviewHeadingRef}
+              recoveries={syncRecoveries}
+              onClosePreview={() => {
+                setSyncRecoveryPreview(undefined);
+                setNotice("Closed the recovery review without changing files.");
+              }}
+              onConfirm={(recovery) => void applySyncRecovery(recovery)}
+              onDismissFeedback={() => setSyncRecoveryFeedback(undefined)}
+              onReturn={() => setSyncStage("setup")}
+              onReview={(recovery) => void reviewSyncRecovery(recovery)}
+            />
           )}
         </main>
       )}
