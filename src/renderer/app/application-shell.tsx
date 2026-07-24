@@ -39,11 +39,13 @@ const viewCopy: Record<
 export function ApplicationShell({
   activeView,
   notice,
+  onDismissNotice,
   onNavigate,
   children,
 }: {
   readonly activeView: AppView;
   readonly notice: string;
+  readonly onDismissNotice: () => void;
   readonly onNavigate: (view: AppView) => void;
   readonly children: ReactNode;
 }): React.JSX.Element {
@@ -82,9 +84,18 @@ export function ApplicationShell({
             <p>{current.description}</p>
           </div>
         </header>
-        <p className="notice" role="status">
-          {notice}
-        </p>
+        {notice && (
+          <div className="notice" role="status">
+            <p>{notice}</p>
+            <button
+              aria-label="Dismiss status message"
+              onClick={onDismissNotice}
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {children}
       </div>
     </div>
