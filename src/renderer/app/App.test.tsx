@@ -3438,10 +3438,10 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Preview & apply" }),
     ).toHaveAttribute("aria-current", "step");
+    expect(screen.getByText("Successful sync history")).toBeVisible();
+    await user.click(screen.getByText("Successful sync history"));
     expect(
-      await screen.findByText(
-        "No successful sync runs have been recorded yet.",
-      ),
+      screen.getByText("No successful sync runs have been recorded yet."),
     ).toBeVisible();
     expect(applySync).not.toHaveBeenCalled();
 
@@ -3453,6 +3453,9 @@ describe("tag edit UI safety states", () => {
     const preview = await screen.findByLabelText("Sync confirmation");
     expect(preview).toHaveTextContent("Fixture Album");
     expect(preview).toHaveTextContent("Second Album");
+    expect(
+      within(preview).getByRole("heading", { name: "Current sync plan" }),
+    ).toHaveFocus();
     expect(applySync).not.toHaveBeenCalled();
     const confirm = within(preview).getByRole("button", {
       name: "Confirm and apply copy plan",
@@ -3706,6 +3709,13 @@ describe("tag edit UI safety states", () => {
       "Road DAP",
     );
     expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
+    const historySummary = screen
+      .getByText("Successful sync history")
+      .closest("summary");
+    if (!historySummary) throw new Error("Sync history disclosure missing");
+    historySummary.focus();
+    expect(historySummary).toHaveFocus();
+    await user.click(historySummary);
     const history = await screen.findByRole("list", {
       name: "Successful sync history for Road DAP",
     });
