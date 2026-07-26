@@ -1818,6 +1818,62 @@ h1 {
 .track-list details {
   border-top: 1px solid #d8ddd8;
 }
+.library-track-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  border-top: 1px solid #d8ddd8;
+}
+.library-track-activation {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.85rem 0.25rem;
+  border-color: transparent;
+  background: transparent;
+  color: #14251b;
+  text-align: left;
+}
+.library-track-activation:hover:not(:disabled),
+.library-track-activation:focus-visible {
+  border-color: #aab9ad;
+  background: #f7faf7;
+}
+.track-more-actions {
+  position: relative;
+}
+.track-more-actions > button {
+  min-width: 4.5rem;
+}
+.track-action-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 12rem;
+  padding: 0.35rem;
+  border: 1px solid #aab9ad;
+  border-radius: 9px;
+  background: white;
+  box-shadow: 0 0.75rem 1.8rem rgb(20 37 27 / 18%);
+}
+.track-action-menu button {
+  border-color: transparent;
+  background: transparent;
+  color: #14251b;
+  text-align: left;
+}
+.track-action-menu button:hover,
+.track-action-menu button:focus-visible {
+  border-color: #aab9ad;
+  background: #eef8f1;
+}
 .track-list summary {
   cursor: pointer;
   display: flex;
@@ -1903,6 +1959,91 @@ h1 {
 }
 .track-actions label {
   margin: 0;
+}
+.modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(0.5rem, 3vw, 2rem);
+  background: rgb(12 25 17 / 58%);
+}
+.modal-sheet {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 980px);
+  max-height: calc(100vh - clamp(1rem, 6vw, 4rem));
+  overflow: hidden;
+  border: 1px solid #aab9ad;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 28%);
+  color: #14251b;
+}
+.modal-sheet:focus-visible {
+  outline: 3px solid #ef9d28;
+  outline-offset: 3px;
+}
+.modal-sheet-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #d8ddd8;
+  background: #f4f6f2;
+}
+.modal-sheet-toolbar > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+.modal-sheet-toolbar button {
+  flex: 0 0 auto;
+}
+.modal-sheet-content {
+  min-width: 0;
+  overflow: auto;
+  padding: 1rem;
+}
+.track-editor-sheet .track-editor {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.technical-info-sheet {
+  width: min(100%, 780px);
+}
+.technical-info-heading {
+  margin-bottom: 1.25rem;
+}
+.technical-info-heading h2 {
+  overflow-wrap: anywhere;
+}
+.technical-info-heading p:last-child {
+  color: #526159;
+}
+.technical-info-sheet section + section,
+.technical-info-sheet section + details {
+  margin-top: 1.25rem;
+}
+.technical-info-sheet pre {
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.technical-info-sheet .advanced-metadata {
+  border: 1px solid #c5cec7;
+  border-radius: 9px;
+}
+.technical-info-sheet .advanced-metadata > summary {
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+}
+.technical-info-sheet .advanced-metadata > section {
+  padding: 0 1rem 1rem;
 }
 .workbench-track-context-heading {
   display: flex;
@@ -2764,6 +2905,40 @@ td {
   .album-detail .album-artwork-placeholder {
     width: min(58vw, 190px);
     max-width: none;
+  }
+  .library-track-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+    padding: 0.7rem 0;
+  }
+  .library-track-activation {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 0.55rem 0.25rem;
+  }
+  .library-track-activation .track-summary-facts {
+    justify-content: flex-start;
+  }
+  .track-more-actions > button {
+    width: 100%;
+  }
+  .track-action-menu {
+    right: auto;
+    left: 0;
+    width: min(100%, 18rem);
+  }
+  .modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+  .modal-sheet {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .modal-sheet-toolbar {
+    align-items: stretch;
+    flex-direction: column;
   }
   .sync-setup-nav {
     grid-template-columns: 1fr;

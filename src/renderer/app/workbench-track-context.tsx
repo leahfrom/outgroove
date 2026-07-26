@@ -154,7 +154,7 @@ export function WorkbenchTrackContext({
               <LibraryTrackDetail
                 busy={busy}
                 key={track.id}
-                mode="library"
+                mode="technical"
                 selectedForBatch={selectedTrackIds.includes(track.id)}
                 selectionPurpose={selectionPurpose}
                 track={track}
