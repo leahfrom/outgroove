@@ -44,12 +44,16 @@ const unchangedDraft: TrackMetadataDraft = {
   year: track.tags.year ?? "",
 };
 
-function editor(draft: TrackMetadataDraft, preview?: TrackTagEditPreviewDto) {
+function editor(
+  draft: TrackMetadataDraft,
+  preview?: TrackTagEditPreviewDto,
+  error?: string,
+) {
   return (
     <TrackMetadataEditor
       busy={false}
       draft={draft}
-      error={undefined}
+      error={error}
       onCancelPreview={vi.fn()}
       onClose={vi.fn()}
       onConfirm={vi.fn()}
@@ -131,5 +135,24 @@ describe("TrackMetadataEditor", () => {
       "The current tag no longer matches this draft.",
     );
     expect(confirmation).toHaveTextContent("Confirmation is blocked.");
+  });
+
+  it("focuses a recoverable request error inside the editor", () => {
+    render(
+      editor(
+        { ...unchangedDraft, title: "Proposed title" },
+        undefined,
+        "The file changed after the preview was created.",
+      ),
+    );
+
+    const error = screen.getByRole("alert", {
+      name: "Track metadata request error",
+    });
+    expect(error).toHaveFocus();
+    expect(error).toHaveTextContent(
+      "The file changed after the preview was created.",
+    );
+    expect(error).toHaveTextContent("No unverified change is reported");
   });
 });

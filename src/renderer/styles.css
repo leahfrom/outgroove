@@ -2627,6 +2627,7 @@ pre {
 }
 .confirmation-panel:focus,
 .confirmation-panel .primary:focus,
+.workflow-error:focus,
 .workflow-result:focus {
   outline: 3px solid #e59b2d;
   outline-offset: 2px;
@@ -3313,6 +3314,7 @@ td {
   [tabindex="-1"]:focus-visible,
   .confirmation-panel:focus,
   .confirmation-panel .primary:focus,
+  .workflow-error:focus,
   .workflow-result:focus {
     outline-color: Highlight;
   }

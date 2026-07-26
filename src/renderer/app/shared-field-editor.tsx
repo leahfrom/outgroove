@@ -8,6 +8,7 @@ import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
+  WorkbenchRequestError,
   WorkbenchWriteResult,
 } from "./workbench-review-stage";
 
@@ -114,6 +115,7 @@ interface SharedFieldEditorProps {
   readonly draft: SharedFieldDraft;
   readonly preview: TrackBatchEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
+  readonly error: string | undefined;
   readonly busy: boolean;
   readonly onEnabledChange: (field: SharedField, enabled: boolean) => void;
   readonly onDraftChange: (field: SharedField, value: string) => void;
@@ -129,6 +131,7 @@ function SharedFieldEditorComponent(
     draft,
     preview,
     result,
+    error,
     busy,
     onEnabledChange,
     onDraftChange,
@@ -267,6 +270,14 @@ function SharedFieldEditorComponent(
           Preview selected tracks
         </button>
       </div>
+
+      {error && (
+        <WorkbenchRequestError
+          label="Shared metadata request error"
+          message={error}
+          recovery="Revise the shared-field draft or retry the current confirmation. The per-file preview remains available when it is still safe to retry."
+        />
+      )}
 
       {preview && (
         <WorkbenchConfirmation

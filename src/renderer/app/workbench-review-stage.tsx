@@ -37,6 +37,36 @@ export function WorkbenchDraftHeading({
   );
 }
 
+export function WorkbenchRequestError({
+  label,
+  message,
+  recovery,
+}: {
+  readonly label: string;
+  readonly message: string;
+  readonly recovery: string;
+}): React.JSX.Element {
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    errorRef.current?.focus();
+  }, [message]);
+
+  return (
+    <div
+      aria-label={label}
+      className="workflow-error"
+      ref={errorRef}
+      role="alert"
+      tabIndex={-1}
+    >
+      <strong>The request could not be completed.</strong>
+      <span>{message}</span>
+      <span>{recovery}</span>
+    </div>
+  );
+}
+
 export function WorkbenchConfirmation({
   label,
   title,

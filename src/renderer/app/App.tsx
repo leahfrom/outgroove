@@ -268,12 +268,14 @@ export function App(): React.JSX.Element {
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
+  const [batchError, setBatchError] = useState<string>();
   const [sequenceStart, setSequenceStart] = useState("1");
   const [sequenceDiscEnabled, setSequenceDiscEnabled] = useState(false);
   const [sequenceDiscNumber, setSequenceDiscNumber] = useState("1");
   const [sequencePreview, setSequencePreview] =
     useState<TrackBatchEditPreviewDto>();
   const [sequenceResult, setSequenceResult] = useState<TagEditResultDto>();
+  const [sequenceError, setSequenceError] = useState<string>();
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
@@ -414,6 +416,11 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setBatchError(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+    setSequenceError(undefined);
     setLibraryTrackEditorOpen(false);
     setLibraryAlbumEditingTool(undefined);
     setTechnicalTrackId(undefined);
@@ -755,6 +762,8 @@ export function App(): React.JSX.Element {
     setTrackUndoResult(undefined);
     setBatchUndoPreview(undefined);
     setBatchUndoResult(undefined);
+    setBatchError(undefined);
+    setSequenceError(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
@@ -1082,8 +1091,10 @@ export function App(): React.JSX.Element {
     setBatchTrackIds(affectedIds);
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
     let target: "track" | "batch" | "sequence" | "album-title";
     switch (finding.workflow) {
       case "track-editor": {
@@ -1148,6 +1159,7 @@ export function App(): React.JSX.Element {
 
   const previewTrackEdit = async (): Promise<void> => {
     if (!selectedTrack) return;
+    setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     const result = await window.outgroove.previewTrackTagEdit({
@@ -1166,10 +1178,7 @@ export function App(): React.JSX.Element {
       },
     });
     if (result.ok) setTrackEditPreview(result.value);
-    else {
-      setTrackEditError(result.error.message);
-      setNotice(result.error.message, "error");
-    }
+    else setTrackEditError(result.error.message);
   };
 
   const applyTrackEdit = async (): Promise<void> => {
@@ -1184,12 +1193,6 @@ export function App(): React.JSX.Element {
         setTrackEditResult(result.value);
         setTrackEditError(undefined);
         const written = result.value.results[0];
-        setNotice(
-          written?.verified
-            ? "Track metadata write was re-read and verified."
-            : `Track metadata was not changed: ${written?.error ?? "verification failed"}`,
-          written?.verified ? "success" : "error",
-        );
         if (written?.verified) {
           setTrackEditPreview(undefined);
           await refreshCatalog();
@@ -1197,7 +1200,6 @@ export function App(): React.JSX.Element {
         }
       } else {
         setTrackEditError(result.error.message);
-        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -1264,8 +1266,10 @@ export function App(): React.JSX.Element {
     );
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const selectAllBatchTracks = (): void => {
@@ -1273,16 +1277,20 @@ export function App(): React.JSX.Element {
     setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const clearBatchTracks = (): void => {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const moveBatchTrack = (fileId: string, offset: -1 | 1): void => {
@@ -1299,9 +1307,12 @@ export function App(): React.JSX.Element {
     });
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const previewBatchEdit = async (): Promise<void> => {
+    setBatchPreview(undefined);
+    setBatchError(undefined);
     const changes: {
       artist?: string;
       albumArtist?: string;
@@ -1322,11 +1333,12 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setBatchPreview(result.value);
       setBatchResult(undefined);
-    } else setNotice(result.error.message, "error");
+    } else setBatchError(result.error.message);
   };
 
   const applyBatchEdit = async (): Promise<void> => {
     if (!batchPreview) return;
+    setBatchError(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.applyTrackBatchEdit({
@@ -1335,23 +1347,21 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setBatchResult(result.value);
-        const failures = result.value.results.filter((item) => !item.verified);
-        setNotice(
-          failures.length === 0
-            ? `Re-read and verified ${result.value.results.length} track writes.`
-            : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
-          failures.length === 0 ? "success" : "error",
-        );
+        setBatchError(undefined);
         setBatchPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message, "error");
+      } else {
+        setBatchError(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const previewTrackNumberSequence = async (): Promise<void> => {
+    setSequencePreview(undefined);
+    setSequenceError(undefined);
     const result = await window.outgroove.previewTrackNumberSequence({
       fileIds: batchTrackIds,
       startNumber: Number(sequenceStart),
@@ -1362,11 +1372,12 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSequencePreview(result.value);
       setSequenceResult(undefined);
-    } else setNotice(result.error.message, "error");
+    } else setSequenceError(result.error.message);
   };
 
   const applyTrackNumberSequence = async (): Promise<void> => {
     if (!sequencePreview) return;
+    setSequenceError(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.applyTrackNumberSequence({
@@ -1375,17 +1386,13 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setSequenceResult(result.value);
-        const failures = result.value.results.filter((item) => !item.verified);
-        setNotice(
-          failures.length === 0
-            ? `Re-read and verified ${result.value.results.length} track-number writes.`
-            : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
-          failures.length === 0 ? "success" : "error",
-        );
+        setSequenceError(undefined);
         setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message, "error");
+      } else {
+        setSequenceError(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -1995,11 +2002,15 @@ export function App(): React.JSX.Element {
       busy={busy}
       draft={batchDraft}
       enabled={batchEnabled}
+      error={batchError}
       preview={batchPreview}
       ref={batchEditorRef}
       result={batchResult}
       tracks={selectedBatchTracks}
-      onCancelPreview={() => setBatchPreview(undefined)}
+      onCancelPreview={() => {
+        setBatchPreview(undefined);
+        setBatchError(undefined);
+      }}
       onConfirm={() => void applyBatchEdit()}
       onDraftChange={(field, value) => {
         setBatchDraft((draft) => ({
@@ -2008,6 +2019,7 @@ export function App(): React.JSX.Element {
         }));
         setBatchPreview(undefined);
         setBatchResult(undefined);
+        setBatchError(undefined);
       }}
       onEnabledChange={(field, enabled) => {
         setBatchEnabled((current) => ({
@@ -2016,6 +2028,7 @@ export function App(): React.JSX.Element {
         }));
         setBatchPreview(undefined);
         setBatchResult(undefined);
+        setBatchError(undefined);
       }}
       onPreview={() => void previewBatchEdit()}
     />
@@ -2026,22 +2039,28 @@ export function App(): React.JSX.Element {
       busy={busy}
       discDraft={sequenceDiscNumber}
       discEnabled={sequenceDiscEnabled}
+      error={sequenceError}
       preview={sequencePreview}
       ref={sequenceEditorRef}
       result={sequenceResult}
       startDraft={sequenceStart}
       tracks={orderedSequenceTracks}
-      onCancelPreview={() => setSequencePreview(undefined)}
+      onCancelPreview={() => {
+        setSequencePreview(undefined);
+        setSequenceError(undefined);
+      }}
       onConfirm={() => void applyTrackNumberSequence()}
       onDiscChange={(value) => {
         setSequenceDiscNumber(value);
         setSequencePreview(undefined);
         setSequenceResult(undefined);
+        setSequenceError(undefined);
       }}
       onDiscEnabledChange={(enabled) => {
         setSequenceDiscEnabled(enabled);
         setSequencePreview(undefined);
         setSequenceResult(undefined);
+        setSequenceError(undefined);
       }}
       onMove={moveBatchTrack}
       onPreview={() => void previewTrackNumberSequence()}
@@ -2049,6 +2068,7 @@ export function App(): React.JSX.Element {
         setSequenceStart(value);
         setSequencePreview(undefined);
         setSequenceResult(undefined);
+        setSequenceError(undefined);
       }}
     />
   );
