@@ -63,11 +63,13 @@ import {
 } from "./library-album-collection";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
+import { ModalSheet } from "./modal-sheet";
 import { SharedFieldEditor } from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { TrackTechnicalInfo } from "./track-technical-info";
 import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import { SyncPlanReview } from "./sync-plan-review";
@@ -228,6 +230,8 @@ export function App(): React.JSX.Element {
   const [undoResult, setUndoResult] = useState<TagEditResultDto>();
   const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
+  const [libraryTrackEditorOpen, setLibraryTrackEditorOpen] = useState(false);
+  const [technicalTrackId, setTechnicalTrackId] = useState<string>();
   const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
     artist: "",
@@ -325,7 +329,13 @@ export function App(): React.JSX.Element {
   const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
   const albumDetailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const albumDetailFocusPending = useRef(false);
   const albumTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trackEditTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trackEditorReturnFocusId = useRef<string | undefined>(undefined);
+  const trackEditorReturnFocusElement = useRef<HTMLElement | undefined>(
+    undefined,
+  );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
@@ -340,6 +350,10 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const technicalTrack = useMemo(
+    () => selectedAlbum?.tracks.find((track) => track.id === technicalTrackId),
+    [selectedAlbum, technicalTrackId],
   );
   const selectedBatchTracks = useMemo(
     () =>
@@ -394,6 +408,8 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
+    setLibraryTrackEditorOpen(false);
+    setTechnicalTrackId(undefined);
   }, [selectedAlbumId]);
 
   useEffect(() => {
@@ -420,12 +436,49 @@ export function App(): React.JSX.Element {
   }, [activeView, libraryAlbumDetailOpen]);
 
   useEffect(() => {
-    if (activeView !== "library" || !libraryAlbumDetailOpen) return;
-    albumDetailHeadingRef.current?.focus();
-  }, [activeView, libraryAlbumDetailOpen]);
+    if (
+      libraryTrackEditorOpen ||
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      !trackEditorReturnFocusId.current
+    )
+      return;
+    const trackId = trackEditorReturnFocusId.current;
+    trackEditorReturnFocusId.current = undefined;
+    const returnElement = trackEditorReturnFocusElement.current;
+    trackEditorReturnFocusElement.current = undefined;
+    if (returnElement?.isConnected) returnElement.focus();
+    else trackEditTriggerRefs.current.get(trackId)?.focus();
+  }, [activeView, libraryAlbumDetailOpen, libraryTrackEditorOpen]);
 
   useEffect(() => {
-    if (activeView !== "library" || !libraryAlbumDetailOpen) return;
+    if (!albumDetailFocusPending.current) return;
+    if (
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      libraryTrackEditorOpen ||
+      technicalTrack
+    ) {
+      albumDetailFocusPending.current = false;
+      return;
+    }
+    albumDetailHeadingRef.current?.focus();
+    albumDetailFocusPending.current = false;
+  }, [
+    activeView,
+    libraryAlbumDetailOpen,
+    libraryTrackEditorOpen,
+    technicalTrack,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      libraryTrackEditorOpen ||
+      technicalTrack
+    )
+      return;
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -434,7 +487,13 @@ export function App(): React.JSX.Element {
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [activeView, libraryAlbumDetailOpen, selectedAlbumId]);
+  }, [
+    activeView,
+    libraryAlbumDetailOpen,
+    libraryTrackEditorOpen,
+    selectedAlbumId,
+    technicalTrack,
+  ]);
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
     const requestId = ++libraryRequestId.current;
@@ -677,19 +736,17 @@ export function App(): React.JSX.Element {
       (candidate) => candidate.id === pendingTrackId,
     );
     if (!track) return;
-    setActiveView("workbench");
-    setWorkbenchTool("track");
     setSelectedTrackId(track.id);
+    trackEditorReturnFocusId.current = track.id;
+    setActiveView("library");
+    setLibraryAlbumDetailOpen(true);
+    setLibraryTrackEditorOpen(true);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
     setPendingTrackId(undefined);
-    setDiagnosticDestination((current) => ({
-      target: "track",
-      request: (current?.request ?? 0) + 1,
-    }));
   }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<boolean> => {
@@ -972,6 +1029,23 @@ export function App(): React.JSX.Element {
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
+  };
+
+  const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    trackEditorReturnFocusId.current = track.id;
+    trackEditorReturnFocusElement.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : undefined;
+    if (selectedTrackId !== track.id) {
+      setSelectedTrackId(track.id);
+      setTrackEditPreview(undefined);
+      setTrackEditResult(undefined);
+      setTrackEditError(undefined);
+      setTrackUndoPreview(undefined);
+      setTrackDraft(draftForTrack(track));
+    }
+    setLibraryTrackEditorOpen(true);
   };
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
@@ -1843,6 +1917,7 @@ export function App(): React.JSX.Element {
             !albumIdFilter))));
 
   const openLibraryAlbum = (album: CatalogAlbum): void => {
+    albumDetailFocusPending.current = true;
     setSelectedAlbumId(album.id);
     setLibraryAlbumDetailOpen(true);
     setEditPreview(undefined);
@@ -2552,11 +2627,11 @@ export function App(): React.JSX.Element {
                                 setQuery("");
                                 setPageOffset(0);
                                 setNotice(
-                                  `Opening ${track.title} in the existing preview-only track editor.`,
+                                  `Opening ${track.title} in its Library metadata editor.`,
                                 );
                               }}
                             >
-                              Open {track.title} in Workbench
+                              Edit {track.title}
                             </button>
                           </td>
                         </tr>
@@ -2811,8 +2886,8 @@ export function App(): React.JSX.Element {
                           <div>
                             <h3 id="album-tracks-title">Tracks</h3>
                             <p>
-                              Open a track for technical details. Raw tag data
-                              stays in its Advanced metadata disclosure.
+                              Select a track to edit its common metadata. Use
+                              More for read-only technical information.
                             </p>
                           </div>
                           <span>{selectedAlbum.tracks.length} total</span>
@@ -2834,8 +2909,22 @@ export function App(): React.JSX.Element {
                                 track.id,
                               )}
                               track={track}
-                              onEdit={() => editTrack(track)}
+                              onEdit={() =>
+                                activeView === "library"
+                                  ? editLibraryTrack(track)
+                                  : editTrack(track)
+                              }
+                              onMoreInfo={() => setTechnicalTrackId(track.id)}
                               onToggleBatch={() => toggleBatchTrack(track.id)}
+                              registerEditTrigger={(element) => {
+                                if (element)
+                                  trackEditTriggerRefs.current.set(
+                                    track.id,
+                                    element,
+                                  );
+                                else
+                                  trackEditTriggerRefs.current.delete(track.id);
+                              }}
                             />
                           ))}
                         </div>
@@ -3189,6 +3278,51 @@ export function App(): React.JSX.Element {
           onRestoreBackup={() => void chooseRestore()}
           onScanRoot={(selectedRootId) => void startScan(selectedRootId)}
           onSelectSection={setSettingsSection}
+        />
+      )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
+        libraryTrackEditorOpen &&
+        selectedTrack && (
+          <ModalSheet
+            ariaLabel={`Edit metadata for ${selectedTrack.tags.title}`}
+            className="track-editor-sheet"
+            closeLabel="Close editor"
+            onClose={() => setLibraryTrackEditorOpen(false)}
+          >
+            <TrackMetadataEditor
+              busy={busy}
+              draft={trackDraft}
+              error={trackEditError}
+              onCancelPreview={() => {
+                setTrackEditPreview(undefined);
+                setTrackEditResult(undefined);
+                setTrackEditError(undefined);
+              }}
+              onClose={() => setLibraryTrackEditorOpen(false)}
+              onConfirm={() => void applyTrackEdit()}
+              onDraftChange={(field, value) => {
+                setTrackDraft((draft) => ({
+                  ...draft,
+                  [field]: value,
+                }));
+                setTrackEditPreview(undefined);
+                setTrackEditResult(undefined);
+                setTrackEditError(undefined);
+              }}
+              onPreview={() => void previewTrackEdit()}
+              preview={trackEditPreview}
+              ref={trackEditorRef}
+              result={trackEditResult}
+              showClose={false}
+              track={selectedTrack}
+            />
+          </ModalSheet>
+        )}
+      {activeView === "library" && libraryAlbumDetailOpen && technicalTrack && (
+        <TrackTechnicalInfo
+          onClose={() => setTechnicalTrackId(undefined)}
+          track={technicalTrack}
         />
       )}
     </ApplicationShell>

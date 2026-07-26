@@ -93,6 +93,7 @@ interface TrackMetadataEditorProps {
   onConfirm: () => void;
   onCancelPreview: () => void;
   onClose: () => void;
+  showClose?: boolean;
 }
 
 function TrackMetadataEditorComponent(
@@ -108,6 +109,7 @@ function TrackMetadataEditorComponent(
     onConfirm,
     onCancelPreview,
     onClose,
+    showClose = true,
   }: TrackMetadataEditorProps,
   ref: Ref<HTMLElement>,
 ): React.JSX.Element {
@@ -218,9 +220,11 @@ function TrackMetadataEditorComponent(
             Review {changedFields.length || "exact"}{" "}
             {changedFields.length === 1 ? "change" : "changes"}
           </button>
-          <button disabled={busy} onClick={onClose} type="button">
-            Close editor
-          </button>
+          {showClose && (
+            <button disabled={busy} onClick={onClose} type="button">
+              Close editor
+            </button>
+          )}
         </div>
       </div>
 
