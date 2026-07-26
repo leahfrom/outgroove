@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -57,6 +57,15 @@ describe("TrackTechnicalInfo", () => {
       name: "More information about Fixture Track",
     });
     expect(dialog).toHaveFocus();
+    expect(dialog).toHaveTextContent("Track information");
+    const identity = dialog.querySelector(".technical-info-heading");
+    if (!(identity instanceof HTMLElement))
+      throw new Error("Track identity missing");
+    expect(
+      within(identity).getByRole("heading", { name: "Fixture Track" }),
+    ).toBeVisible();
+    expect(within(identity).getByText("Fixture Artist")).toBeVisible();
+    expect(within(identity).getByText("From Fixture Album")).toBeVisible();
     expect(dialog).toHaveTextContent("MPEG 1 Layer 3");
     expect(dialog).toHaveTextContent("128 kbps");
     expect(dialog).toHaveTextContent(track.path);

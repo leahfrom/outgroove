@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
@@ -9,6 +9,7 @@ import {
   formatFileSize,
   formatSampleRate,
 } from "../../shared/domain/audio-technical";
+import { ActionMenu, type ActionMenuAnchor } from "./action-menu";
 
 type AlbumTrack = CatalogAlbum["tracks"][number];
 
@@ -33,74 +34,27 @@ export function LibraryTrackDetail({
   readonly onToggleBatch: () => void;
   readonly registerEditTrigger?: (element: HTMLButtonElement | null) => void;
 }): React.JSX.Element {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuAnchor, setMenuAnchor] = useState<ActionMenuAnchor>();
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const menuReturnFocusRef = useRef<HTMLElement | null>(null);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    menuRef.current
-      ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
-      ?.focus();
-    const closeForOutsidePointer = (event: PointerEvent): void => {
-      if (
-        event.target instanceof Node &&
-        !menuRef.current?.contains(event.target) &&
-        event.target !== moreButtonRef.current
-      )
-        setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeForOutsidePointer);
-    return () =>
-      document.removeEventListener("pointerdown", closeForOutsidePointer);
-  }, [menuOpen]);
-
-  const openMenu = (origin?: HTMLElement | null): void => {
-    menuReturnFocusRef.current = origin ?? moreButtonRef.current;
-    setMenuOpen(true);
-  };
-
-  const closeMenu = (restoreFocus: boolean): void => {
-    setMenuOpen(false);
-    if (restoreFocus) menuReturnFocusRef.current?.focus();
-  };
-
-  const chooseMenuAction = (action: () => void): void => {
-    setMenuOpen(false);
-    menuReturnFocusRef.current?.focus();
-    action();
-  };
-
-  const handleMenuKeyDown = (
-    event: React.KeyboardEvent<HTMLDivElement>,
+  const openMenu = (
+    anchor: ActionMenuAnchor,
+    origin?: HTMLElement | null,
   ): void => {
-    const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      ) ?? [],
-    );
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeMenu(true);
-      return;
-    }
-    if (event.key === "Tab") {
-      setMenuOpen(false);
-      return;
-    }
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? items.length - 1
-          : event.key === "ArrowDown"
-            ? (current + 1) % items.length
-            : (current - 1 + items.length) % items.length;
-    items[next]?.focus();
+    menuReturnFocusRef.current = origin ?? moreButtonRef.current;
+    setMenuAnchor(anchor);
+  };
+
+  const dismissMenu = useCallback(() => setMenuAnchor(undefined), []);
+
+  const anchorToMoreButton = (): ActionMenuAnchor => {
+    const bounds = moreButtonRef.current?.getBoundingClientRect();
+    return {
+      x: bounds?.right ?? 0,
+      y: (bounds?.bottom ?? 0) + 4,
+      align: "end",
+    };
   };
 
   if (mode === "library")
@@ -114,7 +68,10 @@ export function LibraryTrackDetail({
             event.currentTarget.contains(document.activeElement)
               ? document.activeElement
               : moreButtonRef.current;
-          openMenu(active);
+          openMenu(
+            { x: event.clientX, y: event.clientY, align: "start" },
+            active,
+          );
         }}
         onKeyDown={(event) => {
           if (
@@ -125,6 +82,7 @@ export function LibraryTrackDetail({
             return;
           event.preventDefault();
           openMenu(
+            anchorToMoreButton(),
             document.activeElement instanceof HTMLElement
               ? document.activeElement
               : moreButtonRef.current,
@@ -154,41 +112,35 @@ export function LibraryTrackDetail({
         </button>
         <div className="track-more-actions">
           <button
-            aria-expanded={menuOpen}
+            aria-expanded={Boolean(menuAnchor)}
             aria-haspopup="menu"
             aria-label={`More actions for ${track.tags.title}`}
             onClick={() => {
-              if (menuOpen) closeMenu(true);
-              else openMenu(moreButtonRef.current);
+              if (menuAnchor) {
+                dismissMenu();
+                moreButtonRef.current?.focus();
+              } else openMenu(anchorToMoreButton(), moreButtonRef.current);
             }}
             ref={moreButtonRef}
             type="button"
           >
             More
           </button>
-          {menuOpen && (
-            <div
-              aria-label={`Actions for ${track.tags.title}`}
+          {menuAnchor && (
+            <ActionMenu
+              anchor={menuAnchor}
+              ariaLabel={`Actions for ${track.tags.title}`}
               className="track-action-menu"
-              onKeyDown={handleMenuKeyDown}
-              ref={menuRef}
-              role="menu"
-            >
-              <button
-                onClick={() => chooseMenuAction(onEdit)}
-                role="menuitem"
-                type="button"
-              >
-                Edit metadata
-              </button>
-              <button
-                onClick={() => chooseMenuAction(() => onMoreInfo?.())}
-                role="menuitem"
-                type="button"
-              >
-                More info
-              </button>
-            </div>
+              items={[
+                { label: "Edit metadata", onSelect: onEdit },
+                {
+                  label: "More info",
+                  onSelect: () => onMoreInfo?.(),
+                },
+              ]}
+              returnFocus={menuReturnFocusRef.current}
+              onDismiss={dismissMenu}
+            />
           )}
         </div>
       </article>

@@ -41,6 +41,30 @@ async function openLibraryAlbum(
   expect(heading).toHaveFocus();
 }
 
+async function chooseAlbumAction(
+  user: ReturnType<typeof userEvent.setup>,
+  name:
+    | "Edit album metadata"
+    | "Edit track order"
+    | "History & undo"
+    | `Add ${string} to Sync`,
+): Promise<HTMLElement> {
+  const trigger = screen.getByRole("button", { name: "Album actions" });
+  await user.click(trigger);
+  await user.click(screen.getByRole("menuitem", { name }));
+  return trigger;
+}
+
+async function openLibraryTools(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<HTMLElement> {
+  const summary = await screen.findByText("Library tools");
+  const disclosure = summary.closest("details");
+  if (!disclosure) throw new Error("Library tools disclosure missing");
+  if (!disclosure.hasAttribute("open")) await user.click(summary);
+  return disclosure;
+}
+
 async function openSyncSetupSection(
   user: ReturnType<typeof userEvent.setup>,
   name: "Selection draft" | "Saved profiles",
@@ -321,6 +345,39 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("searchbox", { name: "Search Library" }),
     ).toHaveValue("Fixture");
     expect(screen.getByLabelText("View")).toHaveValue("tracks");
+  });
+
+  it("keeps the established Library compact until tools are requested", async () => {
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: api(true),
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("list", { name: "Albums" })).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Browse your Library" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("search")).toBeVisible();
+    const summaryLabel = screen.getByText("Library tools");
+    const summary = summaryLabel.closest("summary");
+    const disclosure = summaryLabel.closest("details");
+    if (!summary) throw new Error("Library tools summary missing");
+    if (!disclosure) throw new Error("Library tools disclosure missing");
+    const savedFilters = screen
+      .getByText("Saved Library filters")
+      .closest("section");
+    if (!savedFilters) throw new Error("Saved filters section missing");
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(savedFilters).not.toBeVisible();
+
+    await user.click(summary);
+    expect(disclosure).toHaveAttribute("open");
+    expect(savedFilters).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Choose Library folder" }),
+    ).toBeVisible();
   });
 
   it("shows labelled global feedback only after an event and dismisses it from the keyboard", async () => {
@@ -668,11 +725,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    const openEditor = screen.getByRole("button", {
-      name: "Edit album metadata",
-    });
-    openEditor.focus();
-    await user.keyboard("{Enter}");
+    const albumActions = await chooseAlbumAction(user, "Edit album metadata");
     const dialog = screen.getByRole("dialog", {
       name: "Edit Fixture Album",
     });
@@ -711,8 +764,8 @@ describe("tag edit UI safety states", () => {
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(openEditor).toHaveFocus();
-    await user.keyboard("{Enter}");
+    expect(albumActions).toHaveFocus();
+    await chooseAlbumAction(user, "Edit album metadata");
     expect(
       within(
         screen.getByRole("dialog", { name: "Edit Fixture Album" }),
@@ -775,9 +828,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    await user.click(
-      screen.getByRole("button", { name: "Edit album metadata" }),
-    );
+    await chooseAlbumAction(user, "Edit album metadata");
     const dialog = screen.getByRole("dialog", {
       name: "Edit Fixture Album",
     });
@@ -829,11 +880,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    const trackOrder = screen.getByRole("button", {
-      name: "Edit track order",
-    });
-    trackOrder.focus();
-    await user.keyboard("{Enter}");
+    const albumActions = await chooseAlbumAction(user, "Edit track order");
     let dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
     expect(
       within(dialog).getByRole("button", { name: /^Track order/u }),
@@ -843,11 +890,9 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(previewSequence).not.toHaveBeenCalled();
     await user.keyboard("{Escape}");
-    expect(trackOrder).toHaveFocus();
+    expect(albumActions).toHaveFocus();
 
-    const history = screen.getByRole("button", { name: "History & undo" });
-    history.focus();
-    await user.keyboard("{Enter}");
+    await chooseAlbumAction(user, "History & undo");
     dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
     expect(
       within(dialog).getByRole("button", { name: /^History & undo/u }),
@@ -859,7 +904,7 @@ describe("tag edit UI safety states", () => {
       expect(listHistory).toHaveBeenCalledWith({ albumId: album.id }),
     );
     await user.keyboard("{Escape}");
-    expect(history).toHaveFocus();
+    expect(albumActions).toHaveFocus();
   });
 
   it("opens read-only technical details separately from track editing", async () => {
@@ -2944,6 +2989,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openLibraryTools(user);
     const open = await screen.findByRole("button", {
       name: "Open Missing genres",
     });
@@ -3039,6 +3085,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openLibraryTools(user);
     const name = await screen.findByLabelText("Filter name");
     await user.type(name, "Existing");
     await user.click(
@@ -3081,6 +3128,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
+    await openLibraryTools(user);
     const name = await screen.findByLabelText("Name for Existing");
     await user.clear(name);
     await user.type(name, "Taken{Enter}");
@@ -3766,19 +3814,11 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    const addFirst = screen.getByRole("button", {
-      name: "Add Fixture Album to Sync",
-    });
-    addFirst.focus();
-    await user.keyboard("{Enter}");
+    await chooseAlbumAction(user, "Add Fixture Album to Sync");
     await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: "Back to albums" }));
     await openLibraryAlbum(user, "Second Album");
-    const addSecond = screen.getByRole("button", {
-      name: "Add Second Album to Sync",
-    });
-    addSecond.focus();
-    await user.keyboard("{Enter}");
+    await chooseAlbumAction(user, "Add Second Album to Sync");
     const selection = screen.getByRole("list", {
       name: "Albums selected for DAP sync",
     });
@@ -4508,11 +4548,7 @@ describe("tag edit UI safety states", () => {
 
     await openPrimaryView(user, "Library");
     await user.click(screen.getByRole("button", { name: /^Second Album/u }));
-    const addSecond = screen.getByRole("button", {
-      name: "Add Second Album to Sync",
-    });
-    addSecond.focus();
-    await user.keyboard("{Enter}");
+    await chooseAlbumAction(user, "Add Second Album to Sync");
     const save = screen.getByRole("button", {
       name: "Save album selection for Road DAP",
     });

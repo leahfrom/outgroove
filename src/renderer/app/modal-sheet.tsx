@@ -15,12 +15,14 @@ export function ModalSheet({
   children,
   className,
   closeLabel,
+  toolbarLabel,
   onClose,
 }: {
   readonly ariaLabel: string;
   readonly children: React.ReactNode;
   readonly className?: string;
   readonly closeLabel: string;
+  readonly toolbarLabel?: string;
   readonly onClose: () => void;
 }): React.JSX.Element {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -83,7 +85,7 @@ export function ModalSheet({
         tabIndex={-1}
       >
         <div className="modal-sheet-toolbar">
-          <span>{ariaLabel}</span>
+          <span>{toolbarLabel ?? ariaLabel}</span>
           <button onClick={onClose} type="button">
             {closeLabel}
           </button>
