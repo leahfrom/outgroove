@@ -88,10 +88,6 @@ import {
 } from "./sync-setup-workspace";
 import type { SettingsSection } from "./settings-navigation";
 import { SettingsView } from "./settings-view";
-import {
-  WorkbenchNavigation,
-  type WorkbenchTool,
-} from "./workbench-navigation";
 import { WorkbenchTrackContext } from "./workbench-track-context";
 
 const PAGE_SIZE = 20;
@@ -163,7 +159,6 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 
 export function App(): React.JSX.Element {
   const [activeView, setActiveView] = useState<AppView>("library");
-  const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
   const [syncSetupSection, setSyncSetupSection] =
     useState<SyncSetupSection>("selection");
@@ -1028,17 +1023,6 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const editTrack = (track: CatalogAlbum["tracks"][number]): void => {
-    setActiveView("workbench");
-    setWorkbenchTool("track");
-    setSelectedTrackId(track.id);
-    setTrackEditPreview(undefined);
-    setTrackEditResult(undefined);
-    setTrackEditError(undefined);
-    setTrackUndoPreview(undefined);
-    setTrackDraft(draftForTrack(track));
-  };
-
   const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
     trackEditorReturnFocusId.current = track.id;
     trackEditorReturnFocusElement.current =
@@ -1058,9 +1042,8 @@ export function App(): React.JSX.Element {
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
     if (!selectedAlbum) return;
-    const routeWithinLibrary =
-      activeView === "library" && libraryAlbumDetailOpen;
-    if (!routeWithinLibrary) setActiveView("workbench");
+    setActiveView("library");
+    setLibraryAlbumDetailOpen(true);
     const affectedIds = [...finding.affectedTrackIds];
     setBatchTrackIds(affectedIds);
     setBatchPreview(undefined);
@@ -1073,18 +1056,13 @@ export function App(): React.JSX.Element {
         const firstTrack = selectedAlbum.tracks.find((track) =>
           affectedIds.includes(track.id),
         );
-        if (firstTrack) {
-          if (routeWithinLibrary) editLibraryTrack(firstTrack);
-          else editTrack(firstTrack);
-        }
+        if (firstTrack) editLibraryTrack(firstTrack);
         target = "track";
-        if (!routeWithinLibrary) setWorkbenchTool("track");
         break;
       }
       case "sequence":
         target = "sequence";
-        if (routeWithinLibrary) setLibraryAlbumEditingTool("sequence");
-        else setWorkbenchTool("sequence");
+        setLibraryAlbumEditingTool("sequence");
         break;
       case "batch-track-artist":
         setBatchEnabled({
@@ -1095,8 +1073,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
-        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
-        else setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "batch-album-artist":
         setBatchEnabled({
@@ -1107,8 +1084,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
-        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
-        else setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "batch-release-date":
         setBatchEnabled({
@@ -1119,20 +1095,16 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
-        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
-        else setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "album-title":
         target = "album-title";
         setAlbumTitleSection("edit");
-        if (routeWithinLibrary) setLibraryAlbumEditingTool("title");
-        else setWorkbenchTool("album");
+        setLibraryAlbumEditingTool("title");
         break;
     }
     setNotice(
-      `Affected tracks selected. Review and propose a change ${
-        routeWithinLibrary ? "for this album" : "in the Workbench"
-      }; no preview or write has started.`,
+      "Affected tracks selected. Review and propose a change for this album; no preview or write has started.",
     );
     setDiagnosticDestination((current) => ({
       target,
@@ -1518,7 +1490,7 @@ export function App(): React.JSX.Element {
     const definition = currentLibraryFilterDefinition();
     if (!definition) {
       setNotice(
-        "Exact Workbench album routes cannot be saved as Library filters.",
+        "Exact album-detail routes cannot be saved as Library filters.",
       );
       return;
     }
@@ -1571,7 +1543,7 @@ export function App(): React.JSX.Element {
     const definition = currentLibraryFilterDefinition();
     if (!definition) {
       setNotice(
-        "Exact Workbench album routes cannot replace a saved Library filter.",
+        "Exact album-detail routes cannot replace a saved Library filter.",
       );
       return;
     }
@@ -1643,7 +1615,7 @@ export function App(): React.JSX.Element {
     setSyncAlbums(saved.albums);
     void refreshSyncHistory(saved.id);
     setNotice(
-      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in the Workbench, then save the selection.`,
+      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in Sync, then save the selection.`,
     );
   };
 
@@ -2148,415 +2120,400 @@ export function App(): React.JSX.Element {
           onRetry={(selectedRootId) => void startScan(selectedRootId)}
         />
       )}
-      {(activeView === "library" || activeView === "workbench") && (
+      {activeView === "library" && (
         <>
-          {activeView === "library" &&
-            !libraryOnboardingVisible &&
-            !libraryAlbumDetailOpen && (
-              <>
-                <form
-                  className="library-toolbar"
-                  role="search"
-                  onSubmit={(event) => {
-                    event.preventDefault();
+          {!libraryOnboardingVisible && !libraryAlbumDetailOpen && (
+            <>
+              <form
+                className="library-toolbar"
+                role="search"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setPageOffset(0);
+                  setQuery(searchText.trim());
+                }}
+              >
+                <label className="visually-hidden" htmlFor="library-search">
+                  Search Library
+                </label>
+                <input
+                  id="library-search"
+                  type="search"
+                  value={searchText}
+                  placeholder="Album, artist, genre, track, format, or path"
+                  onChange={(event) => setSearchText(event.target.value)}
+                />
+                <label className="visually-hidden" htmlFor="library-view">
+                  View
+                </label>
+                <select
+                  id="library-view"
+                  value={libraryView}
+                  onChange={(event) => {
+                    const view = event.target.value as
+                      | "albums"
+                      | "artists"
+                      | "genres"
+                      | "formats"
+                      | "folders"
+                      | "tracks"
+                      | "data-quality"
+                      | "scan-errors";
+                    setLibraryView(view);
+                    setAlbumArtistFilter(undefined);
+                    setAlbumIdFilter(undefined);
+                    setTrackRouteLabel(undefined);
+                    setPendingTrackId(undefined);
+                    setTrackFormatFilter(undefined);
+                    setTrackFolderFilter(undefined);
+                    setTrackGenreFilter(undefined);
                     setPageOffset(0);
-                    setQuery(searchText.trim());
+                    if (view === "data-quality")
+                      setNotice(
+                        "Checking album data quality in a background worker…",
+                      );
                   }}
                 >
-                  <label className="visually-hidden" htmlFor="library-search">
-                    Search Library
-                  </label>
-                  <input
-                    id="library-search"
-                    type="search"
-                    value={searchText}
-                    placeholder="Album, artist, genre, track, format, or path"
-                    onChange={(event) => setSearchText(event.target.value)}
-                  />
-                  <label className="visually-hidden" htmlFor="library-view">
-                    View
-                  </label>
-                  <select
-                    id="library-view"
-                    value={libraryView}
-                    onChange={(event) => {
-                      const view = event.target.value as
-                        | "albums"
-                        | "artists"
-                        | "genres"
-                        | "formats"
-                        | "folders"
-                        | "tracks"
-                        | "data-quality"
-                        | "scan-errors";
-                      setLibraryView(view);
+                  <option value="albums">Albums</option>
+                  <option value="artists">Album artists</option>
+                  <option value="genres">Genres</option>
+                  <option value="formats">Formats</option>
+                  <option value="folders">Folders</option>
+                  <option value="tracks">Tracks</option>
+                  <option value="data-quality">Albums needing review</option>
+                  <option value="scan-errors">Scan problems</option>
+                </select>
+                {libraryView === "data-quality" && (
+                  <>
+                    <label htmlFor="quality-filter">Issue type</label>
+                    <select
+                      id="quality-filter"
+                      value={qualityFilter}
+                      onChange={(event) => {
+                        const filter = event.target.value;
+                        if (!isAlbumDiagnosticFilter(filter)) return;
+                        setQualityFilter(filter);
+                        setPageOffset(0);
+                        setNotice(
+                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                        );
+                      }}
+                    >
+                      {albumDiagnosticFilters.map((filter) => (
+                        <option key={filter} value={filter}>
+                          {diagnosticFilterLabels[filter]}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+                <button type="submit">Search</button>
+                {(query || searchText) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchText("");
+                      setQuery("");
+                      setPageOffset(0);
+                    }}
+                  >
+                    Clear search
+                  </button>
+                )}
+                {libraryView === "albums" && albumArtistFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
                       setAlbumArtistFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all album artists
+                  </button>
+                )}
+                {libraryView === "albums" && albumIdFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
                       setAlbumIdFilter(undefined);
                       setTrackRouteLabel(undefined);
                       setPendingTrackId(undefined);
-                      setTrackFormatFilter(undefined);
-                      setTrackFolderFilter(undefined);
-                      setTrackGenreFilter(undefined);
                       setPageOffset(0);
-                      if (view === "data-quality")
-                        setNotice(
-                          "Checking album data quality in a background worker…",
-                        );
                     }}
                   >
-                    <option value="albums">Albums</option>
-                    <option value="artists">Album artists</option>
-                    <option value="genres">Genres</option>
-                    <option value="formats">Formats</option>
-                    <option value="folders">Folders</option>
-                    <option value="tracks">Tracks</option>
-                    <option value="data-quality">Albums needing review</option>
-                    <option value="scan-errors">Scan problems</option>
-                  </select>
-                  {libraryView === "data-quality" && (
-                    <>
-                      <label htmlFor="quality-filter">Issue type</label>
-                      <select
-                        id="quality-filter"
-                        value={qualityFilter}
-                        onChange={(event) => {
-                          const filter = event.target.value;
-                          if (!isAlbumDiagnosticFilter(filter)) return;
-                          setQualityFilter(filter);
-                          setPageOffset(0);
-                          setNotice(
-                            `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
-                          );
+                    Show all albums
+                  </button>
+                )}
+                {libraryView === "tracks" && trackFormatFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackFormatFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all formats
+                  </button>
+                )}
+                {libraryView === "tracks" && trackFolderFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackFolderFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all folders
+                  </button>
+                )}
+                {libraryView === "tracks" && trackGenreFilter && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTrackGenreFilter(undefined);
+                      setPageOffset(0);
+                    }}
+                  >
+                    Show all genres
+                  </button>
+                )}
+              </form>
+              <details className="library-tools-disclosure">
+                <summary>
+                  <div>
+                    <strong>Library tools</strong>
+                    <span>Saved filters and scanning</span>
+                  </div>
+                  <span>
+                    {savedFilters.length === 0
+                      ? "No saved filters"
+                      : `${savedFilters.length} saved ${
+                          savedFilters.length === 1 ? "filter" : "filters"
+                        }`}
+                  </span>
+                </summary>
+                <div className="library-tools-content">
+                  <section
+                    className="library-scan-tools"
+                    aria-labelledby="library-scan-tools-title"
+                  >
+                    <div>
+                      <p className="eyebrow">Local collection</p>
+                      <h2 id="library-scan-tools-title">Folders & scanning</h2>
+                      <p>
+                        Add and scan a folder explicitly. Scanning remains local
+                        and read-only.
+                      </p>
+                    </div>
+                    <div className="actions">
+                      <button
+                        disabled={busy || scanActive}
+                        onClick={() => void chooseAndScan()}
+                      >
+                        Choose Library folder
+                      </button>
+                      <button
+                        disabled={busy || scanActive || !rootId}
+                        onClick={() => void rescan()}
+                      >
+                        Scan current folder
+                      </button>
+                    </div>
+                  </section>
+                  <section
+                    className="saved-filters"
+                    aria-labelledby="saved-filters-title"
+                  >
+                    <div className="section-heading">
+                      <div>
+                        <p className="eyebrow">Local shortcuts</p>
+                        <h2 id="saved-filters-title">Saved Library filters</h2>
+                      </div>
+                      <form
+                        className="inline"
+                        aria-label="Save current Library filter"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveCurrentLibraryFilter();
                         }}
                       >
-                        {albumDiagnosticFilters.map((filter) => (
-                          <option key={filter} value={filter}>
-                            {diagnosticFilterLabels[filter]}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  )}
-                  <button type="submit">Search</button>
-                  {(query || searchText) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchText("");
-                        setQuery("");
-                        setPageOffset(0);
-                      }}
-                    >
-                      Clear search
-                    </button>
-                  )}
-                  {libraryView === "albums" && albumArtistFilter && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAlbumArtistFilter(undefined);
-                        setPageOffset(0);
-                      }}
-                    >
-                      Show all album artists
-                    </button>
-                  )}
-                  {libraryView === "albums" && albumIdFilter && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAlbumIdFilter(undefined);
-                        setTrackRouteLabel(undefined);
-                        setPendingTrackId(undefined);
-                        setPageOffset(0);
-                      }}
-                    >
-                      Show all albums
-                    </button>
-                  )}
-                  {libraryView === "tracks" && trackFormatFilter && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTrackFormatFilter(undefined);
-                        setPageOffset(0);
-                      }}
-                    >
-                      Show all formats
-                    </button>
-                  )}
-                  {libraryView === "tracks" && trackFolderFilter && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTrackFolderFilter(undefined);
-                        setPageOffset(0);
-                      }}
-                    >
-                      Show all folders
-                    </button>
-                  )}
-                  {libraryView === "tracks" && trackGenreFilter && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTrackGenreFilter(undefined);
-                        setPageOffset(0);
-                      }}
-                    >
-                      Show all genres
-                    </button>
-                  )}
-                </form>
-                <details className="library-tools-disclosure">
-                  <summary>
-                    <div>
-                      <strong>Library tools</strong>
-                      <span>Saved filters and scanning</span>
+                        <label htmlFor="saved-filter-name">Filter name</label>
+                        <input
+                          id="saved-filter-name"
+                          value={savedFilterName}
+                          maxLength={100}
+                          placeholder="For example, Ambient FLAC"
+                          onChange={(event) =>
+                            setSavedFilterName(event.target.value)
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={
+                            savedFilterBusy ||
+                            !savedFilterName.trim() ||
+                            Boolean(albumIdFilter)
+                          }
+                        >
+                          Save current filter
+                        </button>
+                      </form>
                     </div>
-                    <span>
-                      {savedFilters.length === 0
-                        ? "No saved filters"
-                        : `${savedFilters.length} saved ${
-                            savedFilters.length === 1 ? "filter" : "filters"
-                          }`}
-                    </span>
-                  </summary>
-                  <div className="library-tools-content">
-                    <section
-                      className="library-scan-tools"
-                      aria-labelledby="library-scan-tools-title"
-                    >
-                      <div>
-                        <p className="eyebrow">Local collection</p>
-                        <h2 id="library-scan-tools-title">
-                          Folders & scanning
-                        </h2>
-                        <p>
-                          Add and scan a folder explicitly. Scanning remains
-                          local and read-only.
-                        </p>
-                      </div>
-                      <div className="actions">
-                        <button
-                          disabled={busy || scanActive}
-                          onClick={() => void chooseAndScan()}
-                        >
-                          Choose Library folder
-                        </button>
-                        <button
-                          disabled={busy || scanActive || !rootId}
-                          onClick={() => void rescan()}
-                        >
-                          Scan current folder
-                        </button>
-                      </div>
-                    </section>
-                    <section
-                      className="saved-filters"
-                      aria-labelledby="saved-filters-title"
-                    >
-                      <div className="section-heading">
-                        <div>
-                          <p className="eyebrow">Local shortcuts</p>
-                          <h2 id="saved-filters-title">
-                            Saved Library filters
-                          </h2>
-                        </div>
-                        <form
-                          className="inline"
-                          aria-label="Save current Library filter"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void saveCurrentLibraryFilter();
-                          }}
-                        >
-                          <label htmlFor="saved-filter-name">Filter name</label>
-                          <input
-                            id="saved-filter-name"
-                            value={savedFilterName}
-                            maxLength={100}
-                            placeholder="For example, Ambient FLAC"
-                            onChange={(event) =>
-                              setSavedFilterName(event.target.value)
-                            }
-                          />
-                          <button
-                            type="submit"
-                            disabled={
-                              savedFilterBusy ||
-                              !savedFilterName.trim() ||
-                              Boolean(albumIdFilter)
-                            }
-                          >
-                            Save current filter
-                          </button>
-                        </form>
-                      </div>
+                    <p>
+                      Saves the active search and view. Page position and exact
+                      album-detail routes remain temporary.
+                    </p>
+                    {albumIdFilter && (
                       <p>
-                        Saves the active search and view. Page position and
-                        exact album-detail routes remain temporary.
+                        Status: Return to a normal Library view before saving.
                       </p>
-                      {albumIdFilter && (
-                        <p>
-                          Status: Return to a normal Library view before saving.
-                        </p>
-                      )}
-                      {savedFilters.length === 0 ? (
-                        <p>No saved Library filters yet.</p>
-                      ) : (
-                        <ul>
-                          {savedFilters.map((saved) => (
-                            <li key={saved.id}>
-                              <div>
-                                <strong>{saved.name}</strong>
-                                <span>
-                                  {describeSavedFilter(saved.definition)}
-                                </span>
-                              </div>
-                              <form
-                                className="inline"
-                                aria-label={`Rename ${saved.name}`}
-                                onSubmit={(event) => {
-                                  event.preventDefault();
-                                  const name = (
-                                    savedFilterNames[saved.id] ?? ""
-                                  ).trim();
-                                  if (name)
-                                    void updateSavedLibraryFilter(
-                                      saved,
-                                      name,
-                                      saved.definition,
-                                      "Renamed",
-                                    );
-                                }}
-                              >
-                                <label
-                                  htmlFor={`saved-filter-name-${saved.id}`}
-                                >
-                                  Name
-                                </label>
-                                <input
-                                  id={`saved-filter-name-${saved.id}`}
-                                  aria-label={`Name for ${saved.name}`}
-                                  value={
-                                    savedFilterNames[saved.id] ?? saved.name
-                                  }
-                                  maxLength={100}
-                                  onChange={(event) =>
-                                    setSavedFilterNames((names) => ({
-                                      ...names,
-                                      [saved.id]: event.target.value,
-                                    }))
-                                  }
-                                />
-                                <button
-                                  type="submit"
-                                  disabled={
-                                    savedFilterBusy ||
-                                    !(
-                                      savedFilterNames[saved.id] ?? ""
-                                    ).trim() ||
-                                    (
-                                      savedFilterNames[saved.id] ?? ""
-                                    ).trim() === saved.name
-                                  }
-                                >
-                                  Rename {saved.name}
-                                </button>
-                              </form>
+                    )}
+                    {savedFilters.length === 0 ? (
+                      <p>No saved Library filters yet.</p>
+                    ) : (
+                      <ul>
+                        {savedFilters.map((saved) => (
+                          <li key={saved.id}>
+                            <div>
+                              <strong>{saved.name}</strong>
+                              <span>
+                                {describeSavedFilter(saved.definition)}
+                              </span>
+                            </div>
+                            <form
+                              className="inline"
+                              aria-label={`Rename ${saved.name}`}
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                const name = (
+                                  savedFilterNames[saved.id] ?? ""
+                                ).trim();
+                                if (name)
+                                  void updateSavedLibraryFilter(
+                                    saved,
+                                    name,
+                                    saved.definition,
+                                    "Renamed",
+                                  );
+                              }}
+                            >
+                              <label htmlFor={`saved-filter-name-${saved.id}`}>
+                                Name
+                              </label>
+                              <input
+                                id={`saved-filter-name-${saved.id}`}
+                                aria-label={`Name for ${saved.name}`}
+                                value={savedFilterNames[saved.id] ?? saved.name}
+                                maxLength={100}
+                                onChange={(event) =>
+                                  setSavedFilterNames((names) => ({
+                                    ...names,
+                                    [saved.id]: event.target.value,
+                                  }))
+                                }
+                              />
                               <button
-                                disabled={savedFilterBusy}
-                                onClick={() => openSavedLibraryFilter(saved)}
-                              >
-                                Open {saved.name}
-                              </button>
-                              <button
+                                type="submit"
                                 disabled={
-                                  savedFilterBusy || Boolean(albumIdFilter)
-                                }
-                                onClick={() =>
-                                  void replaceSavedLibraryFilter(saved)
-                                }
-                              >
-                                Update {saved.name} to current filter
-                              </button>
-                              <button
-                                disabled={savedFilterBusy}
-                                onClick={() =>
-                                  void deleteSavedLibraryFilter(saved)
+                                  savedFilterBusy ||
+                                  !(savedFilterNames[saved.id] ?? "").trim() ||
+                                  (savedFilterNames[saved.id] ?? "").trim() ===
+                                    saved.name
                                 }
                               >
-                                Delete {saved.name}
+                                Rename {saved.name}
                               </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                  </div>
-                </details>
-              </>
-            )}
-          {activeView === "library" &&
-            !libraryOnboardingVisible &&
-            !libraryAlbumDetailOpen && (
-              <p className="result-count" aria-live="polite">
-                {totalItems}{" "}
-                {libraryView === "scan-errors"
+                            </form>
+                            <button
+                              disabled={savedFilterBusy}
+                              onClick={() => openSavedLibraryFilter(saved)}
+                            >
+                              Open {saved.name}
+                            </button>
+                            <button
+                              disabled={
+                                savedFilterBusy || Boolean(albumIdFilter)
+                              }
+                              onClick={() =>
+                                void replaceSavedLibraryFilter(saved)
+                              }
+                            >
+                              Update {saved.name} to current filter
+                            </button>
+                            <button
+                              disabled={savedFilterBusy}
+                              onClick={() =>
+                                void deleteSavedLibraryFilter(saved)
+                              }
+                            >
+                              Delete {saved.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+              </details>
+            </>
+          )}
+          {!libraryOnboardingVisible && !libraryAlbumDetailOpen && (
+            <p className="result-count" aria-live="polite">
+              {totalItems}{" "}
+              {libraryView === "scan-errors"
+                ? totalItems === 1
+                  ? "scan problem"
+                  : "scan problems"
+                : libraryView === "artists"
                   ? totalItems === 1
-                    ? "scan problem"
-                    : "scan problems"
-                  : libraryView === "artists"
+                    ? "album artist"
+                    : "album artists"
+                  : libraryView === "genres"
                     ? totalItems === 1
-                      ? "album artist"
-                      : "album artists"
-                    : libraryView === "genres"
+                      ? "genre"
+                      : "genres"
+                    : libraryView === "formats"
                       ? totalItems === 1
-                        ? "genre"
-                        : "genres"
-                      : libraryView === "formats"
+                        ? "format"
+                        : "formats"
+                      : libraryView === "folders"
                         ? totalItems === 1
-                          ? "format"
-                          : "formats"
-                        : libraryView === "folders"
+                          ? "folder"
+                          : "folders"
+                        : libraryView === "tracks"
                           ? totalItems === 1
-                            ? "folder"
-                            : "folders"
-                          : libraryView === "tracks"
+                            ? "track"
+                            : "tracks"
+                          : libraryView === "data-quality"
                             ? totalItems === 1
-                              ? "track"
-                              : "tracks"
-                            : libraryView === "data-quality"
-                              ? totalItems === 1
-                                ? "album needing review"
-                                : "albums needing review"
-                              : totalItems === 1
-                                ? "album"
-                                : "albums"}
-                {query ? ` matching “${query}”` : ""}
-                {libraryView === "data-quality" && qualityFilter !== "all"
-                  ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
-                  : ""}
-                {libraryView === "albums" && albumArtistFilter
-                  ? ` by “${albumArtistFilter}”`
-                  : ""}
-                {libraryView === "albums" && trackRouteLabel
-                  ? ` containing “${trackRouteLabel}”`
-                  : ""}
-                {libraryView === "tracks" && trackFormatFilter
-                  ? ` in “${trackFormatFilter}” format`
-                  : ""}
-                {libraryView === "tracks" && trackFolderFilter
-                  ? ` in folder “${trackFolderFilter.path}”`
-                  : ""}
-                {libraryView === "tracks" && trackGenreFilter
-                  ? trackGenreFilter.missing
-                    ? " with no genre tag"
-                    : ` with genre “${trackGenreFilter.name}”`
-                  : ""}
-              </p>
-            )}
+                              ? "album needing review"
+                              : "albums needing review"
+                            : totalItems === 1
+                              ? "album"
+                              : "albums"}
+              {query ? ` matching “${query}”` : ""}
+              {libraryView === "data-quality" && qualityFilter !== "all"
+                ? ` with ${diagnosticFilterLabels[qualityFilter].toLowerCase()}`
+                : ""}
+              {libraryView === "albums" && albumArtistFilter
+                ? ` by “${albumArtistFilter}”`
+                : ""}
+              {libraryView === "albums" && trackRouteLabel
+                ? ` containing “${trackRouteLabel}”`
+                : ""}
+              {libraryView === "tracks" && trackFormatFilter
+                ? ` in “${trackFormatFilter}” format`
+                : ""}
+              {libraryView === "tracks" && trackFolderFilter
+                ? ` in folder “${trackFolderFilter.path}”`
+                : ""}
+              {libraryView === "tracks" && trackGenreFilter
+                ? trackGenreFilter.missing
+                  ? " with no genre tag"
+                  : ` with genre “${trackGenreFilter.name}”`
+                : ""}
+            </p>
+          )}
           {libraryOnboardingVisible ? (
             <LibraryOnboarding
               busy={busy}
@@ -2573,7 +2530,7 @@ export function App(): React.JSX.Element {
                 void startFirstScan(selectedRootId)
               }
             />
-          ) : activeView === "library" && libraryView === "scan-errors" ? (
+          ) : libraryView === "scan-errors" ? (
             <main className="errors" aria-labelledby="scan-errors">
               <h2 id="scan-errors">Scan problems</h2>
               {scanErrors.length === 0 ? (
@@ -2594,7 +2551,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "artists" ? (
+          ) : libraryView === "artists" ? (
             <main className="artists" aria-labelledby="album-artists">
               <h2 id="album-artists">Album artists</h2>
               {artists.length === 0 ? (
@@ -2633,7 +2590,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "genres" ? (
+          ) : libraryView === "genres" ? (
             <main className="genres" aria-labelledby="library-genres">
               <h2 id="library-genres">Genres</h2>
               {genres.length === 0 ? (
@@ -2683,7 +2640,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "formats" ? (
+          ) : libraryView === "formats" ? (
             <main className="formats" aria-labelledby="library-formats">
               <h2 id="library-formats">Formats</h2>
               {formats.length === 0 ? (
@@ -2724,7 +2681,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "folders" ? (
+          ) : libraryView === "folders" ? (
             <main className="folders" aria-labelledby="library-folders">
               <h2 id="library-folders">Folders</h2>
               {folders.length === 0 ? (
@@ -2770,7 +2727,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "tracks" ? (
+          ) : libraryView === "tracks" ? (
             <main className="tracks" aria-labelledby="library-tracks">
               <h2 id="library-tracks">Tracks</h2>
               {tracks.length === 0 ? (
@@ -2858,40 +2815,30 @@ export function App(): React.JSX.Element {
           ) : albums.length === 0 || !selectedAlbum ? (
             <main className="empty">
               <h2>
-                {activeView === "workbench"
-                  ? "Choose an album to begin"
-                  : query
-                    ? "No matching albums"
-                    : albumArtistFilter
-                      ? `No albums by ${albumArtistFilter}`
-                      : albumIdFilter
-                        ? "The selected track’s album is unavailable"
-                        : libraryView === "data-quality"
-                          ? "No albums need review"
-                          : "Your Library is empty"}
+                {query
+                  ? "No matching albums"
+                  : albumArtistFilter
+                    ? `No albums by ${albumArtistFilter}`
+                    : albumIdFilter
+                      ? "The selected track’s album is unavailable"
+                      : libraryView === "data-quality"
+                        ? "No albums need review"
+                        : "Your Library is empty"}
               </h2>
               <p>
-                {activeView === "workbench"
-                  ? "Select an album or track in Library, then open its contextual metadata workflow. No preview or write starts automatically."
-                  : query
-                    ? "Try a different album, artist, track, format, or path."
-                    : albumArtistFilter
-                      ? "Clear the album-artist filter to return to the full Library."
-                      : albumIdFilter
-                        ? "The track may have been removed or rescanned. Show all albums to continue browsing."
-                        : libraryView === "data-quality"
-                          ? qualityFilter === "all"
-                            ? "The current catalog has no album data-quality findings."
-                            : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
-                          : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+                {query
+                  ? "Try a different album, artist, track, format, or path."
+                  : albumArtistFilter
+                    ? "Clear the album-artist filter to return to the full Library."
+                    : albumIdFilter
+                      ? "The track may have been removed or rescanned. Show all albums to continue browsing."
+                      : libraryView === "data-quality"
+                        ? qualityFilter === "all"
+                          ? "The current catalog has no album data-quality findings."
+                          : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                        : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
               </p>
-              {activeView === "workbench" && (
-                <button onClick={() => setActiveView("library")}>
-                  Browse Library
-                </button>
-              )}
               {!query &&
-                activeView === "library" &&
                 !albumArtistFilter &&
                 !albumIdFilter &&
                 libraryView !== "data-quality" && (
@@ -2906,14 +2853,12 @@ export function App(): React.JSX.Element {
           ) : (
             <main
               className={
-                activeView === "workbench"
-                  ? "workspace workbench-workspace"
-                  : libraryAlbumDetailOpen
-                    ? "library-album-detail"
-                    : "library-album-collection"
+                libraryAlbumDetailOpen
+                  ? "library-album-detail"
+                  : "library-album-collection"
               }
             >
-              {activeView === "library" && !libraryAlbumDetailOpen && (
+              {!libraryAlbumDetailOpen && (
                 <LibraryAlbumCollection
                   albums={albums}
                   diagnosticsByAlbum={diagnosticsByAlbum}
@@ -2924,276 +2869,155 @@ export function App(): React.JSX.Element {
                   }}
                 />
               )}
-              {(activeView === "workbench" || libraryAlbumDetailOpen) && (
-                <section
-                  className={
-                    activeView === "library"
-                      ? "detail album-detail"
-                      : "detail workbench-detail"
-                  }
-                >
-                  <>
-                    {activeView === "library" && (
-                      <nav
-                        aria-label="Album detail navigation"
-                        className="album-detail-navigation"
-                      >
-                        <button onClick={closeLibraryAlbum} type="button">
-                          Back to albums
-                        </button>
-                      </nav>
-                    )}
-                    <div className="section-heading album-context">
-                      {activeView === "library" && (
-                        <AlbumArtworkPlaceholder album={selectedAlbum} />
-                      )}
-                      <div>
-                        <p className="eyebrow">
-                          {activeView === "workbench"
-                            ? "Current album context"
-                            : "Album detail"}
-                        </p>
-                        <h2
-                          ref={
-                            activeView === "library"
-                              ? albumDetailHeadingRef
-                              : undefined
-                          }
-                          tabIndex={activeView === "library" ? -1 : undefined}
-                        >
-                          {selectedAlbum.title}
-                        </h2>
-                        <p>
-                          {selectedAlbum.albumArtist} ·{" "}
-                          {selectedAlbumReleaseDate?.status === "consistent"
-                            ? selectedAlbumReleaseDate.value
-                            : selectedAlbumReleaseDate?.status === "mixed"
-                              ? "Mixed release dates"
-                              : "Release date not set"}{" "}
-                          · {selectedAlbum.tracks.length} tracks
-                          {selectedTrack
-                            ? ` · Selected: ${selectedTrack.tags.title}`
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="actions">
-                        {activeView === "library" ? (
-                          <AlbumActionsMenu
-                            albumTitle={selectedAlbum.title}
-                            busy={busy}
-                            syncDisabled={
-                              syncAlbums.length >= 100 &&
-                              !syncAlbums.some(
-                                (album) => album.id === selectedAlbum.id,
-                              )
-                            }
-                            onAddToSync={addSelectedAlbumToSync}
-                            onEditMetadata={() =>
-                              openLibraryAlbumEditingTool("title")
-                            }
-                            onEditTrackOrder={() =>
-                              openLibraryAlbumEditingTool("sequence")
-                            }
-                            onOpenHistory={() =>
-                              openLibraryAlbumEditingTool("history")
-                            }
-                          />
-                        ) : (
-                          <button onClick={() => setActiveView("library")}>
-                            Back to Library
-                          </button>
-                        )}
-                      </div>
+              {libraryAlbumDetailOpen && (
+                <section className="detail album-detail">
+                  <nav
+                    aria-label="Album detail navigation"
+                    className="album-detail-navigation"
+                  >
+                    <button onClick={closeLibraryAlbum} type="button">
+                      Back to albums
+                    </button>
+                  </nav>
+                  <div className="section-heading album-context">
+                    <AlbumArtworkPlaceholder album={selectedAlbum} />
+                    <div>
+                      <p className="eyebrow">Album detail</p>
+                      <h2 ref={albumDetailHeadingRef} tabIndex={-1}>
+                        {selectedAlbum.title}
+                      </h2>
+                      <p>
+                        {selectedAlbum.albumArtist} ·{" "}
+                        {selectedAlbumReleaseDate?.status === "consistent"
+                          ? selectedAlbumReleaseDate.value
+                          : selectedAlbumReleaseDate?.status === "mixed"
+                            ? "Mixed release dates"
+                            : "Release date not set"}{" "}
+                        · {selectedAlbum.tracks.length} tracks
+                        {selectedTrack
+                          ? ` · Selected: ${selectedTrack.tags.title}`
+                          : ""}
+                      </p>
                     </div>
-                    {activeView === "workbench" && (
-                      <WorkbenchNavigation
-                        activeTool={workbenchTool}
-                        selectedTrackTitle={selectedTrack?.tags.title}
-                        onSelect={setWorkbenchTool}
+                    <div className="actions">
+                      <AlbumActionsMenu
+                        albumTitle={selectedAlbum.title}
+                        busy={busy}
+                        syncDisabled={
+                          syncAlbums.length >= 100 &&
+                          !syncAlbums.some(
+                            (album) => album.id === selectedAlbum.id,
+                          )
+                        }
+                        onAddToSync={addSelectedAlbumToSync}
+                        onEditMetadata={() =>
+                          openLibraryAlbumEditingTool("title")
+                        }
+                        onEditTrackOrder={() =>
+                          openLibraryAlbumEditingTool("sequence")
+                        }
+                        onOpenHistory={() =>
+                          openLibraryAlbumEditingTool("history")
+                        }
                       />
-                    )}
-                    {(activeView === "library" ||
-                      workbenchTool === "overview") && (
-                      <section
-                        className="card diagnostics"
-                        aria-label="Album data quality"
-                      >
-                        <h3>
-                          {activeView === "library"
-                            ? "Album data quality"
-                            : "Album review"}
-                        </h3>
-                        <p>
-                          Findings come from the current local catalog. They
-                          select a review workflow but never infer, preview, or
-                          write a correction.
-                        </p>
-                        {albumDiagnostics.length === 0 ? (
-                          <p>
-                            Status: No data-quality findings for this album.
-                          </p>
-                        ) : (
-                          <ol className="diagnostic-list">
-                            {albumDiagnostics.map((finding) => {
-                              const affectedTracks =
-                                finding.affectedTrackIds.flatMap((fileId) => {
-                                  const track = selectedAlbum.tracks.find(
-                                    (candidate) => candidate.id === fileId,
-                                  );
-                                  return track ? [track] : [];
-                                });
-                              return (
-                                <li key={finding.id}>
-                                  <article
-                                    aria-labelledby={`diagnostic-${finding.id}`}
-                                  >
-                                    <p className="diagnostic-status">
-                                      Status:{" "}
-                                      {finding.severity === "needs-attention"
-                                        ? "Needs attention"
-                                        : "Review recommended"}
-                                    </p>
-                                    <h4 id={`diagnostic-${finding.id}`}>
-                                      {finding.title}
-                                    </h4>
-                                    <p>{finding.explanation}</p>
-                                    <h5>Affected files</h5>
-                                    <ul>
-                                      {affectedTracks.map((track) => (
-                                        <li key={track.id}>{track.path}</li>
-                                      ))}
-                                    </ul>
-                                    <button
-                                      disabled={busy}
-                                      onClick={() => routeDiagnostic(finding)}
-                                    >
-                                      {diagnosticActionLabel(finding.workflow)}
-                                    </button>
-                                  </article>
-                                </li>
+                    </div>
+                  </div>
+                  <section
+                    className="card diagnostics"
+                    aria-label="Album data quality"
+                  >
+                    <h3>Album data quality</h3>
+                    <p>
+                      Findings come from the current local catalog. They select
+                      a review workflow but never infer, preview, or write a
+                      correction.
+                    </p>
+                    {albumDiagnostics.length === 0 ? (
+                      <p>Status: No data-quality findings for this album.</p>
+                    ) : (
+                      <ol className="diagnostic-list">
+                        {albumDiagnostics.map((finding) => {
+                          const affectedTracks =
+                            finding.affectedTrackIds.flatMap((fileId) => {
+                              const track = selectedAlbum.tracks.find(
+                                (candidate) => candidate.id === fileId,
                               );
-                            })}
-                          </ol>
-                        )}
-                      </section>
+                              return track ? [track] : [];
+                            });
+                          return (
+                            <li key={finding.id}>
+                              <article
+                                aria-labelledby={`diagnostic-${finding.id}`}
+                              >
+                                <p className="diagnostic-status">
+                                  Status:{" "}
+                                  {finding.severity === "needs-attention"
+                                    ? "Needs attention"
+                                    : "Review recommended"}
+                                </p>
+                                <h4 id={`diagnostic-${finding.id}`}>
+                                  {finding.title}
+                                </h4>
+                                <p>{finding.explanation}</p>
+                                <h5>Affected files</h5>
+                                <ul>
+                                  {affectedTracks.map((track) => (
+                                    <li key={track.id}>{track.path}</li>
+                                  ))}
+                                </ul>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => routeDiagnostic(finding)}
+                                >
+                                  {diagnosticActionLabel(finding.workflow)}
+                                </button>
+                              </article>
+                            </li>
+                          );
+                        })}
+                      </ol>
                     )}
-                    {(activeView === "library" ||
-                      workbenchTool === "overview") && (
-                      <section
-                        className="album-tracks"
-                        aria-labelledby="album-tracks-title"
-                      >
-                        <div className="track-section-heading">
-                          <div>
-                            <h3 id="album-tracks-title">Tracks</h3>
-                            <p>
-                              Select a track to edit its common metadata. Use
-                              More for read-only technical information.
-                            </p>
-                          </div>
-                          <span>{selectedAlbum.tracks.length} total</span>
-                        </div>
-                        <div className="track-list">
-                          {selectedAlbum.tracks.map((track) => (
-                            <LibraryTrackDetail
-                              busy={busy}
-                              key={track.id}
-                              mode={activeView}
-                              selectionPurpose={
-                                workbenchTool === "sequence"
-                                  ? "track ordering"
-                                  : workbenchTool === "batch"
-                                    ? "shared-field editing"
-                                    : "shared metadata or track ordering"
-                              }
-                              selectedForBatch={batchTrackIds.includes(
-                                track.id,
-                              )}
-                              track={track}
-                              onEdit={() =>
-                                activeView === "library"
-                                  ? editLibraryTrack(track)
-                                  : editTrack(track)
-                              }
-                              onMoreInfo={() => setTechnicalTrackId(track.id)}
-                              onToggleBatch={() => toggleBatchTrack(track.id)}
-                              registerEditTrigger={(element) => {
-                                if (element)
-                                  trackEditTriggerRefs.current.set(
-                                    track.id,
-                                    element,
-                                  );
-                                else
-                                  trackEditTriggerRefs.current.delete(track.id);
-                              }}
-                            />
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                    {activeView === "workbench" &&
-                      (workbenchTool === "batch" ||
-                        workbenchTool === "sequence") && (
-                        <>
-                          {renderTrackContext(
-                            workbenchTool === "sequence"
-                              ? "sequence"
-                              : "shared",
-                            editTrack,
-                          )}
-                        </>
-                      )}
-                    {activeView === "workbench" &&
-                      workbenchTool === "batch" &&
-                      sharedFieldEditor}
-                    {activeView === "workbench" &&
-                      workbenchTool === "sequence" &&
-                      trackOrderEditor}
-                    {activeView === "workbench" &&
-                      workbenchTool === "track" &&
-                      selectedTrack && (
-                        <TrackMetadataEditor
+                  </section>
+                  <section
+                    className="album-tracks"
+                    aria-labelledby="album-tracks-title"
+                  >
+                    <div className="track-section-heading">
+                      <div>
+                        <h3 id="album-tracks-title">Tracks</h3>
+                        <p>
+                          Select a track to edit its common metadata. Use More
+                          for read-only technical information.
+                        </p>
+                      </div>
+                      <span>{selectedAlbum.tracks.length} total</span>
+                    </div>
+                    <div className="track-list">
+                      {selectedAlbum.tracks.map((track) => (
+                        <LibraryTrackDetail
                           busy={busy}
-                          draft={trackDraft}
-                          error={trackEditError}
-                          onCancelPreview={() => {
-                            setTrackEditPreview(undefined);
-                            setTrackEditResult(undefined);
-                            setTrackEditError(undefined);
+                          key={track.id}
+                          mode="library"
+                          track={track}
+                          onEdit={() => editLibraryTrack(track)}
+                          onMoreInfo={() => setTechnicalTrackId(track.id)}
+                          registerEditTrigger={(element) => {
+                            if (element)
+                              trackEditTriggerRefs.current.set(
+                                track.id,
+                                element,
+                              );
+                            else trackEditTriggerRefs.current.delete(track.id);
                           }}
-                          onClose={() => {
-                            setSelectedTrackId(undefined);
-                            setTrackEditPreview(undefined);
-                            setTrackEditResult(undefined);
-                            setTrackEditError(undefined);
-                          }}
-                          onConfirm={() => void applyTrackEdit()}
-                          onDraftChange={(field, value) => {
-                            setTrackDraft((draft) => ({
-                              ...draft,
-                              [field]: value,
-                            }));
-                            setTrackEditPreview(undefined);
-                            setTrackEditResult(undefined);
-                            setTrackEditError(undefined);
-                          }}
-                          onPreview={() => void previewTrackEdit()}
-                          preview={trackEditPreview}
-                          ref={trackEditorRef}
-                          result={trackEditResult}
-                          track={selectedTrack}
                         />
-                      )}
-                    {activeView === "workbench" &&
-                      workbenchTool === "album" &&
-                      renderAlbumTitleWorkbench(true)}
-                  </>
+                      ))}
+                    </div>
+                  </section>
                 </section>
               )}
             </main>
           )}
-          {activeView === "library" &&
-            !libraryOnboardingVisible &&
+          {!libraryOnboardingVisible &&
             !libraryAlbumDetailOpen &&
             totalItems > PAGE_SIZE && (
               <nav className="pagination" aria-label="Library pages">

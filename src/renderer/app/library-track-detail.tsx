@@ -16,22 +16,16 @@ type AlbumTrack = CatalogAlbum["tracks"][number];
 export function LibraryTrackDetail({
   busy,
   mode,
-  selectionPurpose,
-  selectedForBatch,
   track,
   onEdit,
   onMoreInfo,
-  onToggleBatch,
   registerEditTrigger,
 }: {
   readonly busy: boolean;
-  readonly mode: "library" | "technical" | "workbench";
-  readonly selectionPurpose: string;
-  readonly selectedForBatch: boolean;
+  readonly mode: "library" | "technical";
   readonly track: AlbumTrack;
   readonly onEdit: () => void;
   readonly onMoreInfo?: () => void;
-  readonly onToggleBatch: () => void;
   readonly registerEditTrigger?: (element: HTMLButtonElement | null) => void;
 }): React.JSX.Element {
   const [menuAnchor, setMenuAnchor] = useState<ActionMenuAnchor>();
@@ -204,21 +198,6 @@ export function LibraryTrackDetail({
             </section>
           </div>
         </details>
-        {mode === "workbench" && (
-          <div className="track-actions">
-            <label>
-              <input
-                type="checkbox"
-                checked={selectedForBatch}
-                onChange={onToggleBatch}
-              />
-              Select {track.tags.title} for {selectionPurpose}
-            </label>
-            <button disabled={busy} onClick={onEdit} type="button">
-              Edit track metadata
-            </button>
-          </div>
-        )}
       </div>
     </details>
   );

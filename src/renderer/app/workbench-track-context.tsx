@@ -155,11 +155,8 @@ export function WorkbenchTrackContext({
                 busy={busy}
                 key={track.id}
                 mode="technical"
-                selectedForBatch={selectedTrackIds.includes(track.id)}
-                selectionPurpose={selectionPurpose}
                 track={track}
                 onEdit={() => onEditTrack(track)}
-                onToggleBatch={() => onToggleTrack(track.id)}
               />
             ))}
           </div>

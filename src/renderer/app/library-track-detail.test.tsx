@@ -41,9 +41,6 @@ function trackRow(onEdit = vi.fn(), onMoreInfo = vi.fn()) {
         mode="library"
         onEdit={onEdit}
         onMoreInfo={onMoreInfo}
-        onToggleBatch={vi.fn()}
-        selectedForBatch={false}
-        selectionPurpose="shared metadata"
         track={track}
       />,
     ),
