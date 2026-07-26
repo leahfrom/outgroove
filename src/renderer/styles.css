@@ -1752,11 +1752,6 @@ h1 {
 .album-detail .album-artwork-placeholder > span {
   font-size: clamp(1.5rem, 4vw, 2.5rem);
 }
-@media (prefers-reduced-motion: reduce) {
-  .album-artwork-placeholder.loading {
-    animation: none;
-  }
-}
 .workspace > aside,
 .detail,
 .errors,
@@ -3295,5 +3290,66 @@ td {
 @media (max-width: 380px) {
   .album-editing-tools {
     grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .album-artwork-placeholder.loading {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  [tabindex="-1"]:focus-visible,
+  .confirmation-panel:focus,
+  .confirmation-panel .primary:focus,
+  .workflow-result:focus {
+    outline-color: Highlight;
+  }
+  .primary-navigation button[aria-current="page"],
+  .album-editing-tools button[aria-current="page"],
+  .album-title-navigation button[aria-current="page"],
+  .settings-navigation button[aria-current="page"],
+  .sync-navigation button[aria-current="step"],
+  .sync-setup-nav button[aria-current="page"] {
+    border: 2px solid Highlight;
+  }
+  .primary {
+    border: 2px solid ButtonText;
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+  .modal-backdrop {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+  .modal-sheet,
+  .action-menu {
+    border: 2px solid CanvasText;
+  }
+  .tag-comparison-row[data-changed="true"],
+  .sequence-comparison > ol > li[data-changed="true"] {
+    border-inline-start: 4px solid Highlight;
+  }
+  .sequence-comparison > ol > li[data-invalid="true"] {
+    outline: 2px dashed CanvasText;
+    outline-offset: -2px;
+  }
+  .comparison-status.changed,
+  .comparison-status.invalid,
+  .album-quality-status.review,
+  .album-quality-status.needs-attention {
+    border: 2px solid CanvasText;
   }
 }
