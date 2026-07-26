@@ -53,6 +53,21 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("ipcRenderer");
   });
 
+  it("maps artwork identities to a fixed path-free IPC channel", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const request = {
+      albumIds: ["6fdf7677-0e73-4f9a-85fd-6612ef381bdf"],
+    };
+
+    await api.loadAlbumArtwork(request);
+
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.loadAlbumArtwork,
+      request,
+    );
+    expect(api).not.toHaveProperty("readFile");
+  });
+
   it("maps a multi-album DAP selection to the fixed profile channel", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const request = {

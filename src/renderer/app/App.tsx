@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AlbumArtworkThumbnailDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -59,7 +60,7 @@ import {
   type NoticeTone,
 } from "./application-shell";
 import {
-  AlbumArtworkPlaceholder,
+  AlbumArtwork,
   LibraryAlbumCollection,
 } from "./library-album-collection";
 import {
@@ -172,6 +173,9 @@ export function App(): React.JSX.Element {
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [librarySetupError, setLibrarySetupError] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
+  const [artworkByAlbum, setArtworkByAlbum] = useState<
+    ReadonlyMap<string, AlbumArtworkThumbnailDto | "loading">
+  >(new Map());
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [genres, setGenres] = useState<readonly LibraryGenreDto[]>([]);
   const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
@@ -560,6 +564,36 @@ export function App(): React.JSX.Element {
     trackFormatFilter,
     trackGenreFilter,
   ]);
+
+  useEffect(() => {
+    if (albums.length === 0) return;
+    const albumIds = albums.map((album) => album.id);
+    let cancelled = false;
+    setArtworkByAlbum((current) => {
+      const next = new Map<string, AlbumArtworkThumbnailDto | "loading">();
+      for (const albumId of albumIds)
+        next.set(albumId, current.get(albumId) ?? "loading");
+      return next;
+    });
+    void window.outgroove.loadAlbumArtwork({ albumIds }).then((result) => {
+      if (cancelled) return;
+      setArtworkByAlbum((current) => {
+        const next = new Map<string, AlbumArtworkThumbnailDto | "loading">();
+        for (const albumId of albumIds)
+          next.set(albumId, current.get(albumId) ?? "loading");
+        if (result.ok)
+          for (const artwork of result.value)
+            next.set(artwork.albumId, artwork);
+        else
+          for (const albumId of albumIds)
+            next.set(albumId, { albumId, status: "invalid" });
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [albums]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -2861,6 +2895,7 @@ export function App(): React.JSX.Element {
               {!libraryAlbumDetailOpen && (
                 <LibraryAlbumCollection
                   albums={albums}
+                  artworkByAlbum={artworkByAlbum}
                   diagnosticsByAlbum={diagnosticsByAlbum}
                   onOpenAlbum={openLibraryAlbum}
                   registerAlbumTrigger={(albumId, element) => {
@@ -2880,7 +2915,10 @@ export function App(): React.JSX.Element {
                     </button>
                   </nav>
                   <div className="section-heading album-context">
-                    <AlbumArtworkPlaceholder album={selectedAlbum} />
+                    <AlbumArtwork
+                      album={selectedAlbum}
+                      artwork={artworkByAlbum.get(selectedAlbum.id)}
+                    />
                     <div>
                       <p className="eyebrow">Album detail</p>
                       <h2 ref={albumDetailHeadingRef} tabIndex={-1}>

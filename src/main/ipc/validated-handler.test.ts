@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  albumArtworkRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
@@ -29,6 +30,26 @@ import {
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
+  it("accepts only bounded album identities for artwork queries", async () => {
+    const useCase = vi.fn(() => []);
+    const handler = createValidatedHandler(albumArtworkRequestSchema, useCase);
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { albumIds: [albumId] })).resolves.toEqual({
+      ok: true,
+      value: [],
+    });
+    expect(useCase).toHaveBeenCalledWith({ albumIds: [albumId] });
+    for (const request of [
+      { albumIds: [] },
+      { albumIds: [albumId, albumId] },
+      { albumIds: [albumId], path: "/private/library/cover.png" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
   it("rejects malformed and unknown request fields without calling the use case", async () => {
     const useCase = vi.fn(() => "ok");
     const handler = createValidatedHandler(scanRequestSchema, useCase);

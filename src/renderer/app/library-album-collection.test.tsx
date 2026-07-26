@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import type { AlbumArtworkThumbnailDto } from "../../shared/contracts/api";
 import { LibraryAlbumCollection } from "./library-album-collection";
 
 function album(
@@ -60,6 +61,45 @@ describe("LibraryAlbumCollection", () => {
     expect(
       collection.querySelectorAll(".album-artwork-placeholder"),
     ).toHaveLength(3);
+  });
+
+  it("progressively replaces loading and fallback covers with local thumbnails", () => {
+    const available = album("available", "Covered Album", ["2024"]);
+    const loading = album("loading", "Loading Album", ["2023"]);
+    const missing = album("missing-cover", "Missing Cover", ["2022"]);
+    render(
+      <LibraryAlbumCollection
+        albums={[available, loading, missing]}
+        artworkByAlbum={
+          new Map<string, AlbumArtworkThumbnailDto | "loading">([
+            [
+              available.id,
+              {
+                albumId: available.id,
+                status: "available",
+                dataUrl: "data:image/png;base64,thumbnail",
+              } as const,
+            ],
+            [loading.id, "loading" as const],
+            [missing.id, { albumId: missing.id, status: "missing" } as const],
+          ])
+        }
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={vi.fn()}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelector(".album-artwork")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,thumbnail",
+    );
+    expect(
+      document.querySelectorAll(".album-artwork-placeholder"),
+    ).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".album-artwork-placeholder.loading"),
+    ).toHaveLength(1);
   });
 
   it("opens an album with keyboard activation", async () => {

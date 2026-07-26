@@ -7,12 +7,14 @@ import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
 import { WorkerLibraryQualityQuery } from "./adapters/database/worker-library-quality-query";
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
+import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
+import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -56,6 +58,10 @@ async function createWindow(): Promise<void> {
   qualityQuery = new WorkerLibraryQualityQuery(databasePath);
   const reader = new MusicMetadataReader();
   const writer = new SafeMetadataWriter(reader);
+  const artwork = new LoadAlbumArtwork(
+    database,
+    new ElectronArtworkThumbnailEncoder(),
+  );
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
@@ -70,6 +76,7 @@ async function createWindow(): Promise<void> {
     backup,
     scanJobs: new ScanJobCoordinator(database, scanner),
     libraryRoots: new ManageLibraryRoots(database),
+    artwork,
     editor: new EditAlbumTitle(database, writer),
     trackEditor: new EditTrackTags(database, writer),
     sync: new DeviceSync(database),
@@ -106,6 +113,31 @@ async function createWindow(): Promise<void> {
     if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
       throw new Error(
         "Packaged library data-quality worker returned an invalid page.",
+      );
+    const preservationRoot = database.addLibraryRoot(
+      join(app.getAppPath(), "fixtures", "audio", "preservation"),
+      pathComparisonKey(
+        join(app.getAppPath(), "fixtures", "audio", "preservation"),
+      ),
+    );
+    const preservationResult = await scanner.execute(preservationRoot.id);
+    if (preservationResult.parsed !== 2 || preservationResult.errors !== 0)
+      throw new Error("Packaged artwork fixtures could not be scanned.");
+    const preservationAlbum = database.queryLibrary({
+      query: "Preservation Album",
+      view: "albums",
+      offset: 0,
+      limit: 1,
+    }).albums[0];
+    if (!preservationAlbum)
+      throw new Error("Packaged artwork fixture album was not cataloged.");
+    const thumbnail = (await artwork.load([preservationAlbum.id]))[0];
+    if (
+      thumbnail?.status !== "available" ||
+      !thumbnail.dataUrl?.startsWith("data:image/png;base64,")
+    )
+      throw new Error(
+        "Packaged local artwork extraction and thumbnail encoding failed.",
       );
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
