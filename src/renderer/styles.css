@@ -165,29 +165,6 @@ button:disabled {
   margin-bottom: 0;
   color: #526159;
 }
-.workbench-tools {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding: 0 0 0.85rem;
-  border-bottom: 1px solid #d8ddd8;
-}
-.workbench-tools button {
-  flex: 0 0 auto;
-}
-.workbench-tools button[aria-current="page"] {
-  border-color: #245c39;
-  background: #eef8f1;
-  font-weight: 750;
-}
-.workbench-tools + .card {
-  margin-top: 1.5rem;
-  padding-top: 0;
-  border-top: 0;
-}
-.workspace.workbench-workspace {
-  grid-template-columns: minmax(0, 1fr);
-}
 .sync-view,
 .settings-view {
   display: grid;
