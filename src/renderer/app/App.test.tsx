@@ -23,6 +23,24 @@ async function openPrimaryView(
   );
 }
 
+async function openLibraryAlbum(
+  user: ReturnType<typeof userEvent.setup>,
+  albumName = "Fixture Album",
+): Promise<void> {
+  const albums = await screen.findByRole("list", { name: "Albums" });
+  const albumButton = within(albums).getByRole("button", {
+    name: new RegExp(`^${albumName}`, "u"),
+  });
+  albumButton.focus();
+  await user.keyboard("{Enter}");
+  const heading = await screen.findByRole("heading", {
+    level: 2,
+    name: albumName,
+  });
+  expect(heading).toBeVisible();
+  expect(heading).toHaveFocus();
+}
+
 async function openSyncSetupSection(
   user: ReturnType<typeof userEvent.setup>,
   name: "Selection draft" | "Saved profiles",
@@ -646,7 +664,7 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openLibraryAlbum(user);
     const trackLabel = screen.getByText("1.1 Track");
     const details = trackLabel.closest("details");
     const summary = trackLabel.closest("summary");
@@ -686,7 +704,7 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("ID3v2:TALB");
   });
 
-  it("marks the selected album without exposing Workbench controls in Library", async () => {
+  it("opens an album with the keyboard and restores its Library focus", async () => {
     const mockApi = api(true);
     vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
       ok: true,
@@ -708,27 +726,42 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const albums = await screen.findByLabelText("Albums");
-    const first = within(albums).getByRole("button", {
-      name: /^Fixture Album/u,
-    });
+    const albums = await screen.findByRole("list", { name: "Albums" });
     const second = within(albums).getByRole("button", {
       name: /^Second Album/u,
     });
 
-    expect(first).toHaveAttribute("aria-current", "true");
-    expect(second).not.toHaveAttribute("aria-current");
     expect(
       screen.queryByRole("button", { name: "Edit track metadata" }),
     ).not.toBeInTheDocument();
 
     second.focus();
     await user.keyboard("{Enter}");
-    expect(second).toHaveAttribute("aria-current", "true");
-    expect(first).not.toHaveAttribute("aria-current");
     expect(
       screen.getByRole("heading", { level: 2, name: "Second Album" }),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("list", { name: "Albums" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit track metadata" }),
+    ).not.toBeInTheDocument();
+
+    await openPrimaryView(user, "Settings");
+    await openPrimaryView(user, "Library");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Second Album" }),
+    ).toBeVisible();
+
+    const back = screen.getByRole("button", { name: "Back to albums" });
+    back.focus();
+    await user.keyboard("{Enter}");
+    const restoredAlbums = await screen.findByRole("list", { name: "Albums" });
+    expect(
+      within(restoredAlbums).getByRole("button", {
+        name: /^Second Album/u,
+      }),
+    ).toHaveFocus();
   });
 
   it("shows per-file before/after preview before exposing explicit confirmation", async () => {
@@ -1380,6 +1413,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openLibraryAlbum(user);
     const diagnostics = await screen.findByLabelText("Album data quality");
     const duplicateFinding = within(diagnostics)
       .getByRole("heading", { name: "Duplicate number on disc 1" })
@@ -1456,6 +1490,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
 
+    await openLibraryAlbum(user);
     const diagnostics = await screen.findByLabelText("Album data quality");
     expect(
       within(diagnostics).getByRole("heading", {
@@ -1541,19 +1576,12 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const albumList = await screen.findByLabelText("Albums");
+    const albumList = await screen.findByRole("list", { name: "Albums" });
     expect(
-      within(albumList).getByText(
-        "Albums needing review on this page: 1 of 2.",
-      ),
+      screen.getByText("1 of 2 albums on this page need review."),
     ).toBeVisible();
     expect(
-      within(albumList).getByText("Status: No data-quality findings"),
-    ).toBeVisible();
-    expect(
-      within(albumList).getByText(
-        "Status: 1 data-quality finding — needs attention",
-      ),
+      within(albumList).getByText("1 finding · Needs attention"),
     ).toBeVisible();
 
     await user.click(
@@ -3198,10 +3226,7 @@ describe("tag edit UI safety states", () => {
     );
     expect(await screen.findByText("1 album needing review")).toBeVisible();
     expect(
-      screen.getByText("Albums needing review on this page: 1 of 1."),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: "Missing track titles" }),
+      screen.getByText("1 of 1 albums on this page need review."),
     ).toBeVisible();
 
     await user.selectOptions(issueType, "missing-tags");
@@ -3216,6 +3241,10 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       screen.getByText("1 album needing review with missing/placeholder tags"),
+    ).toBeVisible();
+    await openLibraryAlbum(user, "Flagged Album");
+    expect(
+      screen.getByRole("heading", { name: "Missing track titles" }),
     ).toBeVisible();
   });
 
@@ -3391,11 +3420,11 @@ describe("tag edit UI safety states", () => {
     render(<App />);
 
     expect(
-      await screen.findByText("Albums needing review on this page: 0 of 1."),
+      await screen.findByText("No data-quality findings on this page."),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(
-      await screen.findByText("Albums needing review on this page: 1 of 1."),
+      await screen.findByText("1 of 1 albums on this page need review."),
     ).toBeVisible();
     expect(
       screen.queryByText(/review on this page: 1 of 21/u),
@@ -3479,13 +3508,15 @@ describe("tag edit UI safety states", () => {
     });
     const user = userEvent.setup();
     render(<App />);
-    const addFirst = await screen.findByRole("button", {
+    await openLibraryAlbum(user);
+    const addFirst = screen.getByRole("button", {
       name: "Add Fixture Album to Sync",
     });
     addFirst.focus();
     await user.keyboard("{Enter}");
     await openPrimaryView(user, "Library");
-    await user.click(screen.getByRole("button", { name: /^Second Album/u }));
+    await user.click(screen.getByRole("button", { name: "Back to albums" }));
+    await openLibraryAlbum(user, "Second Album");
     const addSecond = screen.getByRole("button", {
       name: "Add Second Album to Sync",
     });
