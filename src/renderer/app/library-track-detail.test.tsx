@@ -101,10 +101,12 @@ describe("LibraryTrackDetail", () => {
     const row = view.container.querySelector(".library-track-row");
     if (!(row instanceof HTMLElement)) throw new Error("Track row missing");
 
-    fireEvent.contextMenu(row);
-    expect(
-      screen.getByRole("menu", { name: "Actions for Fixture Track" }),
-    ).toBeVisible();
+    fireEvent.contextMenu(row, { clientX: 120, clientY: 80 });
+    const pointerMenu = screen.getByRole("menu", {
+      name: "Actions for Fixture Track",
+    });
+    expect(pointerMenu).toBeVisible();
+    expect(pointerMenu).toHaveStyle({ left: "120px", top: "80px" });
     await user.keyboard("{Escape}");
 
     activation.focus();

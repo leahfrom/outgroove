@@ -23,14 +23,14 @@ export function TrackTechnicalInfo({
       ariaLabel={`More information about ${track.tags.title}`}
       className="technical-info-sheet"
       closeLabel="Close information"
+      toolbarLabel="Track information"
       onClose={onClose}
     >
       <header className="technical-info-heading">
         <p className="eyebrow">Read-only track information</p>
         <h2>{track.tags.title}</h2>
-        <p>
-          {track.tags.artist} · {track.tags.album}
-        </p>
+        <p className="technical-info-artist">{track.tags.artist}</p>
+        <p className="technical-info-album">From {track.tags.album}</p>
       </header>
 
       <section aria-labelledby="technical-properties-title">

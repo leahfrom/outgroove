@@ -46,6 +46,7 @@ import {
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
+import { AlbumActionsMenu } from "./album-actions-menu";
 import {
   AlbumTitleWorkbench,
   type AlbumTitleSection,
@@ -1950,6 +1951,15 @@ export function App(): React.JSX.Element {
     if (tool === "history") void refreshEditHistory(selectedAlbum.id);
   };
 
+  const addSelectedAlbumToSync = (): void => {
+    if (!selectedAlbum) return;
+    if (!syncAlbums.some((album) => album.id === selectedAlbum.id))
+      toggleSyncAlbum(selectedAlbum);
+    setSyncStage("setup");
+    setSyncSetupSection("selection");
+    setActiveView("sync");
+  };
+
   const closeLibraryAlbum = (): void => {
     if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
     setLibraryAlbumDetailOpen(false);
@@ -2143,34 +2153,6 @@ export function App(): React.JSX.Element {
           {activeView === "library" &&
             !libraryOnboardingVisible &&
             !libraryAlbumDetailOpen && (
-              <section className="view-actions" aria-label="Library actions">
-                <div>
-                  <p className="eyebrow">Local collection</p>
-                  <h2>Browse your Library</h2>
-                  <p>
-                    Open an album for its tracks, quality findings, editing, and
-                    Sync actions.
-                  </p>
-                </div>
-                <div className="actions">
-                  <button
-                    disabled={busy || scanActive}
-                    onClick={() => void chooseAndScan()}
-                  >
-                    Choose Library folder
-                  </button>
-                  <button
-                    disabled={busy || scanActive || !rootId}
-                    onClick={() => void rescan()}
-                  >
-                    Scan current folder
-                  </button>
-                </div>
-              </section>
-            )}
-          {activeView === "library" &&
-            !libraryOnboardingVisible &&
-            !libraryAlbumDetailOpen && (
               <>
                 <form
                   className="library-toolbar"
@@ -2181,7 +2163,9 @@ export function App(): React.JSX.Element {
                     setQuery(searchText.trim());
                   }}
                 >
-                  <label htmlFor="library-search">Search Library</label>
+                  <label className="visually-hidden" htmlFor="library-search">
+                    Search Library
+                  </label>
                   <input
                     id="library-search"
                     type="search"
@@ -2189,7 +2173,9 @@ export function App(): React.JSX.Element {
                     placeholder="Album, artist, genre, track, format, or path"
                     onChange={(event) => setSearchText(event.target.value)}
                   />
-                  <label htmlFor="library-view">View</label>
+                  <label className="visually-hidden" htmlFor="library-view">
+                    View
+                  </label>
                   <select
                     id="library-view"
                     value={libraryView}
@@ -2322,133 +2308,194 @@ export function App(): React.JSX.Element {
                     </button>
                   )}
                 </form>
-                <section
-                  className="saved-filters"
-                  aria-labelledby="saved-filters-title"
-                >
-                  <div className="section-heading">
+                <details className="library-tools-disclosure">
+                  <summary>
                     <div>
-                      <p className="eyebrow">Local shortcuts</p>
-                      <h2 id="saved-filters-title">Saved Library filters</h2>
+                      <strong>Library tools</strong>
+                      <span>Saved filters and scanning</span>
                     </div>
-                    <form
-                      className="inline"
-                      aria-label="Save current Library filter"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveCurrentLibraryFilter();
-                      }}
+                    <span>
+                      {savedFilters.length === 0
+                        ? "No saved filters"
+                        : `${savedFilters.length} saved ${
+                            savedFilters.length === 1 ? "filter" : "filters"
+                          }`}
+                    </span>
+                  </summary>
+                  <div className="library-tools-content">
+                    <section
+                      className="library-scan-tools"
+                      aria-labelledby="library-scan-tools-title"
                     >
-                      <label htmlFor="saved-filter-name">Filter name</label>
-                      <input
-                        id="saved-filter-name"
-                        value={savedFilterName}
-                        maxLength={100}
-                        placeholder="For example, Ambient FLAC"
-                        onChange={(event) =>
-                          setSavedFilterName(event.target.value)
-                        }
-                      />
-                      <button
-                        type="submit"
-                        disabled={
-                          savedFilterBusy ||
-                          !savedFilterName.trim() ||
-                          Boolean(albumIdFilter)
-                        }
-                      >
-                        Save current filter
-                      </button>
-                    </form>
-                  </div>
-                  <p>
-                    Saves the active search and view. Page position and exact
-                    album-detail routes remain temporary.
-                  </p>
-                  {albumIdFilter && (
-                    <p>
-                      Status: Return to a normal Library view before saving.
-                    </p>
-                  )}
-                  {savedFilters.length === 0 ? (
-                    <p>No saved Library filters yet.</p>
-                  ) : (
-                    <ul>
-                      {savedFilters.map((saved) => (
-                        <li key={saved.id}>
-                          <div>
-                            <strong>{saved.name}</strong>
-                            <span>{describeSavedFilter(saved.definition)}</span>
-                          </div>
-                          <form
-                            className="inline"
-                            aria-label={`Rename ${saved.name}`}
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              const name = (
-                                savedFilterNames[saved.id] ?? ""
-                              ).trim();
-                              if (name)
-                                void updateSavedLibraryFilter(
-                                  saved,
-                                  name,
-                                  saved.definition,
-                                  "Renamed",
-                                );
-                            }}
-                          >
-                            <label htmlFor={`saved-filter-name-${saved.id}`}>
-                              Name
-                            </label>
-                            <input
-                              id={`saved-filter-name-${saved.id}`}
-                              aria-label={`Name for ${saved.name}`}
-                              value={savedFilterNames[saved.id] ?? saved.name}
-                              maxLength={100}
-                              onChange={(event) =>
-                                setSavedFilterNames((names) => ({
-                                  ...names,
-                                  [saved.id]: event.target.value,
-                                }))
-                              }
-                            />
-                            <button
-                              type="submit"
-                              disabled={
-                                savedFilterBusy ||
-                                !(savedFilterNames[saved.id] ?? "").trim() ||
-                                (savedFilterNames[saved.id] ?? "").trim() ===
-                                  saved.name
-                              }
-                            >
-                              Rename {saved.name}
-                            </button>
-                          </form>
+                      <div>
+                        <p className="eyebrow">Local collection</p>
+                        <h2 id="library-scan-tools-title">
+                          Folders & scanning
+                        </h2>
+                        <p>
+                          Add and scan a folder explicitly. Scanning remains
+                          local and read-only.
+                        </p>
+                      </div>
+                      <div className="actions">
+                        <button
+                          disabled={busy || scanActive}
+                          onClick={() => void chooseAndScan()}
+                        >
+                          Choose Library folder
+                        </button>
+                        <button
+                          disabled={busy || scanActive || !rootId}
+                          onClick={() => void rescan()}
+                        >
+                          Scan current folder
+                        </button>
+                      </div>
+                    </section>
+                    <section
+                      className="saved-filters"
+                      aria-labelledby="saved-filters-title"
+                    >
+                      <div className="section-heading">
+                        <div>
+                          <p className="eyebrow">Local shortcuts</p>
+                          <h2 id="saved-filters-title">
+                            Saved Library filters
+                          </h2>
+                        </div>
+                        <form
+                          className="inline"
+                          aria-label="Save current Library filter"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveCurrentLibraryFilter();
+                          }}
+                        >
+                          <label htmlFor="saved-filter-name">Filter name</label>
+                          <input
+                            id="saved-filter-name"
+                            value={savedFilterName}
+                            maxLength={100}
+                            placeholder="For example, Ambient FLAC"
+                            onChange={(event) =>
+                              setSavedFilterName(event.target.value)
+                            }
+                          />
                           <button
-                            disabled={savedFilterBusy}
-                            onClick={() => openSavedLibraryFilter(saved)}
-                          >
-                            Open {saved.name}
-                          </button>
-                          <button
-                            disabled={savedFilterBusy || Boolean(albumIdFilter)}
-                            onClick={() =>
-                              void replaceSavedLibraryFilter(saved)
+                            type="submit"
+                            disabled={
+                              savedFilterBusy ||
+                              !savedFilterName.trim() ||
+                              Boolean(albumIdFilter)
                             }
                           >
-                            Update {saved.name} to current filter
+                            Save current filter
                           </button>
-                          <button
-                            disabled={savedFilterBusy}
-                            onClick={() => void deleteSavedLibraryFilter(saved)}
-                          >
-                            Delete {saved.name}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
+                        </form>
+                      </div>
+                      <p>
+                        Saves the active search and view. Page position and
+                        exact album-detail routes remain temporary.
+                      </p>
+                      {albumIdFilter && (
+                        <p>
+                          Status: Return to a normal Library view before saving.
+                        </p>
+                      )}
+                      {savedFilters.length === 0 ? (
+                        <p>No saved Library filters yet.</p>
+                      ) : (
+                        <ul>
+                          {savedFilters.map((saved) => (
+                            <li key={saved.id}>
+                              <div>
+                                <strong>{saved.name}</strong>
+                                <span>
+                                  {describeSavedFilter(saved.definition)}
+                                </span>
+                              </div>
+                              <form
+                                className="inline"
+                                aria-label={`Rename ${saved.name}`}
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  const name = (
+                                    savedFilterNames[saved.id] ?? ""
+                                  ).trim();
+                                  if (name)
+                                    void updateSavedLibraryFilter(
+                                      saved,
+                                      name,
+                                      saved.definition,
+                                      "Renamed",
+                                    );
+                                }}
+                              >
+                                <label
+                                  htmlFor={`saved-filter-name-${saved.id}`}
+                                >
+                                  Name
+                                </label>
+                                <input
+                                  id={`saved-filter-name-${saved.id}`}
+                                  aria-label={`Name for ${saved.name}`}
+                                  value={
+                                    savedFilterNames[saved.id] ?? saved.name
+                                  }
+                                  maxLength={100}
+                                  onChange={(event) =>
+                                    setSavedFilterNames((names) => ({
+                                      ...names,
+                                      [saved.id]: event.target.value,
+                                    }))
+                                  }
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={
+                                    savedFilterBusy ||
+                                    !(
+                                      savedFilterNames[saved.id] ?? ""
+                                    ).trim() ||
+                                    (
+                                      savedFilterNames[saved.id] ?? ""
+                                    ).trim() === saved.name
+                                  }
+                                >
+                                  Rename {saved.name}
+                                </button>
+                              </form>
+                              <button
+                                disabled={savedFilterBusy}
+                                onClick={() => openSavedLibraryFilter(saved)}
+                              >
+                                Open {saved.name}
+                              </button>
+                              <button
+                                disabled={
+                                  savedFilterBusy || Boolean(albumIdFilter)
+                                }
+                                onClick={() =>
+                                  void replaceSavedLibraryFilter(saved)
+                                }
+                              >
+                                Update {saved.name} to current filter
+                              </button>
+                              <button
+                                disabled={savedFilterBusy}
+                                onClick={() =>
+                                  void deleteSavedLibraryFilter(saved)
+                                }
+                              >
+                                Delete {saved.name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  </div>
+                </details>
               </>
             )}
           {activeView === "library" &&
@@ -2931,52 +2978,26 @@ export function App(): React.JSX.Element {
                       </div>
                       <div className="actions">
                         {activeView === "library" ? (
-                          <>
-                            <button
-                              className="primary"
-                              onClick={() =>
-                                openLibraryAlbumEditingTool("title")
-                              }
-                            >
-                              Edit album metadata
-                            </button>
-                            <button
-                              onClick={() =>
-                                openLibraryAlbumEditingTool("sequence")
-                              }
-                            >
-                              Edit track order
-                            </button>
-                            <button
-                              onClick={() =>
-                                openLibraryAlbumEditingTool("history")
-                              }
-                            >
-                              History & undo
-                            </button>
-                            <button
-                              disabled={
-                                busy ||
-                                (syncAlbums.length >= 100 &&
-                                  !syncAlbums.some(
-                                    (album) => album.id === selectedAlbum.id,
-                                  ))
-                              }
-                              onClick={() => {
-                                if (
-                                  !syncAlbums.some(
-                                    (album) => album.id === selectedAlbum.id,
-                                  )
-                                )
-                                  toggleSyncAlbum(selectedAlbum);
-                                setSyncStage("setup");
-                                setSyncSetupSection("selection");
-                                setActiveView("sync");
-                              }}
-                            >
-                              Add {selectedAlbum.title} to Sync
-                            </button>
-                          </>
+                          <AlbumActionsMenu
+                            albumTitle={selectedAlbum.title}
+                            busy={busy}
+                            syncDisabled={
+                              syncAlbums.length >= 100 &&
+                              !syncAlbums.some(
+                                (album) => album.id === selectedAlbum.id,
+                              )
+                            }
+                            onAddToSync={addSelectedAlbumToSync}
+                            onEditMetadata={() =>
+                              openLibraryAlbumEditingTool("title")
+                            }
+                            onEditTrackOrder={() =>
+                              openLibraryAlbumEditingTool("sequence")
+                            }
+                            onOpenHistory={() =>
+                              openLibraryAlbumEditingTool("history")
+                            }
+                          />
                         ) : (
                           <button onClick={() => setActiveView("library")}>
                             Back to Library
