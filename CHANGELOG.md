@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.11.0 — 2026-07-26
+
+- Make Library the natural home for browsing and editing. It now opens to a
+  responsive album grid ordered by album artist, trustworthy preserved release
+  date, then title, and opens each album in a focused detail view without
+  losing the current search, page, scroll position, or keyboard focus.
+- Move metadata work into the selected album. Track activation opens the
+  current-to-proposed editor in an accessible modal sheet, while an album
+  actions menu provides album-title, shared-field, track-order, history/undo,
+  and Sync workflows without crowding the release header.
+- Add mouse, right-click, Menu-key, and Shift+F10 access to read-only track
+  information. Technical properties, normalized tags, native tags, and long
+  source paths remain separate from editing, and focus returns to the
+  originating track when the menu or dialog closes.
+- Retire Workbench as a primary destination after preserving every existing
+  preview, confirmation, verification, partial-failure, and undo route in
+  Library context.
+- Load bounded local JPEG/PNG artwork through a runtime-validated privileged
+  query, with deterministic offline placeholders and isolated failure when
+  artwork is missing, malformed, unsupported, or too large.
+- Refine album cards, track rows, menus, modal sheets, contextual feedback, and
+  editor layouts for long metadata, narrow windows, 200% text scaling, keyboard
+  focus, reduced motion, and system high-contrast modes.
+
 ## 0.10.0 — 2026-07-24
 
 - Complete the desktop UI foundation with persistent Library, Workbench, Sync,
