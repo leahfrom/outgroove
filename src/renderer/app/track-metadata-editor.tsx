@@ -8,6 +8,7 @@ import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
+  WorkbenchRequestError,
   WorkbenchWriteResult,
 } from "./workbench-review-stage";
 
@@ -229,10 +230,11 @@ function TrackMetadataEditorComponent(
       </div>
 
       {error && (
-        <div className="workflow-error" role="alert">
-          <strong>The request could not be completed.</strong>
-          <span>{error}</span>
-        </div>
+        <WorkbenchRequestError
+          label="Track metadata request error"
+          message={error}
+          recovery="Revise the draft or retry the current confirmation. No unverified change is reported as complete."
+        />
       )}
 
       {preview && (

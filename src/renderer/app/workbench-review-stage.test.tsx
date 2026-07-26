@@ -6,6 +6,7 @@ import { expect, it, vi } from "vitest";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
+  WorkbenchRequestError,
   WorkbenchWriteResult,
 } from "./workbench-review-stage";
 
@@ -74,6 +75,34 @@ it("focuses and explains a blocked confirmation without enabling writes", () => 
   ).toBeDisabled();
   expect(screen.getAllByRole("alert")).toHaveLength(2);
   expect(screen.getByText("Confirmation is blocked.")).toBeVisible();
+});
+
+it("focuses a recoverable request error and keeps the next action in keyboard order", async () => {
+  const user = userEvent.setup();
+  render(
+    <>
+      <WorkbenchRequestError
+        label="Shared metadata request error"
+        message="The selected file changed after preview."
+        recovery="Review the draft or retry this confirmation."
+      />
+      <button>Retry confirmation</button>
+    </>,
+  );
+
+  const error = screen.getByRole("alert", {
+    name: "Shared metadata request error",
+  });
+  expect(error).toHaveFocus();
+  expect(error).toHaveTextContent("The selected file changed after preview.");
+  expect(error).toHaveTextContent(
+    "Review the draft or retry this confirmation.",
+  );
+
+  await user.tab();
+  expect(
+    screen.getByRole("button", { name: "Retry confirmation" }),
+  ).toHaveFocus();
 });
 
 it("moves focus to results and distinguishes verified and failed files", () => {

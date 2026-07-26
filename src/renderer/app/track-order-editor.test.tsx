@@ -44,6 +44,7 @@ function editor({
   startDraft = "7",
   discEnabled = false,
   discDraft = "1",
+  error,
   onMove = vi.fn(),
   onPreview = vi.fn(),
 }: {
@@ -51,6 +52,7 @@ function editor({
   startDraft?: string;
   discEnabled?: boolean;
   discDraft?: string;
+  error?: string;
   onMove?: (fileId: string, offset: -1 | 1) => void;
   onPreview?: () => void;
 } = {}) {
@@ -59,6 +61,7 @@ function editor({
       busy={false}
       discDraft={discDraft}
       discEnabled={discEnabled}
+      error={error}
       onCancelPreview={vi.fn()}
       onConfirm={vi.fn()}
       onDiscChange={vi.fn()}
@@ -150,5 +153,18 @@ describe("TrackOrderEditor", () => {
     expect(preview).toBeDisabled();
     await user.click(preview);
     expect(onPreview).not.toHaveBeenCalled();
+  });
+
+  it("keeps a request failure focused inside the sequencing workflow", () => {
+    render(editor({ error: "The sequence preview expired." }));
+
+    const error = screen.getByRole("alert", {
+      name: "Track order request error",
+    });
+    expect(error).toHaveFocus();
+    expect(error).toHaveTextContent("The sequence preview expired.");
+    expect(error).toHaveTextContent(
+      "The explicit per-file preview remains available",
+    );
   });
 });

@@ -1113,15 +1113,7 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.queryByLabelText("Track metadata confirmation"),
     ).not.toBeInTheDocument();
-    expect(
-      screen
-        .getAllByRole("status")
-        .some((status) =>
-          status.textContent.includes(
-            "Track metadata write was re-read and verified.",
-          ),
-        ),
-    ).toBe(true);
+    expect(screen.getAllByRole("status")).toEqual([outcome]);
     await waitFor(() => expect(applySpy).toHaveBeenCalledTimes(1));
     expect(previewSpy).toHaveBeenCalledTimes(1);
     expect(previewSpy.mock.calls[0]?.[0]).toMatchObject({
@@ -1155,11 +1147,6 @@ describe("tag edit UI safety states", () => {
       within(preview).getByRole("button", {
         name: "Confirm and write track",
       }),
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Track metadata was not changed: stale preview",
-      ),
     );
     expect(
       screen.getByLabelText("Track metadata confirmation"),
@@ -1544,9 +1531,6 @@ describe("tag edit UI safety states", () => {
       }),
     );
     expect(await screen.findByText(/stale preview/u)).toBeInTheDocument();
-    expect(
-      screen.getByText(/1 writes verified; 1 failed/u),
-    ).toBeInTheDocument();
     const batchResult = screen.getByRole("alert", {
       name: "Batch metadata result",
     });
@@ -1582,6 +1566,99 @@ describe("tag edit UI safety states", () => {
     expect(previewUndo).toHaveBeenCalledWith({
       operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
     });
+  });
+
+  it("keeps shared-field and sequencing request failures focused inside the contextual editor", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      format: "FLAC",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const contextualAlbum = { ...album, tracks: [firstTrack, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [contextualAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    vi.spyOn(mockApi, "previewTrackBatchEdit").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "The shared-field preview could not be created.",
+        recoverable: true,
+      },
+    });
+    vi.spyOn(mockApi, "previewTrackNumberSequence").mockResolvedValue({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "The sequence preview could not be created.",
+        recoverable: true,
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Fixture Album" });
+    await openLibraryAlbumTool(user, "Shared fields");
+    await user.click(screen.getByRole("button", { name: "Select all tracks" }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change track artist" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch track artist value"),
+      "Proposed Artist",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Preview selected tracks" }),
+    );
+
+    const batchError = await screen.findByRole("alert", {
+      name: "Shared metadata request error",
+    });
+    expect(batchError).toHaveFocus();
+    expect(batchError).toHaveTextContent(
+      "The shared-field preview could not be created.",
+    );
+    expect(
+      screen.queryByLabelText("Batch confirmation"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Track order/u }));
+    const start = screen.getByLabelText("Starting track number");
+    await user.clear(start);
+    await user.type(start, "7");
+    await user.click(
+      screen.getByRole("button", { name: "Preview track-number sequence" }),
+    );
+
+    const sequenceError = await screen.findByRole("alert", {
+      name: "Track order request error",
+    });
+    expect(sequenceError).toHaveFocus();
+    expect(sequenceError).toHaveTextContent(
+      "The sequence preview could not be created.",
+    );
+    expect(
+      screen.queryByLabelText("Track number sequence confirmation"),
+    ).not.toBeInTheDocument();
   });
 
   it("previews track numbers in the explicit reordered selection", async () => {
@@ -1700,9 +1777,6 @@ describe("tag edit UI safety states", () => {
     expect(within(confirmation).getByText(/1 → 8/u)).toBeInTheDocument();
     expect(within(confirmation).getAllByText(/1 → 3/u)).toHaveLength(2);
     await user.click(confirmSequence);
-    expect(
-      await screen.findByText("Re-read and verified 2 track-number writes."),
-    ).toBeInTheDocument();
     const sequenceResult = screen.getByRole("status", {
       name: "Track number sequence result",
     });

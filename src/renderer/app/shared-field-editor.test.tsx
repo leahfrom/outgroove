@@ -62,11 +62,13 @@ const emptyDraft: SharedFieldDraft = {
 function editor({
   enabled = disabledFields,
   draft = emptyDraft,
+  error,
   onEnabledChange = vi.fn(),
   onDraftChange = vi.fn(),
 }: {
   enabled?: SharedFieldEnabled;
   draft?: SharedFieldDraft;
+  error?: string;
   onEnabledChange?: (field: keyof SharedFieldDraft, enabled: boolean) => void;
   onDraftChange?: (field: keyof SharedFieldDraft, value: string) => void;
 } = {}) {
@@ -75,6 +77,7 @@ function editor({
       busy={false}
       draft={draft}
       enabled={enabled}
+      error={error}
       onCancelPreview={vi.fn()}
       onConfirm={vi.fn()}
       onDraftChange={onDraftChange}
@@ -161,5 +164,22 @@ describe("SharedFieldEditor", () => {
       "artist",
       "Proposed Artist!",
     );
+  });
+
+  it("keeps a request failure focused inside the shared-field workflow", () => {
+    render(
+      editor({
+        enabled: { ...disabledFields, artist: true },
+        draft: { ...emptyDraft, artist: "Proposed Artist" },
+        error: "The batch preview is stale.",
+      }),
+    );
+
+    const error = screen.getByRole("alert", {
+      name: "Shared metadata request error",
+    });
+    expect(error).toHaveFocus();
+    expect(error).toHaveTextContent("The batch preview is stale.");
+    expect(error).toHaveTextContent("The per-file preview remains available");
   });
 });
