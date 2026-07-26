@@ -1551,8 +1551,7 @@ h1 {
 .library-album-detail {
   min-width: 0;
 }
-.album-collection,
-.library-album-detail {
+.album-collection {
   padding: 1.15rem;
   border: 1px solid #d8ddd8;
   border-radius: 14px;
@@ -2011,6 +2010,52 @@ h1 {
   margin: 0;
   border: 0;
   padding: 0;
+}
+.album-editing-sheet {
+  width: min(100%, 1120px);
+}
+.album-editing-heading {
+  display: block;
+  margin-bottom: 1rem;
+}
+.album-editing-heading h2 {
+  margin-bottom: 0.3rem;
+  overflow-wrap: anywhere;
+}
+.album-editing-heading p:last-child {
+  margin: 0;
+  color: #526159;
+}
+.album-editing-tools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.album-editing-tools button {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  text-align: left;
+}
+.album-editing-tools button span {
+  font-weight: 750;
+}
+.album-editing-tools button small {
+  color: #526159;
+  line-height: 1.35;
+}
+.album-editing-tools button[aria-current="page"] {
+  border-color: #245c39;
+  background: #eef8f1;
+}
+.album-editing-sheet .album-title-workbench,
+.album-editing-sheet .shared-field-editor,
+.album-editing-sheet .track-order-editor {
+  margin: 0;
+}
+.album-editing-sheet .workbench-track-context {
+  margin: 0 0 1rem;
 }
 .technical-info-sheet {
   width: min(100%, 780px);
@@ -2878,6 +2923,9 @@ td {
   .workspace > aside {
     position: static;
   }
+  .album-editing-tools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 600px) {
   .primary-navigation {
@@ -2939,6 +2987,9 @@ td {
   .modal-sheet-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+  .album-editing-tools {
+    grid-template-columns: 1fr;
   }
   .sync-setup-nav {
     grid-template-columns: 1fr;
