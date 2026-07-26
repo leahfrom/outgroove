@@ -1,4 +1,5 @@
 import type { AlbumDiagnostic } from "../../shared/domain/album-diagnostics";
+import type { AlbumArtworkThumbnailDto } from "../../shared/contracts/api";
 import {
   summarizeAlbumReleaseDate,
   type CatalogAlbum,
@@ -22,13 +23,15 @@ function albumInitials(title: string): string {
 
 export function AlbumArtworkPlaceholder({
   album,
+  loading = false,
 }: {
   readonly album: Pick<CatalogAlbum, "id" | "title">;
+  readonly loading?: boolean;
 }): React.JSX.Element {
   return (
     <div
       aria-hidden="true"
-      className="album-artwork-placeholder"
+      className={`album-artwork-placeholder${loading ? " loading" : ""}`}
       data-tone={placeholderTone(album.id)}
     >
       <span>{albumInitials(album.title)}</span>
@@ -36,13 +39,39 @@ export function AlbumArtworkPlaceholder({
   );
 }
 
+export function AlbumArtwork({
+  album,
+  artwork,
+}: {
+  readonly album: Pick<CatalogAlbum, "id" | "title">;
+  readonly artwork?: AlbumArtworkThumbnailDto | "loading" | undefined;
+}): React.JSX.Element {
+  return artwork !== "loading" &&
+    artwork?.status === "available" &&
+    artwork.dataUrl ? (
+    <img
+      alt=""
+      className="album-artwork"
+      draggable={false}
+      src={artwork.dataUrl}
+    />
+  ) : (
+    <AlbumArtworkPlaceholder album={album} loading={artwork === "loading"} />
+  );
+}
+
 export function LibraryAlbumCollection({
   albums,
+  artworkByAlbum,
   diagnosticsByAlbum,
   onOpenAlbum,
   registerAlbumTrigger,
 }: {
   readonly albums: readonly CatalogAlbum[];
+  readonly artworkByAlbum?: ReadonlyMap<
+    string,
+    AlbumArtworkThumbnailDto | "loading"
+  >;
   readonly diagnosticsByAlbum: ReadonlyMap<string, readonly AlbumDiagnostic[]>;
   readonly onOpenAlbum: (album: CatalogAlbum) => void;
   readonly registerAlbumTrigger: (
@@ -86,7 +115,10 @@ export function LibraryAlbumCollection({
                 ref={(element) => registerAlbumTrigger(album.id, element)}
                 type="button"
               >
-                <AlbumArtworkPlaceholder album={album} />
+                <AlbumArtwork
+                  album={album}
+                  artwork={artworkByAlbum?.get(album.id)}
+                />
                 <span className="album-card-copy">
                   <h3>{album.title}</h3>
                   <span>{album.albumArtist}</span>

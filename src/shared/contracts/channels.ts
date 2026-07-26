@@ -10,6 +10,7 @@ export const channels = {
   chooseDatabaseRestore: "database:choose-restore",
   applyDatabaseRestore: "database:apply-restore",
   queryLibrary: "library:query",
+  loadAlbumArtwork: "library:load-album-artwork",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
   updateSavedLibraryFilter: "library:update-saved-filter",

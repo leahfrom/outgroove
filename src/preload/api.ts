@@ -21,6 +21,8 @@ export const api: OutgrooveApi = {
   applyDatabaseRestore: (request) =>
     ipcRenderer.invoke(channels.applyDatabaseRestore, request),
   queryLibrary: (request) => ipcRenderer.invoke(channels.queryLibrary, request),
+  loadAlbumArtwork: (request) =>
+    ipcRenderer.invoke(channels.loadAlbumArtwork, request),
   listSavedLibraryFilters: () =>
     ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
   createSavedLibraryFilter: (request) =>

@@ -10,6 +10,8 @@ describe("renderer content security policy", () => {
     expect(policy).not.toContain("unsafe-inline");
     expect(policy).not.toContain("localhost");
     expect(policy).not.toContain("ws:");
+    expect(policy).toContain("img-src 'self' data:");
+    expect(policy).not.toContain("img-src https:");
   });
 
   it("allows only the Vite development preamble and localhost HMR socket", () => {

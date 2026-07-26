@@ -63,6 +63,17 @@ export const libraryQueryRequestSchema = z
       genre === undefined || missingGenre === undefined,
     { message: "Choose either a genre or missing genre, not both." },
   );
+export const albumArtworkRequestSchema = z
+  .object({
+    albumIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: "Choose each album only once.",
+      }),
+  })
+  .strict();
 export const savedLibraryFilterDefinitionSchema = z
   .object({
     query: z.string().trim().max(200),
@@ -347,6 +358,11 @@ export interface LibraryPageDto {
   readonly offset: number;
   readonly limit: number;
 }
+export interface AlbumArtworkThumbnailDto {
+  readonly albumId: string;
+  readonly status: "available" | "missing" | "unsupported" | "invalid";
+  readonly dataUrl?: string;
+}
 export type SavedLibraryFilterDefinition = z.infer<
   typeof savedLibraryFilterDefinitionSchema
 >;
@@ -550,6 +566,9 @@ export interface OutgrooveApi {
   queryLibrary(
     request: z.infer<typeof libraryQueryRequestSchema>,
   ): Promise<Result<LibraryPageDto>>;
+  loadAlbumArtwork(
+    request: z.infer<typeof albumArtworkRequestSchema>,
+  ): Promise<Result<readonly AlbumArtworkThumbnailDto[]>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,

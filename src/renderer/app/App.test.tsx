@@ -201,6 +201,13 @@ function api(applyVerified: boolean): OutgrooveApi {
         },
       }),
     ),
+    loadAlbumArtwork: vi.fn(
+      ({ albumIds }: { readonly albumIds: readonly string[] }) =>
+        Promise.resolve({
+          ok: true,
+          value: albumIds.map((albumId) => ({ albumId, status: "missing" })),
+        }),
+    ),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -965,6 +972,18 @@ describe("tag edit UI safety states", () => {
 
   it("opens an album with the keyboard and restores its Library focus", async () => {
     const mockApi = api(true);
+    const loadArtwork = vi
+      .spyOn(mockApi, "loadAlbumArtwork")
+      .mockImplementation(({ albumIds }) =>
+        Promise.resolve({
+          ok: true,
+          value: albumIds.map((albumId) => ({
+            albumId,
+            status: "available" as const,
+            dataUrl: "data:image/png;base64,thumbnail",
+          })),
+        }),
+      );
     vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
       ok: true,
       value: {
@@ -986,6 +1005,12 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     const albums = await screen.findByRole("list", { name: "Albums" });
+    await waitFor(() =>
+      expect(loadArtwork).toHaveBeenCalledWith({
+        albumIds: [album.id, secondAlbum.id],
+      }),
+    );
+    expect(albums.querySelectorAll(".album-artwork")).toHaveLength(2);
     const second = within(albums).getByRole("button", {
       name: /^Second Album/u,
     });
