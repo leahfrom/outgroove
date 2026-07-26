@@ -657,6 +657,211 @@ describe("tag edit UI safety states", () => {
     ).toBeEnabled();
   });
 
+  it("keeps album-title drafts and previews in the contextual Library editor", async () => {
+    const mockApi = api(true);
+    const applyEdit = vi.spyOn(mockApi, "applyAlbumTitleEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+
+    const openEditor = screen.getByRole("button", {
+      name: "Edit album metadata",
+    });
+    openEditor.focus();
+    await user.keyboard("{Enter}");
+    const dialog = screen.getByRole("dialog", {
+      name: "Edit Fixture Album",
+    });
+    expect(dialog).toHaveFocus();
+    expect(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await user.type(
+      within(dialog).getByLabelText("Proposed title"),
+      "Renamed Album",
+    );
+    expect(applyEdit).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Review per-file changes",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Tag edit confirmation"),
+    ).toBeVisible();
+    expect(applyEdit).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Shared fields/u }),
+    );
+    expect(
+      within(dialog).queryByLabelText("Tag edit confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    expect(
+      within(dialog).getByLabelText("Tag edit confirmation"),
+    ).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(openEditor).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(
+      within(
+        screen.getByRole("dialog", { name: "Edit Fixture Album" }),
+      ).getByLabelText("Tag edit confirmation"),
+    ).toBeVisible();
+    expect(applyEdit).not.toHaveBeenCalled();
+  });
+
+  it("previews shared album metadata contextually without applying it", async () => {
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack: CatalogAlbum["tracks"][number] = {
+      ...firstTrack,
+      id: "c878d5df-f462-45ec-a4b1-84623fd525b3",
+      path: "/fixture/second.flac",
+      tags: { ...firstTrack.tags, title: "Second Track", trackNumber: 2 },
+    };
+    const editableAlbum = { ...album, tracks: [firstTrack, secondTrack] };
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [editableAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const previewBatch = vi.spyOn(mockApi, "previewTrackBatchEdit");
+    previewBatch.mockResolvedValue({
+      ok: true,
+      value: {
+        operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
+        confirmationToken: "batch-confirmation-token-long-enough",
+        files: editableAlbum.tracks.map((track) => ({
+          fileId: track.id,
+          path: track.path,
+          changes: [
+            {
+              field: "albumArtist",
+              before: track.tags.albumArtist,
+              after: "Reviewed Artist",
+            },
+          ],
+          warnings: [],
+          willWrite: true,
+        })),
+      },
+    });
+    const applyBatch = vi.spyOn(mockApi, "applyTrackBatchEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await user.click(
+      screen.getByRole("button", { name: "Edit album metadata" }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Edit Fixture Album",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Shared fields/u }),
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Select all tracks" }),
+    );
+    expect(within(dialog).getByLabelText("Selected tracks")).toHaveTextContent(
+      "2 of 2 tracks selected",
+    );
+    await user.click(
+      within(dialog).getByRole("checkbox", {
+        name: "Change album artist",
+      }),
+    );
+    await user.type(
+      within(dialog).getByLabelText("Batch album artist value"),
+      "Reviewed Artist",
+    );
+    expect(applyBatch).not.toHaveBeenCalled();
+    const review = within(dialog).getByRole("button", {
+      name: "Preview selected tracks",
+    });
+    expect(review).toBeEnabled();
+    await user.click(review);
+    await waitFor(() =>
+      expect(previewBatch).toHaveBeenCalledWith({
+        fileIds: editableAlbum.tracks.map((track) => track.id),
+        changes: { albumArtist: "Reviewed Artist" },
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Batch confirmation"),
+    ).toBeVisible();
+    expect(applyBatch).not.toHaveBeenCalled();
+  });
+
+  it("opens track order and edit history as separate album actions", async () => {
+    const mockApi = api(true);
+    const listHistory = vi.spyOn(mockApi, "listAlbumEditHistory");
+    const previewSequence = vi.spyOn(mockApi, "previewTrackNumberSequence");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+
+    const trackOrder = screen.getByRole("button", {
+      name: "Edit track order",
+    });
+    trackOrder.focus();
+    await user.keyboard("{Enter}");
+    let dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(
+      within(dialog).getByRole("button", { name: /^Track order/u }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(dialog).getByLabelText("Track number sequencing"),
+    ).toBeVisible();
+    expect(previewSequence).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(trackOrder).toHaveFocus();
+
+    const history = screen.getByRole("button", { name: "History & undo" });
+    history.focus();
+    await user.keyboard("{Enter}");
+    dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(
+      within(dialog).getByRole("button", { name: /^History & undo/u }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      within(dialog).getByLabelText("Metadata edit history"),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(listHistory).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    await user.keyboard("{Escape}");
+    expect(history).toHaveFocus();
+  });
+
   it("opens read-only technical details separately from track editing", async () => {
     Object.defineProperty(window, "outgroove", {
       configurable: true,

@@ -61,6 +61,10 @@ import {
   AlbumArtworkPlaceholder,
   LibraryAlbumCollection,
 } from "./library-album-collection";
+import {
+  LibraryAlbumEditingNavigation,
+  type LibraryAlbumEditingTool,
+} from "./library-album-editing-navigation";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { ModalSheet } from "./modal-sheet";
@@ -217,6 +221,8 @@ export function App(): React.JSX.Element {
     useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
   const [libraryAlbumDetailOpen, setLibraryAlbumDetailOpen] = useState(false);
+  const [libraryAlbumEditingTool, setLibraryAlbumEditingTool] =
+    useState<LibraryAlbumEditingTool>();
   const [albumTitleSection, setAlbumTitleSection] =
     useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
@@ -409,6 +415,7 @@ export function App(): React.JSX.Element {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
     setLibraryTrackEditorOpen(false);
+    setLibraryAlbumEditingTool(undefined);
     setTechnicalTrackId(undefined);
   }, [selectedAlbumId]);
 
@@ -1050,7 +1057,9 @@ export function App(): React.JSX.Element {
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
     if (!selectedAlbum) return;
-    setActiveView("workbench");
+    const routeWithinLibrary =
+      activeView === "library" && libraryAlbumDetailOpen;
+    if (!routeWithinLibrary) setActiveView("workbench");
     const affectedIds = [...finding.affectedTrackIds];
     setBatchTrackIds(affectedIds);
     setBatchPreview(undefined);
@@ -1063,14 +1072,18 @@ export function App(): React.JSX.Element {
         const firstTrack = selectedAlbum.tracks.find((track) =>
           affectedIds.includes(track.id),
         );
-        if (firstTrack) editTrack(firstTrack);
+        if (firstTrack) {
+          if (routeWithinLibrary) editLibraryTrack(firstTrack);
+          else editTrack(firstTrack);
+        }
         target = "track";
-        setWorkbenchTool("track");
+        if (!routeWithinLibrary) setWorkbenchTool("track");
         break;
       }
       case "sequence":
         target = "sequence";
-        setWorkbenchTool("sequence");
+        if (routeWithinLibrary) setLibraryAlbumEditingTool("sequence");
+        else setWorkbenchTool("sequence");
         break;
       case "batch-track-artist":
         setBatchEnabled({
@@ -1081,7 +1094,8 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
+        else setWorkbenchTool("batch");
         break;
       case "batch-album-artist":
         setBatchEnabled({
@@ -1092,7 +1106,8 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
+        else setWorkbenchTool("batch");
         break;
       case "batch-release-date":
         setBatchEnabled({
@@ -1103,16 +1118,20 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        if (routeWithinLibrary) setLibraryAlbumEditingTool("shared");
+        else setWorkbenchTool("batch");
         break;
       case "album-title":
         target = "album-title";
         setAlbumTitleSection("edit");
-        setWorkbenchTool("album");
+        if (routeWithinLibrary) setLibraryAlbumEditingTool("title");
+        else setWorkbenchTool("album");
         break;
     }
     setNotice(
-      "Affected tracks selected. Review and propose a change in the Workbench; no preview or write has started.",
+      `Affected tracks selected. Review and propose a change ${
+        routeWithinLibrary ? "for this album" : "in the Workbench"
+      }; no preview or write has started.`,
     );
     setDiagnosticDestination((current) => ({
       target,
@@ -1924,10 +1943,158 @@ export function App(): React.JSX.Element {
     setSyncPlan(undefined);
   };
 
+  const openLibraryAlbumEditingTool = (tool: LibraryAlbumEditingTool): void => {
+    if (!selectedAlbum) return;
+    setAlbumTitleSection(tool === "history" ? "history" : "edit");
+    setLibraryAlbumEditingTool(tool);
+    if (tool === "history") void refreshEditHistory(selectedAlbum.id);
+  };
+
   const closeLibraryAlbum = (): void => {
     if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
     setLibraryAlbumDetailOpen(false);
   };
+
+  const renderTrackContext = (
+    tool: "shared" | "sequence",
+    onEditTrack: (track: CatalogAlbum["tracks"][number]) => void,
+  ): React.JSX.Element | undefined =>
+    selectedAlbum ? (
+      <WorkbenchTrackContext
+        busy={busy}
+        selectedTrackIds={batchTrackIds}
+        selectionPurpose={
+          tool === "sequence" ? "track ordering" : "shared-field editing"
+        }
+        tracks={selectedAlbum.tracks}
+        onClearSelection={clearBatchTracks}
+        onEditTrack={onEditTrack}
+        onSelectAll={selectAllBatchTracks}
+        onToggleTrack={toggleBatchTrack}
+      />
+    ) : undefined;
+
+  const sharedFieldEditor = (
+    <SharedFieldEditor
+      busy={busy}
+      draft={batchDraft}
+      enabled={batchEnabled}
+      preview={batchPreview}
+      ref={batchEditorRef}
+      result={batchResult}
+      tracks={selectedBatchTracks}
+      onCancelPreview={() => setBatchPreview(undefined)}
+      onConfirm={() => void applyBatchEdit()}
+      onDraftChange={(field, value) => {
+        setBatchDraft((draft) => ({
+          ...draft,
+          [field]: value,
+        }));
+        setBatchPreview(undefined);
+        setBatchResult(undefined);
+      }}
+      onEnabledChange={(field, enabled) => {
+        setBatchEnabled((current) => ({
+          ...current,
+          [field]: enabled,
+        }));
+        setBatchPreview(undefined);
+        setBatchResult(undefined);
+      }}
+      onPreview={() => void previewBatchEdit()}
+    />
+  );
+
+  const trackOrderEditor = (
+    <TrackOrderEditor
+      busy={busy}
+      discDraft={sequenceDiscNumber}
+      discEnabled={sequenceDiscEnabled}
+      preview={sequencePreview}
+      ref={sequenceEditorRef}
+      result={sequenceResult}
+      startDraft={sequenceStart}
+      tracks={orderedSequenceTracks}
+      onCancelPreview={() => setSequencePreview(undefined)}
+      onConfirm={() => void applyTrackNumberSequence()}
+      onDiscChange={(value) => {
+        setSequenceDiscNumber(value);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+      }}
+      onDiscEnabledChange={(enabled) => {
+        setSequenceDiscEnabled(enabled);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+      }}
+      onMove={moveBatchTrack}
+      onPreview={() => void previewTrackNumberSequence()}
+      onStartChange={(value) => {
+        setSequenceStart(value);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+      }}
+    />
+  );
+
+  const renderAlbumTitleWorkbench = (
+    showNavigation: boolean,
+  ): React.JSX.Element | undefined =>
+    selectedAlbum ? (
+      <AlbumTitleWorkbench
+        albumTitle={selectedAlbum.title}
+        batchUndoKind={batchUndoKind}
+        batchUndoPreview={batchUndoPreview}
+        batchUndoResult={batchUndoResult}
+        busy={busy}
+        draftTitle={editTitle}
+        editError={editError}
+        editHistory={editHistory}
+        editPreview={editPreview}
+        editResult={editResult}
+        historyError={historyError}
+        onCancelBatchUndo={() => {
+          setBatchUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelEditPreview={() => {
+          setEditPreview(undefined);
+          setEditError(undefined);
+        }}
+        onCancelTrackUndo={() => {
+          setTrackUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelUndo={() => {
+          setUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onConfirmBatchUndo={() => void applyBatchUndo()}
+        onConfirmEdit={() => void applyEdit()}
+        onConfirmTrackUndo={() => void applyTrackUndo()}
+        onConfirmUndo={() => void applyUndo()}
+        onDraftTitleChange={(title) => {
+          setEditTitle(title);
+          setEditPreview(undefined);
+          setEditResult(undefined);
+          setEditError(undefined);
+        }}
+        onPreviewBatchUndo={(operationId, kind) =>
+          void previewBatchUndo(operationId, kind)
+        }
+        onPreviewEdit={() => void previewEdit()}
+        onPreviewTrackUndo={(operationId) => void previewTrackUndo(operationId)}
+        onPreviewUndo={(operationId) => void previewUndo(operationId)}
+        onSectionChange={setAlbumTitleSection}
+        ref={albumTitleEditorRef}
+        section={albumTitleSection}
+        showNavigation={showNavigation}
+        trackUndoPreview={trackUndoPreview}
+        trackUndoResult={trackUndoResult}
+        undoPreview={undoPreview}
+        undoResult={undoResult}
+      />
+    ) : undefined;
 
   return (
     <ApplicationShell
@@ -2767,12 +2934,25 @@ export function App(): React.JSX.Element {
                           <>
                             <button
                               className="primary"
-                              onClick={() => {
-                                setWorkbenchTool("overview");
-                                setActiveView("workbench");
-                              }}
+                              onClick={() =>
+                                openLibraryAlbumEditingTool("title")
+                              }
                             >
-                              Open {selectedAlbum.title} in Workbench
+                              Edit album metadata
+                            </button>
+                            <button
+                              onClick={() =>
+                                openLibraryAlbumEditingTool("sequence")
+                              }
+                            >
+                              Edit track order
+                            </button>
+                            <button
+                              onClick={() =>
+                                openLibraryAlbumEditingTool("history")
+                              }
+                            >
+                              History & undo
                             </button>
                             <button
                               disabled={
@@ -2933,84 +3113,21 @@ export function App(): React.JSX.Element {
                     {activeView === "workbench" &&
                       (workbenchTool === "batch" ||
                         workbenchTool === "sequence") && (
-                        <WorkbenchTrackContext
-                          busy={busy}
-                          selectedTrackIds={batchTrackIds}
-                          selectionPurpose={
+                        <>
+                          {renderTrackContext(
                             workbenchTool === "sequence"
-                              ? "track ordering"
-                              : "shared-field editing"
-                          }
-                          tracks={selectedAlbum.tracks}
-                          onClearSelection={clearBatchTracks}
-                          onEditTrack={editTrack}
-                          onSelectAll={selectAllBatchTracks}
-                          onToggleTrack={toggleBatchTrack}
-                        />
+                              ? "sequence"
+                              : "shared",
+                            editTrack,
+                          )}
+                        </>
                       )}
                     {activeView === "workbench" &&
-                      workbenchTool === "batch" && (
-                        <SharedFieldEditor
-                          busy={busy}
-                          draft={batchDraft}
-                          enabled={batchEnabled}
-                          preview={batchPreview}
-                          ref={batchEditorRef}
-                          result={batchResult}
-                          tracks={selectedBatchTracks}
-                          onCancelPreview={() => setBatchPreview(undefined)}
-                          onConfirm={() => void applyBatchEdit()}
-                          onDraftChange={(field, value) => {
-                            setBatchDraft((draft) => ({
-                              ...draft,
-                              [field]: value,
-                            }));
-                            setBatchPreview(undefined);
-                            setBatchResult(undefined);
-                          }}
-                          onEnabledChange={(field, enabled) => {
-                            setBatchEnabled((current) => ({
-                              ...current,
-                              [field]: enabled,
-                            }));
-                            setBatchPreview(undefined);
-                            setBatchResult(undefined);
-                          }}
-                          onPreview={() => void previewBatchEdit()}
-                        />
-                      )}
+                      workbenchTool === "batch" &&
+                      sharedFieldEditor}
                     {activeView === "workbench" &&
-                      workbenchTool === "sequence" && (
-                        <TrackOrderEditor
-                          busy={busy}
-                          discDraft={sequenceDiscNumber}
-                          discEnabled={sequenceDiscEnabled}
-                          preview={sequencePreview}
-                          ref={sequenceEditorRef}
-                          result={sequenceResult}
-                          startDraft={sequenceStart}
-                          tracks={orderedSequenceTracks}
-                          onCancelPreview={() => setSequencePreview(undefined)}
-                          onConfirm={() => void applyTrackNumberSequence()}
-                          onDiscChange={(value) => {
-                            setSequenceDiscNumber(value);
-                            setSequencePreview(undefined);
-                            setSequenceResult(undefined);
-                          }}
-                          onDiscEnabledChange={(enabled) => {
-                            setSequenceDiscEnabled(enabled);
-                            setSequencePreview(undefined);
-                            setSequenceResult(undefined);
-                          }}
-                          onMove={moveBatchTrack}
-                          onPreview={() => void previewTrackNumberSequence()}
-                          onStartChange={(value) => {
-                            setSequenceStart(value);
-                            setSequencePreview(undefined);
-                            setSequenceResult(undefined);
-                          }}
-                        />
-                      )}
+                      workbenchTool === "sequence" &&
+                      trackOrderEditor}
                     {activeView === "workbench" &&
                       workbenchTool === "track" &&
                       selectedTrack && (
@@ -3047,64 +3164,8 @@ export function App(): React.JSX.Element {
                         />
                       )}
                     {activeView === "workbench" &&
-                      workbenchTool === "album" && (
-                        <AlbumTitleWorkbench
-                          albumTitle={selectedAlbum.title}
-                          batchUndoKind={batchUndoKind}
-                          batchUndoPreview={batchUndoPreview}
-                          batchUndoResult={batchUndoResult}
-                          busy={busy}
-                          draftTitle={editTitle}
-                          editError={editError}
-                          editHistory={editHistory}
-                          editPreview={editPreview}
-                          editResult={editResult}
-                          historyError={historyError}
-                          onCancelBatchUndo={() => {
-                            setBatchUndoPreview(undefined);
-                            setHistoryError(undefined);
-                          }}
-                          onCancelEditPreview={() => {
-                            setEditPreview(undefined);
-                            setEditError(undefined);
-                          }}
-                          onCancelTrackUndo={() => {
-                            setTrackUndoPreview(undefined);
-                            setHistoryError(undefined);
-                          }}
-                          onCancelUndo={() => {
-                            setUndoPreview(undefined);
-                            setHistoryError(undefined);
-                          }}
-                          onConfirmBatchUndo={() => void applyBatchUndo()}
-                          onConfirmEdit={() => void applyEdit()}
-                          onConfirmTrackUndo={() => void applyTrackUndo()}
-                          onConfirmUndo={() => void applyUndo()}
-                          onDraftTitleChange={(title) => {
-                            setEditTitle(title);
-                            setEditPreview(undefined);
-                            setEditResult(undefined);
-                            setEditError(undefined);
-                          }}
-                          onPreviewBatchUndo={(operationId, kind) =>
-                            void previewBatchUndo(operationId, kind)
-                          }
-                          onPreviewEdit={() => void previewEdit()}
-                          onPreviewTrackUndo={(operationId) =>
-                            void previewTrackUndo(operationId)
-                          }
-                          onPreviewUndo={(operationId) =>
-                            void previewUndo(operationId)
-                          }
-                          onSectionChange={setAlbumTitleSection}
-                          ref={albumTitleEditorRef}
-                          section={albumTitleSection}
-                          trackUndoPreview={trackUndoPreview}
-                          trackUndoResult={trackUndoResult}
-                          undoPreview={undoPreview}
-                          undoResult={undoResult}
-                        />
-                      )}
+                      workbenchTool === "album" &&
+                      renderAlbumTitleWorkbench(true)}
                   </>
                 </section>
               )}
@@ -3280,6 +3341,50 @@ export function App(): React.JSX.Element {
           onSelectSection={setSettingsSection}
         />
       )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
+        libraryAlbumEditingTool &&
+        selectedAlbum && (
+          <ModalSheet
+            ariaLabel={`Edit ${selectedAlbum.title}`}
+            className="album-editing-sheet"
+            closeLabel="Close album editor"
+            onClose={() => setLibraryAlbumEditingTool(undefined)}
+          >
+            <header className="album-editing-heading">
+              <p className="eyebrow">Album editing</p>
+              <h2>{selectedAlbum.title}</h2>
+              <p>
+                Drafts and selections stay local until a fresh preview is
+                explicitly confirmed.
+              </p>
+            </header>
+            <LibraryAlbumEditingNavigation
+              activeTool={libraryAlbumEditingTool}
+              onSelect={(tool) => {
+                setAlbumTitleSection(tool === "history" ? "history" : "edit");
+                setLibraryAlbumEditingTool(tool);
+                if (tool === "history")
+                  void refreshEditHistory(selectedAlbum.id);
+              }}
+            />
+            {(libraryAlbumEditingTool === "shared" ||
+              libraryAlbumEditingTool === "sequence") && (
+              <>
+                {renderTrackContext(libraryAlbumEditingTool, (track) => {
+                  setLibraryAlbumEditingTool(undefined);
+                  editLibraryTrack(track);
+                })}
+              </>
+            )}
+            {libraryAlbumEditingTool === "shared" && sharedFieldEditor}
+            {libraryAlbumEditingTool === "sequence" && trackOrderEditor}
+            {(libraryAlbumEditingTool === "title" ||
+              libraryAlbumEditingTool === "history") && (
+              <>{renderAlbumTitleWorkbench(false)}</>
+            )}
+          </ModalSheet>
+        )}
       {activeView === "library" &&
         libraryAlbumDetailOpen &&
         libraryTrackEditorOpen &&
