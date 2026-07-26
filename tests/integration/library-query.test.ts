@@ -54,6 +54,85 @@ function addAlbum(
 }
 
 describe("paginated library query", () => {
+  it("orders album pages by artist, one consistent partial date, and title", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-album-order-"));
+    temporary.push(directory);
+    const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    const root = database.addLibraryRoot(
+      directory,
+      pathComparisonKey(directory),
+    );
+    const addDatedTrack = (
+      album: string,
+      albumArtist: string,
+      date: string | null,
+      file: string,
+    ): void => {
+      const path = join(directory, albumArtist, album, file);
+      database.upsertScannedFile(root.id, pathComparisonKey(path), {
+        path,
+        size: 100,
+        modifiedMs: 1,
+        format: "FLAC",
+        durationSeconds: 10,
+        tags: {
+          title: file,
+          album,
+          artist: albumArtist,
+          albumArtist,
+          trackNumber: 1,
+          discNumber: 1,
+          year: date,
+        },
+        nativeTags: [],
+      });
+    };
+
+    addDatedTrack("Unknown", "Beta Artist", null, "unknown.flac");
+    addDatedTrack("Later", "Beta Artist", "2024", "later.flac");
+    addDatedTrack("Same date B", "Beta Artist", "2020-03", "b.flac");
+    addDatedTrack("Same date A", "Beta Artist", "2020-03", "a.flac");
+    addDatedTrack("Mixed", "Beta Artist", "2010", "mixed-one.flac");
+    addDatedTrack("Mixed", "Beta Artist", "2011", "mixed-two.flac");
+    addDatedTrack("Other artist", "Alpha Artist", null, "other.flac");
+
+    const first = database.queryLibrary({
+      query: "",
+      view: "albums",
+      offset: 0,
+      limit: 3,
+    });
+    const second = database.queryLibrary({
+      query: "",
+      view: "albums",
+      offset: 3,
+      limit: 4,
+    });
+
+    expect(first.totalItems).toBe(6);
+    expect(first.albums.map((album) => album.title)).toEqual([
+      "Other artist",
+      "Same date A",
+      "Same date B",
+    ]);
+    expect(second.albums.map((album) => album.title)).toEqual([
+      "Later",
+      "Mixed",
+      "Unknown",
+    ]);
+    expect(
+      database
+        .queryLibrary({
+          query: "Beta",
+          view: "albums",
+          offset: 0,
+          limit: 10,
+        })
+        .albums.map((album) => album.title),
+    ).toEqual(["Same date A", "Same date B", "Later", "Mixed", "Unknown"]);
+    database.close();
+  });
+
   it("pages searchable album artists with exact album and track counts", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-artists-"));
     temporary.push(directory);
