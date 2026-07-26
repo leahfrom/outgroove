@@ -1,3 +1,5 @@
+import { isValidPartialDate } from "./partial-date";
+
 export interface NativeTagValue {
   readonly id: string;
   readonly value: string;
@@ -39,6 +41,59 @@ export interface CatalogAlbum {
   readonly title: string;
   readonly albumArtist: string;
   readonly tracks: readonly CatalogTrack[];
+}
+
+export type AlbumReleaseDateSummary =
+  | { readonly status: "consistent"; readonly value: string }
+  | { readonly status: "missing" | "mixed"; readonly value: null };
+
+export function summarizeAlbumReleaseDate(
+  tracks: CatalogAlbum["tracks"],
+): AlbumReleaseDateSummary {
+  let releaseDate: string | undefined;
+  let missing = false;
+
+  for (const track of tracks) {
+    const candidate = track.tags.year?.trim();
+    if (!candidate) {
+      missing = true;
+      continue;
+    }
+    if (!isValidPartialDate(candidate)) return { status: "mixed", value: null };
+    if (releaseDate !== undefined && releaseDate !== candidate)
+      return { status: "mixed", value: null };
+    releaseDate = candidate;
+  }
+
+  if (releaseDate === undefined) return { status: "missing", value: null };
+  if (missing) return { status: "mixed", value: null };
+  return { status: "consistent", value: releaseDate };
+}
+
+export function compareAlbumsByArtistReleaseDateTitle(
+  left: CatalogAlbum,
+  right: CatalogAlbum,
+): number {
+  const artist =
+    left.albumArtist.localeCompare(right.albumArtist, undefined, {
+      sensitivity: "base",
+    }) || left.albumArtist.localeCompare(right.albumArtist);
+  if (artist !== 0) return artist;
+
+  const leftDate = summarizeAlbumReleaseDate(left.tracks).value;
+  const rightDate = summarizeAlbumReleaseDate(right.tracks).value;
+  if (leftDate !== null && rightDate === null) return -1;
+  if (leftDate === null && rightDate !== null) return 1;
+  if (leftDate !== null && rightDate !== null) {
+    const date = leftDate.localeCompare(rightDate);
+    if (date !== 0) return date;
+  }
+
+  return (
+    left.title.localeCompare(right.title, undefined, { sensitivity: "base" }) ||
+    left.title.localeCompare(right.title) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 export function normalizeTagText(value: unknown, fallback: string): string {

@@ -5,6 +5,7 @@ import { dialog, type BrowserWindow, type IpcMain } from "electron";
 
 import {
   albumEditApplyRequestSchema,
+  albumArtworkRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
@@ -41,6 +42,7 @@ import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
+import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -51,6 +53,7 @@ interface Dependencies {
   backup: DatabaseBackupService;
   scanJobs: ScanJobCoordinator;
   libraryRoots: ManageLibraryRoots;
+  artwork: LoadAlbumArtwork;
   editor: EditAlbumTitle;
   trackEditor: EditTrackTags;
   sync: DeviceSync;
@@ -220,6 +223,12 @@ export function registerIpc(
         ...(request.missingGenre ? { missingGenre: request.missingGenre } : {}),
       });
     }),
+  );
+  ipcMain.handle(
+    channels.loadAlbumArtwork,
+    createValidatedHandler(albumArtworkRequestSchema, ({ albumIds }) =>
+      dependencies.artwork.load(albumIds),
+    ),
   );
   ipcMain.handle(
     channels.listSavedLibraryFilters,

@@ -1,3 +1,5 @@
+import { useCallback, useRef, useState } from "react";
+
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
   formatBitDepth,
@@ -7,26 +9,137 @@ import {
   formatFileSize,
   formatSampleRate,
 } from "../../shared/domain/audio-technical";
+import { ActionMenu, type ActionMenuAnchor } from "./action-menu";
 
 type AlbumTrack = CatalogAlbum["tracks"][number];
 
 export function LibraryTrackDetail({
   busy,
   mode,
-  selectionPurpose,
-  selectedForBatch,
   track,
   onEdit,
-  onToggleBatch,
+  onMoreInfo,
+  registerEditTrigger,
 }: {
   readonly busy: boolean;
-  readonly mode: "library" | "workbench";
-  readonly selectionPurpose: string;
-  readonly selectedForBatch: boolean;
+  readonly mode: "library" | "technical";
   readonly track: AlbumTrack;
   readonly onEdit: () => void;
-  readonly onToggleBatch: () => void;
+  readonly onMoreInfo?: () => void;
+  readonly registerEditTrigger?: (element: HTMLButtonElement | null) => void;
 }): React.JSX.Element {
+  const [menuAnchor, setMenuAnchor] = useState<ActionMenuAnchor>();
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const menuReturnFocusRef = useRef<HTMLElement | null>(null);
+
+  const openMenu = (
+    anchor: ActionMenuAnchor,
+    origin?: HTMLElement | null,
+  ): void => {
+    menuReturnFocusRef.current = origin ?? moreButtonRef.current;
+    setMenuAnchor(anchor);
+  };
+
+  const dismissMenu = useCallback(() => setMenuAnchor(undefined), []);
+
+  const anchorToMoreButton = (): ActionMenuAnchor => {
+    const bounds = moreButtonRef.current?.getBoundingClientRect();
+    return {
+      x: bounds?.right ?? 0,
+      y: (bounds?.bottom ?? 0) + 4,
+      align: "end",
+    };
+  };
+
+  if (mode === "library")
+    return (
+      <article
+        className="library-track-row"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          const active =
+            document.activeElement instanceof HTMLElement &&
+            event.currentTarget.contains(document.activeElement)
+              ? document.activeElement
+              : moreButtonRef.current;
+          openMenu(
+            { x: event.clientX, y: event.clientY, align: "start" },
+            active,
+          );
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key !== "ContextMenu" &&
+            event.key !== "Apps" &&
+            !(event.shiftKey && event.key === "F10")
+          )
+            return;
+          event.preventDefault();
+          openMenu(
+            anchorToMoreButton(),
+            document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : moreButtonRef.current,
+          );
+        }}
+      >
+        <button
+          aria-label={`Edit metadata for ${track.tags.title}`}
+          className="library-track-activation"
+          disabled={busy}
+          onClick={onEdit}
+          ref={registerEditTrigger}
+          type="button"
+        >
+          <span className="track-identity">
+            <strong>
+              {track.tags.discNumber ?? 1}.{track.tags.trackNumber ?? "—"}{" "}
+              {track.tags.title}
+            </strong>
+            <small>{track.tags.artist}</small>
+          </span>
+          <span className="track-summary-facts">
+            <span>{track.format}</span>
+            <span>{formatDuration(track.durationSeconds)}</span>
+            <span>{formatFileSize(track.size)}</span>
+          </span>
+        </button>
+        <div className="track-more-actions">
+          <button
+            aria-expanded={Boolean(menuAnchor)}
+            aria-haspopup="menu"
+            aria-label={`More actions for ${track.tags.title}`}
+            onClick={() => {
+              if (menuAnchor) {
+                dismissMenu();
+                moreButtonRef.current?.focus();
+              } else openMenu(anchorToMoreButton(), moreButtonRef.current);
+            }}
+            ref={moreButtonRef}
+            type="button"
+          >
+            More
+          </button>
+          {menuAnchor && (
+            <ActionMenu
+              anchor={menuAnchor}
+              ariaLabel={`Actions for ${track.tags.title}`}
+              className="track-action-menu"
+              items={[
+                { label: "Edit metadata", onSelect: onEdit },
+                {
+                  label: "More info",
+                  onSelect: () => onMoreInfo?.(),
+                },
+              ]}
+              returnFocus={menuReturnFocusRef.current}
+              onDismiss={dismissMenu}
+            />
+          )}
+        </div>
+      </article>
+    );
+
   return (
     <details className="track-detail">
       <summary>
@@ -85,21 +198,6 @@ export function LibraryTrackDetail({
             </section>
           </div>
         </details>
-        {mode === "workbench" && (
-          <div className="track-actions">
-            <label>
-              <input
-                type="checkbox"
-                checked={selectedForBatch}
-                onChange={onToggleBatch}
-              />
-              Select {track.tags.title} for {selectionPurpose}
-            </label>
-            <button disabled={busy} onClick={onEdit} type="button">
-              Edit track metadata
-            </button>
-          </div>
-        )}
       </div>
     </details>
   );

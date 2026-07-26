@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AlbumArtworkThumbnailDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -25,7 +26,10 @@ import type {
   TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
-import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  summarizeAlbumReleaseDate,
+  type CatalogAlbum,
+} from "../../shared/domain/catalog";
 import {
   formatBitDepth,
   formatBitrate,
@@ -43,6 +47,7 @@ import {
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
+import { AlbumActionsMenu } from "./album-actions-menu";
 import {
   AlbumTitleWorkbench,
   type AlbumTitleSection,
@@ -54,13 +59,23 @@ import {
   type AppView,
   type NoticeTone,
 } from "./application-shell";
+import {
+  AlbumArtwork,
+  LibraryAlbumCollection,
+} from "./library-album-collection";
+import {
+  LibraryAlbumEditingNavigation,
+  type LibraryAlbumEditingTool,
+} from "./library-album-editing-navigation";
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
+import { ModalSheet } from "./modal-sheet";
 import { SharedFieldEditor } from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { TrackTechnicalInfo } from "./track-technical-info";
 import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
 import { SyncPlanReview } from "./sync-plan-review";
@@ -74,10 +89,6 @@ import {
 } from "./sync-setup-workspace";
 import type { SettingsSection } from "./settings-navigation";
 import { SettingsView } from "./settings-view";
-import {
-  WorkbenchNavigation,
-  type WorkbenchTool,
-} from "./workbench-navigation";
 import { WorkbenchTrackContext } from "./workbench-track-context";
 
 const PAGE_SIZE = 20;
@@ -149,7 +160,6 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 
 export function App(): React.JSX.Element {
   const [activeView, setActiveView] = useState<AppView>("library");
-  const [workbenchTool, setWorkbenchTool] = useState<WorkbenchTool>("overview");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
   const [syncSetupSection, setSyncSetupSection] =
     useState<SyncSetupSection>("selection");
@@ -163,6 +173,9 @@ export function App(): React.JSX.Element {
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [librarySetupError, setLibrarySetupError] = useState<string>();
   const [albums, setAlbums] = useState<readonly CatalogAlbum[]>([]);
+  const [artworkByAlbum, setArtworkByAlbum] = useState<
+    ReadonlyMap<string, AlbumArtworkThumbnailDto | "loading">
+  >(new Map());
   const [artists, setArtists] = useState<readonly LibraryArtistDto[]>([]);
   const [genres, setGenres] = useState<readonly LibraryGenreDto[]>([]);
   const [formats, setFormats] = useState<readonly LibraryFormatDto[]>([]);
@@ -207,6 +220,9 @@ export function App(): React.JSX.Element {
   const [rootRemovalPreview, setRootRemovalPreview] =
     useState<LibraryRootRemovalPreviewDto>();
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>();
+  const [libraryAlbumDetailOpen, setLibraryAlbumDetailOpen] = useState(false);
+  const [libraryAlbumEditingTool, setLibraryAlbumEditingTool] =
+    useState<LibraryAlbumEditingTool>();
   const [albumTitleSection, setAlbumTitleSection] =
     useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
@@ -220,6 +236,8 @@ export function App(): React.JSX.Element {
   const [undoResult, setUndoResult] = useState<TagEditResultDto>();
   const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
+  const [libraryTrackEditorOpen, setLibraryTrackEditorOpen] = useState(false);
+  const [technicalTrackId, setTechnicalTrackId] = useState<string>();
   const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
     artist: "",
@@ -250,12 +268,14 @@ export function App(): React.JSX.Element {
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
+  const [batchError, setBatchError] = useState<string>();
   const [sequenceStart, setSequenceStart] = useState("1");
   const [sequenceDiscEnabled, setSequenceDiscEnabled] = useState(false);
   const [sequenceDiscNumber, setSequenceDiscNumber] = useState("1");
   const [sequencePreview, setSequencePreview] =
     useState<TrackBatchEditPreviewDto>();
   const [sequenceResult, setSequenceResult] = useState<TagEditResultDto>();
+  const [sequenceError, setSequenceError] = useState<string>();
   const [batchUndoPreview, setBatchUndoPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [batchUndoResult, setBatchUndoResult] = useState<TagEditResultDto>();
@@ -316,6 +336,15 @@ export function App(): React.JSX.Element {
   const syncTargetPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
+  const albumDetailHeadingRef = useRef<HTMLHeadingElement>(null);
+  const albumDetailFocusPending = useRef(false);
+  const albumTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trackEditTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const trackEditorReturnFocusId = useRef<string | undefined>(undefined);
+  const trackEditorReturnFocusElement = useRef<HTMLElement | undefined>(
+    undefined,
+  );
+  const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
@@ -329,6 +358,10 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  const technicalTrack = useMemo(
+    () => selectedAlbum?.tracks.find((track) => track.id === technicalTrackId),
+    [selectedAlbum, technicalTrackId],
   );
   const selectedBatchTracks = useMemo(
     () =>
@@ -362,14 +395,13 @@ export function App(): React.JSX.Element {
       selectedAlbum ? (diagnosticsByAlbum.get(selectedAlbum.id) ?? []) : [],
     [diagnosticsByAlbum, selectedAlbum],
   );
-  const albumsWithDiagnostics = useMemo(
+  const selectedAlbumReleaseDate = useMemo(
     () =>
-      albums.filter((album) =>
-        Boolean(diagnosticsByAlbum.get(album.id)?.length),
-      ).length,
-    [albums, diagnosticsByAlbum],
+      selectedAlbum
+        ? summarizeAlbumReleaseDate(selectedAlbum.tracks)
+        : undefined,
+    [selectedAlbum],
   );
-
   useEffect(() => {
     if (!diagnosticDestination) return;
     const target = {
@@ -384,7 +416,98 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setBatchError(undefined);
+    setSequencePreview(undefined);
+    setSequenceResult(undefined);
+    setSequenceError(undefined);
+    setLibraryTrackEditorOpen(false);
+    setLibraryAlbumEditingTool(undefined);
+    setTechnicalTrackId(undefined);
   }, [selectedAlbumId]);
+
+  useEffect(() => {
+    setLibraryAlbumDetailOpen(false);
+  }, [
+    albumArtistFilter,
+    albumIdFilter,
+    libraryView,
+    pageOffset,
+    qualityFilter,
+    query,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "library" ||
+      libraryAlbumDetailOpen ||
+      !albumReturnFocusId.current
+    )
+      return;
+    const albumId = albumReturnFocusId.current;
+    albumReturnFocusId.current = undefined;
+    albumTriggerRefs.current.get(albumId)?.focus();
+  }, [activeView, libraryAlbumDetailOpen]);
+
+  useEffect(() => {
+    if (
+      libraryTrackEditorOpen ||
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      !trackEditorReturnFocusId.current
+    )
+      return;
+    const trackId = trackEditorReturnFocusId.current;
+    trackEditorReturnFocusId.current = undefined;
+    const returnElement = trackEditorReturnFocusElement.current;
+    trackEditorReturnFocusElement.current = undefined;
+    if (returnElement?.isConnected) returnElement.focus();
+    else trackEditTriggerRefs.current.get(trackId)?.focus();
+  }, [activeView, libraryAlbumDetailOpen, libraryTrackEditorOpen]);
+
+  useEffect(() => {
+    if (!albumDetailFocusPending.current) return;
+    if (
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      libraryTrackEditorOpen ||
+      technicalTrack
+    ) {
+      albumDetailFocusPending.current = false;
+      return;
+    }
+    albumDetailHeadingRef.current?.focus();
+    albumDetailFocusPending.current = false;
+  }, [
+    activeView,
+    libraryAlbumDetailOpen,
+    libraryTrackEditorOpen,
+    technicalTrack,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "library" ||
+      !libraryAlbumDetailOpen ||
+      libraryTrackEditorOpen ||
+      technicalTrack
+    )
+      return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+      setLibraryAlbumDetailOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [
+    activeView,
+    libraryAlbumDetailOpen,
+    libraryTrackEditorOpen,
+    selectedAlbumId,
+    technicalTrack,
+  ]);
 
   const refreshCatalog = useCallback(async (): Promise<void> => {
     const requestId = ++libraryRequestId.current;
@@ -448,6 +571,36 @@ export function App(): React.JSX.Element {
     trackFormatFilter,
     trackGenreFilter,
   ]);
+
+  useEffect(() => {
+    if (albums.length === 0) return;
+    const albumIds = albums.map((album) => album.id);
+    let cancelled = false;
+    setArtworkByAlbum((current) => {
+      const next = new Map<string, AlbumArtworkThumbnailDto | "loading">();
+      for (const albumId of albumIds)
+        next.set(albumId, current.get(albumId) ?? "loading");
+      return next;
+    });
+    void window.outgroove.loadAlbumArtwork({ albumIds }).then((result) => {
+      if (cancelled) return;
+      setArtworkByAlbum((current) => {
+        const next = new Map<string, AlbumArtworkThumbnailDto | "loading">();
+        for (const albumId of albumIds)
+          next.set(albumId, current.get(albumId) ?? "loading");
+        if (result.ok)
+          for (const artwork of result.value)
+            next.set(artwork.albumId, artwork);
+        else
+          for (const albumId of albumIds)
+            next.set(albumId, { albumId, status: "invalid" });
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [albums]);
 
   const refreshEditHistory = useCallback(
     async (albumId: string): Promise<void> => {
@@ -609,6 +762,8 @@ export function App(): React.JSX.Element {
     setTrackUndoResult(undefined);
     setBatchUndoPreview(undefined);
     setBatchUndoResult(undefined);
+    setBatchError(undefined);
+    setSequenceError(undefined);
     void window.outgroove
       .listAlbumEditHistory({ albumId: selectedAlbumId })
       .then((result) => {
@@ -627,19 +782,17 @@ export function App(): React.JSX.Element {
       (candidate) => candidate.id === pendingTrackId,
     );
     if (!track) return;
-    setActiveView("workbench");
-    setWorkbenchTool("track");
     setSelectedTrackId(track.id);
+    trackEditorReturnFocusId.current = track.id;
+    setActiveView("library");
+    setLibraryAlbumDetailOpen(true);
+    setLibraryTrackEditorOpen(true);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackDraft(draftForTrack(track));
     setPendingTrackId(undefined);
-    setDiagnosticDestination((current) => ({
-      target: "track",
-      request: (current?.request ?? 0) + 1,
-    }));
   }, [pendingTrackId, selectedAlbum]);
 
   const startScan = async (selectedRootId: string): Promise<boolean> => {
@@ -913,40 +1066,48 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const editTrack = (track: CatalogAlbum["tracks"][number]): void => {
-    setActiveView("workbench");
-    setWorkbenchTool("track");
-    setSelectedTrackId(track.id);
-    setTrackEditPreview(undefined);
-    setTrackEditResult(undefined);
-    setTrackEditError(undefined);
-    setTrackUndoPreview(undefined);
-    setTrackDraft(draftForTrack(track));
+  const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    trackEditorReturnFocusId.current = track.id;
+    trackEditorReturnFocusElement.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : undefined;
+    if (selectedTrackId !== track.id) {
+      setSelectedTrackId(track.id);
+      setTrackEditPreview(undefined);
+      setTrackEditResult(undefined);
+      setTrackEditError(undefined);
+      setTrackUndoPreview(undefined);
+      setTrackDraft(draftForTrack(track));
+    }
+    setLibraryTrackEditorOpen(true);
   };
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
     if (!selectedAlbum) return;
-    setActiveView("workbench");
+    setActiveView("library");
+    setLibraryAlbumDetailOpen(true);
     const affectedIds = [...finding.affectedTrackIds];
     setBatchTrackIds(affectedIds);
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
     let target: "track" | "batch" | "sequence" | "album-title";
     switch (finding.workflow) {
       case "track-editor": {
         const firstTrack = selectedAlbum.tracks.find((track) =>
           affectedIds.includes(track.id),
         );
-        if (firstTrack) editTrack(firstTrack);
+        if (firstTrack) editLibraryTrack(firstTrack);
         target = "track";
-        setWorkbenchTool("track");
         break;
       }
       case "sequence":
         target = "sequence";
-        setWorkbenchTool("sequence");
+        setLibraryAlbumEditingTool("sequence");
         break;
       case "batch-track-artist":
         setBatchEnabled({
@@ -957,7 +1118,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "batch-album-artist":
         setBatchEnabled({
@@ -968,7 +1129,7 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "batch-release-date":
         setBatchEnabled({
@@ -979,16 +1140,16 @@ export function App(): React.JSX.Element {
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
-        setWorkbenchTool("batch");
+        setLibraryAlbumEditingTool("shared");
         break;
       case "album-title":
         target = "album-title";
         setAlbumTitleSection("edit");
-        setWorkbenchTool("album");
+        setLibraryAlbumEditingTool("title");
         break;
     }
     setNotice(
-      "Affected tracks selected. Review and propose a change in the Workbench; no preview or write has started.",
+      "Affected tracks selected. Review and propose a change for this album; no preview or write has started.",
     );
     setDiagnosticDestination((current) => ({
       target,
@@ -998,6 +1159,7 @@ export function App(): React.JSX.Element {
 
   const previewTrackEdit = async (): Promise<void> => {
     if (!selectedTrack) return;
+    setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     const result = await window.outgroove.previewTrackTagEdit({
@@ -1016,10 +1178,7 @@ export function App(): React.JSX.Element {
       },
     });
     if (result.ok) setTrackEditPreview(result.value);
-    else {
-      setTrackEditError(result.error.message);
-      setNotice(result.error.message, "error");
-    }
+    else setTrackEditError(result.error.message);
   };
 
   const applyTrackEdit = async (): Promise<void> => {
@@ -1034,12 +1193,6 @@ export function App(): React.JSX.Element {
         setTrackEditResult(result.value);
         setTrackEditError(undefined);
         const written = result.value.results[0];
-        setNotice(
-          written?.verified
-            ? "Track metadata write was re-read and verified."
-            : `Track metadata was not changed: ${written?.error ?? "verification failed"}`,
-          written?.verified ? "success" : "error",
-        );
         if (written?.verified) {
           setTrackEditPreview(undefined);
           await refreshCatalog();
@@ -1047,7 +1200,6 @@ export function App(): React.JSX.Element {
         }
       } else {
         setTrackEditError(result.error.message);
-        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -1114,8 +1266,10 @@ export function App(): React.JSX.Element {
     );
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const selectAllBatchTracks = (): void => {
@@ -1123,16 +1277,20 @@ export function App(): React.JSX.Element {
     setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const clearBatchTracks = (): void => {
     setBatchTrackIds([]);
     setBatchPreview(undefined);
     setBatchResult(undefined);
+    setBatchError(undefined);
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const moveBatchTrack = (fileId: string, offset: -1 | 1): void => {
@@ -1149,9 +1307,12 @@ export function App(): React.JSX.Element {
     });
     setSequencePreview(undefined);
     setSequenceResult(undefined);
+    setSequenceError(undefined);
   };
 
   const previewBatchEdit = async (): Promise<void> => {
+    setBatchPreview(undefined);
+    setBatchError(undefined);
     const changes: {
       artist?: string;
       albumArtist?: string;
@@ -1172,11 +1333,12 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setBatchPreview(result.value);
       setBatchResult(undefined);
-    } else setNotice(result.error.message, "error");
+    } else setBatchError(result.error.message);
   };
 
   const applyBatchEdit = async (): Promise<void> => {
     if (!batchPreview) return;
+    setBatchError(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.applyTrackBatchEdit({
@@ -1185,23 +1347,21 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setBatchResult(result.value);
-        const failures = result.value.results.filter((item) => !item.verified);
-        setNotice(
-          failures.length === 0
-            ? `Re-read and verified ${result.value.results.length} track writes.`
-            : `${result.value.results.length - failures.length} writes verified; ${failures.length} failed without stopping the other tracks.`,
-          failures.length === 0 ? "success" : "error",
-        );
+        setBatchError(undefined);
         setBatchPreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message, "error");
+      } else {
+        setBatchError(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
   };
 
   const previewTrackNumberSequence = async (): Promise<void> => {
+    setSequencePreview(undefined);
+    setSequenceError(undefined);
     const result = await window.outgroove.previewTrackNumberSequence({
       fileIds: batchTrackIds,
       startNumber: Number(sequenceStart),
@@ -1212,11 +1372,12 @@ export function App(): React.JSX.Element {
     if (result.ok) {
       setSequencePreview(result.value);
       setSequenceResult(undefined);
-    } else setNotice(result.error.message, "error");
+    } else setSequenceError(result.error.message);
   };
 
   const applyTrackNumberSequence = async (): Promise<void> => {
     if (!sequencePreview) return;
+    setSequenceError(undefined);
     setBusy(true);
     try {
       const result = await window.outgroove.applyTrackNumberSequence({
@@ -1225,17 +1386,13 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setSequenceResult(result.value);
-        const failures = result.value.results.filter((item) => !item.verified);
-        setNotice(
-          failures.length === 0
-            ? `Re-read and verified ${result.value.results.length} track-number writes.`
-            : `${result.value.results.length - failures.length} track numbers verified; ${failures.length} failed without stopping the others.`,
-          failures.length === 0 ? "success" : "error",
-        );
+        setSequenceError(undefined);
         setSequencePreview(undefined);
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
-      } else setNotice(result.error.message, "error");
+      } else {
+        setSequenceError(result.error.message);
+      }
     } finally {
       setBusy(false);
     }
@@ -1374,7 +1531,7 @@ export function App(): React.JSX.Element {
     const definition = currentLibraryFilterDefinition();
     if (!definition) {
       setNotice(
-        "Exact Workbench album routes cannot be saved as Library filters.",
+        "Exact album-detail routes cannot be saved as Library filters.",
       );
       return;
     }
@@ -1427,7 +1584,7 @@ export function App(): React.JSX.Element {
     const definition = currentLibraryFilterDefinition();
     if (!definition) {
       setNotice(
-        "Exact Workbench album routes cannot replace a saved Library filter.",
+        "Exact album-detail routes cannot replace a saved Library filter.",
       );
       return;
     }
@@ -1499,7 +1656,7 @@ export function App(): React.JSX.Element {
     setSyncAlbums(saved.albums);
     void refreshSyncHistory(saved.id);
     setNotice(
-      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in the Workbench, then save the selection.`,
+      `Editing albums for DAP profile “${saved.name}”. Add or remove albums in Sync, then save the selection.`,
     );
   };
 
@@ -1792,6 +1949,189 @@ export function App(): React.JSX.Element {
             !albumArtistFilter &&
             !albumIdFilter))));
 
+  const openLibraryAlbum = (album: CatalogAlbum): void => {
+    albumDetailFocusPending.current = true;
+    setSelectedAlbumId(album.id);
+    setLibraryAlbumDetailOpen(true);
+    setEditPreview(undefined);
+    setSyncPlan(undefined);
+  };
+
+  const openLibraryAlbumEditingTool = (tool: LibraryAlbumEditingTool): void => {
+    if (!selectedAlbum) return;
+    setAlbumTitleSection(tool === "history" ? "history" : "edit");
+    setLibraryAlbumEditingTool(tool);
+    if (tool === "history") void refreshEditHistory(selectedAlbum.id);
+  };
+
+  const addSelectedAlbumToSync = (): void => {
+    if (!selectedAlbum) return;
+    if (!syncAlbums.some((album) => album.id === selectedAlbum.id))
+      toggleSyncAlbum(selectedAlbum);
+    setSyncStage("setup");
+    setSyncSetupSection("selection");
+    setActiveView("sync");
+  };
+
+  const closeLibraryAlbum = (): void => {
+    if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+    setLibraryAlbumDetailOpen(false);
+  };
+
+  const renderTrackContext = (
+    tool: "shared" | "sequence",
+    onEditTrack: (track: CatalogAlbum["tracks"][number]) => void,
+  ): React.JSX.Element | undefined =>
+    selectedAlbum ? (
+      <WorkbenchTrackContext
+        busy={busy}
+        selectedTrackIds={batchTrackIds}
+        selectionPurpose={
+          tool === "sequence" ? "track ordering" : "shared-field editing"
+        }
+        tracks={selectedAlbum.tracks}
+        onClearSelection={clearBatchTracks}
+        onEditTrack={onEditTrack}
+        onSelectAll={selectAllBatchTracks}
+        onToggleTrack={toggleBatchTrack}
+      />
+    ) : undefined;
+
+  const sharedFieldEditor = (
+    <SharedFieldEditor
+      busy={busy}
+      draft={batchDraft}
+      enabled={batchEnabled}
+      error={batchError}
+      preview={batchPreview}
+      ref={batchEditorRef}
+      result={batchResult}
+      tracks={selectedBatchTracks}
+      onCancelPreview={() => {
+        setBatchPreview(undefined);
+        setBatchError(undefined);
+      }}
+      onConfirm={() => void applyBatchEdit()}
+      onDraftChange={(field, value) => {
+        setBatchDraft((draft) => ({
+          ...draft,
+          [field]: value,
+        }));
+        setBatchPreview(undefined);
+        setBatchResult(undefined);
+        setBatchError(undefined);
+      }}
+      onEnabledChange={(field, enabled) => {
+        setBatchEnabled((current) => ({
+          ...current,
+          [field]: enabled,
+        }));
+        setBatchPreview(undefined);
+        setBatchResult(undefined);
+        setBatchError(undefined);
+      }}
+      onPreview={() => void previewBatchEdit()}
+    />
+  );
+
+  const trackOrderEditor = (
+    <TrackOrderEditor
+      busy={busy}
+      discDraft={sequenceDiscNumber}
+      discEnabled={sequenceDiscEnabled}
+      error={sequenceError}
+      preview={sequencePreview}
+      ref={sequenceEditorRef}
+      result={sequenceResult}
+      startDraft={sequenceStart}
+      tracks={orderedSequenceTracks}
+      onCancelPreview={() => {
+        setSequencePreview(undefined);
+        setSequenceError(undefined);
+      }}
+      onConfirm={() => void applyTrackNumberSequence()}
+      onDiscChange={(value) => {
+        setSequenceDiscNumber(value);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+        setSequenceError(undefined);
+      }}
+      onDiscEnabledChange={(enabled) => {
+        setSequenceDiscEnabled(enabled);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+        setSequenceError(undefined);
+      }}
+      onMove={moveBatchTrack}
+      onPreview={() => void previewTrackNumberSequence()}
+      onStartChange={(value) => {
+        setSequenceStart(value);
+        setSequencePreview(undefined);
+        setSequenceResult(undefined);
+        setSequenceError(undefined);
+      }}
+    />
+  );
+
+  const renderAlbumTitleWorkbench = (
+    showNavigation: boolean,
+  ): React.JSX.Element | undefined =>
+    selectedAlbum ? (
+      <AlbumTitleWorkbench
+        albumTitle={selectedAlbum.title}
+        batchUndoKind={batchUndoKind}
+        batchUndoPreview={batchUndoPreview}
+        batchUndoResult={batchUndoResult}
+        busy={busy}
+        draftTitle={editTitle}
+        editError={editError}
+        editHistory={editHistory}
+        editPreview={editPreview}
+        editResult={editResult}
+        historyError={historyError}
+        onCancelBatchUndo={() => {
+          setBatchUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelEditPreview={() => {
+          setEditPreview(undefined);
+          setEditError(undefined);
+        }}
+        onCancelTrackUndo={() => {
+          setTrackUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelUndo={() => {
+          setUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onConfirmBatchUndo={() => void applyBatchUndo()}
+        onConfirmEdit={() => void applyEdit()}
+        onConfirmTrackUndo={() => void applyTrackUndo()}
+        onConfirmUndo={() => void applyUndo()}
+        onDraftTitleChange={(title) => {
+          setEditTitle(title);
+          setEditPreview(undefined);
+          setEditResult(undefined);
+          setEditError(undefined);
+        }}
+        onPreviewBatchUndo={(operationId, kind) =>
+          void previewBatchUndo(operationId, kind)
+        }
+        onPreviewEdit={() => void previewEdit()}
+        onPreviewTrackUndo={(operationId) => void previewTrackUndo(operationId)}
+        onPreviewUndo={(operationId) => void previewUndo(operationId)}
+        onSectionChange={setAlbumTitleSection}
+        ref={albumTitleEditorRef}
+        section={albumTitleSection}
+        showNavigation={showNavigation}
+        trackUndoPreview={trackUndoPreview}
+        trackUndoResult={trackUndoResult}
+        undoPreview={undoPreview}
+        undoResult={undoResult}
+      />
+    ) : undefined;
+
   return (
     <ApplicationShell
       activeView={activeView}
@@ -1834,35 +2174,9 @@ export function App(): React.JSX.Element {
           onRetry={(selectedRootId) => void startScan(selectedRootId)}
         />
       )}
-      {(activeView === "library" || activeView === "workbench") && (
+      {activeView === "library" && (
         <>
-          {activeView === "library" && !libraryOnboardingVisible && (
-            <section className="view-actions" aria-label="Library actions">
-              <div>
-                <p className="eyebrow">Local collection</p>
-                <h2>Browse your Library</h2>
-                <p>
-                  Search and inspect local metadata. Editing and DAP copies open
-                  in their own reviewed workspaces.
-                </p>
-              </div>
-              <div className="actions">
-                <button
-                  disabled={busy || scanActive}
-                  onClick={() => void chooseAndScan()}
-                >
-                  Choose Library folder
-                </button>
-                <button
-                  disabled={busy || scanActive || !rootId}
-                  onClick={() => void rescan()}
-                >
-                  Scan current folder
-                </button>
-              </div>
-            </section>
-          )}
-          {activeView === "library" && !libraryOnboardingVisible && (
+          {!libraryOnboardingVisible && !libraryAlbumDetailOpen && (
             <>
               <form
                 className="library-toolbar"
@@ -1873,7 +2187,9 @@ export function App(): React.JSX.Element {
                   setQuery(searchText.trim());
                 }}
               >
-                <label htmlFor="library-search">Search Library</label>
+                <label className="visually-hidden" htmlFor="library-search">
+                  Search Library
+                </label>
                 <input
                   id="library-search"
                   type="search"
@@ -1881,7 +2197,9 @@ export function App(): React.JSX.Element {
                   placeholder="Album, artist, genre, track, format, or path"
                   onChange={(event) => setSearchText(event.target.value)}
                 />
-                <label htmlFor="library-view">View</label>
+                <label className="visually-hidden" htmlFor="library-view">
+                  View
+                </label>
                 <select
                   id="library-view"
                   value={libraryView}
@@ -2014,132 +2332,186 @@ export function App(): React.JSX.Element {
                   </button>
                 )}
               </form>
-              <section
-                className="saved-filters"
-                aria-labelledby="saved-filters-title"
-              >
-                <div className="section-heading">
+              <details className="library-tools-disclosure">
+                <summary>
                   <div>
-                    <p className="eyebrow">Local shortcuts</p>
-                    <h2 id="saved-filters-title">Saved Library filters</h2>
+                    <strong>Library tools</strong>
+                    <span>Saved filters and scanning</span>
                   </div>
-                  <form
-                    className="inline"
-                    aria-label="Save current Library filter"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void saveCurrentLibraryFilter();
-                    }}
+                  <span>
+                    {savedFilters.length === 0
+                      ? "No saved filters"
+                      : `${savedFilters.length} saved ${
+                          savedFilters.length === 1 ? "filter" : "filters"
+                        }`}
+                  </span>
+                </summary>
+                <div className="library-tools-content">
+                  <section
+                    className="library-scan-tools"
+                    aria-labelledby="library-scan-tools-title"
                   >
-                    <label htmlFor="saved-filter-name">Filter name</label>
-                    <input
-                      id="saved-filter-name"
-                      value={savedFilterName}
-                      maxLength={100}
-                      placeholder="For example, Ambient FLAC"
-                      onChange={(event) =>
-                        setSavedFilterName(event.target.value)
-                      }
-                    />
-                    <button
-                      type="submit"
-                      disabled={
-                        savedFilterBusy ||
-                        !savedFilterName.trim() ||
-                        Boolean(albumIdFilter)
-                      }
-                    >
-                      Save current filter
-                    </button>
-                  </form>
+                    <div>
+                      <p className="eyebrow">Local collection</p>
+                      <h2 id="library-scan-tools-title">Folders & scanning</h2>
+                      <p>
+                        Add and scan a folder explicitly. Scanning remains local
+                        and read-only.
+                      </p>
+                    </div>
+                    <div className="actions">
+                      <button
+                        disabled={busy || scanActive}
+                        onClick={() => void chooseAndScan()}
+                      >
+                        Choose Library folder
+                      </button>
+                      <button
+                        disabled={busy || scanActive || !rootId}
+                        onClick={() => void rescan()}
+                      >
+                        Scan current folder
+                      </button>
+                    </div>
+                  </section>
+                  <section
+                    className="saved-filters"
+                    aria-labelledby="saved-filters-title"
+                  >
+                    <div className="section-heading">
+                      <div>
+                        <p className="eyebrow">Local shortcuts</p>
+                        <h2 id="saved-filters-title">Saved Library filters</h2>
+                      </div>
+                      <form
+                        className="inline"
+                        aria-label="Save current Library filter"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void saveCurrentLibraryFilter();
+                        }}
+                      >
+                        <label htmlFor="saved-filter-name">Filter name</label>
+                        <input
+                          id="saved-filter-name"
+                          value={savedFilterName}
+                          maxLength={100}
+                          placeholder="For example, Ambient FLAC"
+                          onChange={(event) =>
+                            setSavedFilterName(event.target.value)
+                          }
+                        />
+                        <button
+                          type="submit"
+                          disabled={
+                            savedFilterBusy ||
+                            !savedFilterName.trim() ||
+                            Boolean(albumIdFilter)
+                          }
+                        >
+                          Save current filter
+                        </button>
+                      </form>
+                    </div>
+                    <p>
+                      Saves the active search and view. Page position and exact
+                      album-detail routes remain temporary.
+                    </p>
+                    {albumIdFilter && (
+                      <p>
+                        Status: Return to a normal Library view before saving.
+                      </p>
+                    )}
+                    {savedFilters.length === 0 ? (
+                      <p>No saved Library filters yet.</p>
+                    ) : (
+                      <ul>
+                        {savedFilters.map((saved) => (
+                          <li key={saved.id}>
+                            <div>
+                              <strong>{saved.name}</strong>
+                              <span>
+                                {describeSavedFilter(saved.definition)}
+                              </span>
+                            </div>
+                            <form
+                              className="inline"
+                              aria-label={`Rename ${saved.name}`}
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                const name = (
+                                  savedFilterNames[saved.id] ?? ""
+                                ).trim();
+                                if (name)
+                                  void updateSavedLibraryFilter(
+                                    saved,
+                                    name,
+                                    saved.definition,
+                                    "Renamed",
+                                  );
+                              }}
+                            >
+                              <label htmlFor={`saved-filter-name-${saved.id}`}>
+                                Name
+                              </label>
+                              <input
+                                id={`saved-filter-name-${saved.id}`}
+                                aria-label={`Name for ${saved.name}`}
+                                value={savedFilterNames[saved.id] ?? saved.name}
+                                maxLength={100}
+                                onChange={(event) =>
+                                  setSavedFilterNames((names) => ({
+                                    ...names,
+                                    [saved.id]: event.target.value,
+                                  }))
+                                }
+                              />
+                              <button
+                                type="submit"
+                                disabled={
+                                  savedFilterBusy ||
+                                  !(savedFilterNames[saved.id] ?? "").trim() ||
+                                  (savedFilterNames[saved.id] ?? "").trim() ===
+                                    saved.name
+                                }
+                              >
+                                Rename {saved.name}
+                              </button>
+                            </form>
+                            <button
+                              disabled={savedFilterBusy}
+                              onClick={() => openSavedLibraryFilter(saved)}
+                            >
+                              Open {saved.name}
+                            </button>
+                            <button
+                              disabled={
+                                savedFilterBusy || Boolean(albumIdFilter)
+                              }
+                              onClick={() =>
+                                void replaceSavedLibraryFilter(saved)
+                              }
+                            >
+                              Update {saved.name} to current filter
+                            </button>
+                            <button
+                              disabled={savedFilterBusy}
+                              onClick={() =>
+                                void deleteSavedLibraryFilter(saved)
+                              }
+                            >
+                              Delete {saved.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
                 </div>
-                <p>
-                  Saves the active search and view. Page position and exact
-                  Workbench album routes remain temporary.
-                </p>
-                {albumIdFilter && (
-                  <p>Status: Return to a normal Library view before saving.</p>
-                )}
-                {savedFilters.length === 0 ? (
-                  <p>No saved Library filters yet.</p>
-                ) : (
-                  <ul>
-                    {savedFilters.map((saved) => (
-                      <li key={saved.id}>
-                        <div>
-                          <strong>{saved.name}</strong>
-                          <span>{describeSavedFilter(saved.definition)}</span>
-                        </div>
-                        <form
-                          className="inline"
-                          aria-label={`Rename ${saved.name}`}
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            const name = (
-                              savedFilterNames[saved.id] ?? ""
-                            ).trim();
-                            if (name)
-                              void updateSavedLibraryFilter(
-                                saved,
-                                name,
-                                saved.definition,
-                                "Renamed",
-                              );
-                          }}
-                        >
-                          <label htmlFor={`saved-filter-name-${saved.id}`}>
-                            Name
-                          </label>
-                          <input
-                            id={`saved-filter-name-${saved.id}`}
-                            aria-label={`Name for ${saved.name}`}
-                            value={savedFilterNames[saved.id] ?? saved.name}
-                            maxLength={100}
-                            onChange={(event) =>
-                              setSavedFilterNames((names) => ({
-                                ...names,
-                                [saved.id]: event.target.value,
-                              }))
-                            }
-                          />
-                          <button
-                            type="submit"
-                            disabled={
-                              savedFilterBusy ||
-                              !(savedFilterNames[saved.id] ?? "").trim() ||
-                              (savedFilterNames[saved.id] ?? "").trim() ===
-                                saved.name
-                            }
-                          >
-                            Rename {saved.name}
-                          </button>
-                        </form>
-                        <button
-                          disabled={savedFilterBusy}
-                          onClick={() => openSavedLibraryFilter(saved)}
-                        >
-                          Open {saved.name}
-                        </button>
-                        <button
-                          disabled={savedFilterBusy || Boolean(albumIdFilter)}
-                          onClick={() => void replaceSavedLibraryFilter(saved)}
-                        >
-                          Update {saved.name} to current filter
-                        </button>
-                        <button
-                          disabled={savedFilterBusy}
-                          onClick={() => void deleteSavedLibraryFilter(saved)}
-                        >
-                          Delete {saved.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+              </details>
             </>
           )}
-          {activeView === "library" && !libraryOnboardingVisible && (
+          {!libraryOnboardingVisible && !libraryAlbumDetailOpen && (
             <p className="result-count" aria-live="polite">
               {totalItems}{" "}
               {libraryView === "scan-errors"
@@ -2212,7 +2584,7 @@ export function App(): React.JSX.Element {
                 void startFirstScan(selectedRootId)
               }
             />
-          ) : activeView === "library" && libraryView === "scan-errors" ? (
+          ) : libraryView === "scan-errors" ? (
             <main className="errors" aria-labelledby="scan-errors">
               <h2 id="scan-errors">Scan problems</h2>
               {scanErrors.length === 0 ? (
@@ -2233,7 +2605,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "artists" ? (
+          ) : libraryView === "artists" ? (
             <main className="artists" aria-labelledby="album-artists">
               <h2 id="album-artists">Album artists</h2>
               {artists.length === 0 ? (
@@ -2272,7 +2644,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "genres" ? (
+          ) : libraryView === "genres" ? (
             <main className="genres" aria-labelledby="library-genres">
               <h2 id="library-genres">Genres</h2>
               {genres.length === 0 ? (
@@ -2322,7 +2694,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "formats" ? (
+          ) : libraryView === "formats" ? (
             <main className="formats" aria-labelledby="library-formats">
               <h2 id="library-formats">Formats</h2>
               {formats.length === 0 ? (
@@ -2363,7 +2735,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "folders" ? (
+          ) : libraryView === "folders" ? (
             <main className="folders" aria-labelledby="library-folders">
               <h2 id="library-folders">Folders</h2>
               {folders.length === 0 ? (
@@ -2409,7 +2781,7 @@ export function App(): React.JSX.Element {
                 </ul>
               )}
             </main>
-          ) : activeView === "library" && libraryView === "tracks" ? (
+          ) : libraryView === "tracks" ? (
             <main className="tracks" aria-labelledby="library-tracks">
               <h2 id="library-tracks">Tracks</h2>
               {tracks.length === 0 ? (
@@ -2480,11 +2852,11 @@ export function App(): React.JSX.Element {
                                 setQuery("");
                                 setPageOffset(0);
                                 setNotice(
-                                  `Opening ${track.title} in the existing preview-only track editor.`,
+                                  `Opening ${track.title} in its Library metadata editor.`,
                                 );
                               }}
                             >
-                              Open {track.title} in Workbench
+                              Edit {track.title}
                             </button>
                           </td>
                         </tr>
@@ -2497,40 +2869,30 @@ export function App(): React.JSX.Element {
           ) : albums.length === 0 || !selectedAlbum ? (
             <main className="empty">
               <h2>
-                {activeView === "workbench"
-                  ? "Choose an album to begin"
-                  : query
-                    ? "No matching albums"
-                    : albumArtistFilter
-                      ? `No albums by ${albumArtistFilter}`
-                      : albumIdFilter
-                        ? "The selected track’s album is unavailable"
-                        : libraryView === "data-quality"
-                          ? "No albums need review"
-                          : "Your Library is empty"}
+                {query
+                  ? "No matching albums"
+                  : albumArtistFilter
+                    ? `No albums by ${albumArtistFilter}`
+                    : albumIdFilter
+                      ? "The selected track’s album is unavailable"
+                      : libraryView === "data-quality"
+                        ? "No albums need review"
+                        : "Your Library is empty"}
               </h2>
               <p>
-                {activeView === "workbench"
-                  ? "Select an album or track in Library, then open its contextual metadata workflow. No preview or write starts automatically."
-                  : query
-                    ? "Try a different album, artist, track, format, or path."
-                    : albumArtistFilter
-                      ? "Clear the album-artist filter to return to the full Library."
-                      : albumIdFilter
-                        ? "The track may have been removed or rescanned. Show all albums to continue browsing."
-                        : libraryView === "data-quality"
-                          ? qualityFilter === "all"
-                            ? "The current catalog has no album data-quality findings."
-                            : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
-                          : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
+                {query
+                  ? "Try a different album, artist, track, format, or path."
+                  : albumArtistFilter
+                    ? "Clear the album-artist filter to return to the full Library."
+                    : albumIdFilter
+                      ? "The track may have been removed or rescanned. Show all albums to continue browsing."
+                      : libraryView === "data-quality"
+                        ? qualityFilter === "all"
+                          ? "The current catalog has no album data-quality findings."
+                          : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
+                        : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
               </p>
-              {activeView === "workbench" && (
-                <button onClick={() => setActiveView("library")}>
-                  Browse Library
-                </button>
-              )}
               {!query &&
-                activeView === "library" &&
                 !albumArtistFilter &&
                 !albumIdFilter &&
                 libraryView !== "data-quality" && (
@@ -2545,409 +2907,176 @@ export function App(): React.JSX.Element {
           ) : (
             <main
               className={
-                activeView === "workbench"
-                  ? "workspace workbench-workspace"
-                  : "workspace"
+                libraryAlbumDetailOpen
+                  ? "library-album-detail"
+                  : "library-album-collection"
               }
             >
-              {activeView === "library" && (
-                <aside aria-label="Albums">
-                  <h2>Albums</h2>
-                  <p className="album-quality-summary" aria-live="polite">
-                    Albums needing review on this page: {albumsWithDiagnostics}{" "}
-                    of {albums.length}.
-                  </p>
-                  {albums.map((album) => {
-                    const findings = diagnosticsByAlbum.get(album.id) ?? [];
-                    const needsAttention = findings.some(
-                      (finding) => finding.severity === "needs-attention",
-                    );
-                    return (
-                      <button
-                        aria-current={
-                          album.id === selectedAlbumId ? "true" : undefined
-                        }
-                        className={
-                          album.id === selectedAlbumId
-                            ? "album selected"
-                            : "album"
-                        }
-                        key={album.id}
-                        onClick={() => {
-                          setSelectedAlbumId(album.id);
-                          setEditPreview(undefined);
-                          setSyncPlan(undefined);
-                        }}
-                      >
-                        {album.title}
-                        <small>
-                          {album.albumArtist} · {album.tracks.length} tracks
-                        </small>
-                        <small
-                          className={`album-quality-status ${
-                            findings.length === 0 ? "clean" : "review"
-                          }`}
-                        >
-                          {findings.length === 0
-                            ? "Status: No data-quality findings"
-                            : `Status: ${findings.length} data-quality ${findings.length === 1 ? "finding" : "findings"} — ${
-                                needsAttention
-                                  ? "needs attention"
-                                  : "review recommended"
-                              }`}
-                        </small>
-                      </button>
-                    );
-                  })}
-                </aside>
+              {!libraryAlbumDetailOpen && (
+                <LibraryAlbumCollection
+                  albums={albums}
+                  artworkByAlbum={artworkByAlbum}
+                  diagnosticsByAlbum={diagnosticsByAlbum}
+                  onOpenAlbum={openLibraryAlbum}
+                  registerAlbumTrigger={(albumId, element) => {
+                    if (element) albumTriggerRefs.current.set(albumId, element);
+                    else albumTriggerRefs.current.delete(albumId);
+                  }}
+                />
               )}
-              <section className="detail">
-                <>
+              {libraryAlbumDetailOpen && (
+                <section className="detail album-detail">
+                  <nav
+                    aria-label="Album detail navigation"
+                    className="album-detail-navigation"
+                  >
+                    <button onClick={closeLibraryAlbum} type="button">
+                      Back to albums
+                    </button>
+                  </nav>
                   <div className="section-heading album-context">
+                    <AlbumArtwork
+                      album={selectedAlbum}
+                      artwork={artworkByAlbum.get(selectedAlbum.id)}
+                    />
                     <div>
-                      <p className="eyebrow">
-                        {activeView === "workbench"
-                          ? "Current album context"
-                          : "Album detail"}
-                      </p>
-                      <h2>{selectedAlbum.title}</h2>
+                      <p className="eyebrow">Album detail</p>
+                      <h2 ref={albumDetailHeadingRef} tabIndex={-1}>
+                        {selectedAlbum.title}
+                      </h2>
                       <p>
                         {selectedAlbum.albumArtist} ·{" "}
-                        {selectedAlbum.tracks.length} tracks
+                        {selectedAlbumReleaseDate?.status === "consistent"
+                          ? selectedAlbumReleaseDate.value
+                          : selectedAlbumReleaseDate?.status === "mixed"
+                            ? "Mixed release dates"
+                            : "Release date not set"}{" "}
+                        · {selectedAlbum.tracks.length} tracks
                         {selectedTrack
                           ? ` · Selected: ${selectedTrack.tags.title}`
                           : ""}
                       </p>
                     </div>
                     <div className="actions">
-                      {activeView === "library" ? (
-                        <>
-                          <button
-                            className="primary"
-                            onClick={() => {
-                              setWorkbenchTool("overview");
-                              setActiveView("workbench");
-                            }}
-                          >
-                            Open {selectedAlbum.title} in Workbench
-                          </button>
-                          <button
-                            disabled={
-                              busy ||
-                              (syncAlbums.length >= 100 &&
-                                !syncAlbums.some(
-                                  (album) => album.id === selectedAlbum.id,
-                                ))
-                            }
-                            onClick={() => {
-                              if (
-                                !syncAlbums.some(
-                                  (album) => album.id === selectedAlbum.id,
-                                )
-                              )
-                                toggleSyncAlbum(selectedAlbum);
-                              setSyncStage("setup");
-                              setSyncSetupSection("selection");
-                              setActiveView("sync");
-                            }}
-                          >
-                            Add {selectedAlbum.title} to Sync
-                          </button>
-                        </>
-                      ) : (
-                        <button onClick={() => setActiveView("library")}>
-                          Back to Library
-                        </button>
-                      )}
+                      <AlbumActionsMenu
+                        albumTitle={selectedAlbum.title}
+                        busy={busy}
+                        syncDisabled={
+                          syncAlbums.length >= 100 &&
+                          !syncAlbums.some(
+                            (album) => album.id === selectedAlbum.id,
+                          )
+                        }
+                        onAddToSync={addSelectedAlbumToSync}
+                        onEditMetadata={() =>
+                          openLibraryAlbumEditingTool("title")
+                        }
+                        onEditTrackOrder={() =>
+                          openLibraryAlbumEditingTool("sequence")
+                        }
+                        onOpenHistory={() =>
+                          openLibraryAlbumEditingTool("history")
+                        }
+                      />
                     </div>
                   </div>
-                  {activeView === "workbench" && (
-                    <WorkbenchNavigation
-                      activeTool={workbenchTool}
-                      selectedTrackTitle={selectedTrack?.tags.title}
-                      onSelect={setWorkbenchTool}
-                    />
-                  )}
-                  {(activeView === "library" ||
-                    workbenchTool === "overview") && (
-                    <section
-                      className="card diagnostics"
-                      aria-label="Album data quality"
-                    >
-                      <h3>
-                        {activeView === "library"
-                          ? "Album data quality"
-                          : "Album review"}
-                      </h3>
-                      <p>
-                        Findings come from the current local catalog. They
-                        select a review workflow but never infer, preview, or
-                        write a correction.
-                      </p>
-                      {albumDiagnostics.length === 0 ? (
-                        <p>Status: No data-quality findings for this album.</p>
-                      ) : (
-                        <ol className="diagnostic-list">
-                          {albumDiagnostics.map((finding) => {
-                            const affectedTracks =
-                              finding.affectedTrackIds.flatMap((fileId) => {
-                                const track = selectedAlbum.tracks.find(
-                                  (candidate) => candidate.id === fileId,
-                                );
-                                return track ? [track] : [];
-                              });
-                            return (
-                              <li key={finding.id}>
-                                <article
-                                  aria-labelledby={`diagnostic-${finding.id}`}
+                  <section
+                    className="card diagnostics"
+                    aria-label="Album data quality"
+                  >
+                    <h3>Album data quality</h3>
+                    <p>
+                      Findings come from the current local catalog. They select
+                      a review workflow but never infer, preview, or write a
+                      correction.
+                    </p>
+                    {albumDiagnostics.length === 0 ? (
+                      <p>Status: No data-quality findings for this album.</p>
+                    ) : (
+                      <ol className="diagnostic-list">
+                        {albumDiagnostics.map((finding) => {
+                          const affectedTracks =
+                            finding.affectedTrackIds.flatMap((fileId) => {
+                              const track = selectedAlbum.tracks.find(
+                                (candidate) => candidate.id === fileId,
+                              );
+                              return track ? [track] : [];
+                            });
+                          return (
+                            <li key={finding.id}>
+                              <article
+                                aria-labelledby={`diagnostic-${finding.id}`}
+                              >
+                                <p className="diagnostic-status">
+                                  Status:{" "}
+                                  {finding.severity === "needs-attention"
+                                    ? "Needs attention"
+                                    : "Review recommended"}
+                                </p>
+                                <h4 id={`diagnostic-${finding.id}`}>
+                                  {finding.title}
+                                </h4>
+                                <p>{finding.explanation}</p>
+                                <h5>Affected files</h5>
+                                <ul>
+                                  {affectedTracks.map((track) => (
+                                    <li key={track.id}>{track.path}</li>
+                                  ))}
+                                </ul>
+                                <button
+                                  disabled={busy}
+                                  onClick={() => routeDiagnostic(finding)}
                                 >
-                                  <p className="diagnostic-status">
-                                    Status:{" "}
-                                    {finding.severity === "needs-attention"
-                                      ? "Needs attention"
-                                      : "Review recommended"}
-                                  </p>
-                                  <h4 id={`diagnostic-${finding.id}`}>
-                                    {finding.title}
-                                  </h4>
-                                  <p>{finding.explanation}</p>
-                                  <h5>Affected files</h5>
-                                  <ul>
-                                    {affectedTracks.map((track) => (
-                                      <li key={track.id}>{track.path}</li>
-                                    ))}
-                                  </ul>
-                                  <button
-                                    disabled={busy}
-                                    onClick={() => routeDiagnostic(finding)}
-                                  >
-                                    {diagnosticActionLabel(finding.workflow)}
-                                  </button>
-                                </article>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      )}
-                    </section>
-                  )}
-                  {(activeView === "library" ||
-                    workbenchTool === "overview") && (
-                    <section
-                      className="album-tracks"
-                      aria-labelledby="album-tracks-title"
-                    >
-                      <div className="track-section-heading">
-                        <div>
-                          <h3 id="album-tracks-title">Tracks</h3>
-                          <p>
-                            Open a track for technical details. Raw tag data
-                            stays in its Advanced metadata disclosure.
-                          </p>
-                        </div>
-                        <span>{selectedAlbum.tracks.length} total</span>
+                                  {diagnosticActionLabel(finding.workflow)}
+                                </button>
+                              </article>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                  </section>
+                  <section
+                    className="album-tracks"
+                    aria-labelledby="album-tracks-title"
+                  >
+                    <div className="track-section-heading">
+                      <div>
+                        <h3 id="album-tracks-title">Tracks</h3>
+                        <p>
+                          Select a track to edit its common metadata. Use More
+                          for read-only technical information.
+                        </p>
                       </div>
-                      <div className="track-list">
-                        {selectedAlbum.tracks.map((track) => (
-                          <LibraryTrackDetail
-                            busy={busy}
-                            key={track.id}
-                            mode={activeView}
-                            selectionPurpose={
-                              workbenchTool === "sequence"
-                                ? "track ordering"
-                                : workbenchTool === "batch"
-                                  ? "shared-field editing"
-                                  : "shared metadata or track ordering"
-                            }
-                            selectedForBatch={batchTrackIds.includes(track.id)}
-                            track={track}
-                            onEdit={() => editTrack(track)}
-                            onToggleBatch={() => toggleBatchTrack(track.id)}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                  {activeView === "workbench" &&
-                    (workbenchTool === "batch" ||
-                      workbenchTool === "sequence") && (
-                      <WorkbenchTrackContext
-                        busy={busy}
-                        selectedTrackIds={batchTrackIds}
-                        selectionPurpose={
-                          workbenchTool === "sequence"
-                            ? "track ordering"
-                            : "shared-field editing"
-                        }
-                        tracks={selectedAlbum.tracks}
-                        onClearSelection={clearBatchTracks}
-                        onEditTrack={editTrack}
-                        onSelectAll={selectAllBatchTracks}
-                        onToggleTrack={toggleBatchTrack}
-                      />
-                    )}
-                  {activeView === "workbench" && workbenchTool === "batch" && (
-                    <SharedFieldEditor
-                      busy={busy}
-                      draft={batchDraft}
-                      enabled={batchEnabled}
-                      preview={batchPreview}
-                      ref={batchEditorRef}
-                      result={batchResult}
-                      tracks={selectedBatchTracks}
-                      onCancelPreview={() => setBatchPreview(undefined)}
-                      onConfirm={() => void applyBatchEdit()}
-                      onDraftChange={(field, value) => {
-                        setBatchDraft((draft) => ({
-                          ...draft,
-                          [field]: value,
-                        }));
-                        setBatchPreview(undefined);
-                        setBatchResult(undefined);
-                      }}
-                      onEnabledChange={(field, enabled) => {
-                        setBatchEnabled((current) => ({
-                          ...current,
-                          [field]: enabled,
-                        }));
-                        setBatchPreview(undefined);
-                        setBatchResult(undefined);
-                      }}
-                      onPreview={() => void previewBatchEdit()}
-                    />
-                  )}
-                  {activeView === "workbench" &&
-                    workbenchTool === "sequence" && (
-                      <TrackOrderEditor
-                        busy={busy}
-                        discDraft={sequenceDiscNumber}
-                        discEnabled={sequenceDiscEnabled}
-                        preview={sequencePreview}
-                        ref={sequenceEditorRef}
-                        result={sequenceResult}
-                        startDraft={sequenceStart}
-                        tracks={orderedSequenceTracks}
-                        onCancelPreview={() => setSequencePreview(undefined)}
-                        onConfirm={() => void applyTrackNumberSequence()}
-                        onDiscChange={(value) => {
-                          setSequenceDiscNumber(value);
-                          setSequencePreview(undefined);
-                          setSequenceResult(undefined);
-                        }}
-                        onDiscEnabledChange={(enabled) => {
-                          setSequenceDiscEnabled(enabled);
-                          setSequencePreview(undefined);
-                          setSequenceResult(undefined);
-                        }}
-                        onMove={moveBatchTrack}
-                        onPreview={() => void previewTrackNumberSequence()}
-                        onStartChange={(value) => {
-                          setSequenceStart(value);
-                          setSequencePreview(undefined);
-                          setSequenceResult(undefined);
-                        }}
-                      />
-                    )}
-                  {activeView === "workbench" &&
-                    workbenchTool === "track" &&
-                    selectedTrack && (
-                      <TrackMetadataEditor
-                        busy={busy}
-                        draft={trackDraft}
-                        error={trackEditError}
-                        onCancelPreview={() => {
-                          setTrackEditPreview(undefined);
-                          setTrackEditResult(undefined);
-                          setTrackEditError(undefined);
-                        }}
-                        onClose={() => {
-                          setSelectedTrackId(undefined);
-                          setTrackEditPreview(undefined);
-                          setTrackEditResult(undefined);
-                          setTrackEditError(undefined);
-                        }}
-                        onConfirm={() => void applyTrackEdit()}
-                        onDraftChange={(field, value) => {
-                          setTrackDraft((draft) => ({
-                            ...draft,
-                            [field]: value,
-                          }));
-                          setTrackEditPreview(undefined);
-                          setTrackEditResult(undefined);
-                          setTrackEditError(undefined);
-                        }}
-                        onPreview={() => void previewTrackEdit()}
-                        preview={trackEditPreview}
-                        ref={trackEditorRef}
-                        result={trackEditResult}
-                        track={selectedTrack}
-                      />
-                    )}
-                  {activeView === "workbench" && workbenchTool === "album" && (
-                    <AlbumTitleWorkbench
-                      albumTitle={selectedAlbum.title}
-                      batchUndoKind={batchUndoKind}
-                      batchUndoPreview={batchUndoPreview}
-                      batchUndoResult={batchUndoResult}
-                      busy={busy}
-                      draftTitle={editTitle}
-                      editError={editError}
-                      editHistory={editHistory}
-                      editPreview={editPreview}
-                      editResult={editResult}
-                      historyError={historyError}
-                      onCancelBatchUndo={() => {
-                        setBatchUndoPreview(undefined);
-                        setHistoryError(undefined);
-                      }}
-                      onCancelEditPreview={() => {
-                        setEditPreview(undefined);
-                        setEditError(undefined);
-                      }}
-                      onCancelTrackUndo={() => {
-                        setTrackUndoPreview(undefined);
-                        setHistoryError(undefined);
-                      }}
-                      onCancelUndo={() => {
-                        setUndoPreview(undefined);
-                        setHistoryError(undefined);
-                      }}
-                      onConfirmBatchUndo={() => void applyBatchUndo()}
-                      onConfirmEdit={() => void applyEdit()}
-                      onConfirmTrackUndo={() => void applyTrackUndo()}
-                      onConfirmUndo={() => void applyUndo()}
-                      onDraftTitleChange={(title) => {
-                        setEditTitle(title);
-                        setEditPreview(undefined);
-                        setEditResult(undefined);
-                        setEditError(undefined);
-                      }}
-                      onPreviewBatchUndo={(operationId, kind) =>
-                        void previewBatchUndo(operationId, kind)
-                      }
-                      onPreviewEdit={() => void previewEdit()}
-                      onPreviewTrackUndo={(operationId) =>
-                        void previewTrackUndo(operationId)
-                      }
-                      onPreviewUndo={(operationId) =>
-                        void previewUndo(operationId)
-                      }
-                      onSectionChange={setAlbumTitleSection}
-                      ref={albumTitleEditorRef}
-                      section={albumTitleSection}
-                      trackUndoPreview={trackUndoPreview}
-                      trackUndoResult={trackUndoResult}
-                      undoPreview={undoPreview}
-                      undoResult={undoResult}
-                    />
-                  )}
-                </>
-              </section>
+                      <span>{selectedAlbum.tracks.length} total</span>
+                    </div>
+                    <div className="track-list">
+                      {selectedAlbum.tracks.map((track) => (
+                        <LibraryTrackDetail
+                          busy={busy}
+                          key={track.id}
+                          mode="library"
+                          track={track}
+                          onEdit={() => editLibraryTrack(track)}
+                          onMoreInfo={() => setTechnicalTrackId(track.id)}
+                          registerEditTrigger={(element) => {
+                            if (element)
+                              trackEditTriggerRefs.current.set(
+                                track.id,
+                                element,
+                              );
+                            else trackEditTriggerRefs.current.delete(track.id);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                </section>
+              )}
             </main>
           )}
-          {activeView === "library" &&
-            !libraryOnboardingVisible &&
+          {!libraryOnboardingVisible &&
+            !libraryAlbumDetailOpen &&
             totalItems > PAGE_SIZE && (
               <nav className="pagination" aria-label="Library pages">
                 <button
@@ -3113,6 +3242,95 @@ export function App(): React.JSX.Element {
           onRestoreBackup={() => void chooseRestore()}
           onScanRoot={(selectedRootId) => void startScan(selectedRootId)}
           onSelectSection={setSettingsSection}
+        />
+      )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
+        libraryAlbumEditingTool &&
+        selectedAlbum && (
+          <ModalSheet
+            ariaLabel={`Edit ${selectedAlbum.title}`}
+            className="album-editing-sheet"
+            closeLabel="Close album editor"
+            onClose={() => setLibraryAlbumEditingTool(undefined)}
+          >
+            <header className="album-editing-heading">
+              <p className="eyebrow">Album editing</p>
+              <h2>{selectedAlbum.title}</h2>
+              <p>
+                Drafts and selections stay local until a fresh preview is
+                explicitly confirmed.
+              </p>
+            </header>
+            <LibraryAlbumEditingNavigation
+              activeTool={libraryAlbumEditingTool}
+              onSelect={(tool) => {
+                setAlbumTitleSection(tool === "history" ? "history" : "edit");
+                setLibraryAlbumEditingTool(tool);
+                if (tool === "history")
+                  void refreshEditHistory(selectedAlbum.id);
+              }}
+            />
+            {(libraryAlbumEditingTool === "shared" ||
+              libraryAlbumEditingTool === "sequence") && (
+              <>
+                {renderTrackContext(libraryAlbumEditingTool, (track) => {
+                  setLibraryAlbumEditingTool(undefined);
+                  editLibraryTrack(track);
+                })}
+              </>
+            )}
+            {libraryAlbumEditingTool === "shared" && sharedFieldEditor}
+            {libraryAlbumEditingTool === "sequence" && trackOrderEditor}
+            {(libraryAlbumEditingTool === "title" ||
+              libraryAlbumEditingTool === "history") && (
+              <>{renderAlbumTitleWorkbench(false)}</>
+            )}
+          </ModalSheet>
+        )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
+        libraryTrackEditorOpen &&
+        selectedTrack && (
+          <ModalSheet
+            ariaLabel={`Edit metadata for ${selectedTrack.tags.title}`}
+            className="track-editor-sheet"
+            closeLabel="Close editor"
+            onClose={() => setLibraryTrackEditorOpen(false)}
+          >
+            <TrackMetadataEditor
+              busy={busy}
+              draft={trackDraft}
+              error={trackEditError}
+              onCancelPreview={() => {
+                setTrackEditPreview(undefined);
+                setTrackEditResult(undefined);
+                setTrackEditError(undefined);
+              }}
+              onClose={() => setLibraryTrackEditorOpen(false)}
+              onConfirm={() => void applyTrackEdit()}
+              onDraftChange={(field, value) => {
+                setTrackDraft((draft) => ({
+                  ...draft,
+                  [field]: value,
+                }));
+                setTrackEditPreview(undefined);
+                setTrackEditResult(undefined);
+                setTrackEditError(undefined);
+              }}
+              onPreview={() => void previewTrackEdit()}
+              preview={trackEditPreview}
+              ref={trackEditorRef}
+              result={trackEditResult}
+              showClose={false}
+              track={selectedTrack}
+            />
+          </ModalSheet>
+        )}
+      {activeView === "library" && libraryAlbumDetailOpen && technicalTrack && (
+        <TrackTechnicalInfo
+          onClose={() => setTechnicalTrackId(undefined)}
+          track={technicalTrack}
         />
       )}
     </ApplicationShell>

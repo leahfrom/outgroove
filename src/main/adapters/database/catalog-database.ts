@@ -34,11 +34,46 @@ import type {
 } from "../../../shared/domain/catalog";
 import {
   albumGroupingKey,
+  compareAlbumsByArtistReleaseDateTitle,
   folderAlbumGroupingKey,
   sortTracks,
 } from "../../../shared/domain/catalog";
+import { isValidPartialDate } from "../../../shared/domain/partial-date";
 import type { TrackTagChanges } from "../../../shared/domain/tag-edit";
 import { migrations } from "./migrations";
+
+const albumReleaseDatesJoin = `
+  LEFT JOIN (
+    SELECT album_id,
+      CASE
+        WHEN COUNT(*) = COUNT(release_date)
+          AND COUNT(DISTINCT release_date) = 1
+        THEN MIN(release_date)
+        ELSE NULL
+      END AS release_date
+    FROM (
+      SELECT release_track.album_id,
+        CASE
+          WHEN outgroove_valid_partial_date(
+            NULLIF(TRIM(CAST(json_extract(
+              release_file.normalized_tags_json, '$.year'
+            ) AS TEXT)), '')
+          ) = 1
+          THEN NULLIF(TRIM(CAST(json_extract(
+            release_file.normalized_tags_json, '$.year'
+          ) AS TEXT)), '')
+          ELSE NULL
+        END AS release_date
+      FROM tracks release_track
+      JOIN audio_files release_file ON release_file.id=release_track.file_id
+      WHERE release_file.scan_state='ok'
+    ) release_values
+    GROUP BY album_id
+  ) album_release ON album_release.album_id=a.id`;
+
+const albumLibraryOrder = `a.album_artist COLLATE NOCASE, a.album_artist,
+  album_release.release_date IS NULL, album_release.release_date,
+  a.title COLLATE NOCASE, a.title, a.id`;
 
 interface AudioFileRow {
   id: string;
@@ -216,6 +251,12 @@ export class CatalogDatabase {
       "outgroove_parent_folder_path",
       { deterministic: true },
       (value) => dirname(String(value)),
+    );
+    this.connection.function(
+      "outgroove_valid_partial_date",
+      { deterministic: true },
+      (value) =>
+        typeof value === "string" && isValidPartialDate(value) ? 1 : 0,
     );
     this.connection.pragma("foreign_keys = ON");
     this.connection.pragma("journal_mode = WAL");
@@ -1468,7 +1509,8 @@ export class CatalogDatabase {
     if (!request.query) {
       this.refreshCatalogSearchIfNeeded();
       const visibleAlbums = ` FROM catalog_visible_albums visible
-        JOIN albums a ON a.id=visible.album_id${albumFilter ? ` WHERE ${albumFilter}` : ""}`;
+        JOIN albums a ON a.id=visible.album_id
+        ${albumReleaseDatesJoin}${albumFilter ? ` WHERE ${albumFilter}` : ""}`;
       const totalItems = this.connection
         .prepare(`SELECT COUNT(*)${visibleAlbums}`)
         .pluck()
@@ -1476,7 +1518,7 @@ export class CatalogDatabase {
       const albumIds = this.connection
         .prepare(
           `SELECT a.id${visibleAlbums}
-           ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+           ORDER BY ${albumLibraryOrder} LIMIT ? OFFSET ?`,
         )
         .all(...albumParameters, request.limit, request.offset)
         .map((row) => (row as { id: string }).id);
@@ -1515,8 +1557,9 @@ export class CatalogDatabase {
       const albumIds = this.connection
         .prepare(
           `SELECT a.id FROM albums a
-           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id${albumFilter ? ` WHERE ${albumFilter}` : ""}
-           ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+           JOIN (${matchingAlbums}) matched ON matched.album_id=a.id
+           ${albumReleaseDatesJoin}${albumFilter ? ` WHERE ${albumFilter}` : ""}
+           ORDER BY ${albumLibraryOrder} LIMIT ? OFFSET ?`,
         )
         .all(
           pattern,
@@ -1548,6 +1591,7 @@ export class CatalogDatabase {
       ? [pattern, pattern, pattern, pattern, pattern, pattern]
       : [];
     const from = ` FROM albums a JOIN tracks t ON t.album_id=a.id JOIN audio_files f ON f.id=t.file_id
+      ${albumReleaseDatesJoin}
       WHERE f.scan_state='ok'${albumFilter ? ` AND ${albumFilter}` : ""}${search}`;
     const totalItems = this.connection
       .prepare(`SELECT COUNT(DISTINCT a.id)${from}`)
@@ -1555,8 +1599,9 @@ export class CatalogDatabase {
       .get(...albumParameters, ...searchParameters) as number;
     const albumIds = this.connection
       .prepare(
-        `SELECT DISTINCT a.id, a.album_artist, a.title${from}
-         ORDER BY a.album_artist, a.title, a.id LIMIT ? OFFSET ?`,
+        `SELECT DISTINCT a.id, a.album_artist, a.title,
+          album_release.release_date${from}
+         ORDER BY ${albumLibraryOrder} LIMIT ? OFFSET ?`,
       )
       .all(
         ...albumParameters,
@@ -1635,10 +1680,16 @@ export class CatalogDatabase {
       });
       albums.set(row.album_id, album);
     }
-    return [...albums.values()].map((album) => ({
+    const hydrated = [...albums.values()].map((album) => ({
       ...album,
       tracks: sortTracks(album.tracks),
     }));
+    if (ids)
+      return ids.flatMap((id) => {
+        const album = hydrated.find((candidate) => candidate.id === id);
+        return album ? [album] : [];
+      });
+    return hydrated.sort(compareAlbumsByArtistReleaseDateTitle);
   }
 
   getAlbum(id: string): CatalogAlbum | undefined {

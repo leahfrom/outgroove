@@ -1,0 +1,144 @@
+// @vitest-environment jsdom
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import type { CatalogAlbum } from "../../shared/domain/catalog";
+import type { AlbumArtworkThumbnailDto } from "../../shared/contracts/api";
+import { LibraryAlbumCollection } from "./library-album-collection";
+
+function album(
+  id: string,
+  title: string,
+  releaseDates: readonly (string | null)[],
+): CatalogAlbum {
+  return {
+    id,
+    title,
+    albumArtist: "Fixture Artist",
+    tracks: releaseDates.map((year, index) => ({
+      id: `${id}-${index}`,
+      path: `/fixture/${id}-${index}.flac`,
+      size: 100,
+      modifiedMs: 1,
+      format: "FLAC",
+      durationSeconds: 10,
+      tags: {
+        title: `Track ${index + 1}`,
+        album: title,
+        artist: "Fixture Artist",
+        albumArtist: "Fixture Artist",
+        trackNumber: index + 1,
+        discNumber: 1,
+        year,
+      },
+      nativeTags: [],
+      scanError: null,
+    })),
+  };
+}
+
+describe("LibraryAlbumCollection", () => {
+  it("shows resilient cover placeholders and honest release-date states", () => {
+    render(
+      <LibraryAlbumCollection
+        albums={[
+          album("consistent", "Known Album", ["2024-03", "2024-03"]),
+          album("mixed", "Mixed Album", ["2023", "2024"]),
+          album("missing", "Missing Album", [null]),
+        ]}
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={vi.fn()}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    const collection = screen.getByRole("list", { name: "Albums" });
+    expect(within(collection).getAllByRole("button")).toHaveLength(3);
+    expect(within(collection).getByText("2024-03")).toBeVisible();
+    expect(within(collection).getByText("Mixed release dates")).toBeVisible();
+    expect(within(collection).getByText("Release date not set")).toBeVisible();
+    expect(
+      collection.querySelectorAll(".album-artwork-placeholder"),
+    ).toHaveLength(3);
+  });
+
+  it("progressively replaces loading and fallback covers with local thumbnails", () => {
+    const available = album("available", "Covered Album", ["2024"]);
+    const loading = album("loading", "Loading Album", ["2023"]);
+    const missing = album("missing-cover", "Missing Cover", ["2022"]);
+    render(
+      <LibraryAlbumCollection
+        albums={[available, loading, missing]}
+        artworkByAlbum={
+          new Map<string, AlbumArtworkThumbnailDto | "loading">([
+            [
+              available.id,
+              {
+                albumId: available.id,
+                status: "available",
+                dataUrl: "data:image/png;base64,thumbnail",
+              } as const,
+            ],
+            [loading.id, "loading" as const],
+            [missing.id, { albumId: missing.id, status: "missing" } as const],
+          ])
+        }
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={vi.fn()}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    expect(document.querySelector(".album-artwork")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,thumbnail",
+    );
+    expect(
+      document.querySelectorAll(".album-artwork-placeholder"),
+    ).toHaveLength(2);
+    expect(
+      document.querySelectorAll(".album-artwork-placeholder.loading"),
+    ).toHaveLength(1);
+  });
+
+  it("opens an album with keyboard activation", async () => {
+    const selected = album("selected", "Keyboard Album", ["2024"]);
+    const onOpenAlbum = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <LibraryAlbumCollection
+        albums={[selected]}
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={onOpenAlbum}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: /Keyboard Album/u });
+    trigger.focus();
+    await user.keyboard("{Enter}");
+
+    expect(onOpenAlbum).toHaveBeenCalledWith(selected);
+  });
+
+  it("keeps the complete album title available when the visual title is bounded", () => {
+    const longTitle = "A Very Long Album Title That Needs Several Lines";
+    render(
+      <LibraryAlbumCollection
+        albums={[album("long-title", longTitle, ["2024"])]}
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={vi.fn()}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: longTitle })).toHaveAttribute(
+      "title",
+      longTitle,
+    );
+    expect(
+      screen.getByRole("button", { name: new RegExp(longTitle, "u") }),
+    ).toBeVisible();
+  });
+});

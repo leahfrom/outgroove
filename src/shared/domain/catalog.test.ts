@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   albumGroupingKey,
+  compareAlbumsByArtistReleaseDateTitle,
   folderAlbumGroupingKey,
   normalizeGenres,
   normalizeNumber,
   normalizeTagText,
   sortTracks,
+  summarizeAlbumReleaseDate,
+  type CatalogAlbum,
   type NormalizedTags,
 } from "./catalog";
 
@@ -62,5 +65,83 @@ describe("catalog normalization and grouping", () => {
     expect(folderAlbumGroupingKey("Album", "/music/artist/album")).not.toBe(
       folderAlbumGroupingKey("Album", "/music/other/album"),
     );
+  });
+});
+
+function album(
+  id: string,
+  albumArtist: string,
+  title: string,
+  dates: readonly (string | null)[],
+): CatalogAlbum {
+  return {
+    id,
+    albumArtist,
+    title,
+    tracks: dates.map((year, index) => ({
+      id: `${id}-${index}`,
+      path: `/fixture/${id}-${index}.flac`,
+      size: 1,
+      modifiedMs: 1,
+      format: "FLAC",
+      durationSeconds: 1,
+      tags: {
+        title: `Track ${index + 1}`,
+        album: title,
+        artist: albumArtist,
+        albumArtist,
+        trackNumber: index + 1,
+        discNumber: 1,
+        year,
+      },
+      nativeTags: [],
+      scanError: null,
+    })),
+  };
+}
+
+describe("album presentation", () => {
+  it("summarizes only one valid release date shared by every track", () => {
+    expect(
+      summarizeAlbumReleaseDate(
+        album("one", "Artist", "One", ["2024-03", "2024-03"]).tracks,
+      ),
+    ).toEqual({ status: "consistent", value: "2024-03" });
+    expect(
+      summarizeAlbumReleaseDate(
+        album("missing", "Artist", "Missing", [null, null]).tracks,
+      ),
+    ).toEqual({ status: "missing", value: null });
+    expect(
+      summarizeAlbumReleaseDate(
+        album("mixed", "Artist", "Mixed", ["2024", "2024-03"]).tracks,
+      ),
+    ).toEqual({ status: "mixed", value: null });
+    expect(
+      summarizeAlbumReleaseDate(
+        album("partial", "Artist", "Partial", ["2024", null]).tracks,
+      ),
+    ).toEqual({ status: "mixed", value: null });
+    expect(
+      summarizeAlbumReleaseDate(
+        album("invalid", "Artist", "Invalid", ["2024-13"]).tracks,
+      ),
+    ).toEqual({ status: "mixed", value: null });
+  });
+
+  it("orders by artist, known preserved date, title, and stable id", () => {
+    const albums = [
+      album("unknown", "Artist", "Unknown", [null]),
+      album("later", "Artist", "Later", ["2024"]),
+      album("earlier-b", "Artist", "Beta", ["2020"]),
+      album("other", "Another Artist", "Other", [null]),
+      album("earlier-a", "Artist", "Alpha", ["2020"]),
+    ];
+
+    expect(
+      [...albums]
+        .sort(compareAlbumsByArtistReleaseDateTitle)
+        .map((candidate) => candidate.id),
+    ).toEqual(["other", "earlier-a", "earlier-b", "later", "unknown"]);
   });
 });

@@ -57,6 +57,7 @@ function AlbumTitleWorkbenchComponent(
     editResult,
     historyError,
     section,
+    showNavigation = true,
     trackUndoPreview,
     trackUndoResult,
     undoPreview,
@@ -88,6 +89,7 @@ function AlbumTitleWorkbenchComponent(
     readonly editResult: TagEditResultDto | undefined;
     readonly historyError: string | undefined;
     readonly section: AlbumTitleSection;
+    readonly showNavigation?: boolean;
     readonly trackUndoPreview: TrackTagEditPreviewDto | undefined;
     readonly trackUndoResult: TagEditResultDto | undefined;
     readonly undoPreview: TagEditPreviewDto | undefined;
@@ -124,27 +126,31 @@ function AlbumTitleWorkbenchComponent(
       ref={ref}
       tabIndex={-1}
     >
-      <nav
-        aria-label="Album title workspace"
-        className="album-title-navigation"
-      >
-        <button
-          aria-current={section === "edit" ? "page" : undefined}
-          onClick={() => onSectionChange("edit")}
-          type="button"
+      {showNavigation && (
+        <nav
+          aria-label="Album title workspace"
+          className="album-title-navigation"
         >
-          <span>Edit title</span>
-          <small>Draft, preview, and verify an album-title change.</small>
-        </button>
-        <button
-          aria-current={section === "history" ? "page" : undefined}
-          onClick={() => onSectionChange("history")}
-          type="button"
-        >
-          <span>History & undo</span>
-          <small>Review verified operations before proposing a restore.</small>
-        </button>
-      </nav>
+          <button
+            aria-current={section === "edit" ? "page" : undefined}
+            onClick={() => onSectionChange("edit")}
+            type="button"
+          >
+            <span>Edit title</span>
+            <small>Draft, preview, and verify an album-title change.</small>
+          </button>
+          <button
+            aria-current={section === "history" ? "page" : undefined}
+            onClick={() => onSectionChange("history")}
+            type="button"
+          >
+            <span>History & undo</span>
+            <small>
+              Review verified operations before proposing a restore.
+            </small>
+          </button>
+        </nav>
+      )}
 
       {section === "edit" ? (
         <div className="album-title-section">

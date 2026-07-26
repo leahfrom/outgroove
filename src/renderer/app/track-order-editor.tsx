@@ -8,6 +8,7 @@ import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
+  WorkbenchRequestError,
   WorkbenchWriteResult,
 } from "./workbench-review-stage";
 
@@ -78,6 +79,7 @@ interface TrackOrderEditorProps {
   readonly discDraft: string;
   readonly preview: TrackBatchEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
+  readonly error: string | undefined;
   readonly busy: boolean;
   readonly onStartChange: (value: string) => void;
   readonly onDiscEnabledChange: (enabled: boolean) => void;
@@ -96,6 +98,7 @@ function TrackOrderEditorComponent(
     discDraft,
     preview,
     result,
+    error,
     busy,
     onStartChange,
     onDiscEnabledChange,
@@ -304,6 +307,14 @@ function TrackOrderEditorComponent(
           Preview track-number sequence
         </button>
       </div>
+
+      {error && (
+        <WorkbenchRequestError
+          label="Track order request error"
+          message={error}
+          recovery="Revise the sequence or retry the current confirmation. The explicit per-file preview remains available when it is still safe to retry."
+        />
+      )}
 
       {preview && (
         <WorkbenchConfirmation
