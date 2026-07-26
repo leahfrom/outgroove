@@ -117,6 +117,11 @@ button:disabled {
   background: #e7f3e9;
   color: #14251b;
 }
+.primary-navigation button[aria-current="page"]:hover:not(:disabled) {
+  border-color: #8fba9d;
+  background: #dcecdf;
+  color: #14251b;
+}
 .primary-navigation button span {
   font-weight: 750;
 }
@@ -1681,9 +1686,15 @@ h1 {
   min-width: 0;
 }
 .album-card-copy > h3 {
+  display: -webkit-box;
+  min-height: 2.5em;
   margin: 0;
+  overflow: hidden;
   overflow-wrap: anywhere;
   font-size: 1rem;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .album-card-copy > span:not(.album-quality-status) {
   color: #526159;
@@ -1853,6 +1864,8 @@ h1 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.6rem;
   align-items: center;
+  padding-right: 0.5rem;
+  padding-left: 0.5rem;
   border-top: 1px solid #d8ddd8;
 }
 .library-track-row:hover,
@@ -2139,6 +2152,11 @@ h1 {
 .workbench-track-context-heading > div:first-child {
   min-width: 0;
 }
+.workbench-track-context-heading > .actions {
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
+}
 .workbench-track-context-heading h3,
 .workbench-track-context-heading p:last-child {
   margin-bottom: 0;
@@ -2324,9 +2342,10 @@ h1 {
 }
 .sequence-settings {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
   gap: 1rem;
-  max-width: 760px;
+  align-items: end;
+  max-width: 640px;
   margin: 1rem 0;
 }
 .sequence-settings label {
@@ -2342,7 +2361,12 @@ h1 {
   gap: 0.75rem;
 }
 .sequence-empty {
+  display: grid;
+  gap: 0.35rem;
   margin-bottom: 1rem;
+}
+.sequence-empty span {
+  color: #526159;
 }
 dl {
   display: grid;
@@ -2553,6 +2577,10 @@ pre {
   color: #526159;
   font-weight: 650;
 }
+.track-comparison-summary > button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .shared-field-editor {
   max-width: 1040px;
 }
@@ -2583,7 +2611,7 @@ pre {
 .safety-note {
   display: grid;
   gap: 0.2rem;
-  margin-top: 1rem;
+  margin: 1rem 0;
   padding: 0.85rem 1rem;
   border-left: 4px solid #245c39;
   border-radius: 0 8px 8px 0;
@@ -2594,6 +2622,9 @@ pre {
 }
 .confirmation-panel {
   margin-top: 1.5rem;
+}
+.confirmation-panel > .actions {
+  justify-content: flex-end;
 }
 .confirmation-panel:focus,
 .confirmation-panel .primary:focus,
@@ -2805,6 +2836,11 @@ input {
 .library-scan-tools p:last-child {
   margin-bottom: 0;
   color: #526159;
+}
+.library-scan-tools > .actions {
+  flex: 0 0 auto;
+  align-items: flex-end;
+  flex-direction: column;
 }
 select {
   border: 1px solid #708075;
@@ -3046,6 +3082,9 @@ td {
     align-items: stretch;
     flex-direction: column;
   }
+  .library-scan-tools > .actions {
+    align-items: stretch;
+  }
   .album-detail .album-artwork-placeholder {
     width: min(58vw, 190px);
     max-width: none;
@@ -3053,7 +3092,7 @@ td {
   .library-track-row {
     grid-template-columns: 1fr;
     gap: 0;
-    padding: 0.7rem 0;
+    padding: 0.7rem 0.5rem;
   }
   .library-track-activation {
     align-items: stretch;
@@ -3179,6 +3218,10 @@ td {
     align-items: stretch;
     flex-direction: column;
   }
+  .track-comparison-summary > button {
+    width: 100%;
+    margin-left: 0;
+  }
   .track-editor-context {
     grid-template-columns: 1fr;
   }
@@ -3191,6 +3234,12 @@ td {
   .workbench-track-context-heading {
     align-items: stretch;
     flex-direction: column;
+  }
+  .workbench-track-context-heading > .actions {
+    align-items: stretch;
+  }
+  .workbench-track-context-heading > .actions button {
+    width: 100%;
   }
   .compact-track-picker li {
     grid-template-columns: 1fr;

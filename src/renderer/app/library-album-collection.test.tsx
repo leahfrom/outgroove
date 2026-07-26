@@ -121,4 +121,24 @@ describe("LibraryAlbumCollection", () => {
 
     expect(onOpenAlbum).toHaveBeenCalledWith(selected);
   });
+
+  it("keeps the complete album title available when the visual title is bounded", () => {
+    const longTitle = "A Very Long Album Title That Needs Several Lines";
+    render(
+      <LibraryAlbumCollection
+        albums={[album("long-title", longTitle, ["2024"])]}
+        diagnosticsByAlbum={new Map()}
+        onOpenAlbum={vi.fn()}
+        registerAlbumTrigger={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: longTitle })).toHaveAttribute(
+      "title",
+      longTitle,
+    );
+    expect(
+      screen.getByRole("button", { name: new RegExp(longTitle, "u") }),
+    ).toBeVisible();
+  });
 });

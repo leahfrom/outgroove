@@ -120,7 +120,7 @@ export function LibraryAlbumCollection({
                   artwork={artworkByAlbum?.get(album.id)}
                 />
                 <span className="album-card-copy">
-                  <h3>{album.title}</h3>
+                  <h3 title={album.title}>{album.title}</h3>
                   <span>{album.albumArtist}</span>
                   <span className="album-card-facts">
                     <span>
