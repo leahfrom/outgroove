@@ -418,6 +418,10 @@ button:disabled {
 .album-title-section .inline {
   align-items: stretch;
 }
+.album-title-section .inline > button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .change-summary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0.75rem 0 0;
@@ -3124,7 +3128,7 @@ td {
     flex-direction: column;
   }
   .album-editing-tools {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .sync-setup-nav {
     grid-template-columns: 1fr;
@@ -3222,6 +3226,10 @@ td {
     width: 100%;
     margin-left: 0;
   }
+  .album-title-section .inline > button {
+    width: 100%;
+    margin-left: 0;
+  }
   .track-editor-context {
     grid-template-columns: 1fr;
   }
@@ -3282,5 +3290,10 @@ td {
   }
   dd {
     margin-bottom: 0.5rem;
+  }
+}
+@media (max-width: 380px) {
+  .album-editing-tools {
+    grid-template-columns: 1fr;
   }
 }

@@ -39,6 +39,7 @@ export function LibraryAlbumEditingNavigation({
     <nav aria-label="Album editing tools" className="album-editing-tools">
       {tools.map((tool) => (
         <button
+          aria-label={`${tool.label}. ${tool.description}`}
           aria-current={activeTool === tool.id ? "page" : undefined}
           key={tool.id}
           onClick={() => onSelect(tool.id)}
