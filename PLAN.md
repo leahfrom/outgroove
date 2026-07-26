@@ -1,7 +1,7 @@
 # Outgroove build plan
 
 > Status: initial product and technical plan  
-> Updated: 2026-07-23
+> Updated: 2026-07-26
 > Target: macOS and Windows first; Linux kept compatible and added to the release matrix when stable
 
 ## 1. Product vision
@@ -11,7 +11,7 @@ Outgroove is a local-first desktop application for people who own music files an
 The product has three connected jobs:
 
 1. **Library** — scan one or more folders, organize albums and tracks, find inconsistencies, and search the collection.
-2. **Workbench** — safely edit tags and artwork, optionally matching files against MusicBrainz and AcoustID.
+2. **Metadata review** — edit albums and tracks in context through explicit current/proposed comparison, preview, confirmation, verification, and history workflows, optionally matching files against MusicBrainz and AcoustID.
 3. **Radar and Sync** — follow favorite artists for new releases, then copy chosen music to an SD card or other DAP storage using repeatable device profiles.
 
 Outgroove is not a streaming service. The files on disk remain the source of truth, while Outgroove's database is a rebuildable index plus user-owned state such as favorites, match decisions, Radar history, and sync profiles.
@@ -292,9 +292,16 @@ Generate UTF-8 M3U8 playlists initially. Device-specific legacy encodings and ab
 ## 9. UI map
 
 - **Onboarding:** choose library folders, explain local/network behavior, start first scan.
-- **Library:** album grid/table, artist view, track table, saved filters, scan health.
-- **Album detail:** artwork, release data, discs/tracks, file properties, tag consistency, match status.
-- **Workbench:** editable field comparison grid, current and proposed values, candidate comparison, validation, write results, undo history.
+- **Library:** a cover-led album grid by default, ordered by album artist and
+  preserved release date, plus artist, track, saved-filter, and scan-health
+  views.
+- **Album detail:** artwork, release data, a simple disc-aware track list, tag
+  consistency, match status, Sync action, and contextual album-edit entry
+  points.
+- **Metadata editor:** a contextual album or track dialog/sheet with editable
+  field comparison, current and proposed values, candidate comparison,
+  validation, write results, and undo history. It is not a primary navigation
+  destination.
 - **Radar:** upcoming/recent/newly-found tabs, favorite artists, filters, seen/dismiss actions.
 - **Sync:** profiles, selection rules, capacity estimate, plan diff, progress, history, errors.
 - **Jobs:** persistent activity center for scans, lookups, fingerprinting, edits, and sync.
@@ -302,20 +309,17 @@ Generate UTF-8 M3U8 playlists initially. Device-specific legacy encodings and ab
 
 Keyboard navigation, screen-reader names, visible focus, scalable text, reduced motion, and high-contrast states are acceptance criteria, not a final polish phase. Avoid using color as the only indication of tag differences or sync actions.
 
-### 9.1 Near-term UI foundation priority
+### 9.1 Desktop shell foundation
 
-Pause broad roadmap expansion until the implemented Library, Workbench, Sync,
-Jobs/activity, and Settings behavior is organized into a usable desktop
-application shell. This is product work, not optional cosmetic polish.
+The implemented Library, metadata editing, Sync, Jobs/activity, and Settings
+behavior must remain organized in a usable desktop application shell. This is
+product work, not optional cosmetic polish.
 
-The near-term information architecture is:
+The information architecture is:
 
 - **Library:** search, saved filters, browsing, scan health, and album/track
-  inspection. Editing and sync entry points are contextual actions rather than
-  embedded full workflows.
-- **Workbench:** retain the selected album and track context while disclosing
-  one relevant edit, sequencing, preview, result, or history workflow at a
-  time.
+  inspection. Editing is contextual to the selected album or track rather than
+  a separate primary destination.
 - **Sync:** album selection, DAP profiles, plan review, progress, history,
   errors, and interrupted-run recovery.
 - **Activity:** persistent scan and job progress, cancellation, retry, and
@@ -323,12 +327,12 @@ The near-term information architecture is:
 - **Settings:** watched Library folders, database backup/restore, and later
   metadata, privacy, appearance, and update preferences.
 
-The first independently mergeable slice must establish persistent primary
-navigation and render one contextual main view at a time without changing
-backend behavior. Library selections, searches, pagination, Workbench drafts
-and previews, Sync selections and plans, and pending confirmations must retain
-their safe state when users navigate. Album and track actions must route into
-the existing preview-only Workbench flows without applying a proposal.
+Persistent primary navigation renders one contextual main view at a time
+without changing backend safety behavior. Library selections, searches,
+pagination, metadata drafts and previews, Sync selections and plans, and
+pending confirmations retain their safe state when users navigate. Album and
+track actions route into preview-only contextual editing without applying a
+proposal.
 
 Acceptance for that slice includes:
 
@@ -339,22 +343,21 @@ Acceptance for that slice includes:
 - layouts that work at the application's minimum window size, at 200% text
   scaling, with long paths and metadata, and without a fixed document minimum
   width;
-- focused UI tests for navigation, state preservation, and routing into
-  existing preview/confirmation workflows;
+- focused UI tests for navigation, state preservation, and contextual routing
+  into existing preview/confirmation workflows;
 - visual and functional verification in the packaged Electron application;
 - no routing library, renderer-side privileged access, duplicate catalog
   state, backend behavior change, or speculative design-system framework.
 
 Follow with smaller workflow-specific usability slices for Library/detail,
-Workbench editing, and Sync/recovery. Consider a `v0.9.0` prerelease only when
-the navigation plus core Library → Workbench and Library/Workbench → Sync
-journeys form a coherent, cross-platform-tested experience.
+contextual metadata editing, and Sync/recovery. Section 9.3 defines the next
+Library-centered restructuring priority.
 
-### 9.2 Tag comparison workspace direction
+### 9.2 Tag comparison editor direction
 
-Workbench editing should adapt the clearest part of established desktop tag
-editors without copying their full multi-pane interface: keep the selected
-album and tracks visible, then present each editable field as a direct
+Contextual metadata editing should adapt the clearest part of established
+desktop tag editors without copying their full multi-pane interface: keep the
+selected album or track visible, then present each editable field as a direct
 **Current value → Proposed value** comparison. The proposed value is the draft;
 the current value remains read-only evidence from the catalog until a fresh
 per-file preview is generated.
@@ -376,14 +379,115 @@ The comparison workspace must:
 - preserve keyboard row navigation, associated labels, visible focus, and a
   logical focus move from the edited proposal to preview and confirmation.
 
-The first independently mergeable vertical slice is the existing single-track
-metadata editor expressed as this comparison grid, retaining album and track
-context and all current fields and write behavior. A following slice may extend
-the same interaction to shared multi-track edits with mixed-value handling and
-per-file review. This direction does not authorize spreadsheet-style bulk
-application, automatic metadata writes, renderer-side tag logic, or any change
-to the required select → propose → validate → preview → confirm → snapshot →
-write → re-read → verify sequence.
+The single-track and shared-field editors use this comparison model while
+retaining album and track context and all current write behavior. This
+direction does not authorize spreadsheet-style bulk application, automatic
+metadata writes, renderer-side tag logic, or any change to the required select
+→ propose → validate → preview → confirm → snapshot → write → re-read → verify
+sequence.
+
+### 9.3 Next priority: Library-centered album and metadata workflow
+
+The next product priority is to make Library the natural home for browsing and
+editing. A separate Workbench destination makes users leave the album they were
+inspecting, exposes workflow structure as navigation, and makes ordinary track
+editing feel heavier than the task requires. Remove **Workbench** from primary
+navigation after all of its current behavior is available contextually from
+Library. Internal component or application-service names may migrate
+incrementally; the user-facing workflow is the priority.
+
+The target interaction model is:
+
+1. **Default album collection.** Library opens to a responsive album grid. It
+   orders albums by album artist, then a trustworthy preserved release date,
+   then album title. A date is shown and used for chronological ordering only
+   when the album has one consistent value; partial dates remain partial,
+   conflicting dates are labeled for review, and unknown or conflicting dates
+   sort after known dates within an artist rather than receiving an invented
+   value.
+2. **Cover-led but resilient cards.** Album cards reserve a stable artwork
+   region and show locally available embedded or folder artwork when the
+   artwork pipeline can supply a safe thumbnail. Missing, unreadable, or
+   unsupported artwork uses a polished deterministic placeholder without
+   hiding the album. Artwork thumbnails are rebuildable derived state, not a
+   new durable source of truth, and browsing must never require the network.
+3. **Focused album detail.** Activating an album opens a Library subview rather
+   than a different primary workspace. It shows a clear back/breadcrumb route,
+   artwork and core release facts, a simple disc-aware track list, quality
+   findings, Sync action, and contextual album editing. Returning restores the
+   previous search, filter, sort, page/scroll position, and keyboard focus.
+4. **Direct track editing.** Activating a track opens an accessible in-app
+   dialog or sheet with the current/proposed comparison editor. Keep the album
+   visible behind it and retain drafts, previews, errors, verified results, and
+   focus correctly. Prefer this over another Electron `BrowserWindow`; a
+   separate window is justified only if packaged usability testing proves a
+   concrete need and it repeats the full sandbox, navigation-denial, typed IPC,
+   lifecycle, and security review.
+5. **Separate technical inspection.** A track context menu offers **More
+   info** for codec, duration, bitrate, sample rate, bit depth, channels, file
+   size/path, normalized tags, and progressively disclosed native tags.
+   Right-click must not be the only route: every row also has an accessible
+   More button, and Menu/Shift+F10 keyboard invocation, Escape dismissal,
+   focus restoration, long-path containment, and screen-reader names are
+   required. Technical information is read-only and visually distinct from
+   editing.
+6. **Contextual album editing.** Album detail exposes **Edit album metadata**
+   for shared fields, album title, and later artwork, plus separate track-order
+   and history/undo actions. Mixed values stay explicit and each mutation still
+   moves through proposal, validation, per-file preview, confirmation,
+   snapshot, write, re-read, and verification.
+
+Implement this as small, independently mergeable vertical slices:
+
+1. **Album hierarchy slice:** add the deterministic default album ordering,
+   responsive cover-shaped grid with placeholders, and focused album-detail
+   subview with a simple track list. Preserve existing searches, filters,
+   paging, selection, Sync entry, diagnostics, and keyboard return position.
+   Do not remove Workbench yet.
+2. **Track interaction slice:** make track activation open the existing
+   single-track editor in an accessible dialog/sheet, and add the context
+   menu/More-button technical-information flow. Closing, navigating, or an
+   external file conflict must never apply or silently discard a change.
+3. **Album editing slice:** move album title, shared-field batch editing, track
+   selection/order, data-quality routes, history, and every supported undo
+   path into contextual album-detail actions. Preview, confirmation, partial
+   failure, recovery, and result hierarchy must remain complete.
+4. **Workbench retirement slice:** remove Workbench from primary navigation
+   and delete obsolete routing only after route-parity tests prove every
+   current entry point remains reachable. Existing drafts or pending
+   confirmations must be preserved or explicitly resolved during the
+   transition; no feature may disappear as cleanup.
+5. **Local artwork slice:** add a narrow runtime-validated artwork-thumbnail
+   query and privileged extraction/cache adapter only when local artwork can be
+   delivered safely. Bound decode dimensions and memory, reject malformed
+   payloads locally, avoid exposing arbitrary filesystem paths to the
+   renderer, and test packaged behavior. Cover Art Archive remains part of the
+   later explicitly networked identification phase, not this local browsing
+   slice.
+
+Acceptance for the complete restructuring includes:
+
+- Library opens to albums in deterministic album-artist/release-date/title
+  order and remains usable without artwork;
+- album activation, Back/Escape, and browser-style pointer buttons preserve
+  collection context without requiring a routing or state framework;
+- a track can be edited with mouse or keyboard from album detail, but no write
+  control appears until a fresh preview exists;
+- right-click, More button, Menu/Shift+F10, arrow-key menu movement, Escape,
+  focus restoration, and accessible naming cover the same information
+  actions;
+- album shared edits, sequencing, diagnostics, history, and undo remain
+  reachable after Workbench navigation is removed;
+- dialogs trap focus while open, restore focus on close, announce errors and
+  verified results, tolerate 200% text scaling, long metadata/paths, reduced
+  motion, high contrast, and the minimum supported window size;
+- focused component tests cover hierarchy, sorting, state preservation,
+  context-menu keyboard access, dialog dismissal, stale previews, and routing
+  into preview/confirmation; packaged-app testing covers real focus, native
+  pointer/context-menu behavior, and responsive layout;
+- no renderer filesystem/SQLite/Electron access, generic IPC, automatic
+  metadata write, network artwork dependency, second catalog, or backend safety
+  relaxation is introduced for the redesign.
 
 ## 10. Cross-platform requirements
 
