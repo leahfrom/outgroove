@@ -247,6 +247,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     previewAlbumTitleUndo: vi.fn(),
     applyAlbumTitleUndo: vi.fn(),
     chooseAlbumArtworkEdit: vi.fn(),
+    previewAlbumArtworkRemoval: vi.fn(),
     applyAlbumArtworkEdit: vi.fn(),
     previewAlbumArtworkUndo: vi.fn(),
     applyAlbumArtworkUndo: vi.fn(),
@@ -892,6 +893,94 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       await within(dialog).findByLabelText("Artwork edit result"),
+    ).toBeVisible();
+  });
+
+  it("previews embedded front-cover removal contextually before keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const previewRemoval = vi
+      .spyOn(mockApi, "previewAlbumArtworkRemoval")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+          confirmationToken: "removal-confirmation-token-long-enough",
+          action: "remove",
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              currentFrontCovers: 1,
+              preservedPictures: 1,
+              willWrite: true,
+              warnings: [],
+            },
+          ],
+        },
+      });
+    const applyArtwork = vi
+      .spyOn(mockApi, "applyAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Remove embedded front covers"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Preview front-cover removal",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewRemoval).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(applyArtwork).not.toHaveBeenCalled();
+    expect(
+      await within(dialog).findByLabelText("Artwork removal confirmation"),
+    ).toBeVisible();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    expect(
+      within(dialog).queryByLabelText("Artwork removal confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Artwork/u }));
+    const confirmation = within(dialog).getByLabelText(
+      "Artwork removal confirmation",
+    );
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm removal from 1 file",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyArtwork).toHaveBeenCalledWith({
+        operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+        confirmationToken: "removal-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork removal result"),
     ).toBeVisible();
   });
 

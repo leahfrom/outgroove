@@ -109,6 +109,21 @@ describe("AlbumTitleWorkbench", () => {
     );
   });
 
+  it("labels a verified front-cover removal honestly in artwork history", () => {
+    renderWorkbench({
+      section: "history",
+      editHistory: [
+        {
+          ...historyItem,
+          kind: "album-artwork-edit",
+          proposedTitle: "Remove embedded front cover",
+        },
+      ],
+    });
+
+    expect(screen.getByText("Removed embedded front cover")).toBeVisible();
+  });
+
   it("discloses history contextually and supports keyboard navigation", async () => {
     const user = userEvent.setup();
     const { onSectionChange } = renderWorkbench();

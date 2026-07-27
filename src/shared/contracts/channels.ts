@@ -21,6 +21,7 @@ export const channels = {
   previewAlbumTitleUndo: "tagging:preview-album-title-undo",
   applyAlbumTitleUndo: "tagging:apply-album-title-undo",
   chooseAlbumArtworkEdit: "tagging:choose-album-artwork",
+  previewAlbumArtworkRemoval: "tagging:preview-album-artwork-removal",
   applyAlbumArtworkEdit: "tagging:apply-album-artwork",
   previewAlbumArtworkUndo: "tagging:preview-album-artwork-undo",
   applyAlbumArtworkUndo: "tagging:apply-album-artwork-undo",

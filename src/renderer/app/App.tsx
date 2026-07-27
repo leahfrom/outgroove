@@ -242,6 +242,9 @@ export function App(): React.JSX.Element {
     useState<AlbumArtworkEditPreviewDto>();
   const [artworkEditResult, setArtworkEditResult] =
     useState<TagEditResultDto>();
+  const [artworkEditResultAction, setArtworkEditResultAction] = useState<
+    "remove" | "replace"
+  >();
   const [artworkEditError, setArtworkEditError] = useState<string>();
   const [artworkExportPreview, setArtworkExportPreview] =
     useState<AlbumArtworkExportPreviewDto>();
@@ -773,6 +776,7 @@ export function App(): React.JSX.Element {
     setUndoResult(undefined);
     setArtworkEditPreview(undefined);
     setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
     setArtworkEditError(undefined);
     setArtworkExportPreview(undefined);
     setArtworkExportResult(undefined);
@@ -1097,6 +1101,7 @@ export function App(): React.JSX.Element {
     setBusy(true);
     setArtworkEditError(undefined);
     setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
     try {
       const result = await window.outgroove.chooseAlbumArtworkEdit({
         albumId: selectedAlbum.id,
@@ -1112,8 +1117,33 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const prepareArtworkRemoval = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkEditError(undefined);
+    setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumArtworkRemoval({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setArtworkEditPreview(result.value);
+      } else {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const applyArtwork = async (): Promise<void> => {
     if (!artworkEditPreview) return;
+    const action = artworkEditPreview.action;
+    const intendedWrites = artworkEditPreview.files.filter(
+      (file) => file.willWrite,
+    ).length;
     setBusy(true);
     try {
       const result = await window.outgroove.applyAlbumArtworkEdit({
@@ -1122,13 +1152,16 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) {
         setArtworkEditResult(result.value);
+        setArtworkEditResultAction(action === "remove" ? "remove" : "replace");
         setArtworkEditPreview(undefined);
         setArtworkExportPreview(undefined);
         setArtworkExportResult(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
-            ? `Verified embedded artwork for ${result.value.results.length} files.`
+            ? action === "remove"
+              ? `Verified embedded front-cover removal for ${intendedWrites} files.`
+              : `Verified embedded artwork for ${result.value.results.length} files.`
             : `${failures.length} files kept their previous artwork.`,
           failures.length === 0 ? "success" : "error",
         );
@@ -3473,6 +3506,7 @@ export function App(): React.JSX.Element {
                 exportResult={artworkExportResult}
                 preview={artworkEditPreview}
                 result={artworkEditResult}
+                resultAction={artworkEditResultAction}
                 onCancelPreview={() => {
                   setArtworkEditPreview(undefined);
                   setArtworkEditError(undefined);
@@ -3481,6 +3515,7 @@ export function App(): React.JSX.Element {
                 onConfirm={() => void applyArtwork()}
                 onExport={() => void exportArtwork()}
                 onPrepareExport={() => void prepareArtworkExport()}
+                onPrepareRemoval={() => void prepareArtworkRemoval()}
               />
             )}
             {(libraryAlbumEditingTool === "title" ||

@@ -24,7 +24,9 @@ function historyLabel(item: TagEditHistoryItemDto): string {
     case "album-title-undo":
       return `Restored “${item.proposedTitle}”`;
     case "album-artwork-edit":
-      return "Replaced embedded front cover";
+      return item.proposedTitle === "Remove embedded front cover"
+        ? "Removed embedded front cover"
+        : "Replaced embedded front cover";
     case "album-artwork-undo":
       return "Restored embedded artwork";
     default:

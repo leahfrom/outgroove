@@ -418,7 +418,7 @@ export interface TagEditResultDto {
 export interface AlbumArtworkEditPreviewDto {
   readonly operationId: string;
   readonly confirmationToken: string;
-  readonly action: "replace" | "restore";
+  readonly action: "replace" | "remove" | "restore";
   readonly proposedArtworkDataUrl?: string;
   readonly mimeType?: string;
   readonly byteLength?: number;
@@ -639,6 +639,9 @@ export interface OutgrooveApi {
   chooseAlbumArtworkEdit(
     request: z.infer<typeof albumArtworkEditPreviewRequestSchema>,
   ): Promise<Result<AlbumArtworkEditPreviewDto | null>>;
+  previewAlbumArtworkRemoval(
+    request: z.infer<typeof albumArtworkEditPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto>>;
   applyAlbumArtworkEdit(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;

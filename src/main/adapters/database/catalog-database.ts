@@ -1949,16 +1949,25 @@ export class CatalogDatabase {
   createArtworkEditOperation(
     albumId: string,
     confirmationHash: string,
+    action: "replace" | "remove",
   ): string {
     const id = randomUUID();
     this.connection
       .prepare(
         `INSERT INTO edit_operations
          (id, album_id, proposed_title, confirmation_hash, state, created_at, kind)
-         VALUES (?, ?, 'Replace embedded front cover', ?, 'previewed', ?,
+         VALUES (?, ?, ?, ?, 'previewed', ?,
           'album-artwork-edit')`,
       )
-      .run(id, albumId, confirmationHash, new Date().toISOString());
+      .run(
+        id,
+        albumId,
+        action === "replace"
+          ? "Replace embedded front cover"
+          : "Remove embedded front cover",
+        confirmationHash,
+        new Date().toISOString(),
+      );
     return id;
   }
 

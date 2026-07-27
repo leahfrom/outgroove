@@ -24,11 +24,13 @@ export function AlbumArtworkEditor({
   exportResult,
   preview,
   result,
+  resultAction,
   onCancelPreview,
   onChoose,
   onConfirm,
   onExport,
   onPrepareExport,
+  onPrepareRemoval,
 }: {
   readonly busy: boolean;
   readonly error: string | undefined;
@@ -37,15 +39,18 @@ export function AlbumArtworkEditor({
   readonly exportResult: AlbumArtworkExportResultDto | undefined;
   readonly preview: AlbumArtworkEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
+  readonly resultAction: "remove" | "replace" | undefined;
   readonly onCancelPreview: () => void;
   readonly onChoose: () => void;
   readonly onConfirm: () => void;
   readonly onExport: () => void;
   readonly onPrepareExport: () => void;
+  readonly onPrepareRemoval: () => void;
 }): React.JSX.Element {
   const writableFiles = preview?.files.filter((file) => file.willWrite) ?? [];
   const blockedFiles =
     preview?.files.filter((file) => file.warnings.length > 0) ?? [];
+  const removing = preview?.action === "remove";
 
   return (
     <section
@@ -79,59 +84,98 @@ export function AlbumArtworkEditor({
         <WorkbenchConfirmation
           blocked={writableFiles.length === 0}
           busy={busy}
-          cancelLabel="Choose different artwork"
-          confirmLabel={`Confirm and write ${writableFiles.length} ${writableFiles.length === 1 ? "file" : "files"}`}
-          description="Outgroove will re-check each file, snapshot its complete embedded picture set, write through a same-folder temporary file, then re-read and verify both artwork and audio payload."
-          label="Artwork edit confirmation"
-          title="Review the embedded cover change"
+          cancelLabel={
+            removing ? "Return without removing" : "Choose different artwork"
+          }
+          confirmLabel={
+            removing
+              ? `Confirm removal from ${writableFiles.length} ${writableFiles.length === 1 ? "file" : "files"}`
+              : `Confirm and write ${writableFiles.length} ${writableFiles.length === 1 ? "file" : "files"}`
+          }
+          description={
+            removing
+              ? "Outgroove will re-check each file, snapshot its complete embedded picture set, remove only front-cover pictures through a same-folder temporary file, then re-read and verify both the remaining artwork and audio payload."
+              : "Outgroove will re-check each file, snapshot its complete embedded picture set, write through a same-folder temporary file, then re-read and verify both artwork and audio payload."
+          }
+          label={
+            removing
+              ? "Artwork removal confirmation"
+              : "Artwork edit confirmation"
+          }
+          title={
+            removing
+              ? "Review embedded front-cover removal"
+              : "Review the embedded cover change"
+          }
           onCancel={onCancelPreview}
           onConfirm={onConfirm}
         >
-          <div className="artwork-proposal">
-            {preview.proposedArtworkDataUrl && (
-              <img
-                alt="Proposed album cover"
-                src={preview.proposedArtworkDataUrl}
-              />
-            )}
-            <dl>
-              {preview.mimeType && (
-                <div>
-                  <dt>Format</dt>
-                  <dd>{preview.mimeType === "image/jpeg" ? "JPEG" : "PNG"}</dd>
-                </div>
+          {removing ? (
+            <div className="artwork-removal-summary">
+              <strong>After confirmation: no embedded front cover</strong>
+              <span>
+                Folder artwork and every embedded picture with another role
+                remain untouched. Library may therefore continue to display a
+                folder cover.
+              </span>
+              <span>
+                {writableFiles.length} of {preview.files.length} audio files
+                will change.
+              </span>
+            </div>
+          ) : (
+            <div className="artwork-proposal">
+              {preview.proposedArtworkDataUrl && (
+                <img
+                  alt="Proposed album cover"
+                  src={preview.proposedArtworkDataUrl}
+                />
               )}
-              {preview.width && preview.height && (
+              <dl>
+                {preview.mimeType && (
+                  <div>
+                    <dt>Format</dt>
+                    <dd>
+                      {preview.mimeType === "image/jpeg" ? "JPEG" : "PNG"}
+                    </dd>
+                  </div>
+                )}
+                {preview.width && preview.height && (
+                  <div>
+                    <dt>Dimensions</dt>
+                    <dd>
+                      {preview.width} × {preview.height}
+                    </dd>
+                  </div>
+                )}
+                {preview.byteLength && (
+                  <div>
+                    <dt>File size</dt>
+                    <dd>{formatBytes(preview.byteLength)}</dd>
+                  </div>
+                )}
                 <div>
-                  <dt>Dimensions</dt>
+                  <dt>Will write</dt>
                   <dd>
-                    {preview.width} × {preview.height}
+                    {writableFiles.length} of {preview.files.length} audio files
                   </dd>
                 </div>
-              )}
-              {preview.byteLength && (
-                <div>
-                  <dt>File size</dt>
-                  <dd>{formatBytes(preview.byteLength)}</dd>
-                </div>
-              )}
-              <div>
-                <dt>Will write</dt>
-                <dd>
-                  {writableFiles.length} of {preview.files.length} audio files
-                </dd>
-              </div>
-            </dl>
-          </div>
+              </dl>
+            </div>
+          )}
           <div className="workbench-file-reviews">
             {preview.files.map((file) => (
               <article key={file.fileId}>
                 <h5>{file.path}</h5>
                 <p>
                   {file.willWrite
-                    ? `Replace ${file.currentFrontCovers} front cover${file.currentFrontCovers === 1 ? "" : "s"}; preserve ${file.preservedPictures} other embedded picture${file.preservedPictures === 1 ? "" : "s"}.`
+                    ? removing
+                      ? `Remove ${file.currentFrontCovers} embedded front cover${file.currentFrontCovers === 1 ? "" : "s"}; preserve ${file.preservedPictures} other embedded picture${file.preservedPictures === 1 ? "" : "s"}.`
+                      : `Replace ${file.currentFrontCovers} front cover${file.currentFrontCovers === 1 ? "" : "s"}; preserve ${file.preservedPictures} other embedded picture${file.preservedPictures === 1 ? "" : "s"}.`
                     : file.warnings.length === 0
-                      ? "Already matches the selected front cover."
+                      ? removing
+                        ? "No embedded front cover; this file stays unchanged."
+                        : "Already matches the selected front cover."
                       : "Will not be written."}
                 </p>
                 {file.warnings.map((warning) => (
@@ -153,11 +197,48 @@ export function AlbumArtworkEditor({
 
       {result && (
         <WorkbenchWriteResult
-          label="Artwork edit result"
+          label={
+            resultAction === "remove"
+              ? "Artwork removal result"
+              : "Artwork edit result"
+          }
           results={result.results}
-          subject="Artwork write"
+          subject={
+            resultAction === "remove" ? "Artwork removal" : "Artwork write"
+          }
         />
       )}
+
+      <details className="artwork-export-disclosure artwork-removal-disclosure">
+        <summary>
+          <span>
+            <strong>Remove embedded front covers</strong>
+            <small>
+              Prepare a reversible per-file removal without touching folder
+              artwork.
+            </small>
+          </span>
+        </summary>
+        <div className="artwork-export-content">
+          <p>
+            Removal affects only pictures explicitly marked as front covers.
+            Outgroove preserves other embedded pictures and stores the complete
+            before-state for a separately confirmed undo.
+          </p>
+          {preview?.action !== "remove" && (
+            <div className="workflow-actions">
+              <button
+                className="artwork-removal-button"
+                disabled={busy}
+                onClick={onPrepareRemoval}
+                type="button"
+              >
+                Preview front-cover removal
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
 
       <details className="artwork-export-disclosure">
         <summary>

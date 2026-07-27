@@ -2698,6 +2698,28 @@ pre {
 .artwork-export-content {
   padding: 0.5rem 0.8rem 0;
 }
+.artwork-removal-summary {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #b07b2d;
+  border-left-width: 4px;
+  border-radius: 0 9px 9px 0;
+  background: #fff8ec;
+}
+.artwork-removal-summary span {
+  color: #594b35;
+}
+.artwork-removal-button {
+  border-color: #8d672b;
+  color: #684918;
+}
+.artwork-removal-button:hover:not(:disabled) {
+  border-color: #684918;
+  background: #fff8ec;
+  color: #4f350d;
+}
 .artwork-export-result {
   display: grid;
   gap: 0.25rem;
@@ -3423,6 +3445,10 @@ td {
     background: Highlight;
     color: HighlightText;
     forced-color-adjust: none;
+  }
+  .artwork-removal-button {
+    border: 2px solid ButtonText;
+    color: ButtonText;
   }
   .modal-backdrop {
     background: CanvasText;

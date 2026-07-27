@@ -144,10 +144,102 @@ it("previews, confirms, verifies, deduplicates snapshots, and restores album art
   database.close();
 });
 
-it("refuses one stale file without aborting the other confirmed artwork write", async () => {
-  const { albumId, database, editor, files, selectedPath, writer } =
+it("removes only embedded front covers, preserves audio and other pictures, and supports undo", async () => {
+  const { albumId, database, editor, files, writer } =
     await createArtworkEditor();
-  const preview = await editor.preview(albumId, selectedPath);
+  for (const file of files) {
+    const current = await writer.readPictures(file.path);
+    await writer.writePictures(file.path, [
+      ...current,
+      {
+        mimeType: "image/png",
+        kind: PictureKind.CoverFront,
+        description: "Remove this front cover",
+        data: selectedPng,
+      },
+      {
+        mimeType: "image/png",
+        kind: PictureKind.CoverBack,
+        description: "Preserve this back cover",
+        data: selectedPng,
+      },
+    ]);
+  }
+  const beforePictures = await Promise.all(
+    files.map(({ path }) => writer.readPictures(path)),
+  );
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+
+  const preview = await editor.previewRemoval(albumId);
+  expect(preview).toMatchObject({ action: "remove" });
+  expect(preview).not.toHaveProperty("proposedArtworkDataUrl");
+  expect(
+    preview.files.every(
+      (file) =>
+        file.currentFrontCovers > 0 &&
+        file.preservedPictures > 0 &&
+        file.willWrite,
+    ),
+  ).toBe(true);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(result.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries()) {
+    const pictures = await writer.readPictures(file.path);
+    expect(
+      pictures.some((picture) => picture.kind === PictureKind.CoverFront),
+    ).toBe(false);
+    expect(picturesFingerprint(pictures)).toBe(
+      picturesFingerprint(
+        (beforePictures[index] ?? []).filter(
+          (picture) => picture.kind !== PictureKind.CoverFront,
+        ),
+      ),
+    );
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  }
+  expect(database.listEditHistory(albumId)[0]).toMatchObject({
+    kind: "album-artwork-edit",
+    proposedTitle: "Remove embedded front cover",
+    verifiedFiles: 2,
+  });
+
+  const undoPreview = await editor.previewUndo(preview.operationId);
+  expect(undoPreview.action).toBe("restore");
+  const undo = await editor.apply(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+    "album-artwork-undo",
+  );
+  expect(undo.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries())
+    expect(picturesFingerprint(await writer.readPictures(file.path))).toBe(
+      picturesFingerprint(beforePictures[index] ?? []),
+    );
+  database.close();
+});
+
+it("refuses one stale file without aborting the other confirmed artwork removal", async () => {
+  const { albumId, database, editor, files, writer } =
+    await createArtworkEditor();
+  for (const file of files) {
+    const current = await writer.readPictures(file.path);
+    await writer.writePictures(file.path, [
+      ...current,
+      {
+        mimeType: "image/png",
+        kind: PictureKind.CoverFront,
+        description: "Front cover",
+        data: selectedPng,
+      },
+    ]);
+  }
+  const preview = await editor.previewRemoval(albumId);
   const first = files[0];
   if (!first) throw new Error("Fixture file missing");
   const current = await writer.readPictures(first.path);
