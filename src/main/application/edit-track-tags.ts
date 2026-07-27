@@ -10,7 +10,11 @@ import type { NormalizedTags } from "../../shared/domain/catalog";
 import {
   changedTrackTags,
   editableTrackTagFields,
+  isValidMusicBrainzId,
+  isValidPartialDate,
   normalizeTrackTagChanges,
+  trackTagValueEquals,
+  validateTrackTagRelationships,
 } from "../../shared/domain/tag-edit";
 import type { TrackTagChanges } from "../../shared/domain/tag-edit";
 import type { TrackTagChangeInput } from "../../shared/domain/tag-edit";
@@ -34,14 +38,224 @@ function targetedFieldsChanged(
   changes: TrackTagChanges,
 ): boolean {
   return editableTrackTagFields.some(
-    (field) => field in changes && before[field] !== current[field],
+    (field) =>
+      field in changes && !trackTagValueEquals(before[field], current[field]),
   );
+}
+
+function singleValueReplacementWarnings(
+  tags: NormalizedTags,
+  changes: TrackTagChanges,
+): readonly string[] {
+  const warnings: string[] = [];
+  if ("genres" in changes && (tags.genres?.length ?? 0) > 1)
+    warnings.push(
+      "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely.",
+    );
+  if ("composers" in changes && (tags.composers?.length ?? 0) > 1)
+    warnings.push(
+      "Composer editing is unavailable for tracks with multiple composer values because this writer cannot restore them safely.",
+    );
+  if ("conductors" in changes && (tags.conductors?.length ?? 0) > 1)
+    warnings.push(
+      "Conductor editing is unavailable for tracks with multiple conductor values because this writer cannot restore them safely.",
+    );
+  if ("lyricists" in changes && (tags.lyricists?.length ?? 0) > 1)
+    warnings.push(
+      "Lyricist editing is unavailable for tracks with multiple lyricist values because this writer cannot restore them safely.",
+    );
+  if ("isrcs" in changes && (tags.isrcs?.length ?? 0) > 1)
+    warnings.push(
+      "ISRC editing is unavailable for tracks with multiple ISRC values because this writer cannot restore them safely.",
+    );
+  for (const [field, label] of [
+    ["publishers", "Publisher"],
+    ["descriptions", "Description"],
+    ["catalogNumbers", "Catalog number"],
+    ["musicBrainzArtistIds", "MusicBrainz track artist ID"],
+    ["musicBrainzReleaseArtistIds", "MusicBrainz release artist ID"],
+  ] as const)
+    if (field in changes && (tags[field]?.length ?? 0) > 1)
+      warnings.push(
+        `${label} editing is unavailable for tracks with multiple current values because this writer cannot restore them safely.`,
+      );
+  for (const [field, label, maximum] of [
+    ["publishers", "Publisher", 400],
+    ["descriptions", "Description", 4000],
+    ["catalogNumbers", "Catalog number", 200],
+  ] as const) {
+    const current = tags[field] ?? [];
+    if (
+      field in changes &&
+      current.length === 1 &&
+      (current[0]?.length ?? 0) > maximum
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is too long to restore safely.`,
+      );
+  }
+  if ("grouping" in changes && (tags.grouping?.length ?? 0) > 1000)
+    warnings.push(
+      "Grouping editing is unavailable because the current value is too long to restore safely.",
+    );
+  if (
+    "comment" in changes &&
+    !(
+      (tags.comments?.length ?? 0) === 0 ||
+      ((tags.comments?.length ?? 0) === 1 &&
+        (tags.comments?.[0]?.descriptor ?? "") === "" &&
+        ["", "eng"].includes(tags.comments?.[0]?.language ?? ""))
+    )
+  )
+    warnings.push(
+      "Comment editing is unavailable when the current file has multiple comments or comment language/descriptor data that this writer cannot restore exactly.",
+    );
+  if (
+    "publishingDate" in changes &&
+    tags.publishingDate !== null &&
+    tags.publishingDate !== undefined &&
+    !isValidPartialDate(tags.publishingDate)
+  )
+    warnings.push(
+      "Publishing date editing is unavailable because the current value is not a restorable partial date.",
+    );
+  if (
+    "bpm" in changes &&
+    tags.bpm !== null &&
+    tags.bpm !== undefined &&
+    (!Number.isInteger(tags.bpm) || tags.bpm < 1 || tags.bpm > 999)
+  )
+    warnings.push(
+      "BPM editing is unavailable because the current value is not a restorable integer from 1 to 999.",
+    );
+  for (const [field, label] of [
+    ["musicBrainzRecordingId", "MusicBrainz recording ID"],
+    ["musicBrainzReleaseTrackId", "MusicBrainz release track ID"],
+    ["musicBrainzReleaseId", "MusicBrainz release ID"],
+    ["musicBrainzReleaseGroupId", "MusicBrainz release group ID"],
+    ["musicBrainzWorkId", "MusicBrainz work ID"],
+  ] as const) {
+    const current = tags[field];
+    if (
+      field in changes &&
+      current !== null &&
+      current !== undefined &&
+      !isValidMusicBrainzId(current)
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is not a restorable MusicBrainz UUID.`,
+      );
+  }
+  for (const [field, label] of [
+    ["musicBrainzArtistIds", "MusicBrainz track artist ID"],
+    ["musicBrainzReleaseArtistIds", "MusicBrainz release artist ID"],
+  ] as const) {
+    const current = tags[field] ?? [];
+    if (
+      field in changes &&
+      current.length === 1 &&
+      current[0] !== undefined &&
+      !isValidMusicBrainzId(current[0])
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is not a restorable MusicBrainz UUID.`,
+      );
+  }
+  return warnings;
+}
+
+function restorationValue(
+  tags: NormalizedTags,
+  field: (typeof editableTrackTagFields)[number],
+): NormalizedTags[typeof field] {
+  if (
+    field === "genres" ||
+    field === "composers" ||
+    field === "conductors" ||
+    field === "lyricists" ||
+    field === "isrcs" ||
+    field === "publishers" ||
+    field === "descriptions" ||
+    field === "catalogNumbers" ||
+    field === "musicBrainzArtistIds" ||
+    field === "musicBrainzReleaseArtistIds"
+  )
+    return tags[field] ?? [];
+  if (
+    field === "trackTotal" ||
+    field === "discTotal" ||
+    field === "copyright" ||
+    field === "comment" ||
+    field === "originalReleaseDate" ||
+    field === "language" ||
+    field === "grouping" ||
+    field === "publishingDate" ||
+    field === "bpm" ||
+    field === "musicBrainzRecordingId" ||
+    field === "musicBrainzReleaseTrackId" ||
+    field === "musicBrainzReleaseId" ||
+    field === "musicBrainzReleaseGroupId" ||
+    field === "musicBrainzWorkId"
+  )
+    return tags[field] ?? null;
+  if (field === "compilation") return tags.compilation ?? false;
+  return tags[field];
+}
+
+function previewValue(
+  tags: NormalizedTags,
+  field: (typeof editableTrackTagFields)[number],
+): string | number | boolean | readonly string[] | null {
+  if (field !== "comment" || (tags.comments?.length ?? 0) === 0)
+    return tags[field] ?? null;
+  return (tags.comments ?? []).map((comment) => {
+    const context = [
+      comment.language ? `language ${comment.language}` : undefined,
+      comment.descriptor ? `descriptor ${comment.descriptor}` : undefined,
+    ].filter(Boolean);
+    return context.length > 0
+      ? `${comment.text} (${context.join(", ")})`
+      : comment.text;
+  });
 }
 
 type BatchTagChangeInput = Pick<
   TrackTagChangeInput,
-  "artist" | "albumArtist" | "discNumber" | "year"
+  | "artist"
+  | "albumArtist"
+  | "trackTotal"
+  | "discNumber"
+  | "discTotal"
+  | "year"
+  | "genres"
+  | "composers"
+  | "conductors"
+  | "lyricists"
+  | "isrcs"
+  | "copyright"
+  | "originalReleaseDate"
+  | "language"
+  | "publishers"
+  | "grouping"
+  | "catalogNumbers"
+  | "publishingDate"
+  | "compilation"
+  | "musicBrainzReleaseId"
+  | "musicBrainzReleaseArtistIds"
+  | "musicBrainzReleaseGroupId"
 >;
+
+function relationshipError(
+  tags: NormalizedTags,
+  changes: TrackTagChanges,
+): string | null {
+  try {
+    validateTrackTagRelationships(tags, changes);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
 
 interface StoredBatchPreview {
   readonly fileId: string;
@@ -69,6 +283,7 @@ export class EditTrackTags {
     );
     if (Object.keys(changes).length === 0)
       throw new Error("The proposed metadata already matches this track.");
+    validateTrackTagRelationships(track.tags, changes);
     const confirmationToken = randomBytes(24).toString("base64url");
     const operationId = this.database.createTrackEditOperation(
       albumId,
@@ -78,6 +293,7 @@ export class EditTrackTags {
       tokenHash(confirmationToken),
     );
     const extension = extname(track.path).toLocaleLowerCase("en-US");
+    const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
     return {
       operationId,
       confirmationToken,
@@ -87,12 +303,15 @@ export class EditTrackTags {
         .filter((field) => field in changes)
         .map((field) => ({
           field,
-          before: track.tags[field],
+          before: previewValue(track.tags, field),
           after: changes[field] ?? null,
         })),
-      warnings: this.writer.writableExtensions.has(extension)
-        ? []
-        : [`${extension || "This format"} is read-only in this slice.`],
+      warnings: [
+        ...(this.writer.writableExtensions.has(extension)
+          ? []
+          : [`${extension || "This format"} is read-only in this slice.`]),
+        ...valueWarnings,
+      ],
     };
   }
 
@@ -134,10 +353,17 @@ export class EditTrackTags {
       current,
       after,
     );
+    const replacementError = singleValueReplacementWarnings(
+      current,
+      changes,
+    )[0];
+    const invalidRelationship = relationshipError(current, changes);
     let verified = false;
     let error: string | null = null;
     if (target?.scanState !== "ok")
       error = "The file is not currently available for writing.";
+    else if (replacementError) error = replacementError;
+    else if (invalidRelationship) error = invalidRelationship;
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -200,7 +426,7 @@ export class EditTrackTags {
     for (const field of editableTrackTagFields)
       if (field in sourceChanges)
         Object.assign(restoreChanges, {
-          [field]: sourceSnapshot.before[field],
+          [field]: restorationValue(sourceSnapshot.before, field),
         });
 
     const target = this.database.getFileEditState(source.target_file_id);
@@ -237,7 +463,7 @@ export class EditTrackTags {
         .filter((field) => field in restoreChanges)
         .map((field) => ({
           field,
-          before: current[field],
+          before: previewValue(current, field),
           after: restoreChanges[field] ?? null,
         })),
       warnings,
@@ -290,6 +516,7 @@ export class EditTrackTags {
     const target = this.database.getFileEditState(operation.target_file_id);
     const current = target?.tags ?? previewTags;
     const after = applyChanges(current, changes);
+    const invalidRelationship = relationshipError(current, changes);
     const snapshotId = this.database.saveSnapshot(
       operationId,
       operation.target_file_id,
@@ -306,6 +533,7 @@ export class EditTrackTags {
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field changed after the undo preview; undo did not overwrite it.";
+    else if (invalidRelationship) error = invalidRelationship;
     else {
       try {
         const write = await this.writer.writeTags(target.path, changes);
@@ -359,7 +587,9 @@ export class EditTrackTags {
 
     const files = tracks.map(({ fileId, track }) => {
       const changes = changedTrackTags(track.tags, proposed);
+      validateTrackTagRelationships(track.tags, changes);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
+      const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
       return {
         fileId,
         path: track.path,
@@ -367,12 +597,15 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: track.tags[field],
+            before: previewValue(track.tags, field),
             after: changes[field] ?? null,
           })),
-        warnings: this.writer.writableExtensions.has(extension)
-          ? []
-          : [`${extension || "This format"} is read-only in this slice.`],
+        warnings: [
+          ...(this.writer.writableExtensions.has(extension)
+            ? []
+            : [`${extension || "This format"} is read-only in this slice.`]),
+          ...valueWarnings,
+        ],
         willWrite: Object.keys(changes).length > 0,
         tags: track.tags,
       };
@@ -440,10 +673,17 @@ export class EditTrackTags {
         current,
         after,
       );
+      const replacementError = singleValueReplacementWarnings(
+        current,
+        changes,
+      )[0];
+      const invalidRelationship = relationshipError(current, changes);
       let verified = false;
       let error: string | null = null;
       if (target?.scanState !== "ok")
         error = "The file is not currently available for writing.";
+      else if (replacementError) error = replacementError;
+      else if (invalidRelationship) error = invalidRelationship;
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -494,6 +734,7 @@ export class EditTrackTags {
         trackNumber: startNumber + index,
         ...(discNumber === undefined ? {} : { discNumber }),
       });
+      validateTrackTagRelationships(track.tags, changes);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
       return {
         fileId,
@@ -508,7 +749,7 @@ export class EditTrackTags {
           )
           .map((field) => ({
             field,
-            before: track.tags[field],
+            before: previewValue(track.tags, field),
             after: changes[field] ?? null,
           })),
         warnings: this.writer.writableExtensions.has(extension)
@@ -592,6 +833,9 @@ export class EditTrackTags {
       const target = this.database.getFileEditState(preview.fileId);
       const current = target?.tags ?? preview.tags;
       const after = changes ? applyChanges(current, changes) : current;
+      const invalidRelationship = changes
+        ? relationshipError(current, changes)
+        : null;
       const snapshotId = this.database.saveSnapshot(
         operationId,
         preview.fileId,
@@ -606,6 +850,7 @@ export class EditTrackTags {
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A track or disc number changed after this preview; sequencing did not overwrite it.";
+      else if (invalidRelationship) error = invalidRelationship;
       else {
         try {
           const write = await this.writer.writeTags(target.path, changes);
@@ -687,10 +932,14 @@ export class EditTrackTags {
       const restore: TrackTagChanges = {};
       for (const field of editableTrackTagFields)
         if (field in sourceChanges)
-          Object.assign(restore, { [field]: snapshot.before[field] });
+          Object.assign(restore, {
+            [field]: restorationValue(snapshot.before, field),
+          });
       const target = this.database.getFileEditState(snapshot.fileId);
       const current = target?.tags ?? snapshot.current;
       const changes = changedTrackTags(current, restore);
+      if (Object.keys(changes).length > 0)
+        validateTrackTagRelationships(current, changes);
       const willWrite = Object.keys(changes).length > 0;
       const warnings: string[] = [];
       if (willWrite && target?.scanState !== "ok")
@@ -713,7 +962,7 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: current[field],
+            before: previewValue(current, field),
             after: changes[field] ?? null,
           })),
         warnings,
@@ -802,6 +1051,9 @@ export class EditTrackTags {
       const target = this.database.getFileEditState(preview.fileId);
       const current = target?.tags ?? preview.tags;
       const after = changes ? applyChanges(current, changes) : current;
+      const invalidRelationship = changes
+        ? relationshipError(current, changes)
+        : null;
       const snapshotId = this.database.saveSnapshot(
         operationId,
         preview.fileId,
@@ -820,6 +1072,7 @@ export class EditTrackTags {
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field changed after the batch undo preview; undo did not overwrite it.";
+      else if (invalidRelationship) error = invalidRelationship;
       else {
         try {
           const write = await this.writer.writeTags(target.path, changes);

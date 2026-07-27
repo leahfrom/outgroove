@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   albumArtworkRequestSchema,
+  albumFolderArtworkPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
@@ -48,6 +49,26 @@ describe("validated IPC handlers", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+  });
+
+  it("does not accept renderer-supplied paths for folder artwork", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      albumFolderArtworkPreviewRequestSchema,
+      useCase,
+    );
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { albumId })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(
+      handler({}, { albumId, destinationPath: "/tmp/cover.jpg" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(useCase).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed and unknown request fields without calling the use case", async () => {
@@ -751,7 +772,126 @@ describe("validated IPC handlers", () => {
     await expect(
       handler({}, { fileId, changes: {}, filePath: "/arbitrary/file.mp3" }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-    expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler({}, { fileId, changes: { genres: ["Rock", "Metal"] } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { trackTotal: 10_000 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { discTotal: 0 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { originalReleaseDate: "2026-13" } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { comment: "C".repeat(4001) } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { language: "L".repeat(101) } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { bpm: 1000 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        { fileId, changes: { musicBrainzRecordingId: "not-a-uuid" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: { composers: ["First Composer", "Second Composer"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
+            conductors: ["First Conductor", "Second Conductor"],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
+            lyricists: ["First Lyricist", "Second Lyricist"],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: { isrcs: ["DEABC2600001", "DEABC2600002"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
+            trackTotal: 12,
+            discTotal: null,
+            genres: ["  Post Rock  "],
+            composers: ["  Fixture Composer  "],
+            conductors: ["  Fixture Conductor  "],
+            lyricists: ["  Fixture Lyricist  "],
+            isrcs: ["  DEABC2600001  "],
+            copyright: "  Copyright Fixture  ",
+            comment: "  Fixture comment  ",
+            originalReleaseDate: "  1998-04  ",
+            language: "  deu  ",
+            publishers: ["  Fixture Publisher  "],
+            descriptions: ["  Fixture description  "],
+            grouping: "  Suite I  ",
+            catalogNumbers: ["  OUT-42  "],
+            publishingDate: "  2025-09  ",
+            bpm: 127,
+            compilation: true,
+            musicBrainzRecordingId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(useCase).toHaveBeenCalledWith({
+      fileId,
+      changes: {
+        trackTotal: 12,
+        discTotal: null,
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+        comment: "Fixture comment",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      },
+    });
   });
 
   it("limits batch edits to unique track ids and shared safe fields", async () => {
@@ -776,12 +916,138 @@ describe("validated IPC handlers", () => {
         {},
         {
           fileIds: [first, second],
+          changes: { musicBrainzRecordingId: first },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { lyricists: ["First Lyricist", "Second Lyricist"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { comment: "Comments stay single-track only" },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { isrcs: ["DEABC2600001", "DEABC2600002"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: {
+            conductors: ["First Conductor", "Second Conductor"],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { trackTotal: 10_000, discTotal: 0 },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
           changes: { artist: "Artist" },
           directory: "/arbitrary/path",
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-    expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { genres: ["Rock", "Metal"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { composers: ["First Composer", "Second Composer"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: {
+            trackTotal: 12,
+            discTotal: 2,
+            genres: [],
+            composers: ["Fixture Composer"],
+            conductors: ["Fixture Conductor"],
+            lyricists: ["Fixture Lyricist"],
+            isrcs: ["DEABC2600001"],
+            copyright: null,
+            originalReleaseDate: "1998-04",
+            language: "deu",
+            publishers: ["Fixture Publisher"],
+            grouping: "Suite I",
+            catalogNumbers: ["OUT-42"],
+            publishingDate: "2025-09",
+            compilation: true,
+            musicBrainzReleaseId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            musicBrainzReleaseArtistIds: [
+              "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB",
+            ],
+            musicBrainzReleaseGroupId: "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC",
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(useCase).toHaveBeenCalledWith({
+      fileIds: [first, second],
+      changes: {
+        trackTotal: 12,
+        discTotal: 2,
+        genres: [],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: null,
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        publishers: ["Fixture Publisher"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        compilation: true,
+        musicBrainzReleaseId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        musicBrainzReleaseArtistIds: ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],
+        musicBrainzReleaseGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      },
+    });
   });
 
   it("requires an explicit bounded order for track-number sequencing", async () => {

@@ -57,6 +57,31 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()).toHaveLength(1);
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.composers).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.conductors).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.lyricists).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.isrcs).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.copyright).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.comment).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.comments).toEqual([]);
+    expect(
+      database.listAlbums()[0]?.tracks[0]?.tags.originalReleaseDate,
+    ).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.language).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.publishers).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.descriptions).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.grouping).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.catalogNumbers).toEqual(
+      [],
+    );
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.publishingDate).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.bpm).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.compilation).toBe(false);
+    expect(
+      database.listAlbums()[0]?.tracks[0]?.tags.musicBrainzReleaseId,
+    ).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.trackTotal).toBe(2);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.discTotal).toBe(1);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
     expect(
       scannedTracks.find((track) => track.format === "MPEG"),
@@ -83,6 +108,59 @@ describe("incremental library scan", () => {
       errors: 0,
     });
     expect(database.listScanErrors()).toHaveLength(1);
+    database.connection
+      .prepare(
+        `UPDATE audio_files
+         SET normalized_tags_json=json_remove(
+           normalized_tags_json, '$.trackTotal', '$.discTotal', '$.conductors',
+           '$.lyricists', '$.isrcs', '$.copyright', '$.comment', '$.comments',
+           '$.originalReleaseDate', '$.language', '$.publishers',
+           '$.descriptions', '$.grouping', '$.catalogNumbers',
+           '$.publishingDate', '$.bpm', '$.compilation',
+           '$.musicBrainzRecordingId', '$.musicBrainzReleaseTrackId',
+           '$.musicBrainzReleaseId', '$.musicBrainzArtistIds',
+           '$.musicBrainzReleaseArtistIds', '$.musicBrainzReleaseGroupId',
+           '$.musicBrainzWorkId'
+         )
+         WHERE scan_state='ok'`,
+      )
+      .run();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags).toMatchObject({
+      trackTotal: null,
+      discTotal: null,
+    });
+    await expect(scanner.execute(root.id)).resolves.toEqual({
+      parsed: 2,
+      unchanged: 1,
+      errors: 0,
+    });
+    expect(
+      database
+        .listAlbums()
+        .flatMap((album) => album.tracks)
+        .every(
+          (track) => track.tags.trackTotal === 2 && track.tags.discTotal === 1,
+        ),
+    ).toBe(true);
+    expect(
+      database
+        .listAlbums()
+        .flatMap((album) => album.tracks)
+        .every(
+          (track) =>
+            Array.isArray(track.tags.publishers) &&
+            Array.isArray(track.tags.descriptions) &&
+            Array.isArray(track.tags.catalogNumbers) &&
+            typeof track.tags.compilation === "boolean" &&
+            Array.isArray(track.tags.musicBrainzArtistIds) &&
+            Array.isArray(track.tags.musicBrainzReleaseArtistIds),
+        ),
+    ).toBe(true);
+    await expect(scanner.execute(root.id)).resolves.toEqual({
+      parsed: 0,
+      unchanged: 3,
+      errors: 0,
+    });
     database.close();
   });
 

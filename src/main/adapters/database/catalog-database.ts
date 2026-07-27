@@ -1,6 +1,6 @@
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 
@@ -95,6 +95,31 @@ interface AudioFileRow {
   scan_state: "ok" | "error" | "missing";
   scan_error: string | null;
   genres_type?: string | null;
+  composers_type?: string | null;
+  conductors_type?: string | null;
+  lyricists_type?: string | null;
+  isrcs_type?: string | null;
+  copyright_type?: string | null;
+  comments_type?: string | null;
+  comment_type?: string | null;
+  original_release_date_type?: string | null;
+  language_type?: string | null;
+  track_total_type?: string | null;
+  disc_total_type?: string | null;
+  publishers_type?: string | null;
+  descriptions_type?: string | null;
+  grouping_type?: string | null;
+  catalog_numbers_type?: string | null;
+  publishing_date_type?: string | null;
+  bpm_type?: string | null;
+  compilation_type?: string | null;
+  musicbrainz_recording_id_type?: string | null;
+  musicbrainz_release_track_id_type?: string | null;
+  musicbrainz_release_id_type?: string | null;
+  musicbrainz_artist_ids_type?: string | null;
+  musicbrainz_release_artist_ids_type?: string | null;
+  musicbrainz_release_group_id_type?: string | null;
+  musicbrainz_work_id_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -230,6 +255,26 @@ export interface StoredTagSnapshot {
   readonly error: string | null;
 }
 
+export interface StoredArtworkPicture {
+  readonly mimeType: string;
+  readonly kind: number;
+  readonly description?: string;
+  readonly data: Uint8Array;
+}
+
+export interface StoredArtworkSnapshot extends StoredTagSnapshot {
+  readonly beforePictures: readonly StoredArtworkPicture[];
+  readonly afterPictures: readonly StoredArtworkPicture[];
+}
+
+function hydrateRebuildableTotals(tags: NormalizedTags): NormalizedTags {
+  return {
+    ...tags,
+    trackTotal: tags.trackTotal ?? null,
+    discTotal: tags.discTotal ?? null,
+  };
+}
+
 export class CatalogDatabase {
   readonly connection: Database.Database;
   private readonly scanStatements: ScanStatements;
@@ -298,7 +343,33 @@ export class CatalogDatabase {
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
-        `SELECT *, json_type(normalized_tags_json, '$.genres') AS genres_type
+        `SELECT *,
+           json_type(normalized_tags_json, '$.genres') AS genres_type,
+           json_type(normalized_tags_json, '$.composers') AS composers_type,
+           json_type(normalized_tags_json, '$.conductors') AS conductors_type,
+           json_type(normalized_tags_json, '$.lyricists') AS lyricists_type,
+           json_type(normalized_tags_json, '$.isrcs') AS isrcs_type,
+           json_type(normalized_tags_json, '$.copyright') AS copyright_type,
+           json_type(normalized_tags_json, '$.comments') AS comments_type,
+           json_type(normalized_tags_json, '$.comment') AS comment_type,
+           json_type(normalized_tags_json, '$.originalReleaseDate') AS original_release_date_type,
+           json_type(normalized_tags_json, '$.language') AS language_type,
+           json_type(normalized_tags_json, '$.trackTotal') AS track_total_type,
+           json_type(normalized_tags_json, '$.discTotal') AS disc_total_type,
+           json_type(normalized_tags_json, '$.publishers') AS publishers_type,
+           json_type(normalized_tags_json, '$.descriptions') AS descriptions_type,
+           json_type(normalized_tags_json, '$.grouping') AS grouping_type,
+           json_type(normalized_tags_json, '$.catalogNumbers') AS catalog_numbers_type,
+           json_type(normalized_tags_json, '$.publishingDate') AS publishing_date_type,
+           json_type(normalized_tags_json, '$.bpm') AS bpm_type,
+           json_type(normalized_tags_json, '$.compilation') AS compilation_type,
+           json_type(normalized_tags_json, '$.musicBrainzRecordingId') AS musicbrainz_recording_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseTrackId') AS musicbrainz_release_track_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseId') AS musicbrainz_release_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzArtistIds') AS musicbrainz_artist_ids_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseArtistIds') AS musicbrainz_release_artist_ids_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseGroupId') AS musicbrainz_release_group_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzWorkId') AS musicbrainz_work_id_type
          FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
@@ -959,7 +1030,36 @@ export class CatalogDatabase {
       file.sampleRate ?? null,
       file.bitDepth ?? null,
       file.channels ?? null,
-      JSON.stringify({ ...file.tags, genres: file.tags.genres ?? [] }),
+      JSON.stringify({
+        ...file.tags,
+        trackTotal: file.tags.trackTotal ?? null,
+        discTotal: file.tags.discTotal ?? null,
+        genres: file.tags.genres ?? [],
+        composers: file.tags.composers ?? [],
+        conductors: file.tags.conductors ?? [],
+        lyricists: file.tags.lyricists ?? [],
+        isrcs: file.tags.isrcs ?? [],
+        copyright: file.tags.copyright ?? null,
+        comment: file.tags.comment ?? null,
+        comments: file.tags.comments ?? [],
+        originalReleaseDate: file.tags.originalReleaseDate ?? null,
+        language: file.tags.language ?? null,
+        publishers: file.tags.publishers ?? [],
+        descriptions: file.tags.descriptions ?? [],
+        grouping: file.tags.grouping ?? null,
+        catalogNumbers: file.tags.catalogNumbers ?? [],
+        publishingDate: file.tags.publishingDate ?? null,
+        bpm: file.tags.bpm ?? null,
+        compilation: file.tags.compilation ?? false,
+        musicBrainzRecordingId: file.tags.musicBrainzRecordingId ?? null,
+        musicBrainzReleaseTrackId: file.tags.musicBrainzReleaseTrackId ?? null,
+        musicBrainzReleaseId: file.tags.musicBrainzReleaseId ?? null,
+        musicBrainzArtistIds: file.tags.musicBrainzArtistIds ?? [],
+        musicBrainzReleaseArtistIds:
+          file.tags.musicBrainzReleaseArtistIds ?? [],
+        musicBrainzReleaseGroupId: file.tags.musicBrainzReleaseGroupId ?? null,
+        musicBrainzWorkId: file.tags.musicBrainzWorkId ?? null,
+      }),
       JSON.stringify(file.nativeTags),
       now,
     );
@@ -1079,6 +1179,47 @@ export class CatalogDatabase {
           Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs) &&
           (existing.scan_state === "error" ||
             (existing.genres_type === "array" &&
+              existing.composers_type === "array" &&
+              existing.conductors_type === "array" &&
+              existing.lyricists_type === "array" &&
+              existing.isrcs_type === "array" &&
+              (existing.copyright_type === "text" ||
+                existing.copyright_type === "null") &&
+              existing.comments_type === "array" &&
+              (existing.comment_type === "text" ||
+                existing.comment_type === "null") &&
+              (existing.original_release_date_type === "text" ||
+                existing.original_release_date_type === "null") &&
+              (existing.language_type === "text" ||
+                existing.language_type === "null") &&
+              (existing.track_total_type === "integer" ||
+                existing.track_total_type === "null") &&
+              (existing.disc_total_type === "integer" ||
+                existing.disc_total_type === "null") &&
+              existing.publishers_type === "array" &&
+              existing.descriptions_type === "array" &&
+              (existing.grouping_type === "text" ||
+                existing.grouping_type === "null") &&
+              existing.catalog_numbers_type === "array" &&
+              (existing.publishing_date_type === "text" ||
+                existing.publishing_date_type === "null") &&
+              (existing.bpm_type === "integer" ||
+                existing.bpm_type === "real" ||
+                existing.bpm_type === "null") &&
+              (existing.compilation_type === "true" ||
+                existing.compilation_type === "false") &&
+              (existing.musicbrainz_recording_id_type === "text" ||
+                existing.musicbrainz_recording_id_type === "null") &&
+              (existing.musicbrainz_release_track_id_type === "text" ||
+                existing.musicbrainz_release_track_id_type === "null") &&
+              (existing.musicbrainz_release_id_type === "text" ||
+                existing.musicbrainz_release_id_type === "null") &&
+              existing.musicbrainz_artist_ids_type === "array" &&
+              existing.musicbrainz_release_artist_ids_type === "array" &&
+              (existing.musicbrainz_release_group_id_type === "text" ||
+                existing.musicbrainz_release_group_id_type === "null") &&
+              (existing.musicbrainz_work_id_type === "text" ||
+                existing.musicbrainz_work_id_type === "null") &&
               existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
@@ -1651,9 +1792,9 @@ export class CatalogDatabase {
       { id: string; title: string; albumArtist: string; tracks: CatalogTrack[] }
     >();
     for (const row of rows) {
-      const tags = JSON.parse(
-        row.normalized_tags_json ?? "{}",
-      ) as NormalizedTags;
+      const tags = hydrateRebuildableTotals(
+        JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      );
       const album = albums.get(row.album_id) ?? {
         id: row.album_id,
         title: row.album_title,
@@ -1736,7 +1877,9 @@ export class CatalogDatabase {
     return row?.normalized_tags_json
       ? {
           path: row.path,
-          tags: JSON.parse(row.normalized_tags_json) as NormalizedTags,
+          tags: hydrateRebuildableTotals(
+            JSON.parse(row.normalized_tags_json) as NormalizedTags,
+          ),
           scanState: row.scan_state,
         }
       : undefined;
@@ -1934,6 +2077,55 @@ export class CatalogDatabase {
     return id;
   }
 
+  createArtworkEditOperation(
+    albumId: string,
+    confirmationHash: string,
+    action: "replace" | "remove",
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at, kind)
+         VALUES (?, ?, ?, ?, 'previewed', ?,
+          'album-artwork-edit')`,
+      )
+      .run(
+        id,
+        albumId,
+        action === "replace"
+          ? "Replace embedded front cover"
+          : "Remove embedded front cover",
+        confirmationHash,
+        new Date().toISOString(),
+      );
+    return id;
+  }
+
+  createArtworkUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id)
+         VALUES (?, ?, 'Restore embedded artwork', ?, 'previewed', ?,
+          'album-artwork-undo', ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1948,7 +2140,9 @@ export class CatalogDatabase {
           | "track-tags-undo"
           | "track-tags-batch-edit"
           | "track-tags-batch-undo"
-          | "track-number-sequence-edit";
+          | "track-number-sequence-edit"
+          | "album-artwork-edit"
+          | "album-artwork-undo";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1975,7 +2169,9 @@ export class CatalogDatabase {
             | "track-tags-undo"
             | "track-tags-batch-edit"
             | "track-tags-batch-undo"
-            | "track-number-sequence-edit";
+            | "track-number-sequence-edit"
+            | "album-artwork-edit"
+            | "album-artwork-undo";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -2013,7 +2209,9 @@ export class CatalogDatabase {
         | "track-tags-undo"
         | "track-tags-batch-edit"
         | "track-tags-batch-undo"
-        | "track-number-sequence-edit";
+        | "track-number-sequence-edit"
+        | "album-artwork-edit"
+        | "album-artwork-undo";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";
@@ -2060,9 +2258,15 @@ export class CatalogDatabase {
       id: row.id,
       fileId: row.file_id,
       path: row.path,
-      before: JSON.parse(row.before_tags_json) as NormalizedTags,
-      after: JSON.parse(row.after_tags_json) as NormalizedTags,
-      current: JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      before: hydrateRebuildableTotals(
+        JSON.parse(row.before_tags_json) as NormalizedTags,
+      ),
+      after: hydrateRebuildableTotals(
+        JSON.parse(row.after_tags_json) as NormalizedTags,
+      ),
+      current: hydrateRebuildableTotals(
+        JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      ),
       scanState: row.scan_state,
       verified: row.verified === 1,
       error: row.error,
@@ -2098,6 +2302,95 @@ export class CatalogDatabase {
         JSON.stringify(after),
       );
     return id;
+  }
+
+  saveArtworkSnapshot(
+    operationId: string,
+    fileId: string,
+    tags: NormalizedTags,
+    before: readonly StoredArtworkPicture[],
+    after: readonly StoredArtworkPicture[],
+  ): string {
+    return this.connection.transaction(() => {
+      const snapshotId = this.saveSnapshot(operationId, fileId, tags, tags);
+      const insertAsset = this.connection.prepare(
+        `INSERT INTO artwork_assets (sha256, mime_type, data)
+         VALUES (?, ?, ?) ON CONFLICT(sha256) DO NOTHING`,
+      );
+      const insertPicture = this.connection.prepare(
+        `INSERT INTO artwork_snapshot_pictures
+         (snapshot_id, side, position, asset_sha256, kind, description)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const [side, pictures] of [
+        ["before", before],
+        ["after", after],
+      ] as const) {
+        pictures.forEach((picture, position) => {
+          const sha256 = createHash("sha256")
+            .update(picture.data)
+            .digest("hex");
+          insertAsset.run(sha256, picture.mimeType, Buffer.from(picture.data));
+          insertPicture.run(
+            snapshotId,
+            side,
+            position,
+            sha256,
+            picture.kind,
+            picture.description ?? null,
+          );
+        });
+      }
+      return snapshotId;
+    })();
+  }
+
+  listArtworkSnapshots(operationId: string): readonly StoredArtworkSnapshot[] {
+    const snapshots = this.listSnapshots(operationId);
+    const rows = this.connection
+      .prepare(
+        `SELECT picture.snapshot_id, picture.side, picture.position,
+          picture.kind, picture.description, asset.mime_type, asset.data
+         FROM artwork_snapshot_pictures picture
+         JOIN artwork_assets asset ON asset.sha256=picture.asset_sha256
+         JOIN tag_snapshots snapshot ON snapshot.id=picture.snapshot_id
+         WHERE snapshot.operation_id=?
+         ORDER BY picture.snapshot_id, picture.side, picture.position`,
+      )
+      .all(operationId) as {
+      snapshot_id: string;
+      side: "before" | "after";
+      position: number;
+      kind: number;
+      description: string | null;
+      mime_type: string;
+      data: Buffer;
+    }[];
+    const pictures = new Map<
+      string,
+      { before: StoredArtworkPicture[]; after: StoredArtworkPicture[] }
+    >();
+    for (const row of rows) {
+      const entry = pictures.get(row.snapshot_id) ?? {
+        before: [],
+        after: [],
+      };
+      entry[row.side].push({
+        mimeType: row.mime_type,
+        kind: row.kind,
+        ...(row.description === null ? {} : { description: row.description }),
+        data: new Uint8Array(row.data),
+      });
+      pictures.set(row.snapshot_id, entry);
+    }
+    return snapshots.map((snapshot) => {
+      const stored = pictures.get(snapshot.id) ?? { before: [], after: [] };
+      return {
+        ...snapshot,
+        beforePictures: stored.before,
+        afterPictures: stored.after,
+      };
+    });
   }
 
   finishSnapshot(id: string, verified: boolean, error: string | null): void {

@@ -393,7 +393,14 @@ describe("deterministic manifest-based sync", () => {
     const outside = join(directory, "outside");
     await rename(originalDirectory, retainedDirectory);
     await mkdir(outside);
-    await symlink(outside, originalDirectory, "dir");
+    // Windows directory symlinks require Developer Mode or elevation. A
+    // junction is an unprivileged reparse point and exercises the same
+    // recovery containment guard on a normal release-gate machine.
+    await symlink(
+      outside,
+      originalDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
     database.close();
 
     const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));

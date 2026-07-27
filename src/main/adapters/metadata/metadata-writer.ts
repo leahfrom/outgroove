@@ -1,5 +1,13 @@
-import { randomUUID } from "node:crypto";
-import { open, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  copyFile,
+  open,
+  readFile,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
 import {
@@ -7,7 +15,8 @@ import {
   saveTrack,
   writeMetadata,
 } from "@akabeko/music-metadata-editor";
-import type { TagData } from "@akabeko/music-metadata-editor";
+import type { PictureInfo, TagData } from "@akabeko/music-metadata-editor";
+import { TagLib } from "taglib-wasm";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
 import { streamingFileHash } from "../filesystem/streaming-hash";
@@ -25,12 +34,42 @@ export interface MetadataTagChanges {
   readonly artist?: string;
   readonly albumArtist?: string;
   readonly trackNumber?: number | null;
+  readonly trackTotal?: number | null;
   readonly discNumber?: number | null;
+  readonly discTotal?: number | null;
   readonly year?: string | null;
+  readonly genres?: readonly string[];
+  readonly composers?: readonly string[];
+  readonly conductors?: readonly string[];
+  readonly lyricists?: readonly string[];
+  readonly isrcs?: readonly string[];
+  readonly copyright?: string | null;
+  readonly comment?: string | null;
+  readonly originalReleaseDate?: string | null;
+  readonly language?: string | null;
+  readonly publishers?: readonly string[];
+  readonly descriptions?: readonly string[];
+  readonly grouping?: string | null;
+  readonly catalogNumbers?: readonly string[];
+  readonly publishingDate?: string | null;
+  readonly bpm?: number | null;
+  readonly compilation?: boolean;
+  readonly musicBrainzRecordingId?: string | null;
+  readonly musicBrainzReleaseTrackId?: string | null;
+  readonly musicBrainzReleaseId?: string | null;
+  readonly musicBrainzArtistIds?: readonly string[];
+  readonly musicBrainzReleaseArtistIds?: readonly string[];
+  readonly musicBrainzReleaseGroupId?: string | null;
+  readonly musicBrainzWorkId?: string | null;
 }
 
 export interface MetadataWriter {
   readonly writableExtensions: ReadonlySet<string>;
+  readPictures(path: string): Promise<readonly PictureInfo[]>;
+  writePictures(
+    path: string,
+    pictures: readonly PictureInfo[],
+  ): Promise<MetadataWriteResult>;
   writeTags(
     path: string,
     changes: MetadataTagChanges,
@@ -39,6 +78,20 @@ export interface MetadataWriter {
     path: string,
     albumTitle: string,
   ): Promise<MetadataWriteResult>;
+}
+
+function pictureFingerprint(pictures: readonly PictureInfo[]): string {
+  const hash = createHash("sha256");
+  for (const picture of pictures) {
+    hash.update(picture.mimeType);
+    hash.update("\0");
+    hash.update(String(picture.kind));
+    hash.update("\0");
+    hash.update(picture.description ?? "");
+    hash.update("\0");
+    hash.update(picture.data);
+  }
+  return hash.digest("hex");
 }
 
 function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
@@ -53,9 +106,17 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
     if (changes.trackNumber === null) delete updated.trackNumber;
     else updated.trackNumber = changes.trackNumber;
   }
+  if ("trackTotal" in changes) {
+    if (changes.trackTotal === null) delete updated.trackTotal;
+    else updated.trackTotal = changes.trackTotal;
+  }
   if ("discNumber" in changes) {
     if (changes.discNumber === null) delete updated.discNumber;
     else updated.discNumber = changes.discNumber;
+  }
+  if ("discTotal" in changes) {
+    if (changes.discTotal === null) delete updated.discTotal;
+    else updated.discTotal = changes.discTotal;
   }
   if ("year" in changes) {
     const year = changes.year;
@@ -64,16 +125,189 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
     if (year && /^\d{4}$/u.test(year)) updated.year = Number(year);
     else if (year) updated.recordingDate = year;
   }
+  if (changes.genres !== undefined) {
+    const genres = changes.genres;
+    if (genres.length > 1)
+      throw new Error("This writer supports one proposed genre value.");
+    updated.genre = genres[0] ?? "";
+  }
+  if (changes.composers !== undefined) {
+    const composers = changes.composers;
+    if (composers.length > 1)
+      throw new Error("This writer supports one proposed composer value.");
+    updated.composer = composers[0] ?? "";
+  }
+  if (changes.conductors !== undefined) {
+    const conductors = changes.conductors;
+    if (conductors.length > 1)
+      throw new Error("This writer supports one proposed conductor value.");
+    updated.conductor = conductors[0] ?? "";
+  }
+  if (changes.lyricists !== undefined) {
+    const lyricists = changes.lyricists;
+    if (lyricists.length > 1)
+      throw new Error("This writer supports one proposed lyricist value.");
+    updated.lyricist = lyricists[0] ?? "";
+  }
+  if (changes.isrcs !== undefined) {
+    const isrcs = changes.isrcs;
+    if (isrcs.length > 1)
+      throw new Error("This writer supports one proposed ISRC.");
+    updated.isrc = isrcs[0] ?? "";
+  }
+  if ("copyright" in changes) updated.copyright = changes.copyright ?? "";
+  if ("comment" in changes) updated.comment = changes.comment ?? "";
+  if ("originalReleaseDate" in changes)
+    updated.originalReleaseDate = changes.originalReleaseDate ?? "";
+  if ("language" in changes) updated.language = changes.language ?? "";
+  if ("publishers" in changes) {
+    const publishers = changes.publishers;
+    if (publishers.length > 1)
+      throw new Error("This writer supports one proposed publisher.");
+    updated.publisher = publishers[0] ?? "";
+  }
+  if ("descriptions" in changes) {
+    const descriptions = changes.descriptions;
+    if (descriptions.length > 1)
+      throw new Error("This writer supports one proposed description.");
+    updated.description = descriptions[0] ?? "";
+  }
+  if ("publishingDate" in changes)
+    updated.publishingDate = changes.publishingDate ?? "";
+  if ("bpm" in changes) {
+    // Akabeko treats an explicit empty runtime value as "manage and remove"
+    // for both ID3 TBPM and Vorbis BPM. Its public numeric type omits that
+    // clearing sentinel, so the regression fixtures guard this narrow cast.
+    updated.bpm = (changes.bpm ?? "") as number;
+  }
   return updated;
+}
+
+const extendedPropertyFields = [
+  "grouping",
+  "catalogNumbers",
+  "compilation",
+  "musicBrainzRecordingId",
+  "musicBrainzReleaseTrackId",
+  "musicBrainzReleaseId",
+  "musicBrainzArtistIds",
+  "musicBrainzReleaseArtistIds",
+  "musicBrainzReleaseGroupId",
+  "musicBrainzWorkId",
+] as const;
+
+type ExtendedPropertyField = (typeof extendedPropertyFields)[number];
+
+const extendedPropertyKeys: Readonly<Record<ExtendedPropertyField, string>> = {
+  grouping: "GROUPING",
+  catalogNumbers: "CATALOGNUMBER",
+  compilation: "COMPILATION",
+  musicBrainzRecordingId: "MUSICBRAINZ_TRACKID",
+  musicBrainzReleaseTrackId: "MUSICBRAINZ_RELEASETRACKID",
+  musicBrainzReleaseId: "MUSICBRAINZ_ALBUMID",
+  musicBrainzArtistIds: "MUSICBRAINZ_ARTISTID",
+  musicBrainzReleaseArtistIds: "MUSICBRAINZ_ALBUMARTISTID",
+  musicBrainzReleaseGroupId: "MUSICBRAINZ_RELEASEGROUPID",
+  musicBrainzWorkId: "MUSICBRAINZ_WORKID",
+};
+
+let tagLibPromise: Promise<TagLib> | undefined;
+
+function tagLib(): Promise<TagLib> {
+  // Keep one deterministic in-memory backend across Node platforms. The WASI
+  // property-map saver currently normalizes unrelated MP3 totals and FLAC
+  // descriptions differently from the Emscripten backend.
+  tagLibPromise ??= TagLib.initialize({ forceWasmType: "emscripten" });
+  return tagLibPromise;
+}
+
+function extendedPropertyValue(
+  field: ExtendedPropertyField,
+  changes: MetadataTagChanges,
+): string {
+  const value = changes[field];
+  if (value !== null && typeof value === "object") {
+    const [first] = value;
+    return first ?? "";
+  }
+  if (typeof value === "boolean") return value ? "1" : "0";
+  return value ?? "";
+}
+
+async function applyExtendedProperties(
+  path: string,
+  changes: MetadataTagChanges,
+): Promise<void> {
+  const fields = extendedPropertyFields.filter((field) => field in changes);
+  if (fields.length === 0) return;
+  const writer = await tagLib();
+  const input = await readFile(path);
+  const output = await writer.edit(input, (file) => {
+    for (const field of fields)
+      file.setProperty(
+        extendedPropertyKeys[field],
+        extendedPropertyValue(field, changes),
+      );
+    if (file.getFormat() === "MP3" && changes.comment === null)
+      file.tag().setComment("");
+    if (file.getFormat() === "FLAC" && changes.trackTotal === null)
+      file.setProperty("totalTracks", "");
+    if (file.getFormat() === "FLAC" && changes.discTotal === null)
+      file.setProperty("totalDiscs", "");
+  });
+  await writeFile(path, output);
+}
+
+function akabekoChanges(changes: MetadataTagChanges): MetadataTagChanges {
+  const result: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(changes))
+    if (!(extendedPropertyFields as readonly string[]).includes(field))
+      result[field] = value;
+  return result;
+}
+
+function mismatchedFields(
+  file: ScannedAudioFile,
+  changes: MetadataTagChanges,
+): readonly (keyof MetadataTagChanges)[] {
+  const listFields = [
+    "genres",
+    "composers",
+    "conductors",
+    "lyricists",
+    "isrcs",
+    "publishers",
+    "descriptions",
+    "catalogNumbers",
+    "musicBrainzArtistIds",
+    "musicBrainzReleaseArtistIds",
+  ] as const;
+  const mismatches: (keyof MetadataTagChanges)[] = [];
+  for (const field of listFields) {
+    const proposed = changes[field];
+    if (proposed === undefined) continue;
+    const actual = file.tags[field] ?? [];
+    if (
+      actual.length !== proposed.length ||
+      !actual.every((value, index) => value === proposed[index])
+    )
+      mismatches.push(field);
+  }
+  for (const field of Object.keys(changes) as (keyof MetadataTagChanges)[]) {
+    if (
+      !(listFields as readonly string[]).includes(field) &&
+      file.tags[field] !== changes[field]
+    )
+      mismatches.push(field);
+  }
+  return mismatches;
 }
 
 function changesMatch(
   file: ScannedAudioFile,
   changes: MetadataTagChanges,
 ): boolean {
-  return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
-    (field) => file.tags[field] === changes[field],
-  );
+  return mismatchedFields(file, changes).length === 0;
 }
 
 function expectedDescription(changes: MetadataTagChanges): string {
@@ -182,6 +416,15 @@ export class SafeMetadataWriter implements MetadataWriter {
 
   constructor(private readonly reader: MetadataReader) {}
 
+  async readPictures(path: string): Promise<readonly PictureInfo[]> {
+    const extension = extname(path).toLocaleLowerCase("en-US");
+    if (!this.writableExtensions.has(extension))
+      throw new Error(
+        `Reading embedded artwork from ${extension || "this format"} is not supported in this slice.`,
+      );
+    return (await loadTrack(path)).pictures;
+  }
+
   async writeAlbumTitle(
     path: string,
     albumTitle: string,
@@ -213,29 +456,36 @@ export class SafeMetadataWriter implements MetadataWriter {
     const hashBefore = await audioPayloadHash(path);
     let originalMoved = false;
     try {
-      const loaded = await loadTrack(path);
-      const updatedTag = applyChanges(loaded.tag, changes);
-      if (extension === ".mp3") {
-        // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
-        // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
-        const bytes = await writeMetadata(path, {
-          tag: updatedTag,
-          id3v2MajorVersion: 4,
-        } as Parameters<typeof writeMetadata>[1] & {
-          id3v2MajorVersion: 4;
-        });
-        await writeFile(temporary, bytes, { flag: "wx" });
+      const highLevelChanges = akabekoChanges(changes);
+      if (Object.keys(highLevelChanges).length === 0) {
+        await copyFile(path, temporary);
       } else {
-        await saveTrack(
-          { ...loaded, tag: updatedTag },
-          { source: path, outputPath: temporary },
-        );
+        const loaded = await loadTrack(path);
+        const updatedTag = applyChanges(loaded.tag, highLevelChanges);
+        if (extension === ".mp3") {
+          // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
+          // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
+          const bytes = await writeMetadata(path, {
+            tag: updatedTag,
+            id3v2MajorVersion: 4,
+          } as Parameters<typeof writeMetadata>[1] & {
+            id3v2MajorVersion: 4;
+          });
+          await writeFile(temporary, bytes, { flag: "wx" });
+        } else {
+          await saveTrack(
+            { ...loaded, tag: updatedTag },
+            { source: path, outputPath: temporary },
+          );
+        }
       }
+      await applyExtendedProperties(temporary, changes);
       await flushPath(temporary);
       const temporaryRead = await this.reader.read(temporary);
-      if (!changesMatch(temporaryRead, changes))
+      const temporaryMismatches = mismatchedFields(temporaryRead, changes);
+      if (temporaryMismatches.length > 0)
         throw new Error(
-          `Temporary write verification failed: expected ${expectedDescription(changes)}.`,
+          `Temporary write verification failed for ${temporaryMismatches.join(", ")}: expected ${expectedDescription(changes)}.`,
         );
       const temporaryHash = await audioPayloadHash(temporary);
       if (temporaryHash !== hashBefore)
@@ -251,6 +501,91 @@ export class SafeMetadataWriter implements MetadataWriter {
       const hashAfter = await audioPayloadHash(path);
       if (!changesMatch(finalRead, changes) || hashAfter !== hashBefore)
         throw new Error("Post-replacement verification failed.");
+      await bestEffortUnlink(rollback);
+      return {
+        file: finalRead,
+        payloadHashBefore: hashBefore,
+        payloadHashAfter: hashAfter,
+      };
+    } catch (error) {
+      if (originalMoved) {
+        await bestEffortUnlink(path);
+        await rename(rollback, path);
+      }
+      await bestEffortUnlink(temporary);
+      throw error;
+    }
+  }
+
+  async writePictures(
+    path: string,
+    pictures: readonly PictureInfo[],
+  ): Promise<MetadataWriteResult> {
+    const extension = extname(path).toLocaleLowerCase("en-US");
+    if (!this.writableExtensions.has(extension))
+      throw new Error(
+        `Writing embedded artwork to ${extension || "this format"} is not supported in this slice.`,
+      );
+    const directory = dirname(path);
+    const nonce = randomUUID();
+    const temporary = join(
+      directory,
+      `.${basename(path, extension)}.outgroove-${nonce}.tmp${extension}`,
+    );
+    const rollback = join(
+      directory,
+      `.${basename(path)}.outgroove-${nonce}.rollback`,
+    );
+    // The format adapter receives owned byte arrays so it cannot mutate the
+    // previewed proposal that the application layer later verifies.
+    const ownedPictures = pictures.map((picture) => ({
+      ...picture,
+      data: picture.data.slice(),
+    }));
+    const expectedPictures = pictureFingerprint(ownedPictures);
+    const hashBefore = await audioPayloadHash(path);
+    let originalMoved = false;
+    try {
+      const loaded = await loadTrack(path);
+      if (extension === ".mp3") {
+        const bytes = await writeMetadata(path, {
+          tag: loaded.tag,
+          pictures: ownedPictures,
+          id3v2MajorVersion: 4,
+        } as Parameters<typeof writeMetadata>[1] & {
+          id3v2MajorVersion: 4;
+        });
+        await writeFile(temporary, bytes, { flag: "wx" });
+      } else {
+        await saveTrack(
+          { ...loaded, pictures: ownedPictures },
+          { source: path, outputPath: temporary },
+        );
+      }
+      await flushPath(temporary);
+      const temporaryTrack = await loadTrack(temporary);
+      if (pictureFingerprint(temporaryTrack.pictures) !== expectedPictures)
+        throw new Error(
+          "Temporary artwork verification failed; original was left untouched.",
+        );
+      const temporaryHash = await audioPayloadHash(temporary);
+      if (temporaryHash !== hashBefore)
+        throw new Error(
+          "Writer changed the audio payload; original was left untouched.",
+        );
+
+      await rename(path, rollback);
+      originalMoved = true;
+      await rename(temporary, path);
+      await flushPath(path);
+      const finalTrack = await loadTrack(path);
+      const finalRead = await this.reader.read(path);
+      const hashAfter = await audioPayloadHash(path);
+      if (
+        pictureFingerprint(finalTrack.pictures) !== expectedPictures ||
+        hashAfter !== hashBefore
+      )
+        throw new Error("Post-replacement artwork verification failed.");
       await bestEffortUnlink(rollback);
       return {
         file: finalRead,

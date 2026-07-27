@@ -1,6 +1,7 @@
 import { forwardRef, type Ref } from "react";
 
 import type {
+  AlbumArtworkEditPreviewDto,
   TagEditHistoryItemDto,
   TagEditPreviewDto,
   TagEditResultDto,
@@ -22,6 +23,12 @@ function historyLabel(item: TagEditHistoryItemDto): string {
       return `Changed title to “${item.proposedTitle}”`;
     case "album-title-undo":
       return `Restored “${item.proposedTitle}”`;
+    case "album-artwork-edit":
+      return item.proposedTitle === "Remove embedded front cover"
+        ? "Removed embedded front cover"
+        : "Replaced embedded front cover";
+    case "album-artwork-undo":
+      return "Restored embedded artwork";
     default:
       return item.proposedTitle;
   }
@@ -46,6 +53,8 @@ function PreviewWarnings({
 function AlbumTitleWorkbenchComponent(
   {
     albumTitle,
+    artworkUndoPreview,
+    artworkUndoResult,
     batchUndoKind,
     batchUndoPreview,
     batchUndoResult,
@@ -63,21 +72,26 @@ function AlbumTitleWorkbenchComponent(
     undoPreview,
     undoResult,
     onCancelBatchUndo,
+    onCancelArtworkUndo,
     onCancelEditPreview,
     onCancelTrackUndo,
     onCancelUndo,
     onConfirmBatchUndo,
+    onConfirmArtworkUndo,
     onConfirmEdit,
     onConfirmTrackUndo,
     onConfirmUndo,
     onDraftTitleChange,
     onPreviewBatchUndo,
+    onPreviewArtworkUndo,
     onPreviewEdit,
     onPreviewTrackUndo,
     onPreviewUndo,
     onSectionChange,
   }: {
     readonly albumTitle: string;
+    readonly artworkUndoPreview: AlbumArtworkEditPreviewDto | undefined;
+    readonly artworkUndoResult: TagEditResultDto | undefined;
     readonly batchUndoKind: BatchUndoKind;
     readonly batchUndoPreview: TrackBatchEditPreviewDto | undefined;
     readonly batchUndoResult: TagEditResultDto | undefined;
@@ -95,10 +109,12 @@ function AlbumTitleWorkbenchComponent(
     readonly undoPreview: TagEditPreviewDto | undefined;
     readonly undoResult: TagEditResultDto | undefined;
     readonly onCancelBatchUndo: () => void;
+    readonly onCancelArtworkUndo: () => void;
     readonly onCancelEditPreview: () => void;
     readonly onCancelTrackUndo: () => void;
     readonly onCancelUndo: () => void;
     readonly onConfirmBatchUndo: () => void;
+    readonly onConfirmArtworkUndo: () => void;
     readonly onConfirmEdit: () => void;
     readonly onConfirmTrackUndo: () => void;
     readonly onConfirmUndo: () => void;
@@ -107,6 +123,7 @@ function AlbumTitleWorkbenchComponent(
       operationId: string,
       kind: BatchUndoKind,
     ) => void;
+    readonly onPreviewArtworkUndo: (operationId: string) => void;
     readonly onPreviewEdit: () => void;
     readonly onPreviewTrackUndo: (operationId: string) => void;
     readonly onPreviewUndo: (operationId: string) => void;
@@ -327,6 +344,16 @@ function AlbumTitleWorkbenchComponent(
                           Preview sequence undo
                         </button>
                       )}
+                    {item.kind === "album-artwork-edit" &&
+                      item.verifiedFiles > 0 && (
+                        <button
+                          disabled={busy}
+                          onClick={() => onPreviewArtworkUndo(item.operationId)}
+                          type="button"
+                        >
+                          Preview artwork undo
+                        </button>
+                      )}
                   </li>
                 ))}
               </ol>
@@ -477,6 +504,62 @@ function AlbumTitleWorkbenchComponent(
                 ))}
               </div>
             </WorkbenchConfirmation>
+          )}
+
+          {artworkUndoPreview && (
+            <WorkbenchConfirmation
+              blocked={
+                artworkUndoPreview.files.filter((file) => file.willWrite)
+                  .length === 0
+              }
+              busy={busy}
+              cancelLabel="Keep current artwork"
+              confirmLabel={`Confirm and restore ${artworkUndoPreview.files.filter((file) => file.willWrite).length} files`}
+              description="Undo restores the complete embedded picture set recorded for each verified file. Files whose artwork changed afterward are refused."
+              label="Artwork undo confirmation"
+              title="Review embedded artwork restore"
+              onCancel={onCancelArtworkUndo}
+              onConfirm={onConfirmArtworkUndo}
+            >
+              {artworkUndoPreview.proposedArtworkDataUrl ? (
+                <div className="artwork-undo-preview">
+                  <img
+                    alt="Front cover restored by this undo"
+                    src={artworkUndoPreview.proposedArtworkDataUrl}
+                  />
+                  <p>
+                    This is the recorded front cover. Any other recorded
+                    embedded pictures are restored as well.
+                  </p>
+                </div>
+              ) : (
+                <p>
+                  The recorded state has no embedded front cover. Other recorded
+                  embedded pictures are still restored exactly.
+                </p>
+              )}
+              <div className="workbench-file-reviews">
+                {artworkUndoPreview.files.map((file) => (
+                  <article key={file.fileId}>
+                    <h5>{file.path}</h5>
+                    <p>
+                      {file.willWrite
+                        ? "Current artwork matches the verified edit and can be restored."
+                        : "This file will remain unchanged."}
+                    </p>
+                    <PreviewWarnings warnings={file.warnings} />
+                  </article>
+                ))}
+              </div>
+            </WorkbenchConfirmation>
+          )}
+
+          {artworkUndoResult && (
+            <WorkbenchWriteResult
+              label="Artwork undo result"
+              results={artworkUndoResult.results}
+              subject="Artwork undo"
+            />
           )}
 
           {batchUndoResult && (

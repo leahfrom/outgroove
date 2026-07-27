@@ -35,6 +35,14 @@ export class LoadAlbumArtwork {
     return results;
   }
 
+  invalidate(albumId: string): void {
+    for (const [key, value] of this.cache) {
+      if (value.albumId !== albumId) continue;
+      this.cacheCharacters -= value.dataUrl?.length ?? 0;
+      this.cache.delete(key);
+    }
+  }
+
   private async loadOne(albumId: string): Promise<AlbumArtworkThumbnailDto> {
     const album = this.database.getAlbum(albumId);
     const track = album?.tracks[0];

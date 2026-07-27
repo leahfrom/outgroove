@@ -47,7 +47,20 @@ function jpegSize(
 export function validatedArtworkSize(
   data: Uint8Array,
 ): { width: number; height: number } | undefined {
-  const size = pngSize(data) ?? jpegSize(data);
+  const info = validatedArtworkInfo(data);
+  return info ? { width: info.width, height: info.height } : undefined;
+}
+
+export function validatedArtworkInfo(data: Uint8Array):
+  | {
+      readonly width: number;
+      readonly height: number;
+      readonly mimeType: "image/jpeg" | "image/png";
+    }
+  | undefined {
+  const png = pngSize(data);
+  const jpeg = png ? undefined : jpegSize(data);
+  const size = png ?? jpeg;
   if (
     !size ||
     size.width <= 0 ||
@@ -57,5 +70,8 @@ export function validatedArtworkSize(
     size.width * size.height > MAX_PIXELS
   )
     return undefined;
-  return size;
+  return {
+    ...size,
+    mimeType: png ? "image/png" : "image/jpeg",
+  };
 }

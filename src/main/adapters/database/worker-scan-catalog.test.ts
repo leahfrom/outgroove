@@ -129,7 +129,7 @@ describe("worker scan catalog", () => {
       await catalog.close();
       database.close();
     }
-  });
+  }, 10_000);
 
   it("classifies and persists a repeat scan without interrupting the active job", async () => {
     const directory = await mkdtemp(

@@ -4,7 +4,9 @@ import {
   albumGroupingKey,
   compareAlbumsByArtistReleaseDateTitle,
   folderAlbumGroupingKey,
+  normalizeComments,
   normalizeGenres,
+  normalizeTagTextList,
   normalizeNumber,
   normalizeTagText,
   sortTracks,
@@ -38,6 +40,37 @@ describe("catalog normalization and grouping", () => {
     ).toEqual(["ambient", "Café", "Rock"]);
     expect(normalizeGenres(undefined)).toEqual([]);
     expect(normalizeGenres("Rock")).toEqual([]);
+  });
+
+  it("normalizes and deduplicates ordered contributor values", () => {
+    expect(
+      normalizeTagTextList([
+        "  First   Composer ",
+        "Second Composer",
+        "first composer",
+        "",
+      ]),
+    ).toEqual(["First Composer", "Second Composer"]);
+  });
+
+  it("normalizes structured comments without discarding their context", () => {
+    expect(
+      normalizeComments([
+        {
+          text: "  First line\r\nSecond line  ",
+          language: " eng ",
+          descriptor: "  Notes ",
+        },
+        { text: "   ", language: "deu" },
+      ]),
+    ).toEqual([
+      {
+        text: "First line\nSecond line",
+        language: "eng",
+        descriptor: "Notes",
+      },
+    ]);
+    expect(normalizeComments("plain text")).toEqual([]);
   });
 
   it("groups by normalized album artist and album, then orders disc and track", () => {

@@ -668,7 +668,10 @@ describe("paginated library query", () => {
     database.connection
       .prepare(
         `UPDATE audio_files
-         SET normalized_tags_json=json_remove(normalized_tags_json, '$.genres'),
+         SET normalized_tags_json=json_remove(
+           json_remove(normalized_tags_json, '$.genres'),
+           '$.composers'
+         ),
            codec=NULL, bitrate=NULL, sample_rate=NULL, bit_depth=NULL,
            channels=NULL, technical_properties_version=0`,
       )

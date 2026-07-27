@@ -176,11 +176,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the album-artwork migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "018_album_artwork_edits.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 18);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(17);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(18);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -195,6 +207,87 @@ describe("database migration and backup", () => {
         .get(),
     ).toBe(1);
     backup.close();
+  });
+
+  it("migrates schema v17 without losing verified edit history", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v17-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 17))
+      legacy.exec(migration.sql);
+    legacy.pragma("user_version = 17");
+    const tags = JSON.stringify({
+      title: "Track",
+      album: "Album",
+      artist: "Artist",
+      albumArtist: "Artist",
+    });
+    legacy
+      .prepare(
+        `INSERT INTO library_roots
+         (id, path, path_key, created_at) VALUES ('root', '/music', '/music', '2026-01-01')`,
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO albums
+         (id, grouping_key, title, album_artist)
+         VALUES ('album', 'artist-album', 'Album', 'Artist')`,
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO audio_files
+         (id, root_id, path, path_key, size, modified_ms, signature, format,
+          normalized_tags_json, scan_state, scanned_at)
+         VALUES ('file', 'root', '/music/track.flac', '/music/track.flac',
+          100, 1, 'signature', 'FLAC', ?, 'ok', '2026-01-01')`,
+      )
+      .run(tags);
+    legacy
+      .prepare(
+        `INSERT INTO tracks
+         (id, file_id, album_id, title) VALUES ('file', 'file', 'album', 'Track')`,
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          completed_at, kind)
+         VALUES ('operation', 'album', 'Renamed', 'hash', 'completed',
+          '2026-01-01', '2026-01-01', 'album-title-edit')`,
+      )
+      .run();
+    legacy
+      .prepare(
+        `INSERT INTO tag_snapshots
+         (id, operation_id, file_id, before_tags_json, after_tags_json, verified)
+         VALUES ('snapshot', 'operation', 'file', ?, ?, 1)`,
+      )
+      .run(tags, tags);
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      18,
+    );
+    expect(migrated.listEditHistory("album")).toMatchObject([
+      {
+        operationId: "operation",
+        kind: "album-title-edit",
+        verifiedFiles: 1,
+      },
+    ]);
+    expect(
+      migrated.connection
+        .prepare("SELECT count(*) FROM artwork_assets")
+        .pluck()
+        .get(),
+    ).toBe(0);
+    expect(migrated.connection.pragma("foreign_key_check")).toEqual([]);
+    migrated.close();
   });
 
   it("backfills every schema-v15 sync profile into a durable album selection", async () => {
@@ -215,7 +308,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.getSyncProfile("profile")).toMatchObject({
       id: "profile",
@@ -247,7 +340,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.getSyncProfile("profile")?.album_ids).toEqual(["album"]);
     const run = migrated.createSyncRun("plan", "profile", directory);
@@ -328,7 +421,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -410,7 +503,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -452,7 +545,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -483,7 +576,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -536,7 +629,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(
       migrated.queryLibrary({
@@ -612,7 +705,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -667,7 +760,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",
@@ -721,7 +814,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      17,
+      18,
     );
     const albums = migrated.listAlbums();
     expect(albums).toHaveLength(2);

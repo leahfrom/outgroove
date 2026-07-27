@@ -12,6 +12,7 @@ import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { parseFile } from "music-metadata";
+import { loadTrack, PictureKind } from "@akabeko/music-metadata-editor";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
@@ -81,8 +82,16 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "New track artist",
         albumArtist: "New album artist",
         trackNumber: 7,
+        trackTotal: 12,
         discNumber: 2,
+        discTotal: 3,
         year: "2031-04",
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       });
       const after = await reader.read(path);
       expect(after.tags).toEqual({
@@ -91,8 +100,16 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "New track artist",
         albumArtist: "New album artist",
         trackNumber: 7,
+        trackTotal: 12,
         discNumber: 2,
+        discTotal: 3,
         year: "2031-04",
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       });
       expect(
         after.nativeTags.some(
@@ -101,6 +118,296 @@ describe.each(["01-first.mp3", "02-second.flac"])(
             tag.value.includes("preserve-me"),
         ),
       ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe advanced-field clearing: %s",
+  (fixture) => {
+    it("sets and clears lyricist, ISRC, and copyright while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "outgroove-advanced-fields-"),
+      );
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, {
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+      });
+
+      const result = await writer.writeTags(path, {
+        lyricists: [],
+        isrcs: [],
+        copyright: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        lyricists: [],
+        isrcs: [],
+        copyright: null,
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe comment, original-date, and language round trip: %s",
+  (fixture) => {
+    it("sets and clears the fields while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-text-fields-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, {
+        comment: "First line\nSecond line",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        comment: "First line\nSecond line",
+        comments: [
+          {
+            text: "First line\nSecond line",
+            language: fixture.endsWith(".mp3") ? "eng" : null,
+            descriptor: null,
+          },
+        ],
+        originalReleaseDate: "1998-04",
+        language: "deu",
+      });
+
+      const result = await writer.writeTags(path, {
+        comment: null,
+        originalReleaseDate: null,
+        language: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        comment: null,
+        comments: [],
+        originalReleaseDate: null,
+        language: null,
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe track/disc-total clearing: %s",
+  (fixture) => {
+    it("clears only totals while preserving numbers, private tags, and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-totals-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const before = await reader.read(path);
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(reader).writeTags(path, {
+        trackTotal: null,
+        discTotal: null,
+      });
+      const after = await reader.read(path);
+
+      expect(after.tags.trackNumber).toBe(before.tags.trackNumber);
+      expect(after.tags.discNumber).toBe(before.tags.discNumber);
+      expect(after.tags.trackTotal).toBeNull();
+      expect(after.tags.discTotal).toBeNull();
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe conductor clearing: %s",
+  (fixture) => {
+    it("sets and clears conductor while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-conductor-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, { conductors: ["Fixture Conductor"] });
+      expect((await reader.read(path)).tags.conductors).toEqual([
+        "Fixture Conductor",
+      ]);
+      const result = await writer.writeTags(path, { conductors: [] });
+      const after = await reader.read(path);
+      expect(after.tags.conductors).toEqual([]);
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe catalog and identifier round trip: %s",
+  (fixture) => {
+    it("sets, clears, and verifies every completed field without changing private tags, artwork, or audio", async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "outgroove-complete-tags-"),
+      );
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const writer = new SafeMetadataWriter(reader);
+      const payloadBefore = await audioPayloadHash(path);
+      const picturesBefore = (await loadTrack(path)).pictures;
+
+      await writer.writeTags(path, {
+        trackNumber: 7,
+        trackTotal: 12,
+        comment: "First line\nSecond line",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-0042"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        trackNumber: 7,
+        trackTotal: 12,
+        comment: "First line\nSecond line",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-0042"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
+      });
+
+      const result = await writer.writeTags(path, {
+        trackTotal: null,
+        comment: null,
+        publishers: [],
+        descriptions: [],
+        grouping: null,
+        catalogNumbers: [],
+        publishingDate: null,
+        bpm: null,
+        compilation: false,
+        musicBrainzRecordingId: null,
+        musicBrainzReleaseTrackId: null,
+        musicBrainzReleaseId: null,
+        musicBrainzArtistIds: [],
+        musicBrainzReleaseArtistIds: [],
+        musicBrainzReleaseGroupId: null,
+        musicBrainzWorkId: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        trackTotal: null,
+        comment: null,
+        publishers: [],
+        descriptions: [],
+        grouping: null,
+        catalogNumbers: [],
+        publishingDate: null,
+        bpm: null,
+        compilation: false,
+        musicBrainzRecordingId: null,
+        musicBrainzReleaseTrackId: null,
+        musicBrainzReleaseId: null,
+        musicBrainzArtistIds: [],
+        musicBrainzReleaseArtistIds: [],
+        musicBrainzReleaseGroupId: null,
+        musicBrainzWorkId: null,
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect((await loadTrack(path)).pictures).toEqual(picturesBefore);
       expect(result.payloadHashBefore).toBe(payloadBefore);
       expect(result.payloadHashAfter).toBe(payloadBefore);
     });
@@ -157,6 +464,41 @@ it("leaves the source untouched when temporary metadata verification fails", asy
   expect(await readdir(directory)).toEqual(["verification-failure.mp3"]);
 });
 
+it("leaves the source untouched when an extended-field candidate fails verification", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-extended-verify-"));
+  temporary.push(directory);
+  const path = join(directory, "extended-verification-failure.flac");
+  await copyFile(
+    join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.flac",
+    ),
+    path,
+  );
+  const before = await readFile(path);
+  const realReader = new MusicMetadataReader();
+  const mismatchingReader = {
+    async read(candidatePath: string) {
+      const file = await realReader.read(candidatePath);
+      return candidatePath === path
+        ? file
+        : { ...file, tags: { ...file.tags, grouping: "Wrong grouping" } };
+    },
+  };
+  await expect(
+    new SafeMetadataWriter(mismatchingReader).writeTags(path, {
+      grouping: "Expected grouping",
+    }),
+  ).rejects.toThrow("Temporary write verification failed");
+  expect(await readFile(path)).toEqual(before);
+  expect(await readdir(directory)).toEqual([
+    "extended-verification-failure.flac",
+  ]);
+});
+
 it("streams a large MP3 payload while excluding leading and trailing tags", async () => {
   const directory = await mkdtemp(join(tmpdir(), "outgroove-hash-"));
   temporary.push(directory);
@@ -198,6 +540,79 @@ describe.each(["preservation.mp3", "preservation.flac"])(
     });
   },
 );
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe embedded artwork round trip: %s",
+  (fixture) => {
+    it("replaces the complete picture set while preserving tags, private fields, and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-artwork-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const before = await preservationFingerprint(path);
+      const loaded = await loadTrack(path);
+      const original = loaded.pictures[0];
+      if (!original) throw new Error("Preservation artwork fixture missing");
+      const pictures = [
+        {
+          ...original,
+          kind: PictureKind.CoverBack,
+          description: "Preserved back cover",
+        },
+        {
+          ...original,
+          kind: PictureKind.CoverFront,
+          description: "New front cover",
+        },
+      ];
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(
+        new MusicMetadataReader(),
+      ).writePictures(path, pictures);
+      const after = await preservationFingerprint(path);
+
+      expect(after.pictures).toHaveLength(2);
+      expect(after.pictures.map((picture) => picture.description)).toEqual([
+        "Preserved back cover",
+        "New front cover",
+      ]);
+      expect({ ...after, pictures: before.pictures }).toEqual(before);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+it("restores the source if final artwork verification cannot complete", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-artwork-fail-"));
+  temporary.push(directory);
+  const path = join(directory, "artwork-failure.flac");
+  await copyFile(
+    join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.flac",
+    ),
+    path,
+  );
+  const before = await readFile(path);
+  const loaded = await loadTrack(path);
+  const reader = {
+    read() {
+      return Promise.reject(new Error("simulated final reader failure"));
+    },
+  };
+  await expect(
+    new SafeMetadataWriter(reader).writePictures(path, loaded.pictures),
+  ).rejects.toThrow("simulated final reader failure");
+  expect(await readFile(path)).toEqual(before);
+  expect(await readdir(directory)).toEqual(["artwork-failure.flac"]);
+});
 
 async function preservationFingerprint(path: string) {
   const metadata = await parseFile(path, { duration: true });

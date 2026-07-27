@@ -5,15 +5,46 @@ export interface NativeTagValue {
   readonly value: string;
 }
 
+export interface NormalizedComment {
+  readonly text: string;
+  readonly language: string | null;
+  readonly descriptor: string | null;
+}
+
 export interface NormalizedTags {
   readonly title: string;
   readonly album: string;
   readonly artist: string;
   readonly albumArtist: string;
   readonly trackNumber: number | null;
+  readonly trackTotal?: number | null;
   readonly discNumber: number | null;
+  readonly discTotal?: number | null;
   readonly year: string | null;
   readonly genres?: readonly string[];
+  readonly composers?: readonly string[];
+  readonly conductors?: readonly string[];
+  readonly lyricists?: readonly string[];
+  readonly isrcs?: readonly string[];
+  readonly copyright?: string | null;
+  readonly comment?: string | null;
+  readonly comments?: readonly NormalizedComment[];
+  readonly originalReleaseDate?: string | null;
+  readonly language?: string | null;
+  readonly publishers?: readonly string[];
+  readonly descriptions?: readonly string[];
+  readonly grouping?: string | null;
+  readonly catalogNumbers?: readonly string[];
+  readonly publishingDate?: string | null;
+  readonly bpm?: number | null;
+  readonly compilation?: boolean;
+  readonly musicBrainzRecordingId?: string | null;
+  readonly musicBrainzReleaseTrackId?: string | null;
+  readonly musicBrainzReleaseId?: string | null;
+  readonly musicBrainzArtistIds?: readonly string[];
+  readonly musicBrainzReleaseArtistIds?: readonly string[];
+  readonly musicBrainzReleaseGroupId?: string | null;
+  readonly musicBrainzWorkId?: string | null;
 }
 
 export interface ScannedAudioFile {
@@ -103,19 +134,49 @@ export function normalizeTagText(value: unknown, fallback: string): string {
 }
 
 export function normalizeGenres(value: unknown): readonly string[] {
+  return normalizeTagTextList(value).toSorted((left, right) => {
+    const leftKey = left.toLocaleLowerCase("en-US");
+    const rightKey = right.toLocaleLowerCase("en-US");
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
+}
+
+export function normalizeTagTextList(value: unknown): readonly string[] {
   if (!Array.isArray(value)) return [];
 
-  const genres = new Map<string, string>();
+  const values = new Map<string, string>();
   for (const candidate of value) {
-    const genre = normalizeTagText(candidate, "");
-    if (!genre) continue;
-    const key = genre.toLocaleLowerCase("en-US");
-    if (!genres.has(key)) genres.set(key, genre);
+    const normalized = normalizeTagText(candidate, "");
+    if (!normalized) continue;
+    const key = normalized.toLocaleLowerCase("en-US");
+    if (!values.has(key)) values.set(key, normalized);
   }
 
-  return [...genres.entries()]
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([, genre]) => genre);
+  return [...values.values()];
+}
+
+export function normalizeComments(
+  value: unknown,
+): readonly NormalizedComment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const raw = candidate as {
+      readonly text?: unknown;
+      readonly language?: unknown;
+      readonly descriptor?: unknown;
+    };
+    if (typeof raw.text !== "string") return [];
+    const text = raw.text.normalize("NFC").replace(/\r\n?/gu, "\n").trim();
+    if (!text) return [];
+    return [
+      {
+        text,
+        language: normalizeTagText(raw.language, "") || null,
+        descriptor: normalizeTagText(raw.descriptor, "") || null,
+      },
+    ];
+  });
 }
 
 export function normalizeNumber(value: unknown): number | null {

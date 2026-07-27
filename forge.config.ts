@@ -5,7 +5,12 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    // Keep LGPL-covered TagLib WebAssembly binaries physically replaceable in
+    // app.asar.unpacked; Electron resolves the original module path through
+    // the unpacked mirror without exposing it to the renderer.
+    asar: {
+      unpack: "**/node_modules/taglib-wasm/dist/*.wasm",
+    },
     executableName: "Outgroove",
     // Vite bundles every production dependency except this native adapter.
     // An explicit allowlist avoids shipping the complete development tree while
@@ -13,7 +18,9 @@ const config: ForgeConfig = {
     prune: false,
     ignore: (path) =>
       path.startsWith("/node_modules/") &&
-      !/^\/node_modules\/(?:better-sqlite3|node-addon-api)(?:\/|$)/u.test(path),
+      !/^\/node_modules\/(?:better-sqlite3|node-addon-api|taglib-wasm|@msgpack\/msgpack)(?:\/|$)/u.test(
+        path,
+      ),
   },
   rebuildConfig: {},
   makers: [new MakerZIP({}, ["darwin", "win32", "linux"])],

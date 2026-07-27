@@ -6,6 +6,11 @@ import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
 
+const musicBrainzIdSchema = z
+  .uuid()
+  .transform((value) => value.toLocaleLowerCase("en-US"));
+const musicBrainzIdListSchema = z.array(musicBrainzIdSchema).max(1);
+
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
 export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
@@ -149,6 +154,15 @@ export const albumEditHistoryRequestSchema = z
 export const albumEditUndoPreviewRequestSchema = z
   .object({ operationId: z.uuid() })
   .strict();
+export const albumArtworkEditPreviewRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
+export const albumArtworkExportPreviewRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
+export const albumFolderArtworkPreviewRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
 export const trackTagEditPreviewRequestSchema = z
   .object({
     fileId: z.uuid(),
@@ -158,13 +172,60 @@ export const trackTagEditPreviewRequestSchema = z
         artist: z.string().trim().min(1).max(400).optional(),
         albumArtist: z.string().trim().min(1).max(400).optional(),
         trackNumber: z.number().int().min(1).max(9999).nullable().optional(),
+        trackTotal: z.number().int().min(1).max(9999).nullable().optional(),
         discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        discTotal: z.number().int().min(1).max(999).nullable().optional(),
         year: z
           .string()
           .trim()
           .refine(isValidPartialDate)
           .nullable()
           .optional(),
+        genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        composers: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
+        conductors: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        lyricists: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
+        isrcs: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        copyright: z.string().trim().max(1000).nullable().optional(),
+        comment: z.string().trim().max(4000).nullable().optional(),
+        originalReleaseDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        language: z.string().trim().max(100).nullable().optional(),
+        publishers: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        descriptions: z
+          .array(z.string().trim().min(1).max(4000))
+          .max(1)
+          .optional(),
+        grouping: z.string().trim().max(1000).nullable().optional(),
+        catalogNumbers: z
+          .array(z.string().trim().min(1).max(200))
+          .max(1)
+          .optional(),
+        publishingDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        bpm: z.number().int().min(1).max(999).nullable().optional(),
+        compilation: z.boolean().optional(),
+        musicBrainzRecordingId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseTrackId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseGroupId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzWorkId: musicBrainzIdSchema.nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -183,13 +244,50 @@ export const trackBatchEditPreviewRequestSchema = z
       .object({
         artist: z.string().trim().min(1).max(400).optional(),
         albumArtist: z.string().trim().min(1).max(400).optional(),
+        trackTotal: z.number().int().min(1).max(9999).nullable().optional(),
         discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        discTotal: z.number().int().min(1).max(999).nullable().optional(),
         year: z
           .string()
           .trim()
           .refine(isValidPartialDate)
           .nullable()
           .optional(),
+        genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        composers: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
+        conductors: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        lyricists: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
+        isrcs: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        copyright: z.string().trim().max(1000).nullable().optional(),
+        originalReleaseDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        language: z.string().trim().max(100).nullable().optional(),
+        publishers: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        grouping: z.string().trim().max(1000).nullable().optional(),
+        catalogNumbers: z
+          .array(z.string().trim().min(1).max(200))
+          .max(1)
+          .optional(),
+        publishingDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        compilation: z.boolean().optional(),
+        musicBrainzReleaseId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseGroupId: musicBrainzIdSchema.nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -409,6 +507,56 @@ export interface TagEditResultDto {
     error: string | null;
   }[];
 }
+export interface AlbumArtworkEditPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly action: "replace" | "remove" | "restore";
+  readonly proposedArtworkDataUrl?: string;
+  readonly mimeType?: string;
+  readonly byteLength?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly files: readonly {
+    readonly fileId: string;
+    readonly path: string;
+    readonly currentFrontCovers: number;
+    readonly preservedPictures: number;
+    readonly willWrite: boolean;
+    readonly warnings: readonly string[];
+  }[];
+}
+export interface AlbumArtworkExportPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly artworkDataUrl: string;
+  readonly source: "embedded" | "folder";
+  readonly mimeType: "image/jpeg" | "image/png";
+  readonly byteLength: number;
+  readonly width: number;
+  readonly height: number;
+  readonly suggestedFileName: string;
+}
+export interface AlbumArtworkExportResultDto {
+  readonly destinationPath: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
+export interface AlbumFolderArtworkPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly artworkDataUrl: string;
+  readonly mimeType: "image/jpeg" | "image/png";
+  readonly byteLength: number;
+  readonly width: number;
+  readonly height: number;
+  readonly destinationPath: string;
+}
+export interface AlbumFolderArtworkResultDto {
+  readonly albumId: string;
+  readonly destinationPath: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
 export interface TrackTagEditPreviewDto {
   readonly operationId: string;
   readonly confirmationToken: string;
@@ -416,8 +564,8 @@ export interface TrackTagEditPreviewDto {
   readonly path: string;
   readonly changes: readonly {
     field: EditableTrackTagField;
-    before: string | number | null;
-    after: string | number | null;
+    before: string | number | boolean | readonly string[] | null;
+    after: string | number | boolean | readonly string[] | null;
   }[];
   readonly warnings: readonly string[];
 }
@@ -440,7 +588,9 @@ export interface TagEditHistoryItemDto {
     | "track-tags-undo"
     | "track-tags-batch-edit"
     | "track-tags-batch-undo"
-    | "track-number-sequence-edit";
+    | "track-number-sequence-edit"
+    | "album-artwork-edit"
+    | "album-artwork-undo";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -594,6 +744,33 @@ export interface OutgrooveApi {
   applyAlbumTitleUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
+  chooseAlbumArtworkEdit(
+    request: z.infer<typeof albumArtworkEditPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto | null>>;
+  previewAlbumArtworkRemoval(
+    request: z.infer<typeof albumArtworkEditPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto>>;
+  applyAlbumArtworkEdit(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewAlbumArtworkUndo(
+    request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto>>;
+  applyAlbumArtworkUndo(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewAlbumArtworkExport(
+    request: z.infer<typeof albumArtworkExportPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkExportPreviewDto>>;
+  exportAlbumArtwork(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<AlbumArtworkExportResultDto | null>>;
+  previewAlbumFolderArtwork(
+    request: z.infer<typeof albumFolderArtworkPreviewRequestSchema>,
+  ): Promise<Result<AlbumFolderArtworkPreviewDto>>;
+  applyAlbumFolderArtwork(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<AlbumFolderArtworkResultDto>>;
   previewTrackTagEdit(
     request: z.infer<typeof trackTagEditPreviewRequestSchema>,
   ): Promise<Result<TrackTagEditPreviewDto>>;

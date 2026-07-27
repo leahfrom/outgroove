@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -45,6 +52,7 @@ async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
     | "Edit album metadata"
+    | "Change album artwork"
     | "Edit track order"
     | "History & undo"
     | `Add ${string} to Sync`,
@@ -137,7 +145,9 @@ const album: CatalogAlbum = {
         artist: "Fixture Artist",
         albumArtist: "Fixture Artist",
         trackNumber: 1,
+        trackTotal: 2,
         discNumber: 1,
+        discTotal: 1,
         year: "2026",
       },
       nativeTags: [{ id: "ID3v2:TALB", value: "Fixture Album" }],
@@ -245,6 +255,15 @@ function api(applyVerified: boolean): OutgrooveApi {
     listAlbumEditHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     previewAlbumTitleUndo: vi.fn(),
     applyAlbumTitleUndo: vi.fn(),
+    chooseAlbumArtworkEdit: vi.fn(),
+    previewAlbumArtworkRemoval: vi.fn(),
+    applyAlbumArtworkEdit: vi.fn(),
+    previewAlbumArtworkUndo: vi.fn(),
+    applyAlbumArtworkUndo: vi.fn(),
+    previewAlbumArtworkExport: vi.fn(),
+    exportAlbumArtwork: vi.fn(),
+    previewAlbumFolderArtwork: vi.fn(),
+    applyAlbumFolderArtwork: vi.fn(),
     previewTrackTagEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -259,6 +278,35 @@ function api(applyVerified: boolean): OutgrooveApi {
               field: "artist",
               before: "Fixture Artist",
               after: "Different Artist",
+            },
+            { field: "trackTotal", before: 2, after: 12 },
+            { field: "discTotal", before: 1, after: 2 },
+            {
+              field: "conductors",
+              before: [],
+              after: ["Fixture Conductor"],
+            },
+            {
+              field: "lyricists",
+              before: [],
+              after: ["Fixture Lyricist"],
+            },
+            { field: "isrcs", before: [], after: ["DEABC2600001"] },
+            {
+              field: "copyright",
+              before: null,
+              after: "Copyright Fixture",
+            },
+            {
+              field: "originalReleaseDate",
+              before: null,
+              after: "1998-04",
+            },
+            { field: "language", before: null, after: "deu" },
+            {
+              field: "comment",
+              before: null,
+              after: "Fixture comment",
             },
           ],
           warnings: [],
@@ -793,6 +841,335 @@ describe("tag edit UI safety states", () => {
     expect(applyEdit).not.toHaveBeenCalled();
   });
 
+  it("routes local artwork through a preserved preview and explicit keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const chooseArtwork = vi
+      .spyOn(mockApi, "chooseAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          confirmationToken: "artwork-confirmation-token-long-enough",
+          action: "replace",
+          proposedArtworkDataUrl: "data:image/png;base64,cHJldmlldw==",
+          mimeType: "image/png",
+          byteLength: 2048,
+          width: 900,
+          height: 900,
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              currentFrontCovers: 1,
+              preservedPictures: 0,
+              willWrite: true,
+              warnings: [],
+            },
+          ],
+        },
+      });
+    const applyArtwork = vi
+      .spyOn(mockApi, "applyAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(
+      within(dialog).getByRole("button", { name: /^Artwork/u }),
+    ).toHaveAttribute("aria-current", "page");
+    const choose = within(dialog).getByRole("button", {
+      name: "Choose JPEG or PNG",
+    });
+    choose.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(chooseArtwork).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork edit confirmation"),
+    ).toBeVisible();
+    expect(applyArtwork).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    expect(
+      within(dialog).queryByLabelText("Artwork edit confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Artwork/u }));
+    const confirmation = within(dialog).getByLabelText(
+      "Artwork edit confirmation",
+    );
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm and write 1 file",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyArtwork).toHaveBeenCalledWith({
+        operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+        confirmationToken: "artwork-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork edit result"),
+    ).toBeVisible();
+  });
+
+  it("previews embedded front-cover removal contextually before keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const previewRemoval = vi
+      .spyOn(mockApi, "previewAlbumArtworkRemoval")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+          confirmationToken: "removal-confirmation-token-long-enough",
+          action: "remove",
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              currentFrontCovers: 1,
+              preservedPictures: 1,
+              willWrite: true,
+              warnings: [],
+            },
+          ],
+        },
+      });
+    const applyArtwork = vi
+      .spyOn(mockApi, "applyAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Remove embedded front covers"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Preview front-cover removal",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewRemoval).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(applyArtwork).not.toHaveBeenCalled();
+    expect(
+      await within(dialog).findByLabelText("Artwork removal confirmation"),
+    ).toBeVisible();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    expect(
+      within(dialog).queryByLabelText("Artwork removal confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Artwork/u }));
+    const confirmation = within(dialog).getByLabelText(
+      "Artwork removal confirmation",
+    );
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm removal from 1 file",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyArtwork).toHaveBeenCalledWith({
+        operationId: "a322ac51-ad96-4fee-84e1-f667ce63d755",
+        confirmationToken: "removal-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork removal result"),
+    ).toBeVisible();
+  });
+
+  it("prepares artwork export before the native save step and preserves it after cancellation", async () => {
+    const mockApi = api(true);
+    const previewExport = vi
+      .spyOn(mockApi, "previewAlbumArtworkExport")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "1a5b2f3c-390a-4843-852a-0edeb4753171",
+          confirmationToken: "export-confirmation-token-long-enough",
+          artworkDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+          source: "embedded",
+          mimeType: "image/jpeg",
+          byteLength: 4096,
+          width: 1200,
+          height: 1200,
+          suggestedFileName: "cover.jpg",
+        },
+      });
+    const exportArtwork = vi
+      .spyOn(mockApi, "exportAlbumArtwork")
+      .mockResolvedValueOnce({ ok: true, value: null })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          destinationPath: "/fixture/exported-cover.jpg",
+          byteLength: 4096,
+          sha256:
+            "a29157d168e67be11f7c8e6a338fef458b72da9f8aecd8e0c7be78d4cf9702fe",
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Export current artwork"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Prepare artwork export",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewExport).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork export preview"),
+    ).toHaveTextContent("Embedded artwork");
+
+    const exportButton = within(dialog).getByRole("button", {
+      name: "Export this artwork…",
+    });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(exportArtwork).toHaveBeenCalledTimes(1));
+    expect(exportArtwork).toHaveBeenLastCalledWith({
+      operationId: "1a5b2f3c-390a-4843-852a-0edeb4753171",
+      confirmationToken: "export-confirmation-token-long-enough",
+    });
+    expect(
+      within(dialog).getByLabelText("Artwork export preview"),
+    ).toBeVisible();
+
+    await user.click(exportButton);
+    expect(
+      await within(dialog).findByLabelText("Artwork export result"),
+    ).toHaveTextContent("/fixture/exported-cover.jpg");
+    expect(
+      within(dialog).queryByLabelText("Artwork export preview"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("routes optional folder artwork through preview and explicit keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const previewFolderArtwork = vi
+      .spyOn(mockApi, "previewAlbumFolderArtwork")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "6be02533-46aa-4622-9af7-59d9af9fb6dd",
+          confirmationToken: "folder-confirmation-token-long-enough",
+          artworkDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+          mimeType: "image/jpeg",
+          byteLength: 4096,
+          width: 1200,
+          height: 1200,
+          destinationPath: "/fixture/album/cover.jpg",
+        },
+      });
+    const applyFolderArtwork = vi
+      .spyOn(mockApi, "applyAlbumFolderArtwork")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          destinationPath: "/fixture/album/cover.jpg",
+          byteLength: 4096,
+          sha256:
+            "a29157d168e67be11f7c8e6a338fef458b72da9f8aecd8e0c7be78d4cf9702fe",
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Create folder artwork"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Preview folder artwork",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewFolderArtwork).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(applyFolderArtwork).not.toHaveBeenCalled();
+
+    const confirmation = await within(dialog).findByLabelText(
+      "Folder artwork confirmation",
+    );
+    expect(confirmation).toHaveTextContent("/fixture/album/cover.jpg");
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm and create folder artwork",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyFolderArtwork).toHaveBeenCalledWith({
+        operationId: "6be02533-46aa-4622-9af7-59d9af9fb6dd",
+        confirmationToken: "folder-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Folder artwork result"),
+    ).toHaveTextContent("/fixture/album/cover.jpg");
+  });
+
   it("previews shared album metadata contextually without applying it", async () => {
     const firstTrack = album.tracks[0];
     if (!firstTrack) throw new Error("Test track missing");
@@ -1088,17 +1465,97 @@ describe("tag edit UI safety states", () => {
     await user.type(screen.getByLabelText("Track title"), "Renamed Track");
     await user.clear(screen.getByLabelText("Track artist"));
     await user.type(screen.getByLabelText("Track artist"), "Different Artist");
+    await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
+    await user.click(screen.getByText("More fields"));
+    await user.type(
+      screen.getByLabelText("Composer proposed value"),
+      "Fixture Composer",
+    );
+    await user.type(
+      screen.getByLabelText("Conductor proposed value"),
+      "Fixture Conductor",
+    );
+    await user.type(
+      screen.getByLabelText("Lyricist proposed value"),
+      "Fixture Lyricist",
+    );
+    await user.type(
+      screen.getByLabelText("ISRC proposed value"),
+      "DEABC2600001",
+    );
+    await user.type(
+      screen.getByLabelText("Copyright proposed value"),
+      "Copyright Fixture",
+    );
+    await user.type(
+      screen.getByLabelText("Original release date proposed value"),
+      "1998-04",
+    );
+    await user.type(screen.getByLabelText("Language proposed value"), "deu");
+    await user.type(
+      screen.getByLabelText("Comment proposed value"),
+      "Fixture comment",
+    );
+    fireEvent.change(screen.getByLabelText("Publisher proposed value"), {
+      target: { value: "Fixture Publisher" },
+    });
+    fireEvent.change(screen.getByLabelText("Description proposed value"), {
+      target: { value: "Fixture description" },
+    });
+    fireEvent.change(screen.getByLabelText("Grouping proposed value"), {
+      target: { value: "Suite I" },
+    });
+    fireEvent.change(screen.getByLabelText("Catalog number proposed value"), {
+      target: { value: "OUT-42" },
+    });
+    fireEvent.change(screen.getByLabelText("Publishing date proposed value"), {
+      target: { value: "2025-09" },
+    });
+    fireEvent.change(screen.getByLabelText("BPM proposed value"), {
+      target: { value: "127" },
+    });
+    await user.selectOptions(
+      screen.getByLabelText("Compilation proposed value"),
+      "true",
+    );
+    for (const [label, value] of [
+      ["MusicBrainz recording ID", "11111111-1111-4111-8111-111111111111"],
+      ["MusicBrainz release track ID", "22222222-2222-4222-8222-222222222222"],
+      ["MusicBrainz release ID", "33333333-3333-4333-8333-333333333333"],
+      ["MusicBrainz track artist ID", "44444444-4444-4444-8444-444444444444"],
+      ["MusicBrainz release artist ID", "55555555-5555-4555-8555-555555555555"],
+      ["MusicBrainz release group ID", "66666666-6666-4666-8666-666666666666"],
+      ["MusicBrainz work ID", "77777777-7777-4777-8777-777777777777"],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(`${label} proposed value`), {
+        target: { value },
+      });
+    await user.clear(screen.getByLabelText("Track total proposed value"));
+    await user.type(screen.getByLabelText("Track total proposed value"), "12");
+    await user.clear(screen.getByLabelText("Disc total proposed value"));
+    await user.type(screen.getByLabelText("Disc total proposed value"), "2");
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 2 changes",
+      name: "Review 27 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
     const preview = await screen.findByLabelText("Track metadata confirmation");
     expect(within(preview).getByText("Renamed Track")).toBeInTheDocument();
     expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
+    expect(within(preview).getByText("Track total")).toBeInTheDocument();
+    expect(within(preview).getByText("Disc total")).toBeInTheDocument();
+    expect(within(preview).getByText("Conductor")).toBeInTheDocument();
+    expect(within(preview).getByText("Lyricist")).toBeInTheDocument();
+    expect(within(preview).getByText("ISRC")).toBeInTheDocument();
+    expect(within(preview).getByText("Copyright")).toBeInTheDocument();
+    expect(
+      within(preview).getByText("Original release date"),
+    ).toBeInTheDocument();
+    expect(within(preview).getByText("Language")).toBeInTheDocument();
+    expect(within(preview).getByText("Comment")).toBeInTheDocument();
     const confirmButton = within(preview).getByRole("button", {
       name: "Confirm and write track",
     });
@@ -1121,9 +1578,34 @@ describe("tag edit UI safety states", () => {
       changes: {
         title: "Renamed Track",
         artist: "Different Artist",
+        trackTotal: 12,
+        discTotal: 2,
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        comment: "Fixture comment",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       },
     });
-  });
+  }, 10_000);
 
   it("keeps a failed Library track edit preview visible with its stale-write error", async () => {
     Object.defineProperty(window, "outgroove", {
@@ -1468,6 +1950,67 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Batch track artist value"),
       "Batch Artist",
     );
+    await user.click(screen.getByRole("checkbox", { name: "Change genre" }));
+    await user.type(screen.getByLabelText("Batch genre value"), "Post Rock");
+    await user.click(screen.getByText("More fields"));
+    await user.click(screen.getByRole("checkbox", { name: "Change composer" }));
+    await user.type(
+      screen.getByLabelText("Batch composer value"),
+      "Fixture Composer",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change conductor" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch conductor value"),
+      "Fixture Conductor",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change lyricist" }));
+    await user.type(
+      screen.getByLabelText("Batch lyricist value"),
+      "Fixture Lyricist",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change ISRC" }));
+    await user.type(screen.getByLabelText("Batch ISRC value"), "DEABC2600001");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change copyright" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch copyright value"),
+      "Copyright Fixture",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change original release date" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch original release date value"),
+      "1998-04",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change language" }));
+    await user.type(screen.getByLabelText("Batch language value"), "deu");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change publisher" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch publisher value"),
+      "Fixture Publisher",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change compilation" }),
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Batch compilation value"),
+      "true",
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Change MusicBrainz release ID",
+      }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch MusicBrainz release ID value"),
+      "33333333-3333-4333-8333-333333333333",
+    );
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1487,7 +2030,20 @@ describe("tag edit UI safety states", () => {
     ).toBeInTheDocument();
     expect(preview).toHaveBeenCalledWith({
       fileIds: batchAlbum.tracks.map((track) => track.id),
-      changes: { artist: "Batch Artist" },
+      changes: {
+        artist: "Batch Artist",
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        publishers: ["Fixture Publisher"],
+        compilation: true,
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+      },
     });
     await user.type(
       screen.getByLabelText("Batch track artist value"),
@@ -1499,7 +2055,20 @@ describe("tag edit UI safety states", () => {
     await user.click(previewButton);
     expect(preview).toHaveBeenLastCalledWith({
       fileIds: batchAlbum.tracks.map((track) => track.id),
-      changes: { artist: "Batch Artist revised" },
+      changes: {
+        artist: "Batch Artist revised",
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        publishers: ["Fixture Publisher"],
+        compilation: true,
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+      },
     });
     expect(
       screen.queryByLabelText("Track number sequencing"),
@@ -1566,7 +2135,7 @@ describe("tag edit UI safety states", () => {
     expect(previewUndo).toHaveBeenCalledWith({
       operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
     });
-  });
+  }, 10_000);
 
   it("keeps shared-field and sequencing request failures focused inside the contextual editor", async () => {
     const firstTrack = album.tracks[0];

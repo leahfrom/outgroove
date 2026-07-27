@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AlbumArtworkEditPreviewDto,
+  AlbumArtworkExportPreviewDto,
+  AlbumArtworkExportResultDto,
   AlbumArtworkThumbnailDto,
+  AlbumFolderArtworkPreviewDto,
+  AlbumFolderArtworkResultDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -48,6 +53,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { AlbumActionsMenu } from "./album-actions-menu";
+import { AlbumArtworkEditor } from "./album-artwork-editor";
 import {
   AlbumTitleWorkbench,
   type AlbumTitleSection,
@@ -99,8 +105,35 @@ function draftForTrack(track: CatalogAlbum["tracks"][number]) {
     artist: track.tags.artist,
     albumArtist: track.tags.albumArtist,
     trackNumber: track.tags.trackNumber?.toString() ?? "",
+    trackTotal: track.tags.trackTotal?.toString() ?? "",
     discNumber: track.tags.discNumber?.toString() ?? "",
+    discTotal: track.tags.discTotal?.toString() ?? "",
     year: track.tags.year ?? "",
+    genre: (track.tags.genres ?? []).join(" · "),
+    composer: (track.tags.composers ?? []).join(" · "),
+    conductor: (track.tags.conductors ?? []).join(" · "),
+    lyricist: (track.tags.lyricists ?? []).join(" · "),
+    isrc: (track.tags.isrcs ?? []).join(" · "),
+    copyright: track.tags.copyright ?? "",
+    originalReleaseDate: track.tags.originalReleaseDate ?? "",
+    language: track.tags.language ?? "",
+    comment: track.tags.comment ?? "",
+    publisher: (track.tags.publishers ?? []).join(" · "),
+    description: (track.tags.descriptions ?? []).join(" · "),
+    grouping: track.tags.grouping ?? "",
+    catalogNumber: (track.tags.catalogNumbers ?? []).join(" · "),
+    publishingDate: track.tags.publishingDate ?? "",
+    bpm: track.tags.bpm?.toString() ?? "",
+    compilation: track.tags.compilation === true ? "true" : "false",
+    musicBrainzRecordingId: track.tags.musicBrainzRecordingId ?? "",
+    musicBrainzReleaseTrackId: track.tags.musicBrainzReleaseTrackId ?? "",
+    musicBrainzReleaseId: track.tags.musicBrainzReleaseId ?? "",
+    musicBrainzArtistId: (track.tags.musicBrainzArtistIds ?? []).join(" · "),
+    musicBrainzReleaseArtistId: (
+      track.tags.musicBrainzReleaseArtistIds ?? []
+    ).join(" · "),
+    musicBrainzReleaseGroupId: track.tags.musicBrainzReleaseGroupId ?? "",
+    musicBrainzWorkId: track.tags.musicBrainzWorkId ?? "",
   };
 }
 
@@ -234,6 +267,28 @@ export function App(): React.JSX.Element {
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
   const [undoResult, setUndoResult] = useState<TagEditResultDto>();
+  const [artworkEditPreview, setArtworkEditPreview] =
+    useState<AlbumArtworkEditPreviewDto>();
+  const [artworkEditResult, setArtworkEditResult] =
+    useState<TagEditResultDto>();
+  const [artworkEditResultAction, setArtworkEditResultAction] = useState<
+    "remove" | "replace"
+  >();
+  const [artworkEditError, setArtworkEditError] = useState<string>();
+  const [artworkExportPreview, setArtworkExportPreview] =
+    useState<AlbumArtworkExportPreviewDto>();
+  const [artworkExportResult, setArtworkExportResult] =
+    useState<AlbumArtworkExportResultDto>();
+  const [artworkExportError, setArtworkExportError] = useState<string>();
+  const [folderArtworkPreview, setFolderArtworkPreview] =
+    useState<AlbumFolderArtworkPreviewDto>();
+  const [folderArtworkResult, setFolderArtworkResult] =
+    useState<AlbumFolderArtworkResultDto>();
+  const [folderArtworkError, setFolderArtworkError] = useState<string>();
+  const [artworkUndoPreview, setArtworkUndoPreview] =
+    useState<AlbumArtworkEditPreviewDto>();
+  const [artworkUndoResult, setArtworkUndoResult] =
+    useState<TagEditResultDto>();
   const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
   const [libraryTrackEditorOpen, setLibraryTrackEditorOpen] = useState(false);
@@ -243,8 +298,33 @@ export function App(): React.JSX.Element {
     artist: "",
     albumArtist: "",
     trackNumber: "",
+    trackTotal: "",
     discNumber: "",
+    discTotal: "",
     year: "",
+    genre: "",
+    composer: "",
+    conductor: "",
+    lyricist: "",
+    isrc: "",
+    copyright: "",
+    originalReleaseDate: "",
+    language: "",
+    comment: "",
+    publisher: "",
+    description: "",
+    grouping: "",
+    catalogNumber: "",
+    publishingDate: "",
+    bpm: "",
+    compilation: "false",
+    musicBrainzRecordingId: "",
+    musicBrainzReleaseTrackId: "",
+    musicBrainzReleaseId: "",
+    musicBrainzArtistId: "",
+    musicBrainzReleaseArtistId: "",
+    musicBrainzReleaseGroupId: "",
+    musicBrainzWorkId: "",
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
@@ -257,14 +337,50 @@ export function App(): React.JSX.Element {
   const [batchEnabled, setBatchEnabled] = useState({
     artist: false,
     albumArtist: false,
+    trackTotal: false,
     discNumber: false,
+    discTotal: false,
     year: false,
+    genre: false,
+    composer: false,
+    conductor: false,
+    lyricist: false,
+    isrc: false,
+    copyright: false,
+    originalReleaseDate: false,
+    language: false,
+    publisher: false,
+    grouping: false,
+    catalogNumber: false,
+    publishingDate: false,
+    compilation: false,
+    musicBrainzReleaseId: false,
+    musicBrainzReleaseArtistId: false,
+    musicBrainzReleaseGroupId: false,
   });
   const [batchDraft, setBatchDraft] = useState({
     artist: "",
     albumArtist: "",
+    trackTotal: "",
     discNumber: "",
+    discTotal: "",
     year: "",
+    genre: "",
+    composer: "",
+    conductor: "",
+    lyricist: "",
+    isrc: "",
+    copyright: "",
+    originalReleaseDate: "",
+    language: "",
+    publisher: "",
+    grouping: "",
+    catalogNumber: "",
+    publishingDate: "",
+    compilation: "false",
+    musicBrainzReleaseId: "",
+    musicBrainzReleaseArtistId: "",
+    musicBrainzReleaseGroupId: "",
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
@@ -753,6 +869,18 @@ export function App(): React.JSX.Element {
     setEditError(undefined);
     setUndoPreview(undefined);
     setUndoResult(undefined);
+    setArtworkEditPreview(undefined);
+    setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
+    setArtworkEditError(undefined);
+    setArtworkExportPreview(undefined);
+    setArtworkExportResult(undefined);
+    setArtworkExportError(undefined);
+    setFolderArtworkPreview(undefined);
+    setFolderArtworkResult(undefined);
+    setFolderArtworkError(undefined);
+    setArtworkUndoPreview(undefined);
+    setArtworkUndoResult(undefined);
     setHistoryError(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
@@ -1066,6 +1194,221 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const chooseArtwork = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkEditError(undefined);
+    setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
+    try {
+      const result = await window.outgroove.chooseAlbumArtworkEdit({
+        albumId: selectedAlbum.id,
+      });
+      if (!result.ok) {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      } else if (result.value) {
+        setArtworkEditPreview(result.value);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareArtworkRemoval = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkEditError(undefined);
+    setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumArtworkRemoval({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setArtworkEditPreview(result.value);
+      } else {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyArtwork = async (): Promise<void> => {
+    if (!artworkEditPreview) return;
+    const action = artworkEditPreview.action;
+    const intendedWrites = artworkEditPreview.files.filter(
+      (file) => file.willWrite,
+    ).length;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyAlbumArtworkEdit({
+        operationId: artworkEditPreview.operationId,
+        confirmationToken: artworkEditPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setArtworkEditResult(result.value);
+        setArtworkEditResultAction(action === "remove" ? "remove" : "replace");
+        setArtworkEditPreview(undefined);
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(undefined);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? action === "remove"
+              ? `Verified embedded front-cover removal for ${intendedWrites} files.`
+              : `Verified embedded artwork for ${result.value.results.length} files.`
+            : `${failures.length} files kept their previous artwork.`,
+          failures.length === 0 ? "success" : "error",
+        );
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareArtworkExport = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkExportError(undefined);
+    setArtworkExportResult(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumArtworkExport({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setArtworkExportPreview(result.value);
+      } else {
+        setArtworkExportError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportArtwork = async (): Promise<void> => {
+    if (!artworkExportPreview) return;
+    setBusy(true);
+    setArtworkExportError(undefined);
+    try {
+      const result = await window.outgroove.exportAlbumArtwork({
+        operationId: artworkExportPreview.operationId,
+        confirmationToken: artworkExportPreview.confirmationToken,
+      });
+      if (!result.ok) {
+        setArtworkExportError(result.error.message);
+        setNotice(result.error.message, "error");
+      } else if (result.value === null) {
+        setNotice("Artwork export cancelled.");
+      } else {
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(result.value);
+        setNotice("Artwork exported and verified.", "success");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareFolderArtwork = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setFolderArtworkError(undefined);
+    setFolderArtworkResult(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumFolderArtwork({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setFolderArtworkPreview(result.value);
+      } else {
+        setFolderArtworkError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyFolderArtwork = async (): Promise<void> => {
+    if (!folderArtworkPreview) return;
+    setBusy(true);
+    setFolderArtworkError(undefined);
+    try {
+      const result = await window.outgroove.applyAlbumFolderArtwork({
+        operationId: folderArtworkPreview.operationId,
+        confirmationToken: folderArtworkPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setFolderArtworkPreview(undefined);
+        setFolderArtworkResult(result.value);
+        setNotice("Folder artwork created and verified.", "success");
+        await refreshCatalog();
+      } else {
+        setFolderArtworkError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewArtworkUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
+    const result = await window.outgroove.previewAlbumArtworkUndo({
+      operationId,
+    });
+    if (result.ok) {
+      setArtworkUndoResult(undefined);
+      setUndoPreview(undefined);
+      setTrackUndoPreview(undefined);
+      setBatchUndoPreview(undefined);
+      setArtworkUndoPreview(result.value);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
+  };
+
+  const applyArtworkUndo = async (): Promise<void> => {
+    if (!artworkUndoPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyAlbumArtworkUndo({
+        operationId: artworkUndoPreview.operationId,
+        confirmationToken: artworkUndoPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setArtworkUndoResult(result.value);
+        setArtworkUndoPreview(undefined);
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(undefined);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Verified artwork restore for ${result.value.results.length} files.`
+            : `${failures.length} files were not restored because they changed or failed verification.`,
+          failures.length === 0 ? "success" : "error",
+        );
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
     trackEditorReturnFocusId.current = track.id;
     trackEditorReturnFocusElement.current =
@@ -1113,8 +1456,26 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: true,
           albumArtist: false,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: false,
+          genre: false,
+          composer: false,
+          conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
+          originalReleaseDate: false,
+          language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
@@ -1124,8 +1485,26 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: false,
           albumArtist: true,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: false,
+          genre: false,
+          composer: false,
+          conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
+          originalReleaseDate: false,
+          language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
@@ -1135,8 +1514,26 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: false,
           albumArtist: false,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: true,
+          genre: false,
+          composer: false,
+          conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
+          originalReleaseDate: false,
+          language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
@@ -1171,10 +1568,125 @@ export function App(): React.JSX.Element {
         trackNumber: trackDraft.trackNumber
           ? Number(trackDraft.trackNumber)
           : null,
+        trackTotal: trackDraft.trackTotal
+          ? Number(trackDraft.trackTotal)
+          : null,
         discNumber: trackDraft.discNumber
           ? Number(trackDraft.discNumber)
           : null,
+        discTotal: trackDraft.discTotal ? Number(trackDraft.discTotal) : null,
         year: trackDraft.year || null,
+        ...(trackDraft.genre !== (selectedTrack.tags.genres ?? []).join(" · ")
+          ? { genres: trackDraft.genre ? [trackDraft.genre] : [] }
+          : {}),
+        ...(trackDraft.composer !==
+        (selectedTrack.tags.composers ?? []).join(" · ")
+          ? { composers: trackDraft.composer ? [trackDraft.composer] : [] }
+          : {}),
+        ...(trackDraft.conductor !==
+        (selectedTrack.tags.conductors ?? []).join(" · ")
+          ? {
+              conductors: trackDraft.conductor ? [trackDraft.conductor] : [],
+            }
+          : {}),
+        ...(trackDraft.lyricist !==
+        (selectedTrack.tags.lyricists ?? []).join(" · ")
+          ? { lyricists: trackDraft.lyricist ? [trackDraft.lyricist] : [] }
+          : {}),
+        ...(trackDraft.isrc !== (selectedTrack.tags.isrcs ?? []).join(" · ")
+          ? { isrcs: trackDraft.isrc ? [trackDraft.isrc] : [] }
+          : {}),
+        ...(trackDraft.copyright !== (selectedTrack.tags.copyright ?? "")
+          ? { copyright: trackDraft.copyright || null }
+          : {}),
+        ...(trackDraft.originalReleaseDate !==
+        (selectedTrack.tags.originalReleaseDate ?? "")
+          ? { originalReleaseDate: trackDraft.originalReleaseDate || null }
+          : {}),
+        ...(trackDraft.language !== (selectedTrack.tags.language ?? "")
+          ? { language: trackDraft.language || null }
+          : {}),
+        ...(trackDraft.comment !== (selectedTrack.tags.comment ?? "")
+          ? { comment: trackDraft.comment || null }
+          : {}),
+        ...(trackDraft.publisher !==
+        (selectedTrack.tags.publishers ?? []).join(" · ")
+          ? { publishers: trackDraft.publisher ? [trackDraft.publisher] : [] }
+          : {}),
+        ...(trackDraft.description !==
+        (selectedTrack.tags.descriptions ?? []).join(" · ")
+          ? {
+              descriptions: trackDraft.description
+                ? [trackDraft.description]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.grouping !== (selectedTrack.tags.grouping ?? "")
+          ? { grouping: trackDraft.grouping || null }
+          : {}),
+        ...(trackDraft.catalogNumber !==
+        (selectedTrack.tags.catalogNumbers ?? []).join(" · ")
+          ? {
+              catalogNumbers: trackDraft.catalogNumber
+                ? [trackDraft.catalogNumber]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.publishingDate !==
+        (selectedTrack.tags.publishingDate ?? "")
+          ? { publishingDate: trackDraft.publishingDate || null }
+          : {}),
+        ...(trackDraft.bpm !== (selectedTrack.tags.bpm?.toString() ?? "")
+          ? { bpm: trackDraft.bpm ? Number(trackDraft.bpm) : null }
+          : {}),
+        ...(trackDraft.compilation !==
+        (selectedTrack.tags.compilation === true ? "true" : "false")
+          ? { compilation: trackDraft.compilation === "true" }
+          : {}),
+        ...(trackDraft.musicBrainzRecordingId !==
+        (selectedTrack.tags.musicBrainzRecordingId ?? "")
+          ? {
+              musicBrainzRecordingId: trackDraft.musicBrainzRecordingId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseTrackId !==
+        (selectedTrack.tags.musicBrainzReleaseTrackId ?? "")
+          ? {
+              musicBrainzReleaseTrackId:
+                trackDraft.musicBrainzReleaseTrackId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseId !==
+        (selectedTrack.tags.musicBrainzReleaseId ?? "")
+          ? { musicBrainzReleaseId: trackDraft.musicBrainzReleaseId || null }
+          : {}),
+        ...(trackDraft.musicBrainzArtistId !==
+        (selectedTrack.tags.musicBrainzArtistIds ?? []).join(" · ")
+          ? {
+              musicBrainzArtistIds: trackDraft.musicBrainzArtistId
+                ? [trackDraft.musicBrainzArtistId]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseArtistId !==
+        (selectedTrack.tags.musicBrainzReleaseArtistIds ?? []).join(" · ")
+          ? {
+              musicBrainzReleaseArtistIds: trackDraft.musicBrainzReleaseArtistId
+                ? [trackDraft.musicBrainzReleaseArtistId]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseGroupId !==
+        (selectedTrack.tags.musicBrainzReleaseGroupId ?? "")
+          ? {
+              musicBrainzReleaseGroupId:
+                trackDraft.musicBrainzReleaseGroupId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzWorkId !==
+        (selectedTrack.tags.musicBrainzWorkId ?? "")
+          ? { musicBrainzWorkId: trackDraft.musicBrainzWorkId || null }
+          : {}),
       },
     });
     if (result.ok) setTrackEditPreview(result.value);
@@ -1316,16 +1828,78 @@ export function App(): React.JSX.Element {
     const changes: {
       artist?: string;
       albumArtist?: string;
+      trackTotal?: number | null;
       discNumber?: number | null;
+      discTotal?: number | null;
       year?: string | null;
+      genres?: string[];
+      composers?: string[];
+      conductors?: string[];
+      lyricists?: string[];
+      isrcs?: string[];
+      copyright?: string | null;
+      originalReleaseDate?: string | null;
+      language?: string | null;
+      publishers?: string[];
+      grouping?: string | null;
+      catalogNumbers?: string[];
+      publishingDate?: string | null;
+      compilation?: boolean;
+      musicBrainzReleaseId?: string | null;
+      musicBrainzReleaseArtistIds?: string[];
+      musicBrainzReleaseGroupId?: string | null;
     } = {};
     if (batchEnabled.artist) changes.artist = batchDraft.artist;
     if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
+    if (batchEnabled.trackTotal)
+      changes.trackTotal = batchDraft.trackTotal
+        ? Number(batchDraft.trackTotal)
+        : null;
     if (batchEnabled.discNumber)
       changes.discNumber = batchDraft.discNumber
         ? Number(batchDraft.discNumber)
         : null;
+    if (batchEnabled.discTotal)
+      changes.discTotal = batchDraft.discTotal
+        ? Number(batchDraft.discTotal)
+        : null;
     if (batchEnabled.year) changes.year = batchDraft.year || null;
+    if (batchEnabled.genre)
+      changes.genres = batchDraft.genre ? [batchDraft.genre] : [];
+    if (batchEnabled.composer)
+      changes.composers = batchDraft.composer ? [batchDraft.composer] : [];
+    if (batchEnabled.conductor)
+      changes.conductors = batchDraft.conductor ? [batchDraft.conductor] : [];
+    if (batchEnabled.lyricist)
+      changes.lyricists = batchDraft.lyricist ? [batchDraft.lyricist] : [];
+    if (batchEnabled.isrc)
+      changes.isrcs = batchDraft.isrc ? [batchDraft.isrc] : [];
+    if (batchEnabled.copyright)
+      changes.copyright = batchDraft.copyright || null;
+    if (batchEnabled.originalReleaseDate)
+      changes.originalReleaseDate = batchDraft.originalReleaseDate || null;
+    if (batchEnabled.language) changes.language = batchDraft.language || null;
+    if (batchEnabled.publisher)
+      changes.publishers = batchDraft.publisher ? [batchDraft.publisher] : [];
+    if (batchEnabled.grouping) changes.grouping = batchDraft.grouping || null;
+    if (batchEnabled.catalogNumber)
+      changes.catalogNumbers = batchDraft.catalogNumber
+        ? [batchDraft.catalogNumber]
+        : [];
+    if (batchEnabled.publishingDate)
+      changes.publishingDate = batchDraft.publishingDate || null;
+    if (batchEnabled.compilation)
+      changes.compilation = batchDraft.compilation === "true";
+    if (batchEnabled.musicBrainzReleaseId)
+      changes.musicBrainzReleaseId = batchDraft.musicBrainzReleaseId || null;
+    if (batchEnabled.musicBrainzReleaseArtistId)
+      changes.musicBrainzReleaseArtistIds =
+        batchDraft.musicBrainzReleaseArtistId
+          ? [batchDraft.musicBrainzReleaseArtistId]
+          : [];
+    if (batchEnabled.musicBrainzReleaseGroupId)
+      changes.musicBrainzReleaseGroupId =
+        batchDraft.musicBrainzReleaseGroupId || null;
     const result = await window.outgroove.previewTrackBatchEdit({
       fileIds: batchTrackIds,
       changes,
@@ -2079,6 +2653,8 @@ export function App(): React.JSX.Element {
     selectedAlbum ? (
       <AlbumTitleWorkbench
         albumTitle={selectedAlbum.title}
+        artworkUndoPreview={artworkUndoPreview}
+        artworkUndoResult={artworkUndoResult}
         batchUndoKind={batchUndoKind}
         batchUndoPreview={batchUndoPreview}
         batchUndoResult={batchUndoResult}
@@ -2091,6 +2667,10 @@ export function App(): React.JSX.Element {
         historyError={historyError}
         onCancelBatchUndo={() => {
           setBatchUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelArtworkUndo={() => {
+          setArtworkUndoPreview(undefined);
           setHistoryError(undefined);
         }}
         onCancelEditPreview={() => {
@@ -2106,6 +2686,7 @@ export function App(): React.JSX.Element {
           setHistoryError(undefined);
         }}
         onConfirmBatchUndo={() => void applyBatchUndo()}
+        onConfirmArtworkUndo={() => void applyArtworkUndo()}
         onConfirmEdit={() => void applyEdit()}
         onConfirmTrackUndo={() => void applyTrackUndo()}
         onConfirmUndo={() => void applyUndo()}
@@ -2117,6 +2698,9 @@ export function App(): React.JSX.Element {
         }}
         onPreviewBatchUndo={(operationId, kind) =>
           void previewBatchUndo(operationId, kind)
+        }
+        onPreviewArtworkUndo={(operationId) =>
+          void previewArtworkUndo(operationId)
         }
         onPreviewEdit={() => void previewEdit()}
         onPreviewTrackUndo={(operationId) => void previewTrackUndo(operationId)}
@@ -2971,6 +3555,9 @@ export function App(): React.JSX.Element {
                         onEditMetadata={() =>
                           openLibraryAlbumEditingTool("title")
                         }
+                        onEditArtwork={() =>
+                          openLibraryAlbumEditingTool("artwork")
+                        }
                         onEditTrackOrder={() =>
                           openLibraryAlbumEditingTool("sequence")
                         }
@@ -3282,6 +3869,36 @@ export function App(): React.JSX.Element {
             )}
             {libraryAlbumEditingTool === "shared" && sharedFieldEditor}
             {libraryAlbumEditingTool === "sequence" && trackOrderEditor}
+            {libraryAlbumEditingTool === "artwork" && (
+              <AlbumArtworkEditor
+                busy={busy}
+                error={artworkEditError}
+                exportError={artworkExportError}
+                exportPreview={artworkExportPreview}
+                exportResult={artworkExportResult}
+                folderError={folderArtworkError}
+                folderPreview={folderArtworkPreview}
+                folderResult={folderArtworkResult}
+                preview={artworkEditPreview}
+                result={artworkEditResult}
+                resultAction={artworkEditResultAction}
+                onCancelPreview={() => {
+                  setArtworkEditPreview(undefined);
+                  setArtworkEditError(undefined);
+                }}
+                onChoose={() => void chooseArtwork()}
+                onConfirm={() => void applyArtwork()}
+                onExport={() => void exportArtwork()}
+                onCancelFolderArtwork={() => {
+                  setFolderArtworkPreview(undefined);
+                  setFolderArtworkError(undefined);
+                }}
+                onConfirmFolderArtwork={() => void applyFolderArtwork()}
+                onPrepareFolderArtwork={() => void prepareFolderArtwork()}
+                onPrepareExport={() => void prepareArtworkExport()}
+                onPrepareRemoval={() => void prepareArtworkRemoval()}
+              />
+            )}
             {(libraryAlbumEditingTool === "title" ||
               libraryAlbumEditingTool === "history") && (
               <>{renderAlbumTitleWorkbench(false)}</>
