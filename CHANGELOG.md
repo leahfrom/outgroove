@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.14.0 — 2026-07-27
+
+- Load the primary front-cover thumbnail for an explicitly selected
+  MusicBrainz release through a separate, cancellable Cover Art Archive
+  request. Only the release UUID leaves the application; bounded metadata and
+  JPEG/PNG bytes are validated in main, provider redirects remain allowlisted,
+  and the renderer receives only a locally encoded read-only preview.
+- Prepare that exact displayed cover for replacement through a second explicit
+  action. Main re-resolves and verifies the release/artwork identity, fetches a
+  bounded original from a fixed provider endpoint, and passes its bytes
+  directly into the existing per-file artwork comparison and confirmation
+  workflow without exposing a provider URL, local path, or byte payload to the
+  renderer.
+- Preserve the established artwork safety sequence for provider images:
+  confirmation precedes snapshots and same-folder writes, MP3 and FLAC files
+  are re-read to verify complete picture sets and unchanged audio payloads,
+  stale or blocked files fail independently, and verified changes retain
+  previewed undo.
+- Keep Library browsing and local artwork offline, add no durable artwork table
+  or schema migration, refuse release-group and alternate-edition fallback,
+  retain pending provider bytes only in memory, and disclose that users remain
+  responsible for artwork usage rights.
+
 ## 0.13.0 — 2026-07-27
 
 - Add an explicit, cancellable MusicBrainz release-edition search for one
