@@ -38,6 +38,16 @@ const track: CatalogAlbum["tracks"][number] = {
     lyricists: ["Fixture Lyricist"],
     isrcs: ["DEABC2600001"],
     copyright: "Copyright Fixture",
+    originalReleaseDate: "2020-03",
+    language: "deu",
+    comment: "First line\nSecond line",
+    comments: [
+      {
+        text: "First line\nSecond line",
+        language: "eng",
+        descriptor: null,
+      },
+    ],
   },
   nativeTags: [],
   scanError: null,
@@ -58,6 +68,9 @@ const unchangedDraft: TrackMetadataDraft = {
   lyricist: "Fixture Lyricist",
   isrc: "DEABC2600001",
   copyright: "Copyright Fixture",
+  originalReleaseDate: "2020-03",
+  language: "deu",
+  comment: "First line\nSecond line",
 };
 
 function editor(
@@ -125,6 +138,26 @@ describe("TrackMetadataEditor", () => {
     expect(
       screen.getByRole("textbox", { name: "Copyright proposed value" }),
     ).toHaveValue("Copyright Fixture");
+    expect(
+      screen.getByRole("textbox", {
+        name: "Original release date proposed value",
+      }),
+    ).toHaveValue("2020-03");
+    expect(
+      screen.getByRole("textbox", { name: "Language proposed value" }),
+    ).toHaveValue("deu");
+    expect(
+      screen.getByRole("textbox", { name: "Comment proposed value" }),
+    ).toHaveValue("First line\nSecond line");
+    expect(
+      screen.getByRole("textbox", { name: "Comment proposed value" }),
+    ).toHaveAccessibleName("Comment proposed value");
+    const commentRow = screen
+      .getByRole("textbox", { name: "Comment proposed value" })
+      .closest(".tag-comparison-row");
+    if (!(commentRow instanceof HTMLElement))
+      throw new Error("Comment comparison row missing");
+    expect(within(commentRow).getByText(/language eng/u)).toBeVisible();
 
     const changedDraft = {
       ...unchangedDraft,

@@ -177,6 +177,64 @@ describe.each(["preservation.mp3", "preservation.flac"])(
 );
 
 describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe comment, original-date, and language round trip: %s",
+  (fixture) => {
+    it("sets and clears the fields while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-text-fields-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, {
+        comment: "First line\nSecond line",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        comment: "First line\nSecond line",
+        comments: [
+          {
+            text: "First line\nSecond line",
+            language: fixture.endsWith(".mp3") ? "eng" : null,
+            descriptor: null,
+          },
+        ],
+        originalReleaseDate: "1998-04",
+        language: "deu",
+      });
+
+      const result = await writer.writeTags(path, {
+        comment: null,
+        originalReleaseDate: null,
+        language: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        comment: null,
+        comments: [],
+        originalReleaseDate: null,
+        language: null,
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
   "safe track/disc-total clearing: %s",
   (fixture) => {
     it("clears only totals while preserving numbers, private tags, and audio", async () => {

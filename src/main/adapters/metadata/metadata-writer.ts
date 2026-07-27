@@ -35,6 +35,9 @@ export interface MetadataTagChanges {
   readonly lyricists?: readonly string[];
   readonly isrcs?: readonly string[];
   readonly copyright?: string | null;
+  readonly comment?: string | null;
+  readonly originalReleaseDate?: string | null;
+  readonly language?: string | null;
 }
 
 export interface MetadataWriter {
@@ -130,6 +133,10 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
     updated.isrc = isrcs[0] ?? "";
   }
   if ("copyright" in changes) updated.copyright = changes.copyright ?? "";
+  if ("comment" in changes) updated.comment = changes.comment ?? "";
+  if ("originalReleaseDate" in changes)
+    updated.originalReleaseDate = changes.originalReleaseDate ?? "";
+  if ("language" in changes) updated.language = changes.language ?? "";
   return updated;
 }
 

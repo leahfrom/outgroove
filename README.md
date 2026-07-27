@@ -130,16 +130,18 @@ Metadata writing is deliberately narrower:
 
 The currently editable common fields are album title plus a selected track's
 title, track artist, album artist, track/disc number, track/disc total, partial
-release date, Genre, Composer, Conductor, Lyricist, ISRC, and Copyright. Batch
-editing is deliberately narrower: it supports only track artist, album artist,
-track total, disc number, disc total, partial release date, Genre, Composer,
-Conductor, Lyricist, ISRC, and Copyright, requires an explicit opt-in for each
-field, and does not mass-edit titles. The comparison editors show core tags
-first and keep totals, secondary credits, identifiers, and rights behind an
-accessible **More fields** disclosure. A changed or selected secondary field
-opens that disclosure and remains counted in its summary if the user collapses
-it again. Track numbers use a separate sequence preview whose order is
-explicitly controlled by the user; sequencing never infers or writes a total.
+release date, Genre, Composer, Conductor, Lyricist, ISRC, Copyright, original
+release date, Language, and one plain Comment. Batch editing is deliberately
+narrower: it supports only track artist, album artist, track total, disc number,
+disc total, partial release date, Genre, Composer, Conductor, Lyricist, ISRC,
+Copyright, original release date, and Language, requires an explicit opt-in for
+each field, and does not mass-edit titles or comments. The comparison editors
+show core tags first and keep totals, secondary credits, identifiers, rights,
+provenance, language, and comments behind an accessible **More fields**
+disclosure. A changed or selected secondary field opens that disclosure and
+remains counted in its summary if the user collapses it again. Track numbers use
+a separate sequence preview whose order is explicitly controlled by the user;
+sequencing never infers or writes a total.
 
 Embedded front-cover replacement is available only for MP3 and FLAC. It accepts
 one explicitly selected JPEG or PNG up to 8 MiB and 25 megapixels, preserves
@@ -184,6 +186,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Composer scanning preserves the ordered, deduplicated common composer values. Track and shared-field editors can explicitly propose one composer or clear it through the normal safe write and undo path. Tracks with multiple current composer values remain readable, but composer mutation is blocked because the current writer cannot restore that complete set safely; other fields remain editable. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate this rebuildable field.
 - Conductor scanning preserves the ordered, deduplicated common conductor values. Track and shared-field editors can explicitly propose one conductor or clear it through the normal preview, confirmation, snapshot, re-read, verification, and undo path. Tracks with multiple current conductor values remain readable, but conductor mutation is blocked because the current writer cannot restore that complete set safely; other fields remain editable. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate this rebuildable field.
 - Lyricist and ISRC scanning preserve their ordered, deduplicated common values, while Copyright preserves one optional text value. Track and opt-in shared-field editors can set or clear these fields through the same safe write and undo sequence. Multiple current Lyricist or ISRC values remain readable but block mutation of that specific field because the writer can restore only one value. Older unchanged catalog rows are re-read once to hydrate all three rebuildable fields. Publisher is not editable because the current reader does not normalize the writer's MP3/FLAC representation consistently, and BPM is not editable because the pinned writer cannot reliably clear it from FLAC; Outgroove does not advertise those unsafe partial behaviors.
+- Comment scanning preserves each common comment's text, language, and descriptor as rebuildable catalog evidence. The single-track editor can set or clear one plain comment. Multiple comments, a non-empty descriptor, or a language other than the MP3 writer's compatible `eng` default block comment mutation so preview and undo cannot flatten structure; comments are intentionally excluded from batch editing. Original release date accepts the same valid partial-date forms as Release date, and Language preserves one optional text value; both are available in the single-track and opt-in shared-field editors. MP3 and FLAC fixture writes set, clear, re-read, and verify all three fields while preserving private/native tags and audio payloads. Older unchanged catalog rows are re-read once to hydrate the rebuildable fields. Catalog number remains read-only because the current MP3 reader/writer pair does not expose a reliably verifiable normalized value.
 - Track and disc totals are preserved independently from their corresponding numbers. The single-track and opt-in shared-field editors can set a positive bounded total or clear it, but never infer, renumber, or automatically correct either value. A proposal that targets a number/total pair is rejected when it would leave a total without a number or a number greater than its total; unrelated field edits remain available. MP3 and FLAC writes re-read and verify both totals and the unchanged audio payload. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate these rebuildable fields; no schema migration or audio write is involved.
 - Format browsing uses the scanner's local format label, groups labels case-insensitively, and displays blank labels honestly as `unknown`. Selecting a format applies an exact removable filter to the bounded track table.
 - Folder browsing derives parent folders with Node's native path adapter in the privileged process. The renderer receives a display path and an opaque exact-match token but never parses or constructs filesystem paths. Connection-local folder projections are rebuilt from catalog state, excluded from backups, and add no durable schema.

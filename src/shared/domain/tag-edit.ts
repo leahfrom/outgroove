@@ -22,6 +22,9 @@ export const editableTrackTagFields = [
   "lyricists",
   "isrcs",
   "copyright",
+  "comment",
+  "originalReleaseDate",
+  "language",
 ] as const;
 
 export type EditableTrackTagField = (typeof editableTrackTagFields)[number];
@@ -134,6 +137,38 @@ export function normalizeTrackTagChanges(
       throw new Error("copyright is too long.");
     Object.assign(output, { copyright });
   }
+  if ("comment" in input) {
+    if (input.comment === undefined) throw new Error("comment is invalid.");
+    const normalized =
+      input.comment?.normalize("NFC").replace(/\r\n?/gu, "\n").trim() ?? null;
+    const comment = normalized === "" ? null : normalized;
+    if (comment !== null && comment.length > 4000)
+      throw new Error("comment is too long.");
+    Object.assign(output, { comment });
+  }
+  if ("originalReleaseDate" in input) {
+    if (input.originalReleaseDate === undefined)
+      throw new Error("original release date is invalid.");
+    const trimmed = input.originalReleaseDate?.trim() ?? null;
+    const originalReleaseDate = trimmed === "" ? null : trimmed;
+    if (
+      originalReleaseDate !== null &&
+      !isValidPartialDate(originalReleaseDate)
+    )
+      throw new Error(
+        "original release date must be YYYY, YYYY-MM, or a valid YYYY-MM-DD.",
+      );
+    Object.assign(output, { originalReleaseDate });
+  }
+  if ("language" in input) {
+    if (input.language === undefined) throw new Error("language is invalid.");
+    const normalized =
+      input.language?.normalize("NFC").replace(/\s+/gu, " ").trim() ?? null;
+    const language = normalized === "" ? null : normalized;
+    if (language !== null && language.length > 100)
+      throw new Error("language is too long.");
+    Object.assign(output, { language });
+  }
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");
   return output;
@@ -188,7 +223,10 @@ export function trackTagValueEquals(
       Array.isArray(left) &&
       Array.isArray(right) &&
       left.length === right.length &&
-      left.every((value, index) => value === right[index])
+      left.every(
+        (value, index) =>
+          JSON.stringify(value) === JSON.stringify(right[index]),
+      )
     );
   return left === right;
 }

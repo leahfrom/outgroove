@@ -290,6 +290,17 @@ function api(applyVerified: boolean): OutgrooveApi {
               before: null,
               after: "Copyright Fixture",
             },
+            {
+              field: "originalReleaseDate",
+              before: null,
+              after: "1998-04",
+            },
+            { field: "language", before: null, after: "deu" },
+            {
+              field: "comment",
+              before: null,
+              after: "Fixture comment",
+            },
           ],
           warnings: [],
         },
@@ -1469,6 +1480,15 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Copyright proposed value"),
       "Copyright Fixture",
     );
+    await user.type(
+      screen.getByLabelText("Original release date proposed value"),
+      "1998-04",
+    );
+    await user.type(screen.getByLabelText("Language proposed value"), "deu");
+    await user.type(
+      screen.getByLabelText("Comment proposed value"),
+      "Fixture comment",
+    );
     await user.clear(screen.getByLabelText("Track total proposed value"));
     await user.type(screen.getByLabelText("Track total proposed value"), "12");
     await user.clear(screen.getByLabelText("Disc total proposed value"));
@@ -1477,7 +1497,7 @@ describe("tag edit UI safety states", () => {
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 10 changes",
+      name: "Review 13 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1490,6 +1510,11 @@ describe("tag edit UI safety states", () => {
     expect(within(preview).getByText("Lyricist")).toBeInTheDocument();
     expect(within(preview).getByText("ISRC")).toBeInTheDocument();
     expect(within(preview).getByText("Copyright")).toBeInTheDocument();
+    expect(
+      within(preview).getByText("Original release date"),
+    ).toBeInTheDocument();
+    expect(within(preview).getByText("Language")).toBeInTheDocument();
+    expect(within(preview).getByText("Comment")).toBeInTheDocument();
     const confirmButton = within(preview).getByRole("button", {
       name: "Confirm and write track",
     });
@@ -1520,6 +1545,9 @@ describe("tag edit UI safety states", () => {
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
+        comment: "Fixture comment",
       },
     });
   });
@@ -1896,6 +1924,15 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Batch copyright value"),
       "Copyright Fixture",
     );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change original release date" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch original release date value"),
+      "1998-04",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change language" }));
+    await user.type(screen.getByLabelText("Batch language value"), "deu");
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1923,6 +1960,8 @@ describe("tag edit UI safety states", () => {
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
       },
     });
     await user.type(
@@ -1943,6 +1982,8 @@ describe("tag edit UI safety states", () => {
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        originalReleaseDate: "1998-04",
+        language: "deu",
       },
     });
     expect(

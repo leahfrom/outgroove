@@ -33,6 +33,9 @@ export interface TrackMetadataDraft {
   lyricist: string;
   isrc: string;
   copyright: string;
+  originalReleaseDate: string;
+  language: string;
+  comment: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -41,6 +44,7 @@ interface ComparisonField {
   readonly field: TrackMetadataField;
   readonly label: string;
   readonly inputType?: "number";
+  readonly multiline?: boolean;
   readonly max?: number;
   readonly placeholder?: string;
 }
@@ -108,6 +112,22 @@ const moreComparisonFields: readonly ComparisonField[] = [
     label: "Copyright",
     placeholder: "Empty clears",
   },
+  {
+    field: "originalReleaseDate",
+    label: "Original release date",
+    placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD; empty clears",
+  },
+  {
+    field: "language",
+    label: "Language",
+    placeholder: "Track language; empty clears",
+  },
+  {
+    field: "comment",
+    label: "Comment",
+    multiline: true,
+    placeholder: "Empty clears the comment",
+  },
 ];
 
 const comparisonFields = [...basicComparisonFields, ...moreComparisonFields];
@@ -127,6 +147,9 @@ const previewFieldLabels: Record<string, string> = {
   lyricists: "Lyricist",
   isrcs: "ISRC",
   copyright: "Copyright",
+  originalReleaseDate: "Original release date",
+  language: "Language",
+  comment: "Comment",
 };
 
 function currentValue(
@@ -162,7 +185,30 @@ function currentValue(
       return (track.tags.isrcs ?? []).join(" · ");
     case "copyright":
       return track.tags.copyright ?? "";
+    case "originalReleaseDate":
+      return track.tags.originalReleaseDate ?? "";
+    case "language":
+      return track.tags.language ?? "";
+    case "comment":
+      return track.tags.comment ?? "";
   }
+}
+
+function currentDisplayValue(
+  track: CatalogAlbum["tracks"][number],
+  field: TrackMetadataField,
+): string | readonly string[] {
+  if (field !== "comment" || (track.tags.comments?.length ?? 0) === 0)
+    return currentValue(track, field);
+  return (track.tags.comments ?? []).map((comment) => {
+    const context = [
+      comment.language ? `language ${comment.language}` : undefined,
+      comment.descriptor ? `descriptor ${comment.descriptor}` : undefined,
+    ].filter(Boolean);
+    return context.length > 0
+      ? `${comment.text} (${context.join(", ")})`
+      : comment.text;
+  });
 }
 
 function displayValue(
@@ -222,7 +268,7 @@ function TrackMetadataEditorComponent(
 
   const change =
     (field: keyof TrackMetadataDraft) =>
-    (event: ChangeEvent<HTMLInputElement>): void => {
+    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
       onDraftChange(field, event.target.value);
     };
 
@@ -249,7 +295,9 @@ function TrackMetadataEditorComponent(
             explicit: changing or clearing one never changes its track or disc
             number. Conductor and Lyricist follow the same one-value rule as
             Composer. ISRC also accepts one value. Secondary fields are grouped
-            under More fields.
+            under More fields. Comment editing accepts one plain comment;
+            multiple comments or comment-specific language and descriptor data
+            remain read-only so a write cannot discard structure.
           </>
         }
       />
@@ -284,7 +332,9 @@ function TrackMetadataEditorComponent(
               </div>
               <div className="tag-comparison-current">
                 <span className="comparison-mobile-label">Current value</span>
-                <span id={currentId}>{displayValue(current)}</span>
+                <span id={currentId}>
+                  {displayValue(currentDisplayValue(track, item.field))}
+                </span>
               </div>
               <div className="tag-comparison-proposed">
                 <span className="comparison-mobile-label">Proposed value</span>
@@ -345,23 +395,37 @@ function TrackMetadataEditorComponent(
                 </div>
                 <div className="tag-comparison-current">
                   <span className="comparison-mobile-label">Current value</span>
-                  <span id={currentId}>{displayValue(current)}</span>
+                  <span id={currentId}>
+                    {displayValue(currentDisplayValue(track, item.field))}
+                  </span>
                 </div>
                 <div className="tag-comparison-proposed">
                   <span className="comparison-mobile-label">
                     Proposed value
                   </span>
-                  <input
-                    aria-describedby={`${currentId} ${statusId}`}
-                    aria-label={`${item.label} proposed value`}
-                    id={`track-${item.field}`}
-                    max={item.max}
-                    min={item.inputType ? 1 : undefined}
-                    placeholder={item.placeholder}
-                    type={item.inputType}
-                    value={draft[item.field]}
-                    onChange={change(item.field)}
-                  />
+                  {item.multiline ? (
+                    <textarea
+                      aria-describedby={`${currentId} ${statusId}`}
+                      aria-label={`${item.label} proposed value`}
+                      id={`track-${item.field}`}
+                      maxLength={4000}
+                      placeholder={item.placeholder}
+                      value={draft[item.field]}
+                      onChange={change(item.field)}
+                    />
+                  ) : (
+                    <input
+                      aria-describedby={`${currentId} ${statusId}`}
+                      aria-label={`${item.label} proposed value`}
+                      id={`track-${item.field}`}
+                      max={item.max}
+                      min={item.inputType ? 1 : undefined}
+                      placeholder={item.placeholder}
+                      type={item.inputType}
+                      value={draft[item.field]}
+                      onChange={change(item.field)}
+                    />
+                  )}
                 </div>
                 <span
                   className={`comparison-status ${changed ? "changed" : "unchanged"}`}

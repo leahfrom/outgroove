@@ -5,6 +5,12 @@ export interface NativeTagValue {
   readonly value: string;
 }
 
+export interface NormalizedComment {
+  readonly text: string;
+  readonly language: string | null;
+  readonly descriptor: string | null;
+}
+
 export interface NormalizedTags {
   readonly title: string;
   readonly album: string;
@@ -21,6 +27,10 @@ export interface NormalizedTags {
   readonly lyricists?: readonly string[];
   readonly isrcs?: readonly string[];
   readonly copyright?: string | null;
+  readonly comment?: string | null;
+  readonly comments?: readonly NormalizedComment[];
+  readonly originalReleaseDate?: string | null;
+  readonly language?: string | null;
 }
 
 export interface ScannedAudioFile {
@@ -129,6 +139,30 @@ export function normalizeTagTextList(value: unknown): readonly string[] {
   }
 
   return [...values.values()];
+}
+
+export function normalizeComments(
+  value: unknown,
+): readonly NormalizedComment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const raw = candidate as {
+      readonly text?: unknown;
+      readonly language?: unknown;
+      readonly descriptor?: unknown;
+    };
+    if (typeof raw.text !== "string") return [];
+    const text = raw.text.normalize("NFC").replace(/\r\n?/gu, "\n").trim();
+    if (!text) return [];
+    return [
+      {
+        text,
+        language: normalizeTagText(raw.language, "") || null,
+        descriptor: normalizeTagText(raw.descriptor, "") || null,
+      },
+    ];
+  });
 }
 
 export function normalizeNumber(value: unknown): number | null {

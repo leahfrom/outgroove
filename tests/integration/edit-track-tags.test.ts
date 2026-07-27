@@ -107,6 +107,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        comment: "First line\nSecond line",
+        originalReleaseDate: "1998-04",
+        language: "deu",
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -124,6 +127,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "lyricists",
         "isrcs",
         "copyright",
+        "comment",
+        "originalReleaseDate",
+        "language",
       ]);
 
       const result = await editor.apply(
@@ -146,6 +152,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        comment: "First line\nSecond line",
+        originalReleaseDate: "1998-04",
+        language: "deu",
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -444,6 +453,48 @@ it("blocks replacing multiple lyricist and ISRC values when exact undo is unavai
   database.close();
 });
 
+it("shows structured comment evidence and blocks a lossy comment replacement", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("02-second.flac");
+  const scanned = await reader.read(path);
+  const payloadBefore = await audioPayloadHash(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: {
+      ...scanned.tags,
+      comment: null,
+      comments: [
+        { text: "Editorial note", language: "deu", descriptor: "Review" },
+        { text: "Second note", language: null, descriptor: null },
+      ],
+    },
+  });
+
+  const preview = editor.preview(fileId, { comment: "Replacement note" });
+  expect(preview.changes).toEqual([
+    {
+      field: "comment",
+      before: [
+        "Editorial note (language deu, descriptor Review)",
+        "Second note",
+      ],
+      after: "Replacement note",
+    },
+  ]);
+  expect(preview.warnings).toEqual([
+    "Comment editing is unavailable when the current file has multiple comments or comment language/descriptor data that this writer cannot restore exactly.",
+  ]);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results[0]).toMatchObject({ verified: false });
+  expect(result.results[0]?.error).toContain("Comment editing is unavailable");
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
 it("undoes advanced edits from a legacy catalog row with explicit empty values", async () => {
   const { database, reader, editor, fileId, path } =
     await createTrackEditor("01-first.mp3");
@@ -452,12 +503,19 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
   delete legacyTags.lyricists;
   delete legacyTags.isrcs;
   delete legacyTags.copyright;
+  delete legacyTags.comment;
+  delete legacyTags.comments;
+  delete legacyTags.originalReleaseDate;
+  delete legacyTags.language;
   database.updateFileAfterEdit(fileId, { ...scanned, tags: legacyTags });
 
   const preview = editor.preview(fileId, {
     lyricists: ["Fixture Lyricist"],
     isrcs: ["DEABC2600001"],
     copyright: "Copyright Fixture",
+    comment: "Fixture comment",
+    originalReleaseDate: "1998-04",
+    language: "deu",
   });
   const applied = await editor.apply(
     preview.operationId,
@@ -478,6 +536,17 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
       before: "Copyright Fixture",
       after: null,
     },
+    {
+      field: "comment",
+      before: ["Fixture comment (language eng)"],
+      after: null,
+    },
+    {
+      field: "originalReleaseDate",
+      before: "1998-04",
+      after: null,
+    },
+    { field: "language", before: "deu", after: null },
   ]);
   const undone = await editor.applyUndo(
     undoPreview.operationId,
@@ -488,7 +557,45 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
     lyricists: [],
     isrcs: [],
     copyright: null,
+    comment: null,
+    comments: [],
+    originalReleaseDate: null,
+    language: null,
   });
+  database.close();
+});
+
+it("rejects new-field no-ops and refuses a stale targeted comment", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const payloadBefore = await audioPayloadHash(path);
+  expect(() =>
+    editor.preview(fileId, {
+      comment: null,
+      originalReleaseDate: null,
+      language: null,
+    }),
+  ).toThrow("already matches this track");
+
+  const preview = editor.preview(fileId, { comment: "Draft comment" });
+  const external = await writer.writeTags(path, {
+    comment: "External comment",
+  });
+  database.updateFileAfterEdit(fileId, external.file);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      fileId,
+      verified: false,
+      error:
+        "A field in this preview changed after it was created; the edit did not overwrite it.",
+    },
+  ]);
+  expect((await reader.read(path)).tags.comment).toBe("External comment");
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
   database.close();
 });
 
@@ -755,6 +862,8 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       lyricists: ["Fixture Lyricist"],
       isrcs: ["DEABC2600001"],
       copyright: "Copyright Fixture",
+      originalReleaseDate: "1998-04",
+      language: "deu",
     },
   );
   expect(preview.files).toHaveLength(2);
@@ -774,6 +883,8 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "lyricists",
       "isrcs",
       "copyright",
+      "originalReleaseDate",
+      "language",
     ],
     [
       "artist",
@@ -787,6 +898,8 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "lyricists",
       "isrcs",
       "copyright",
+      "originalReleaseDate",
+      "language",
     ],
   ]);
 
@@ -811,6 +924,8 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       lyricists: ["Fixture Lyricist"],
       isrcs: ["DEABC2600001"],
       copyright: "Copyright Fixture",
+      originalReleaseDate: "1998-04",
+      language: "deu",
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }
