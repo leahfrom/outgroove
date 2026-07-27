@@ -100,6 +100,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         discNumber: 3,
         year: "2032-02-29",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -110,6 +111,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "discNumber",
         "year",
         "genres",
+        "composers",
       ]);
 
       const result = await editor.apply(
@@ -125,6 +127,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         discNumber: 3,
         year: "2032-02-29",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -199,6 +202,86 @@ it("blocks replacing multiple genre values when exact undo is unavailable", asyn
   ]);
   expect((await reader.read(path)).tags).toEqual(scanned.tags);
   expect(await audioPayloadHash(path)).toBe(bytesBefore);
+  database.close();
+});
+
+it("blocks replacing multiple composer values when exact undo is unavailable", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("02-second.flac");
+  const scanned = await reader.read(path);
+  const bytesBefore = await audioPayloadHash(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: {
+      ...scanned.tags,
+      composers: ["First Composer", "Second Composer"],
+    },
+  });
+
+  const preview = editor.preview(fileId, {
+    composers: ["Replacement Composer"],
+  });
+  expect(preview.changes).toEqual([
+    {
+      field: "composers",
+      before: ["First Composer", "Second Composer"],
+      after: ["Replacement Composer"],
+    },
+  ]);
+  expect(preview.warnings).toContain(
+    "Composer editing is unavailable for tracks with multiple composer values because this writer cannot restore them safely.",
+  );
+
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      verified: false,
+      error:
+        "Composer editing is unavailable for tracks with multiple composer values because this writer cannot restore them safely.",
+    },
+  ]);
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
+  expect(await audioPayloadHash(path)).toBe(bytesBefore);
+  database.close();
+});
+
+it("undoes a composer edit from a legacy catalog row without the rebuildable field", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  const legacyTags = { ...scanned.tags };
+  delete legacyTags.composers;
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: legacyTags,
+  });
+
+  const preview = editor.preview(fileId, {
+    composers: ["Fixture Composer"],
+  });
+  const applied = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([{ verified: true, error: null }]);
+
+  const undoPreview = editor.previewUndo(preview.operationId);
+  expect(undoPreview.changes).toEqual([
+    {
+      field: "composers",
+      before: ["Fixture Composer"],
+      after: [],
+    },
+  ]);
+  const undone = await editor.applyUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results).toMatchObject([{ verified: true, error: null }]);
+  expect((await reader.read(path)).tags.composers).toEqual([]);
   database.close();
 });
 
@@ -335,6 +418,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       discNumber: 2,
       year: "2031-07",
       genres: ["Post Rock"],
+      composers: ["Fixture Composer"],
     },
   );
   expect(preview.files).toHaveLength(2);
@@ -342,8 +426,8 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   expect(
     preview.files.map((file) => file.changes.map((item) => item.field)),
   ).toEqual([
-    ["artist", "discNumber", "year", "genres"],
-    ["artist", "discNumber", "year", "genres"],
+    ["artist", "discNumber", "year", "genres", "composers"],
+    ["artist", "discNumber", "year", "genres", "composers"],
   ]);
 
   const result = await editor.applyBatch(
@@ -360,6 +444,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       discNumber: 2,
       year: "2031-07",
       genres: ["Post Rock"],
+      composers: ["Fixture Composer"],
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }

@@ -20,6 +20,7 @@ export interface TrackMetadataDraft {
   discNumber: string;
   year: string;
   genre: string;
+  composer: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -53,6 +54,11 @@ const comparisonFields: readonly ComparisonField[] = [
     label: "Genre",
     placeholder: "One genre; empty clears",
   },
+  {
+    field: "composer",
+    label: "Composer",
+    placeholder: "One composer; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -63,6 +69,7 @@ const previewFieldLabels: Record<string, string> = {
   discNumber: "Disc number",
   year: "Release date",
   genres: "Genre",
+  composers: "Composer",
 };
 
 function currentValue(
@@ -84,6 +91,8 @@ function currentValue(
       return track.tags.year ?? "";
     case "genre":
       return (track.tags.genres ?? []).join(" · ");
+    case "composer":
+      return (track.tags.composers ?? []).join(" · ");
   }
 }
 
@@ -155,6 +164,8 @@ function TrackMetadataEditorComponent(
             Selecting Genre replaces the complete current genre set with one
             value; an empty proposal clears it. Tracks with multiple current
             genre values stay read-only for that field so undo remains exact.
+            Composer follows the same one-value rule; tracks with multiple
+            current composer values cannot replace that field.
           </>
         }
       />

@@ -175,6 +175,7 @@ export const trackTagEditPreviewRequestSchema = z
           .nullable()
           .optional(),
         genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        composers: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -201,6 +202,7 @@ export const trackBatchEditPreviewRequestSchema = z
           .nullable()
           .optional(),
         genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+        composers: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),

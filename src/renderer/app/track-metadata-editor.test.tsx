@@ -31,6 +31,7 @@ const track: CatalogAlbum["tracks"][number] = {
     discNumber: 1,
     year: "2026-07",
     genres: ["Post Rock"],
+    composers: ["Fixture Composer"],
   },
   nativeTags: [],
   scanError: null,
@@ -44,6 +45,7 @@ const unchangedDraft: TrackMetadataDraft = {
   discNumber: String(track.tags.discNumber),
   year: track.tags.year ?? "",
   genre: "Post Rock",
+  composer: "Fixture Composer",
 };
 
 function editor(
@@ -74,7 +76,7 @@ describe("TrackMetadataEditor", () => {
     const { rerender } = render(editor(unchangedDraft));
 
     const comparison = screen.getByLabelText("Track tag comparison");
-    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(7);
+    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(8);
     expect(
       screen.getByRole("button", { name: "Review exact changes" }),
     ).toBeDisabled();
@@ -82,6 +84,9 @@ describe("TrackMetadataEditor", () => {
     expect(
       screen.getByRole("textbox", { name: "Genre proposed value" }),
     ).toHaveValue("Post Rock");
+    expect(
+      screen.getByRole("textbox", { name: "Composer proposed value" }),
+    ).toHaveValue("Fixture Composer");
 
     const changedDraft = {
       ...unchangedDraft,

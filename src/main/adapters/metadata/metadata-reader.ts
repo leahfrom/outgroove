@@ -12,6 +12,7 @@ import {
   normalizeGenres,
   normalizeNumber,
   normalizeTagText,
+  normalizeTagTextList,
 } from "../../../shared/domain/catalog";
 
 export interface MetadataReader {
@@ -60,6 +61,7 @@ export class MusicMetadataReader implements MetadataReader {
           ? String(common.year)
           : null,
       genres: normalizeGenres(common.genre),
+      composers: normalizeTagTextList(common.composer),
     };
     const nativeTags: NativeTagValue[] = Object.entries(
       metadata.native,

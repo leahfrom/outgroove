@@ -108,6 +108,7 @@ function draftForTrack(track: CatalogAlbum["tracks"][number]) {
     discNumber: track.tags.discNumber?.toString() ?? "",
     year: track.tags.year ?? "",
     genre: (track.tags.genres ?? []).join(" · "),
+    composer: (track.tags.composers ?? []).join(" · "),
   };
 }
 
@@ -275,6 +276,7 @@ export function App(): React.JSX.Element {
     discNumber: "",
     year: "",
     genre: "",
+    composer: "",
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
@@ -290,6 +292,7 @@ export function App(): React.JSX.Element {
     discNumber: false,
     year: false,
     genre: false,
+    composer: false,
   });
   const [batchDraft, setBatchDraft] = useState({
     artist: "",
@@ -297,6 +300,7 @@ export function App(): React.JSX.Element {
     discNumber: "",
     year: "",
     genre: "",
+    composer: "",
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
@@ -1375,6 +1379,7 @@ export function App(): React.JSX.Element {
           discNumber: false,
           year: false,
           genre: false,
+          composer: false,
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
@@ -1387,6 +1392,7 @@ export function App(): React.JSX.Element {
           discNumber: false,
           year: false,
           genre: false,
+          composer: false,
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
@@ -1399,6 +1405,7 @@ export function App(): React.JSX.Element {
           discNumber: false,
           year: true,
           genre: false,
+          composer: false,
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
@@ -1439,6 +1446,10 @@ export function App(): React.JSX.Element {
         year: trackDraft.year || null,
         ...(trackDraft.genre !== (selectedTrack.tags.genres ?? []).join(" · ")
           ? { genres: trackDraft.genre ? [trackDraft.genre] : [] }
+          : {}),
+        ...(trackDraft.composer !==
+        (selectedTrack.tags.composers ?? []).join(" · ")
+          ? { composers: trackDraft.composer ? [trackDraft.composer] : [] }
           : {}),
       },
     });
@@ -1584,6 +1595,7 @@ export function App(): React.JSX.Element {
       discNumber?: number | null;
       year?: string | null;
       genres?: string[];
+      composers?: string[];
     } = {};
     if (batchEnabled.artist) changes.artist = batchDraft.artist;
     if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
@@ -1594,6 +1606,8 @@ export function App(): React.JSX.Element {
     if (batchEnabled.year) changes.year = batchDraft.year || null;
     if (batchEnabled.genre)
       changes.genres = batchDraft.genre ? [batchDraft.genre] : [];
+    if (batchEnabled.composer)
+      changes.composers = batchDraft.composer ? [batchDraft.composer] : [];
     const result = await window.outgroove.previewTrackBatchEdit({
       fileIds: batchTrackIds,
       changes,

@@ -18,6 +18,7 @@ export interface SharedFieldDraft {
   discNumber: string;
   year: string;
   genre: string;
+  composer: string;
 }
 
 export type SharedFieldEnabled = Record<keyof SharedFieldDraft, boolean>;
@@ -65,6 +66,12 @@ const comparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch genre value",
     placeholder: "One genre; empty clears",
   },
+  {
+    field: "composer",
+    label: "Composer",
+    inputLabel: "Batch composer value",
+    placeholder: "One composer; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -73,6 +80,7 @@ const previewFieldLabels: Record<string, string> = {
   discNumber: "Disc number",
   year: "Release date",
   genres: "Genre",
+  composers: "Composer",
 };
 
 function currentValue(track: CatalogTrack, field: SharedField): string {
@@ -87,6 +95,8 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return track.tags.year ?? "";
     case "genre":
       return (track.tags.genres ?? []).join(" · ");
+    case "composer":
+      return (track.tags.composers ?? []).join(" · ");
   }
 }
 
@@ -181,7 +191,7 @@ function SharedFieldEditorComponent(
             Selecting Genre replaces each track&apos;s complete genre set with
             one shared value; an empty proposal clears it. A track with multiple
             current genre values blocks that genre proposal so undo remains
-            exact.
+            exact. Composer follows the same one-value rule.
           </>
         }
       />

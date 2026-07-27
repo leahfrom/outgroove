@@ -5,6 +5,7 @@ import {
   compareAlbumsByArtistReleaseDateTitle,
   folderAlbumGroupingKey,
   normalizeGenres,
+  normalizeTagTextList,
   normalizeNumber,
   normalizeTagText,
   sortTracks,
@@ -38,6 +39,17 @@ describe("catalog normalization and grouping", () => {
     ).toEqual(["ambient", "Café", "Rock"]);
     expect(normalizeGenres(undefined)).toEqual([]);
     expect(normalizeGenres("Rock")).toEqual([]);
+  });
+
+  it("normalizes and deduplicates ordered contributor values", () => {
+    expect(
+      normalizeTagTextList([
+        "  First   Composer ",
+        "Second Composer",
+        "first composer",
+        "",
+      ]),
+    ).toEqual(["First Composer", "Second Composer"]);
   });
 
   it("groups by normalized album artist and album, then orders disc and track", () => {

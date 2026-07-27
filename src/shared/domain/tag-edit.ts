@@ -1,4 +1,8 @@
-import { normalizeGenres, type NormalizedTags } from "./catalog";
+import {
+  normalizeGenres,
+  normalizeTagTextList,
+  type NormalizedTags,
+} from "./catalog";
 import { isValidPartialDate } from "./partial-date";
 
 export { isValidPartialDate } from "./partial-date";
@@ -11,6 +15,7 @@ export const editableTrackTagFields = [
   "discNumber",
   "year",
   "genres",
+  "composers",
 ] as const;
 
 export type EditableTrackTagField = (typeof editableTrackTagFields)[number];
@@ -65,6 +70,18 @@ export function normalizeTrackTagChanges(
     if (genres.some((genre) => genre.length > 100))
       throw new Error("genre is too long.");
     Object.assign(output, { genres });
+  }
+  if ("composers" in input) {
+    const submitted = input.composers;
+    if (!submitted) throw new Error("composers are invalid.");
+    const composers = normalizeTagTextList(submitted);
+    if (composers.length > 1)
+      throw new Error(
+        "This writer currently supports one proposed composer value.",
+      );
+    if (composers.some((composer) => composer.length > 400))
+      throw new Error("composer is too long.");
+    Object.assign(output, { composers });
   }
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");
