@@ -13,8 +13,10 @@ export const channels = {
   loadAlbumArtwork: "library:load-album-artwork",
   findMusicBrainzAlbumCandidates: "identify:find-musicbrainz-album-candidates",
   loadMusicBrainzReleaseTracks: "identify:load-musicbrainz-release-tracks",
+  loadCoverArtArchiveArtwork: "identify:load-cover-art-archive-artwork",
   cancelMusicBrainzAlbumCandidates:
     "identify:cancel-musicbrainz-album-candidates",
+  cancelCoverArtArchiveArtwork: "identify:cancel-cover-art-archive-artwork",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
   updateSavedLibraryFilter: "library:update-saved-filter",
