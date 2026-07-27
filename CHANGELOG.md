@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.12.0 — 2026-07-27
+
+- Complete the planned common-tag workflow for MP3 and FLAC. Single-track
+  editing now covers Genre, Composer, track/disc totals, Conductor, Lyricist,
+  ISRC, Copyright, original and publishing dates, Language, Publisher,
+  Description, Grouping, Catalog number, BPM, Compilation, one plain Comment,
+  and distinct MusicBrainz recording, release-track, release, artist,
+  release-artist, release-group, and work identifiers.
+- Keep core identity and numbering visible while grouping secondary credits,
+  release/catalog details, notes, rights, and identifiers under an accessible
+  More fields disclosure. Shared editing exposes only album-safe fields,
+  requires an explicit opt-in for every proposal, and keeps mixed current
+  values visible.
+- Preserve multi-value Genre, Composer, Publisher, Description, Catalog number,
+  and MusicBrainz artist identifiers in the rebuildable catalog. A field whose
+  complete current value cannot be restored remains readable while mutation of
+  only that field is blocked; other fields remain editable.
+- Retain the full select, propose, validate, preview, confirm, snapshot, write,
+  re-read, verify, and undo sequence. Totals never renumber tracks, identifiers
+  and Compilation are never inferred, no-op proposals cannot reach
+  confirmation, and legacy catalog rows hydrate the new rebuildable fields
+  during their next explicit scan without a schema migration.
+- Add a narrowly scoped, candidate-file-only TagLib-Wasm stage for extended
+  fields the primary writer cannot represent consistently across MP3 and FLAC.
+  Fixture writes verify set, clear, re-read, undo, private/native tag
+  preservation, embedded artwork preservation, and unchanged audio payloads.
+- Complete contextual artwork management with reviewed embedded front-cover
+  replacement and removal, export, and optional safe creation of a conventional
+  folder-artwork file. Every source mutation remains separately previewed and
+  confirmed, while export never changes library audio.
+
 ## 0.11.0 — 2026-07-26
 
 - Make Library the natural home for browsing and editing. It now opens to a

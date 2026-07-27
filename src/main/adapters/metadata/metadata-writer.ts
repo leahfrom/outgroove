@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   copyFile,
   open,
+  readFile,
   rename,
   stat,
   unlink,
@@ -213,7 +214,10 @@ const extendedPropertyKeys: Readonly<Record<ExtendedPropertyField, string>> = {
 let tagLibPromise: Promise<TagLib> | undefined;
 
 function tagLib(): Promise<TagLib> {
-  tagLibPromise ??= TagLib.initialize();
+  // Keep one deterministic in-memory backend across Node platforms. The WASI
+  // property-map saver currently normalizes unrelated MP3 totals and FLAC
+  // descriptions differently from the Emscripten backend.
+  tagLibPromise ??= TagLib.initialize({ forceWasmType: "emscripten" });
   return tagLibPromise;
 }
 
@@ -237,13 +241,21 @@ async function applyExtendedProperties(
   const fields = extendedPropertyFields.filter((field) => field in changes);
   if (fields.length === 0) return;
   const writer = await tagLib();
-  await writer.edit(path, (file) => {
+  const input = await readFile(path);
+  const output = await writer.edit(input, (file) => {
     for (const field of fields)
       file.setProperty(
         extendedPropertyKeys[field],
         extendedPropertyValue(field, changes),
       );
+    if (file.getFormat() === "MP3" && changes.comment === null)
+      file.tag().setComment("");
+    if (file.getFormat() === "FLAC" && changes.trackTotal === null)
+      file.setProperty("totalTracks", "");
+    if (file.getFormat() === "FLAC" && changes.discTotal === null)
+      file.setProperty("totalDiscs", "");
   });
+  await writeFile(path, output);
 }
 
 function akabekoChanges(changes: MetadataTagChanges): MetadataTagChanges {
@@ -254,10 +266,10 @@ function akabekoChanges(changes: MetadataTagChanges): MetadataTagChanges {
   return result;
 }
 
-function changesMatch(
+function mismatchedFields(
   file: ScannedAudioFile,
   changes: MetadataTagChanges,
-): boolean {
+): readonly (keyof MetadataTagChanges)[] {
   const listFields = [
     "genres",
     "composers",
@@ -270,6 +282,7 @@ function changesMatch(
     "musicBrainzArtistIds",
     "musicBrainzReleaseArtistIds",
   ] as const;
+  const mismatches: (keyof MetadataTagChanges)[] = [];
   for (const field of listFields) {
     const proposed = changes[field];
     if (proposed === undefined) continue;
@@ -278,13 +291,23 @@ function changesMatch(
       actual.length !== proposed.length ||
       !actual.every((value, index) => value === proposed[index])
     )
-      return false;
+      mismatches.push(field);
   }
-  return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
-    (field) =>
-      (listFields as readonly string[]).includes(field) ||
-      file.tags[field] === changes[field],
-  );
+  for (const field of Object.keys(changes) as (keyof MetadataTagChanges)[]) {
+    if (
+      !(listFields as readonly string[]).includes(field) &&
+      file.tags[field] !== changes[field]
+    )
+      mismatches.push(field);
+  }
+  return mismatches;
+}
+
+function changesMatch(
+  file: ScannedAudioFile,
+  changes: MetadataTagChanges,
+): boolean {
+  return mismatchedFields(file, changes).length === 0;
 }
 
 function expectedDescription(changes: MetadataTagChanges): string {
@@ -459,9 +482,10 @@ export class SafeMetadataWriter implements MetadataWriter {
       await applyExtendedProperties(temporary, changes);
       await flushPath(temporary);
       const temporaryRead = await this.reader.read(temporary);
-      if (!changesMatch(temporaryRead, changes))
+      const temporaryMismatches = mismatchedFields(temporaryRead, changes);
+      if (temporaryMismatches.length > 0)
         throw new Error(
-          `Temporary write verification failed: expected ${expectedDescription(changes)}.`,
+          `Temporary write verification failed for ${temporaryMismatches.join(", ")}: expected ${expectedDescription(changes)}.`,
         );
       const temporaryHash = await audioPayloadHash(temporary);
       if (temporaryHash !== hashBefore)

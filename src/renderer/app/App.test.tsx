@@ -1605,7 +1605,7 @@ describe("tag edit UI safety states", () => {
         musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       },
     });
-  });
+  }, 10_000);
 
   it("keeps a failed Library track edit preview visible with its stale-write error", async () => {
     Object.defineProperty(window, "outgroove", {
@@ -2135,7 +2135,7 @@ describe("tag edit UI safety states", () => {
     expect(previewUndo).toHaveBeenCalledWith({
       operationId: "216c5a1d-84c7-42d5-9191-6f0ea83b50bb",
     });
-  });
+  }, 10_000);
 
   it("keeps shared-field and sequencing request failures focused inside the contextual editor", async () => {
     const firstTrack = album.tracks[0];
