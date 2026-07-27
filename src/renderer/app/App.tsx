@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AlbumArtworkEditPreviewDto,
+  AlbumIdentificationResultDto,
   AlbumArtworkExportPreviewDto,
   AlbumArtworkExportResultDto,
   AlbumArtworkThumbnailDto,
@@ -15,6 +16,7 @@ import type {
   LibraryRootDto,
   LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
+  MusicBrainzReleaseTracklistDto,
   SavedLibraryFilterDefinition,
   SavedLibraryFilterDto,
   ScanErrorDto,
@@ -51,8 +53,13 @@ import {
   type AlbumDiagnosticFilter,
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
+import {
+  createAlbumCandidateTagDraft,
+  type ComparedAlbumCandidate,
+} from "../../shared/domain/album-identification";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { AlbumActionsMenu } from "./album-actions-menu";
+import { AlbumIdentification } from "./album-identification";
 import { AlbumArtworkEditor } from "./album-artwork-editor";
 import {
   AlbumTitleWorkbench,
@@ -76,7 +83,12 @@ import {
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { ModalSheet } from "./modal-sheet";
-import { SharedFieldEditor } from "./shared-field-editor";
+import type { MusicBrainzTrackMappingEdit } from "./musicbrainz-track-mapper";
+import {
+  SharedFieldEditor,
+  type SharedFieldDraft,
+  type SharedFieldEnabled,
+} from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
@@ -256,6 +268,25 @@ export function App(): React.JSX.Element {
   const [libraryAlbumDetailOpen, setLibraryAlbumDetailOpen] = useState(false);
   const [libraryAlbumEditingTool, setLibraryAlbumEditingTool] =
     useState<LibraryAlbumEditingTool>();
+  const [albumIdentificationOpen, setAlbumIdentificationOpen] = useState(false);
+  const [albumIdentificationLoading, setAlbumIdentificationLoading] =
+    useState(false);
+  const [albumIdentificationResult, setAlbumIdentificationResult] =
+    useState<AlbumIdentificationResultDto>();
+  const [albumIdentificationError, setAlbumIdentificationError] =
+    useState<string>();
+  const [releaseTracksLoading, setReleaseTracksLoading] = useState(false);
+  const [releaseTracksReleaseId, setReleaseTracksReleaseId] =
+    useState<string>();
+  const [releaseTracksResult, setReleaseTracksResult] =
+    useState<MusicBrainzReleaseTracklistDto>();
+  const [releaseTracksError, setReleaseTracksError] = useState<string>();
+  const [musicBrainzMappingPreview, setMusicBrainzMappingPreview] =
+    useState<TrackBatchEditPreviewDto>();
+  const [musicBrainzMappingResult, setMusicBrainzMappingResult] =
+    useState<TagEditResultDto>();
+  const [musicBrainzMappingError, setMusicBrainzMappingError] =
+    useState<string>();
   const [albumTitleSection, setAlbumTitleSection] =
     useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
@@ -334,7 +365,8 @@ export function App(): React.JSX.Element {
     useState<TrackTagEditPreviewDto>();
   const [trackUndoResult, setTrackUndoResult] = useState<TagEditResultDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
-  const [batchEnabled, setBatchEnabled] = useState({
+  const [metadataDraftSource, setMetadataDraftSource] = useState<string>();
+  const [batchEnabled, setBatchEnabled] = useState<SharedFieldEnabled>({
     artist: false,
     albumArtist: false,
     trackTotal: false,
@@ -358,7 +390,7 @@ export function App(): React.JSX.Element {
     musicBrainzReleaseArtistId: false,
     musicBrainzReleaseGroupId: false,
   });
-  const [batchDraft, setBatchDraft] = useState({
+  const [batchDraft, setBatchDraft] = useState<SharedFieldDraft>({
     artist: "",
     albumArtist: "",
     trackTotal: "",
@@ -462,6 +494,7 @@ export function App(): React.JSX.Element {
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
+  const albumIdentificationRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
@@ -1410,6 +1443,7 @@ export function App(): React.JSX.Element {
   };
 
   const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    setMetadataDraftSource(undefined);
     trackEditorReturnFocusId.current = track.id;
     trackEditorReturnFocusElement.current =
       document.activeElement instanceof HTMLElement
@@ -2533,6 +2567,7 @@ export function App(): React.JSX.Element {
 
   const openLibraryAlbumEditingTool = (tool: LibraryAlbumEditingTool): void => {
     if (!selectedAlbum) return;
+    setMetadataDraftSource(undefined);
     setAlbumTitleSection(tool === "history" ? "history" : "edit");
     setLibraryAlbumEditingTool(tool);
     if (tool === "history") void refreshEditHistory(selectedAlbum.id);
@@ -2547,7 +2582,188 @@ export function App(): React.JSX.Element {
     setActiveView("sync");
   };
 
+  const openAlbumIdentification = (): void => {
+    setAlbumIdentificationResult(undefined);
+    setAlbumIdentificationError(undefined);
+    setAlbumIdentificationLoading(false);
+    setReleaseTracksLoading(false);
+    setReleaseTracksReleaseId(undefined);
+    setReleaseTracksResult(undefined);
+    setReleaseTracksError(undefined);
+    setMusicBrainzMappingPreview(undefined);
+    setMusicBrainzMappingResult(undefined);
+    setMusicBrainzMappingError(undefined);
+    setAlbumIdentificationOpen(true);
+  };
+
+  const searchAlbumIdentification = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    const requestId = ++albumIdentificationRequestId.current;
+    setAlbumIdentificationLoading(true);
+    setAlbumIdentificationError(undefined);
+    setReleaseTracksResult(undefined);
+    setReleaseTracksReleaseId(undefined);
+    setMusicBrainzMappingPreview(undefined);
+    setMusicBrainzMappingResult(undefined);
+    setMusicBrainzMappingError(undefined);
+    const result = await window.outgroove.findMusicBrainzAlbumCandidates({
+      albumId: selectedAlbum.id,
+    });
+    if (requestId !== albumIdentificationRequestId.current) return;
+    setAlbumIdentificationLoading(false);
+    if (result.ok) setAlbumIdentificationResult(result.value);
+    else setAlbumIdentificationError(result.error.message);
+  };
+
+  const cancelAlbumIdentification = (): void => {
+    if (!selectedAlbum) return;
+    albumIdentificationRequestId.current += 1;
+    setAlbumIdentificationLoading(false);
+    setAlbumIdentificationError(
+      "Search cancelled. No Library metadata changed.",
+    );
+    void window.outgroove.cancelMusicBrainzAlbumCandidates({
+      albumId: selectedAlbum.id,
+    });
+  };
+
+  const loadMusicBrainzReleaseTracks = async (
+    candidate: ComparedAlbumCandidate,
+  ): Promise<void> => {
+    if (!selectedAlbum) return;
+    const requestId = ++albumIdentificationRequestId.current;
+    setReleaseTracksReleaseId(candidate.releaseId);
+    setReleaseTracksLoading(true);
+    setReleaseTracksResult(undefined);
+    setReleaseTracksError(undefined);
+    setMusicBrainzMappingPreview(undefined);
+    setMusicBrainzMappingResult(undefined);
+    setMusicBrainzMappingError(undefined);
+    const result = await window.outgroove.loadMusicBrainzReleaseTracks({
+      albumId: selectedAlbum.id,
+      releaseId: candidate.releaseId,
+    });
+    if (requestId !== albumIdentificationRequestId.current) return;
+    setReleaseTracksLoading(false);
+    if (result.ok) setReleaseTracksResult(result.value);
+    else setReleaseTracksError(result.error.message);
+  };
+
+  const cancelMusicBrainzReleaseTracks = (): void => {
+    if (!selectedAlbum) return;
+    albumIdentificationRequestId.current += 1;
+    setReleaseTracksLoading(false);
+    setReleaseTracksError(
+      "Tracklist request cancelled. No Library metadata changed.",
+    );
+    void window.outgroove.cancelMusicBrainzAlbumCandidates({
+      albumId: selectedAlbum.id,
+    });
+  };
+
+  const previewMusicBrainzTrackMapping = async (
+    edits: readonly MusicBrainzTrackMappingEdit[],
+  ): Promise<void> => {
+    if (!selectedAlbum || !releaseTracksResult) return;
+    setMusicBrainzMappingPreview(undefined);
+    setMusicBrainzMappingResult(undefined);
+    setMusicBrainzMappingError(undefined);
+    const result = await window.outgroove.previewMusicBrainzTrackMapping({
+      albumId: selectedAlbum.id,
+      releaseId: releaseTracksResult.release.releaseId,
+      edits: [...edits],
+    });
+    if (result.ok) setMusicBrainzMappingPreview(result.value);
+    else setMusicBrainzMappingError(result.error.message);
+  };
+
+  const applyMusicBrainzTrackMapping = async (): Promise<void> => {
+    if (!musicBrainzMappingPreview) return;
+    setMusicBrainzMappingError(undefined);
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyTrackBatchEdit({
+        operationId: musicBrainzMappingPreview.operationId,
+        confirmationToken: musicBrainzMappingPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setMusicBrainzMappingResult(result.value);
+        setMusicBrainzMappingPreview(undefined);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Re-read and verified ${result.value.results.length} mapped MusicBrainz track writes.`
+            : `${failures.length} mapped tracks failed or were stale; other files were handled independently.`,
+          failures.length === 0 ? "success" : "error",
+        );
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else setMusicBrainzMappingError(result.error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeAlbumIdentification = (): void => {
+    if (albumIdentificationLoading) cancelAlbumIdentification();
+    if (releaseTracksLoading) cancelMusicBrainzReleaseTracks();
+    setAlbumIdentificationOpen(false);
+  };
+
+  const createMusicBrainzTagDraft = (
+    candidate: ComparedAlbumCandidate,
+  ): void => {
+    if (!selectedAlbum) return;
+    const candidateDraft = createAlbumCandidateTagDraft(
+      selectedAlbum,
+      candidate,
+    );
+    if (candidateDraft.fields.length === 0) {
+      setNotice(
+        "All safely supported MusicBrainz values are already current or unavailable. No draft was created.",
+      );
+      return;
+    }
+    const source = `Drafted ${candidateDraft.fields.length} supported ${
+      candidateDraft.fields.length === 1 ? "field" : "fields"
+    } from MusicBrainz release ${candidate.releaseId}. Review every selected value; no preview or write has started.`;
+    setMetadataDraftSource(source);
+    setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setBatchError(undefined);
+    setAlbumIdentificationOpen(false);
+
+    if (selectedAlbum.tracks.length === 1) {
+      const track = selectedAlbum.tracks[0];
+      if (!track) return;
+      const nextDraft: TrackMetadataDraft = draftForTrack(track);
+      for (const field of candidateDraft.fields)
+        nextDraft[field.field] = field.value;
+      setSelectedTrackId(track.id);
+      setTrackDraft(nextDraft);
+      setLibraryTrackEditorOpen(true);
+    } else {
+      const enabled = Object.fromEntries(
+        Object.keys(batchEnabled).map((field) => [field, false]),
+      ) as SharedFieldEnabled;
+      const nextDraft = { ...batchDraft };
+      for (const field of candidateDraft.fields) {
+        enabled[field.field] = true;
+        nextDraft[field.field] = field.value;
+      }
+      setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
+      setBatchEnabled(enabled);
+      setBatchDraft(nextDraft);
+      setLibraryAlbumEditingTool("shared");
+    }
+    setNotice(source);
+  };
+
   const closeLibraryAlbum = (): void => {
+    if (albumIdentificationOpen) closeAlbumIdentification();
     if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
     setLibraryAlbumDetailOpen(false);
   };
@@ -2575,6 +2791,7 @@ export function App(): React.JSX.Element {
     <SharedFieldEditor
       busy={busy}
       draft={batchDraft}
+      {...(metadataDraftSource ? { draftSource: metadataDraftSource } : {})}
       enabled={batchEnabled}
       error={batchError}
       preview={batchPreview}
@@ -3558,6 +3775,7 @@ export function App(): React.JSX.Element {
                         onEditArtwork={() =>
                           openLibraryAlbumEditingTool("artwork")
                         }
+                        onFindMatches={openAlbumIdentification}
                         onEditTrackOrder={() =>
                           openLibraryAlbumEditingTool("sequence")
                         }
@@ -3833,6 +4051,41 @@ export function App(): React.JSX.Element {
       )}
       {activeView === "library" &&
         libraryAlbumDetailOpen &&
+        albumIdentificationOpen &&
+        selectedAlbum && (
+          <AlbumIdentification
+            album={selectedAlbum}
+            error={albumIdentificationError}
+            loading={albumIdentificationLoading}
+            mappingBusy={busy}
+            mappingError={musicBrainzMappingError}
+            mappingPreview={musicBrainzMappingPreview}
+            mappingResult={musicBrainzMappingResult}
+            releaseTracksError={releaseTracksError}
+            releaseTracksLoading={releaseTracksLoading}
+            releaseTracksReleaseId={releaseTracksReleaseId}
+            releaseTracksResult={releaseTracksResult}
+            result={albumIdentificationResult}
+            onCancel={cancelAlbumIdentification}
+            onCancelMappingPreview={() => {
+              setMusicBrainzMappingPreview(undefined);
+              setMusicBrainzMappingError(undefined);
+            }}
+            onCancelReleaseTracks={cancelMusicBrainzReleaseTracks}
+            onClose={closeAlbumIdentification}
+            onConfirmMapping={() => void applyMusicBrainzTrackMapping()}
+            onCreateDraft={createMusicBrainzTagDraft}
+            onLoadReleaseTracks={(candidate) =>
+              void loadMusicBrainzReleaseTracks(candidate)
+            }
+            onPreviewMapping={(edits) =>
+              void previewMusicBrainzTrackMapping(edits)
+            }
+            onSearch={() => void searchAlbumIdentification()}
+          />
+        )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
         libraryAlbumEditingTool &&
         selectedAlbum && (
           <ModalSheet
@@ -3918,6 +4171,9 @@ export function App(): React.JSX.Element {
             <TrackMetadataEditor
               busy={busy}
               draft={trackDraft}
+              {...(metadataDraftSource
+                ? { draftSource: metadataDraftSource }
+                : {})}
               error={trackEditError}
               onCancelPreview={() => {
                 setTrackEditPreview(undefined);

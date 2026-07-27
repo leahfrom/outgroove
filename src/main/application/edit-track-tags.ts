@@ -18,6 +18,7 @@ import {
 } from "../../shared/domain/tag-edit";
 import type { TrackTagChanges } from "../../shared/domain/tag-edit";
 import type { TrackTagChangeInput } from "../../shared/domain/tag-edit";
+import type { EditableTrackTagField } from "../../shared/domain/tag-edit";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { MetadataWriter } from "../adapters/metadata/metadata-writer";
 
@@ -244,6 +245,46 @@ type BatchTagChangeInput = Pick<
   | "musicBrainzReleaseArtistIds"
   | "musicBrainzReleaseGroupId"
 >;
+
+type MusicBrainzMappedTagChangeInput = Pick<
+  TrackTagChangeInput,
+  | "title"
+  | "artist"
+  | "trackNumber"
+  | "trackTotal"
+  | "discNumber"
+  | "discTotal"
+  | "isrcs"
+  | "musicBrainzRecordingId"
+  | "musicBrainzReleaseTrackId"
+  | "musicBrainzArtistIds"
+>;
+
+const musicBrainzMappedFields = new Set<EditableTrackTagField>([
+  "title",
+  "artist",
+  "trackNumber",
+  "trackTotal",
+  "discNumber",
+  "discTotal",
+  "isrcs",
+  "musicBrainzRecordingId",
+  "musicBrainzReleaseTrackId",
+  "musicBrainzArtistIds",
+]);
+
+function normalizeMusicBrainzMappedChanges(
+  input: MusicBrainzMappedTagChangeInput,
+): TrackTagChanges {
+  const changes = normalizeTrackTagChanges(input);
+  if (
+    Object.keys(changes).some(
+      (field) => !musicBrainzMappedFields.has(field as EditableTrackTagField),
+    )
+  )
+    throw new Error("The MusicBrainz track proposal contains an unsafe field.");
+  return changes;
+}
 
 function relationshipError(
   tags: NormalizedTags,
@@ -634,6 +675,93 @@ export class EditTrackTags {
     };
   }
 
+  previewMusicBrainzMapping(
+    albumId: string,
+    releaseId: string,
+    edits: readonly {
+      readonly fileId: string;
+      readonly releaseTrackId: string;
+      readonly changes: MusicBrainzMappedTagChangeInput;
+    }[],
+  ): TrackBatchEditPreviewDto {
+    if (
+      edits.length < 1 ||
+      edits.length > 100 ||
+      new Set(edits.map((edit) => edit.fileId)).size !== edits.length ||
+      new Set(edits.map((edit) => edit.releaseTrackId)).size !== edits.length ||
+      !isValidMusicBrainzId(releaseId) ||
+      edits.some((edit) => !isValidMusicBrainzId(edit.releaseTrackId))
+    )
+      throw new Error("The MusicBrainz track mapping is invalid.");
+    const tracks = edits.map((edit) => {
+      const track = this.database.getTrack(edit.fileId);
+      const trackAlbumId = this.database.getTrackAlbumId(edit.fileId);
+      if (!track || !trackAlbumId)
+        throw new Error("A mapped Library track does not exist.");
+      if (trackAlbumId !== albumId)
+        throw new Error(
+          "MusicBrainz track mappings must stay within one album.",
+        );
+      const proposed = normalizeMusicBrainzMappedChanges(edit.changes);
+      if (
+        "musicBrainzReleaseTrackId" in proposed &&
+        proposed.musicBrainzReleaseTrackId !== edit.releaseTrackId
+      )
+        throw new Error(
+          "The proposed MusicBrainz release-track ID does not match its mapping.",
+        );
+      const changes = changedTrackTags(track.tags, proposed);
+      validateTrackTagRelationships(track.tags, changes);
+      const extension = extname(track.path).toLocaleLowerCase("en-US");
+      const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
+      return {
+        fileId: edit.fileId,
+        path: track.path,
+        tags: track.tags,
+        proposed: changes,
+        changes: editableTrackTagFields
+          .filter((field) => field in changes)
+          .map((field) => ({
+            field,
+            before: previewValue(track.tags, field),
+            after: changes[field] ?? null,
+          })),
+        warnings: [
+          ...(this.writer.writableExtensions.has(extension)
+            ? []
+            : [`${extension || "This format"} is read-only in this slice.`]),
+          ...valueWarnings,
+        ],
+        willWrite: Object.keys(changes).length > 0,
+      };
+    });
+    const writableFiles = tracks.filter((track) => track.willWrite);
+    if (writableFiles.length === 0)
+      throw new Error("The mapped metadata already matches every track.");
+    const confirmationToken = randomBytes(24).toString("base64url");
+    const operationId = this.database.createMusicBrainzTrackMappingOperation(
+      albumId,
+      releaseId,
+      writableFiles.map(({ fileId, tags }) => ({ fileId, tags })),
+      writableFiles.map(({ fileId, proposed }) => ({
+        fileId,
+        changes: proposed,
+      })),
+      tokenHash(confirmationToken),
+    );
+    return {
+      operationId,
+      confirmationToken,
+      files: tracks.map((track) => ({
+        fileId: track.fileId,
+        path: track.path,
+        changes: track.changes,
+        warnings: track.warnings,
+        willWrite: track.willWrite,
+      })),
+    };
+  }
+
   async applyBatch(
     operationId: string,
     confirmationToken: string,
@@ -654,9 +782,19 @@ export class EditTrackTags {
     const previews = JSON.parse(
       operation.preview_tags_json,
     ) as StoredBatchPreview[];
-    const changes = normalizeTrackTagChanges(
-      JSON.parse(operation.proposed_tags_json) as TrackTagChanges,
-    );
+    const storedProposals = JSON.parse(operation.proposed_tags_json) as
+      TrackTagChanges | StoredBatchProposal[];
+    const changesByFile = Array.isArray(storedProposals)
+      ? new Map(
+          storedProposals.map((proposal) => [
+            proposal.fileId,
+            normalizeMusicBrainzMappedChanges(proposal.changes),
+          ]),
+        )
+      : undefined;
+    const commonChanges = Array.isArray(storedProposals)
+      ? undefined
+      : normalizeTrackTagChanges(storedProposals);
     if (!this.database.beginEdit(operationId))
       throw new Error(
         "This batch edit is already being applied or has finished.",
@@ -664,23 +802,26 @@ export class EditTrackTags {
 
     const results: TagEditResultDto["results"][number][] = [];
     for (const [index, preview] of previews.entries()) {
+      const changes = commonChanges ?? changesByFile?.get(preview.fileId);
       const target = this.database.getFileEditState(preview.fileId);
       const current = target?.tags ?? preview.tags;
-      const after = applyChanges(current, changes);
+      const after = changes ? applyChanges(current, changes) : current;
       const snapshotId = this.database.saveSnapshot(
         operationId,
         preview.fileId,
         current,
         after,
       );
-      const replacementError = singleValueReplacementWarnings(
-        current,
-        changes,
-      )[0];
-      const invalidRelationship = relationshipError(current, changes);
+      const replacementError = changes
+        ? singleValueReplacementWarnings(current, changes)[0]
+        : "The stored per-track proposal is unavailable.";
+      const invalidRelationship = changes
+        ? relationshipError(current, changes)
+        : null;
       let verified = false;
       let error: string | null = null;
-      if (target?.scanState !== "ok")
+      if (!changes) error = "The stored per-track proposal is unavailable.";
+      else if (target?.scanState !== "ok")
         error = "The file is not currently available for writing.";
       else if (replacementError) error = replacementError;
       else if (invalidRelationship) error = invalidRelationship;
@@ -889,23 +1030,21 @@ export class EditTrackTags {
       throw new Error(
         "Only a finished multi-track metadata edit can be undone.",
       );
-    const sourceChangesByFile =
-      source.kind === "track-tags-batch-edit"
-        ? undefined
-        : new Map(
-            (
-              JSON.parse(source.proposed_tags_json) as StoredBatchProposal[]
-            ).map((proposal) => [
-              proposal.fileId,
-              normalizeTrackTagChanges(proposal.changes),
-            ]),
-          );
-    const commonSourceChanges =
-      source.kind === "track-tags-batch-edit"
-        ? normalizeTrackTagChanges(
-            JSON.parse(source.proposed_tags_json) as TrackTagChanges,
-          )
-        : undefined;
+    const storedSourceProposals = JSON.parse(source.proposed_tags_json) as
+      TrackTagChanges | StoredBatchProposal[];
+    const sourceChangesByFile = Array.isArray(storedSourceProposals)
+      ? new Map(
+          storedSourceProposals.map((proposal) => [
+            proposal.fileId,
+            source.kind === "track-number-sequence-edit"
+              ? normalizeTrackTagChanges(proposal.changes)
+              : normalizeMusicBrainzMappedChanges(proposal.changes),
+          ]),
+        )
+      : undefined;
+    const commonSourceChanges = Array.isArray(storedSourceProposals)
+      ? undefined
+      : normalizeTrackTagChanges(storedSourceProposals);
     const sourceOrder = new Map(
       (JSON.parse(source.preview_tags_json) as StoredBatchPreview[]).map(
         (preview, index) => [preview.fileId, index],

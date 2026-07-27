@@ -136,6 +136,16 @@ interface ScanJobRow {
   finished_at: string | null;
 }
 
+export interface ProviderCacheRecord {
+  readonly provider: string;
+  readonly requestKey: string;
+  readonly responseSchemaVersion: number;
+  readonly status: number;
+  readonly fetchedAt: string;
+  readonly expiresAt: string;
+  readonly payloadJson: string;
+}
+
 export interface SyncRunChangeRecord {
   readonly id: string;
   readonly sequence: number;
@@ -1837,6 +1847,65 @@ export class CatalogDatabase {
     return this.listAlbumsByIds([id])[0];
   }
 
+  getProviderCache(
+    provider: string,
+    requestKey: string,
+  ): ProviderCacheRecord | undefined {
+    const row = this.connection
+      .prepare(
+        `SELECT provider, request_key, response_schema_version, status,
+          fetched_at, expires_at, payload_json
+         FROM provider_cache WHERE provider=? AND request_key=?`,
+      )
+      .get(provider, requestKey) as
+      | {
+          provider: string;
+          request_key: string;
+          response_schema_version: number;
+          status: number;
+          fetched_at: string;
+          expires_at: string;
+          payload_json: string;
+        }
+      | undefined;
+    return (
+      row && {
+        provider: row.provider,
+        requestKey: row.request_key,
+        responseSchemaVersion: row.response_schema_version,
+        status: row.status,
+        fetchedAt: row.fetched_at,
+        expiresAt: row.expires_at,
+        payloadJson: row.payload_json,
+      }
+    );
+  }
+
+  putProviderCache(record: ProviderCacheRecord): void {
+    this.connection
+      .prepare(
+        `INSERT INTO provider_cache
+          (provider, request_key, response_schema_version, status, fetched_at,
+           expires_at, payload_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(provider, request_key) DO UPDATE SET
+           response_schema_version=excluded.response_schema_version,
+           status=excluded.status,
+           fetched_at=excluded.fetched_at,
+           expires_at=excluded.expires_at,
+           payload_json=excluded.payload_json`,
+      )
+      .run(
+        record.provider,
+        record.requestKey,
+        record.responseSchemaVersion,
+        record.status,
+        record.fetchedAt,
+        record.expiresAt,
+        record.payloadJson,
+      );
+  }
+
   getTrack(fileId: string): CatalogTrack | undefined {
     const row = this.connection
       .prepare("SELECT album_id FROM tracks WHERE file_id=?")
@@ -2015,6 +2084,33 @@ export class CatalogDatabase {
         new Date().toISOString(),
         JSON.stringify(previews),
         JSON.stringify(changes),
+      );
+    return id;
+  }
+
+  createMusicBrainzTrackMappingOperation(
+    albumId: string,
+    releaseId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-batch-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `MusicBrainz track mapping: ${releaseId}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
       );
     return id;
   }

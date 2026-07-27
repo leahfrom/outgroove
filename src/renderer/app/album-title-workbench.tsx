@@ -15,7 +15,8 @@ import {
 } from "./workbench-review-stage";
 
 export type AlbumTitleSection = "edit" | "history";
-export type BatchUndoKind = "shared-fields" | "track-order";
+export type BatchUndoKind =
+  "shared-fields" | "track-order" | "musicbrainz-mapping";
 
 function historyLabel(item: TagEditHistoryItemDto): string {
   switch (item.kind) {
@@ -134,7 +135,9 @@ function AlbumTitleWorkbenchComponent(
   const batchUndoSubject =
     batchUndoKind === "track-order"
       ? "Track-number sequence undo"
-      : "Shared-field undo";
+      : batchUndoKind === "musicbrainz-mapping"
+        ? "MusicBrainz track mapping undo"
+        : "Shared-field undo";
 
   return (
     <section
@@ -324,12 +327,20 @@ function AlbumTitleWorkbenchComponent(
                           onClick={() =>
                             onPreviewBatchUndo(
                               item.operationId,
-                              "shared-fields",
+                              item.proposedTitle.startsWith(
+                                "MusicBrainz track mapping:",
+                              )
+                                ? "musicbrainz-mapping"
+                                : "shared-fields",
                             )
                           }
                           type="button"
                         >
-                          Preview batch undo
+                          {item.proposedTitle.startsWith(
+                            "MusicBrainz track mapping:",
+                          )
+                            ? "Preview mapping undo"
+                            : "Preview batch undo"}
                         </button>
                       )}
                     {item.kind === "track-number-sequence-edit" &&

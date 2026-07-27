@@ -11,6 +11,7 @@ describe("AlbumActionsMenu", () => {
     const onEditMetadata = vi.fn();
     const onEditTrackOrder = vi.fn();
     const onEditArtwork = vi.fn();
+    const onFindMatches = vi.fn();
     const onOpenHistory = vi.fn();
     const onAddToSync = vi.fn();
     render(
@@ -21,6 +22,7 @@ describe("AlbumActionsMenu", () => {
         onAddToSync={onAddToSync}
         onEditMetadata={onEditMetadata}
         onEditArtwork={onEditArtwork}
+        onFindMatches={onFindMatches}
         onEditTrackOrder={onEditTrackOrder}
         onOpenHistory={onOpenHistory}
       />,
@@ -34,11 +36,16 @@ describe("AlbumActionsMenu", () => {
         name: "Actions for A very long album title that remains contextual",
       }),
     ).toBeVisible();
-    const editMetadata = screen.getByRole("menuitem", {
-      name: "Edit album metadata",
+    const findMatches = screen.getByRole("menuitem", {
+      name: "Find MusicBrainz matches",
     });
-    expect(editMetadata).toHaveFocus();
-    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    expect(findMatches).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onFindMatches).toHaveBeenCalledOnce();
+    expect(trigger).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
     expect(onOpenHistory).toHaveBeenCalledOnce();
     expect(trigger).toHaveFocus();
 
@@ -58,6 +65,7 @@ describe("AlbumActionsMenu", () => {
         onAddToSync={vi.fn()}
         onEditMetadata={vi.fn()}
         onEditArtwork={vi.fn()}
+        onFindMatches={vi.fn()}
         onEditTrackOrder={vi.fn()}
         onOpenHistory={vi.fn()}
       />,

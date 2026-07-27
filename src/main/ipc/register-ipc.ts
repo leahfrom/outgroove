@@ -12,6 +12,7 @@ import {
   albumEditHistoryRequestSchema,
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
+  albumIdentificationRequestSchema,
   databaseRestoreApplyRequestSchema,
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
@@ -19,6 +20,8 @@ import {
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  musicBrainzReleaseLookupRequestSchema,
+  musicBrainzTrackMappingPreviewRequestSchema,
   renameSyncProfileRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
@@ -49,6 +52,7 @@ import type { CreateAlbumFolderArtwork } from "../application/create-album-folde
 import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
+import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -60,6 +64,7 @@ interface Dependencies {
   scanJobs: ScanJobCoordinator;
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
+  albumCandidates: FindAlbumCandidates;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -237,6 +242,26 @@ export function registerIpc(
     channels.loadAlbumArtwork,
     createValidatedHandler(albumArtworkRequestSchema, ({ albumIds }) =>
       dependencies.artwork.load(albumIds),
+    ),
+  );
+  ipcMain.handle(
+    channels.findMusicBrainzAlbumCandidates,
+    createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
+      dependencies.albumCandidates.search(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.loadMusicBrainzReleaseTracks,
+    createValidatedHandler(
+      musicBrainzReleaseLookupRequestSchema,
+      ({ albumId, releaseId }) =>
+        dependencies.albumCandidates.release(albumId, releaseId),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelMusicBrainzAlbumCandidates,
+    createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
+      dependencies.albumCandidates.cancel(albumId),
     ),
   );
   ipcMain.handle(
@@ -469,6 +494,18 @@ export function registerIpc(
       trackBatchEditPreviewRequestSchema,
       ({ fileIds, changes }) =>
         dependencies.trackEditor.previewBatch(fileIds, changes),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewMusicBrainzTrackMapping,
+    createValidatedHandler(
+      musicBrainzTrackMappingPreviewRequestSchema,
+      ({ albumId, releaseId, edits }) =>
+        dependencies.trackEditor.previewMusicBrainzMapping(
+          albumId,
+          releaseId,
+          edits,
+        ),
     ),
   );
   ipcMain.handle(

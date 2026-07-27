@@ -68,6 +68,49 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("readFile");
   });
 
+  it("maps MusicBrainz lookup and cancellation to fixed album-ID-only channels", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const request = {
+      albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+    };
+    await api.findMusicBrainzAlbumCandidates(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.findMusicBrainzAlbumCandidates,
+      request,
+    );
+    await api.cancelMusicBrainzAlbumCandidates(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelMusicBrainzAlbumCandidates,
+      request,
+    );
+    const release = {
+      albumId: request.albumId,
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    };
+    await api.loadMusicBrainzReleaseTracks(release);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.loadMusicBrainzReleaseTracks,
+      release,
+    );
+    const mapping = {
+      ...release,
+      edits: [
+        {
+          fileId: "73b6d616-0f52-4ef3-b71a-ffb42844e306",
+          releaseTrackId: "11111111-1111-4111-8111-111111111111",
+          changes: { title: "Mapped title" },
+        },
+      ],
+    };
+    await api.previewMusicBrainzTrackMapping(mapping);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewMusicBrainzTrackMapping,
+      mapping,
+    );
+    expect(api).not.toHaveProperty("fetch");
+    expect(api).not.toHaveProperty("searchProvider");
+  });
+
   it("maps optional folder artwork through fixed preview and apply channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const preview = {

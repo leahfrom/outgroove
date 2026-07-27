@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.13.0 — 2026-07-27
+
+- Add an explicit, cancellable MusicBrainz release-edition search for one
+  Library album. The connection disclosure names the only catalog values sent,
+  candidate confidence is calculated locally from album evidence, and every
+  match and conflict remains read-only until the user chooses a separate
+  editing action.
+- Cache bounded, runtime-validated provider responses in rebuildable schema-v19
+  catalog state. MusicBrainz requests share one global one-per-second limiter,
+  meaningful application identity, cancellation, in-flight deduplication, and
+  bounded retry behavior; valid expired responses can remain available
+  honestly when the provider is offline.
+- Turn an explicitly selected release into a limited local draft for safe
+  release-level fields. Candidate selection never starts a preview or write,
+  ambiguous multi-values remain omitted, and the existing single-track or
+  shared-field comparison, confirmation, verified write, partial-failure,
+  history, and undo workflows remain authoritative.
+- Add fully manual one-to-one mapping between Library tracks and tracks on an
+  explicitly loaded MusicBrainz release. No relationship or field is inferred;
+  title, ordered track artist, track/disc numbering and totals, one
+  unambiguous ISRC, and distinct recording, release-track, and artist IDs are
+  individually opt-in before one exact per-file preview and album-level
+  confirmation.
+- Keep track mapping choices as non-durable renderer draft state, disclose
+  omitted multi-value identifiers, invalidate an older preview whenever its
+  mapping or selected fields change, and reuse the existing snapshot, stale
+  target, safe-write, audio-payload, re-read, verification, and verified-undo
+  protections without another write API or durable metadata table.
+
 ## 0.12.0 — 2026-07-27
 
 - Complete the planned common-tag workflow for MP3 and FLAC. Single-track

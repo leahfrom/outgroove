@@ -2058,6 +2058,124 @@ h1 {
 .album-editing-sheet {
   width: min(100%, 1120px);
 }
+.album-identification-sheet {
+  width: min(100%, 900px);
+}
+.identification-heading {
+  display: block;
+  margin-bottom: 1rem;
+}
+.identification-heading p:last-child {
+  max-width: 66ch;
+  margin-bottom: 0;
+}
+.identification-heading h2,
+.identification-candidate h3 {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+}
+.identification-heading p:last-child,
+.identification-privacy p,
+.identification-candidate header p {
+  color: #526159;
+}
+.identification-privacy {
+  margin-bottom: 1rem;
+}
+.identification-privacy .actions {
+  justify-content: flex-start;
+}
+.identification-status {
+  min-height: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 650;
+}
+.identification-candidates {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.identification-candidate > header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.candidate-confidence {
+  flex: 0 0 auto;
+  border: 1px solid #aab9ad;
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  background: #f4f6f2;
+  text-transform: capitalize;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.candidate-confidence.strong {
+  border-color: #5f8d6c;
+  background: #e8f4eb;
+}
+.candidate-confidence.weak {
+  border-color: #c6aa76;
+  background: #fff6e4;
+}
+.identification-candidate dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.identification-candidate dl div:last-child {
+  grid-column: 1 / -1;
+}
+.identification-candidate dt,
+.candidate-evidence h4 {
+  font-weight: 750;
+}
+.identification-candidate dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+.candidate-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.candidate-evidence h4 {
+  margin-bottom: 0.35rem;
+}
+.candidate-evidence ul,
+.candidate-evidence p {
+  margin: 0;
+}
+.candidate-draft {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d9e0da;
+  padding-top: 1rem;
+}
+.candidate-draft h4,
+.candidate-draft p,
+.candidate-draft ul {
+  margin: 0;
+}
+.candidate-draft button {
+  justify-self: start;
+}
+.metadata-draft-source {
+  margin: 0 0 1rem;
+  border-left: 4px solid #5f8d6c;
+  padding: 0.65rem 0.8rem;
+  background: #eef6ef;
+  color: #284d32;
+  overflow-wrap: anywhere;
+}
+.identifier {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+}
 .album-editing-heading {
   display: block;
   margin-bottom: 1rem;
@@ -2626,6 +2744,136 @@ pre {
 }
 .shared-field-editor {
   max-width: 1040px;
+}
+.candidate-track-mapper {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d4dcd6;
+}
+.candidate-track-mapper > header {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.candidate-track-mapper > header > div {
+  min-width: 0;
+}
+.candidate-track-mapper h3,
+.candidate-track-mapper p {
+  overflow-wrap: anywhere;
+}
+.mapping-field-selection {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mapping-field-selection legend {
+  margin-bottom: 0.55rem;
+  font-weight: 800;
+}
+.mapping-field-selection > label,
+.mapping-field-selection details label {
+  display: flex;
+  gap: 0.65rem;
+  align-items: start;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid #d4dcd6;
+  border-radius: 8px;
+  background: #f8faf8;
+}
+.mapping-field-selection label span,
+.mapping-field-selection label small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mapping-field-selection label small {
+  margin-top: 0.15rem;
+  color: #526159;
+}
+.mapping-field-selection .metadata-more-fields {
+  grid-column: 1 / -1;
+}
+.mapping-field-selection .metadata-more-fields[open] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.mapping-field-selection .metadata-more-fields summary {
+  grid-column: 1 / -1;
+}
+.mapping-list {
+  display: grid;
+  gap: 0.75rem;
+}
+.mapping-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(16rem, 1.2fr);
+  gap: 0.9rem 1rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid #d4dcd6;
+  border-radius: 10px;
+  background: #fff;
+}
+.mapping-local-track,
+.mapping-row > label,
+.mapping-proposal {
+  min-width: 0;
+}
+.mapping-local-track > span,
+.mapping-row > label > span {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.mapping-local-track strong,
+.mapping-local-track small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.mapping-row select {
+  width: 100%;
+  min-width: 0;
+}
+.mapping-proposal {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid #e2e7e3;
+}
+.mapping-proposal summary {
+  width: fit-content;
+  cursor: pointer;
+  font-weight: 750;
+}
+.mapping-proposal dl {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+}
+.mapping-proposal dl div {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.5fr) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.mapping-proposal dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.mapping-proposal small {
+  color: #704611;
+  overflow-wrap: anywhere;
 }
 .workflow-heading {
   display: flex;
@@ -3202,8 +3450,39 @@ td {
   .album-editing-tools {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .identification-candidate > header,
+  .candidate-evidence {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .candidate-confidence {
+    justify-self: start;
+  }
+  .identification-candidate dl {
+    grid-template-columns: 1fr;
+  }
+  .identification-candidate dl div:last-child {
+    grid-column: auto;
+  }
 }
 @media (max-width: 600px) {
+  .candidate-track-mapper > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .candidate-track-mapper > header .candidate-confidence {
+    align-self: flex-start;
+  }
+  .mapping-field-selection,
+  .mapping-field-selection .metadata-more-fields[open],
+  .mapping-row,
+  .mapping-proposal dl div {
+    grid-template-columns: 1fr;
+  }
+  .mapping-field-selection .metadata-more-fields,
+  .mapping-proposal {
+    grid-column: 1;
+  }
   .primary-navigation {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

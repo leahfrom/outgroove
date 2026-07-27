@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import type { CatalogAlbum } from "../domain/catalog";
+import type {
+  ComparedAlbumCandidate,
+  MusicBrainzReleaseTracklist,
+} from "../domain/album-identification";
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
@@ -77,6 +81,15 @@ export const albumArtworkRequestSchema = z
       .refine((ids) => new Set(ids).size === ids.length, {
         message: "Choose each album only once.",
       }),
+  })
+  .strict();
+export const albumIdentificationRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
+export const musicBrainzReleaseLookupRequestSchema = z
+  .object({
+    albumId: z.uuid(),
+    releaseId: musicBrainzIdSchema,
   })
   .strict();
 export const savedLibraryFilterDefinitionSchema = z
@@ -293,6 +306,52 @@ export const trackBatchEditPreviewRequestSchema = z
       .refine((changes) => Object.keys(changes).length > 0),
   })
   .strict();
+const musicBrainzMappedTrackChangesSchema = z
+  .object({
+    title: z.string().trim().min(1).max(400).optional(),
+    artist: z.string().trim().min(1).max(400).optional(),
+    trackNumber: z.number().int().min(1).max(9999).optional(),
+    trackTotal: z.number().int().min(1).max(9999).optional(),
+    discNumber: z.number().int().min(1).max(999).optional(),
+    discTotal: z.number().int().min(1).max(999).optional(),
+    isrcs: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
+    musicBrainzRecordingId: musicBrainzIdSchema.optional(),
+    musicBrainzReleaseTrackId: musicBrainzIdSchema.optional(),
+    musicBrainzArtistIds: musicBrainzIdListSchema.optional(),
+  })
+  .strict()
+  .refine((changes) => Object.keys(changes).length > 0);
+export const musicBrainzTrackMappingPreviewRequestSchema = z
+  .object({
+    albumId: z.uuid(),
+    releaseId: musicBrainzIdSchema,
+    edits: z
+      .array(
+        z
+          .object({
+            fileId: z.uuid(),
+            releaseTrackId: musicBrainzIdSchema,
+            changes: musicBrainzMappedTrackChangesSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .refine(
+    ({ edits }) =>
+      new Set(edits.map((edit) => edit.fileId)).size === edits.length,
+    { message: "Choose each Library track only once." },
+  )
+  .refine(
+    ({ edits }) =>
+      new Set(edits.map((edit) => edit.releaseTrackId)).size === edits.length,
+    { message: "Choose each MusicBrainz track only once." },
+  );
+export type MusicBrainzTrackMappingPreviewRequest = z.infer<
+  typeof musicBrainzTrackMappingPreviewRequestSchema
+>;
 export const trackNumberSequencePreviewRequestSchema = z
   .object({
     fileIds: z
@@ -692,6 +751,26 @@ export interface SyncRecoveryResultDto {
   readonly complete: boolean;
 }
 
+export interface AlbumIdentificationResultDto {
+  readonly albumId: string;
+  readonly sent: {
+    readonly albumTitle: string;
+    readonly albumArtist: string;
+  };
+  readonly candidates: readonly ComparedAlbumCandidate[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
+export interface MusicBrainzReleaseTracklistDto {
+  readonly albumId: string;
+  readonly release: MusicBrainzReleaseTracklist;
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
   listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
@@ -719,6 +798,15 @@ export interface OutgrooveApi {
   loadAlbumArtwork(
     request: z.infer<typeof albumArtworkRequestSchema>,
   ): Promise<Result<readonly AlbumArtworkThumbnailDto[]>>;
+  findMusicBrainzAlbumCandidates(
+    request: z.infer<typeof albumIdentificationRequestSchema>,
+  ): Promise<Result<AlbumIdentificationResultDto>>;
+  loadMusicBrainzReleaseTracks(
+    request: z.infer<typeof musicBrainzReleaseLookupRequestSchema>,
+  ): Promise<Result<MusicBrainzReleaseTracklistDto>>;
+  cancelMusicBrainzAlbumCandidates(
+    request: z.infer<typeof albumIdentificationRequestSchema>,
+  ): Promise<Result<{ readonly cancelled: boolean }>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,
@@ -785,6 +873,9 @@ export interface OutgrooveApi {
   ): Promise<Result<TagEditResultDto>>;
   previewTrackBatchEdit(
     request: z.infer<typeof trackBatchEditPreviewRequestSchema>,
+  ): Promise<Result<TrackBatchEditPreviewDto>>;
+  previewMusicBrainzTrackMapping(
+    request: z.infer<typeof musicBrainzTrackMappingPreviewRequestSchema>,
   ): Promise<Result<TrackBatchEditPreviewDto>>;
   applyTrackBatchEdit(
     request: z.infer<typeof albumEditApplyRequestSchema>,

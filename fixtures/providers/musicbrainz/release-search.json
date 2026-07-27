@@ -1,0 +1,52 @@
+{
+  "created": "2026-07-27T12:00:00.000Z",
+  "count": 2,
+  "offset": 0,
+  "releases": [
+    {
+      "id": "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      "score": 100,
+      "title": "Fixture Album",
+      "status": "Official",
+      "date": "2026-04-02",
+      "country": "DE",
+      "artist-credit": [
+        {
+          "name": "Fixture Artist",
+          "artist": {
+            "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+            "name": "Fixture Artist"
+          }
+        }
+      ],
+      "release-group": {
+        "id": "13a6d13b-f42a-49ba-8d54-893791d9f752",
+        "primary-type": "Album"
+      },
+      "media": [{ "position": 1, "format": "CD", "track-count": 2 }],
+      "label-info": [
+        {
+          "catalog-number": "FIX-2026",
+          "label": {
+            "id": "bb16bd11-9b83-40cf-b3a7-2f08554570cf",
+            "name": "Fixture Label"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a39c7f59-51b0-4919-aae1-a4bd54146724",
+      "score": 82,
+      "title": "Fixture Album Deluxe",
+      "status": "Official",
+      "date": "2025",
+      "country": "US",
+      "artist-credit": [{ "name": "Different Artist" }],
+      "release-group": {
+        "id": "13a6d13b-f42a-49ba-8d54-893791d9f752"
+      },
+      "media": [{ "position": 1, "track-count": 12 }],
+      "label-info": []
+    }
+  ]
+}

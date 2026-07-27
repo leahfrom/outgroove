@@ -7,6 +7,7 @@ import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
 import { WorkerLibraryQualityQuery } from "./adapters/database/worker-library-quality-query";
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
+import { MusicBrainzClient } from "./adapters/providers/musicbrainz-client";
 import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
@@ -18,6 +19,7 @@ import { ExportAlbumArtwork } from "./application/export-album-artwork";
 import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
+import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -63,6 +65,10 @@ async function createWindow(): Promise<void> {
   const writer = new SafeMetadataWriter(reader);
   const artworkEncoder = new ElectronArtworkThumbnailEncoder();
   const artwork = new LoadAlbumArtwork(database, artworkEncoder);
+  const musicBrainz = new MusicBrainzClient(
+    database,
+    `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`,
+  );
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
@@ -78,6 +84,7 @@ async function createWindow(): Promise<void> {
     scanJobs: new ScanJobCoordinator(database, scanner),
     libraryRoots: new ManageLibraryRoots(database),
     artwork,
+    albumCandidates: new FindAlbumCandidates(database, musicBrainz),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor: new EditAlbumArtwork(database, writer, artworkEncoder),
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),

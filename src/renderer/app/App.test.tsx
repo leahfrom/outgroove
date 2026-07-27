@@ -51,6 +51,7 @@ async function openLibraryAlbum(
 async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
+    | "Find MusicBrainz matches"
     | "Edit album metadata"
     | "Change album artwork"
     | "Edit track order"
@@ -218,6 +219,11 @@ function api(applyVerified: boolean): OutgrooveApi {
           value: albumIds.map((albumId) => ({ albumId, status: "missing" })),
         }),
     ),
+    findMusicBrainzAlbumCandidates: vi.fn(),
+    loadMusicBrainzReleaseTracks: vi.fn(),
+    cancelMusicBrainzAlbumCandidates: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -332,6 +338,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     previewTrackTagUndo: vi.fn(),
     applyTrackTagUndo: vi.fn(),
     previewTrackBatchEdit: vi.fn(),
+    previewMusicBrainzTrackMapping: vi.fn(),
     applyTrackBatchEdit: vi.fn(),
     previewTrackBatchUndo: vi.fn(),
     applyTrackBatchUndo: vi.fn(),
@@ -839,6 +846,404 @@ describe("tag edit UI safety states", () => {
       ).getByLabelText("Tag edit confirmation"),
     ).toBeVisible();
     expect(applyEdit).not.toHaveBeenCalled();
+  });
+
+  it("routes an explicit candidate into a single-track draft without previewing or writing", async () => {
+    const mockApi = api(true);
+    const findCandidates = vi
+      .spyOn(mockApi, "findMusicBrainzAlbumCandidates")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          sent: {
+            albumTitle: album.title,
+            albumArtist: album.albumArtist,
+          },
+          source: "network",
+          fetchedAt: "2026-07-27T12:00:00.000Z",
+          readOnly: true,
+          candidates: [
+            {
+              releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+              releaseGroupId: null,
+              title: "Fixture Album",
+              artistCredits: [
+                {
+                  name: "Fixture Artist",
+                  joinPhrase: "",
+                  artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+                },
+              ],
+              date: "2026",
+              country: "DE",
+              status: "Official",
+              trackCount: 1,
+              catalogNumbers: [],
+              musicBrainzScore: 100,
+              score: 95,
+              confidence: "strong",
+              matches: [
+                "Album title matches",
+                "Album artist matches",
+                "Track count matches (1)",
+                "Release date agrees at known precision (2026)",
+              ],
+              conflicts: [],
+            },
+          ],
+        },
+      });
+    const applyTrack = vi.spyOn(mockApi, "applyTrackTagEdit");
+    const applyAlbum = vi.spyOn(mockApi, "applyAlbumTitleEdit");
+    const previewTrack = vi.spyOn(mockApi, "previewTrackTagEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const dialog = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    expect(dialog).toHaveFocus();
+    expect(findCandidates).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(findCandidates).toHaveBeenCalledWith({ albumId: album.id });
+    expect(await within(dialog).findByRole("article")).toHaveTextContent(
+      "strong · 95/100",
+    );
+    expect(applyTrack).not.toHaveBeenCalled();
+    expect(applyAlbum).not.toHaveBeenCalled();
+    expect(previewTrack).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Draft supported tags from Fixture Album, 2026",
+      }),
+    );
+    expect(dialog).not.toBeInTheDocument();
+    const editor = screen.getByRole("dialog", {
+      name: "Edit metadata for Track",
+    });
+    expect(editor).toHaveTextContent(
+      "Drafted 2 supported fields from MusicBrainz release",
+    );
+    expect(
+      within(editor).getByLabelText("MusicBrainz release ID proposed value"),
+    ).toHaveValue("2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef");
+    expect(
+      within(editor).getByLabelText(
+        "MusicBrainz release artist ID proposed value",
+      ),
+    ).toHaveValue("7c08e5aa-3d6a-480f-8763-156120bc9bd9");
+    expect(
+      within(editor).getByLabelText("Track title proposed value"),
+    ).toHaveValue("Track");
+    expect(previewTrack).not.toHaveBeenCalled();
+    expect(applyTrack).not.toHaveBeenCalled();
+
+    await user.click(
+      within(editor).getByRole("button", { name: "Review 2 changes" }),
+    );
+    expect(previewTrack).toHaveBeenCalledOnce();
+    expect(applyTrack).not.toHaveBeenCalled();
+  });
+
+  it("routes only explicitly mapped MusicBrainz track fields through batch preview and confirmation", async () => {
+    const mockApi = api(true);
+    const releaseId = "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef";
+    vi.spyOn(mockApi, "findMusicBrainzAlbumCandidates").mockResolvedValue({
+      ok: true,
+      value: {
+        albumId: album.id,
+        sent: {
+          albumTitle: album.title,
+          albumArtist: album.albumArtist,
+        },
+        source: "network",
+        fetchedAt: "2026-07-27T12:00:00.000Z",
+        readOnly: true,
+        candidates: [
+          {
+            releaseId,
+            releaseGroupId: null,
+            title: "Fixture Album",
+            artistCredits: [],
+            date: "2026",
+            country: "DE",
+            status: "Official",
+            trackCount: 1,
+            catalogNumbers: [],
+            musicBrainzScore: 100,
+            score: 95,
+            confidence: "strong",
+            matches: ["Album title matches"],
+            conflicts: [],
+          },
+        ],
+      },
+    });
+    const loadRelease = vi
+      .spyOn(mockApi, "loadMusicBrainzReleaseTracks")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          source: "network",
+          fetchedAt: "2026-07-27T12:00:00.000Z",
+          readOnly: true,
+          release: {
+            releaseId,
+            title: "Fixture Album",
+            tracks: [
+              {
+                releaseTrackId: "11111111-1111-4111-8111-111111111111",
+                recordingId: "22222222-2222-4222-8222-222222222222",
+                discNumber: 1,
+                discTotal: 1,
+                trackNumber: 1,
+                trackTotal: 1,
+                title: "Mapped title",
+                artistCredits: [],
+                isrcs: [],
+                lengthMs: null,
+              },
+            ],
+          },
+        },
+      });
+    const previewMapping = vi
+      .spyOn(mockApi, "previewMusicBrainzTrackMapping")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "57b1e44b-e00a-4daa-bd6f-985472166116",
+          confirmationToken: "mapping-confirmation-token",
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.flac",
+              changes: [
+                { field: "title", before: "Track", after: "Mapped title" },
+              ],
+              warnings: [],
+              willWrite: true,
+            },
+          ],
+        },
+      });
+    const applyMapping = vi
+      .spyOn(mockApi, "applyTrackBatchEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "57b1e44b-e00a-4daa-bd6f-985472166116",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: "/fixture/track.flac",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const finder = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    await user.click(
+      within(finder).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    await user.click(
+      await within(finder).findByRole("button", {
+        name: "Map Library tracks to Fixture Album, 2026",
+      }),
+    );
+    expect(loadRelease).toHaveBeenCalledWith({
+      albumId: album.id,
+      releaseId,
+    });
+    expect(previewMapping).not.toHaveBeenCalled();
+
+    await user.selectOptions(
+      await within(finder).findByRole("combobox", {
+        name: "MusicBrainz track for Track",
+      }),
+      "11111111-1111-4111-8111-111111111111",
+    );
+    await user.click(
+      within(finder).getByRole("checkbox", { name: /Track title/u }),
+    );
+    await user.click(
+      within(finder).getByRole("button", {
+        name: "Preview mapped tracks",
+      }),
+    );
+    expect(previewMapping).toHaveBeenCalledWith({
+      albumId: album.id,
+      releaseId,
+      edits: [
+        {
+          fileId: album.tracks[0]?.id,
+          releaseTrackId: "11111111-1111-4111-8111-111111111111",
+          changes: { title: "Mapped title" },
+        },
+      ],
+    });
+    expect(applyMapping).not.toHaveBeenCalled();
+    await user.click(
+      within(finder).getByRole("button", {
+        name: "Confirm and write mapped tracks",
+      }),
+    );
+    expect(applyMapping).toHaveBeenCalledWith({
+      operationId: "57b1e44b-e00a-4daa-bd6f-985472166116",
+      confirmationToken: "mapping-confirmation-token",
+    });
+  });
+
+  it("routes a release candidate for multiple tracks into explicit shared fields", async () => {
+    const mockApi = api(true);
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack = {
+      ...firstTrack,
+      id: "759ac296-141d-44f8-a8b5-39ea5d421688",
+      path: "/fixture/track-2.flac",
+      format: "FLAC",
+      tags: {
+        ...firstTrack.tags,
+        title: "Track 2",
+        trackNumber: 2,
+      },
+    };
+    const multiTrackAlbum: CatalogAlbum = {
+      ...album,
+      tracks: [...album.tracks, secondTrack],
+    };
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [multiTrackAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    vi.spyOn(mockApi, "findMusicBrainzAlbumCandidates").mockResolvedValue({
+      ok: true,
+      value: {
+        albumId: album.id,
+        sent: {
+          albumTitle: album.title,
+          albumArtist: album.albumArtist,
+        },
+        source: "cache",
+        fetchedAt: "2026-07-27T12:00:00.000Z",
+        readOnly: true,
+        candidates: [
+          {
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+            releaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
+            title: "Fixture Album",
+            artistCredits: [
+              {
+                name: "MusicBrainz Artist",
+                joinPhrase: "",
+                artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+              },
+            ],
+            date: "2027-04",
+            country: "DE",
+            status: "Official",
+            trackCount: 2,
+            catalogNumbers: ["MB-2027"],
+            musicBrainzScore: 100,
+            score: 65,
+            confidence: "possible",
+            matches: ["Album title matches", "Track count matches (2)"],
+            conflicts: ["Album artist differs"],
+          },
+        ],
+      },
+    });
+    const previewBatch = vi
+      .spyOn(mockApi, "previewTrackBatchEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "57b1e44b-e00a-4daa-bd6f-985472166116",
+          confirmationToken: "candidate-batch-confirmation-token",
+          files: [],
+        },
+      });
+    const applyBatch = vi.spyOn(mockApi, "applyTrackBatchEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const finder = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    await user.click(
+      within(finder).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    await user.click(
+      await within(finder).findByRole("button", {
+        name: "Draft supported tags from Fixture Album, 2027-04",
+      }),
+    );
+
+    const editor = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(editor).toHaveTextContent("2 tracks selected");
+    expect(editor).toHaveTextContent("6 shared fields selected for review");
+    expect(within(editor).getByLabelText("Change album artist")).toBeChecked();
+    expect(
+      within(editor).getByLabelText("Batch catalog number value"),
+    ).toHaveValue("MB-2027");
+    expect(previewBatch).not.toHaveBeenCalled();
+    expect(applyBatch).not.toHaveBeenCalled();
+
+    await user.click(
+      within(editor).getByRole("button", {
+        name: "Preview selected tracks",
+      }),
+    );
+    expect(previewBatch).toHaveBeenCalledWith({
+      fileIds: multiTrackAlbum.tracks.map((track) => track.id),
+      changes: {
+        albumArtist: "MusicBrainz Artist",
+        year: "2027-04",
+        catalogNumbers: ["MB-2027"],
+        musicBrainzReleaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+        musicBrainzReleaseArtistIds: ["7c08e5aa-3d6a-480f-8763-156120bc9bd9"],
+        musicBrainzReleaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
+      },
+    });
+    expect(applyBatch).not.toHaveBeenCalled();
   });
 
   it("routes local artwork through a preserved preview and explicit keyboard confirmation", async () => {
@@ -1461,79 +1866,70 @@ describe("tag edit UI safety states", () => {
     await user.click(
       screen.getByRole("button", { name: "Edit metadata for Track" }),
     );
-    await user.clear(screen.getByLabelText("Track title"));
-    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
-    await user.clear(screen.getByLabelText("Track artist"));
-    await user.type(screen.getByLabelText("Track artist"), "Different Artist");
-    await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
-    await user.click(screen.getByText("More fields"));
-    await user.type(
-      screen.getByLabelText("Composer proposed value"),
-      "Fixture Composer",
-    );
-    await user.type(
-      screen.getByLabelText("Conductor proposed value"),
-      "Fixture Conductor",
-    );
-    await user.type(
-      screen.getByLabelText("Lyricist proposed value"),
-      "Fixture Lyricist",
-    );
-    await user.type(
-      screen.getByLabelText("ISRC proposed value"),
-      "DEABC2600001",
-    );
-    await user.type(
-      screen.getByLabelText("Copyright proposed value"),
-      "Copyright Fixture",
-    );
-    await user.type(
-      screen.getByLabelText("Original release date proposed value"),
-      "1998-04",
-    );
-    await user.type(screen.getByLabelText("Language proposed value"), "deu");
-    await user.type(
-      screen.getByLabelText("Comment proposed value"),
-      "Fixture comment",
-    );
-    fireEvent.change(screen.getByLabelText("Publisher proposed value"), {
-      target: { value: "Fixture Publisher" },
-    });
-    fireEvent.change(screen.getByLabelText("Description proposed value"), {
-      target: { value: "Fixture description" },
-    });
-    fireEvent.change(screen.getByLabelText("Grouping proposed value"), {
-      target: { value: "Suite I" },
-    });
-    fireEvent.change(screen.getByLabelText("Catalog number proposed value"), {
-      target: { value: "OUT-42" },
-    });
-    fireEvent.change(screen.getByLabelText("Publishing date proposed value"), {
-      target: { value: "2025-09" },
-    });
-    fireEvent.change(screen.getByLabelText("BPM proposed value"), {
-      target: { value: "127" },
-    });
-    await user.selectOptions(
-      screen.getByLabelText("Compilation proposed value"),
-      "true",
-    );
     for (const [label, value] of [
-      ["MusicBrainz recording ID", "11111111-1111-4111-8111-111111111111"],
-      ["MusicBrainz release track ID", "22222222-2222-4222-8222-222222222222"],
-      ["MusicBrainz release ID", "33333333-3333-4333-8333-333333333333"],
-      ["MusicBrainz track artist ID", "44444444-4444-4444-8444-444444444444"],
-      ["MusicBrainz release artist ID", "55555555-5555-4555-8555-555555555555"],
-      ["MusicBrainz release group ID", "66666666-6666-4666-8666-666666666666"],
-      ["MusicBrainz work ID", "77777777-7777-4777-8777-777777777777"],
+      ["Track title", "Renamed Track"],
+      ["Track artist", "Different Artist"],
+      ["Genre proposed value", "Post Rock"],
     ] as const)
-      fireEvent.change(screen.getByLabelText(`${label} proposed value`), {
+      fireEvent.change(screen.getByLabelText(label), {
         target: { value },
       });
-    await user.clear(screen.getByLabelText("Track total proposed value"));
-    await user.type(screen.getByLabelText("Track total proposed value"), "12");
-    await user.clear(screen.getByLabelText("Disc total proposed value"));
-    await user.type(screen.getByLabelText("Disc total proposed value"), "2");
+    await user.click(screen.getByText("More fields"));
+    for (const [label, value] of [
+      ["Composer proposed value", "Fixture Composer"],
+      ["Conductor proposed value", "Fixture Conductor"],
+      ["Lyricist proposed value", "Fixture Lyricist"],
+      ["ISRC proposed value", "DEABC2600001"],
+      ["Copyright proposed value", "Copyright Fixture"],
+      ["Original release date proposed value", "1998-04"],
+      ["Language proposed value", "deu"],
+      ["Comment proposed value", "Fixture comment"],
+      ["Publisher proposed value", "Fixture Publisher"],
+      ["Description proposed value", "Fixture description"],
+      ["Grouping proposed value", "Suite I"],
+      ["Catalog number proposed value", "OUT-42"],
+      ["Publishing date proposed value", "2025-09"],
+      ["BPM proposed value", "127"],
+      ["Compilation proposed value", "true"],
+      [
+        "MusicBrainz recording ID proposed value",
+        "11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "MusicBrainz release track ID proposed value",
+        "22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "MusicBrainz release ID proposed value",
+        "33333333-3333-4333-8333-333333333333",
+      ],
+      [
+        "MusicBrainz track artist ID proposed value",
+        "44444444-4444-4444-8444-444444444444",
+      ],
+      [
+        "MusicBrainz release artist ID proposed value",
+        "55555555-5555-4555-8555-555555555555",
+      ],
+      [
+        "MusicBrainz release group ID proposed value",
+        "66666666-6666-4666-8666-666666666666",
+      ],
+      [
+        "MusicBrainz work ID proposed value",
+        "77777777-7777-4777-8777-777777777777",
+      ],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value },
+      });
+    for (const [label, value] of [
+      ["Track total proposed value", "12"],
+      ["Disc total proposed value", "2"],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value },
+      });
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
