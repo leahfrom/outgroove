@@ -39,7 +39,9 @@ No provider calls, telemetry, source moves, transcoding, target deletions, mirro
 
 - Node.js 24 or newer
 - npm 11 or newer
-- macOS, Windows, or Linux for development; v0.11.0 was packaged and smoke-tested on macOS arm64 and native Windows x64, with Linux x64 verified under Debian container emulation
+- macOS, Windows, or Linux for development; release candidates are gated by
+  native macOS arm64 and Windows x64 verification plus Linux x64 verification
+  under Debian container emulation
 
 Install exactly from the lockfile:
 
@@ -218,7 +220,10 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Tag audio-payload verification and sync copy verification use bounded-memory streaming SHA-256. MP3/FLAC container-boundary parsing remains deliberately format-specific and fixture-tested.
 - Scan jobs run high-volume discovery/stat, metadata parsing, and SQLite classification/write batches outside Electron main, show indeterminate discovery counts before switching to determinate metadata progress, and persist progress plus terminal state. The scan-scoped database worker closes after finish/abandon so backup restore does not race an idle SQLite handle. An app restart marks unfinished work as interrupted and offers a safe incremental retry; exact mid-file queue resumption is not implemented.
 - Database restore validates and migrates a staged copy, requires a preview and confirmation, refuses active scans, retains a verified automatic rollback backup, and restarts after replacement. Automatic rollback-backup cleanup is not implemented yet.
-- The current UI shell is verified locally on macOS arm64. Its native Windows and Linux font, input, accessibility, and narrow-window behavior remain to be checked in a future cross-platform UI milestone. Manual macOS Intel, Linux storage behavior, and real exFAT/DAP tests also remain unverified.
+- The current UI shell is verified locally on macOS arm64. Native Windows x64
+  UI behavior is checked for each release candidate, while Linux font, input,
+  accessibility, and narrow-window behavior remain beta. Manual macOS Intel,
+  Linux storage behavior, and real exFAT/DAP tests also remain unverified.
 - Packages are unsigned and not notarized.
 
 ## Repository boundaries
