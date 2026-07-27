@@ -80,6 +80,14 @@ const disabledFields: SharedFieldEnabled = {
   copyright: false,
   originalReleaseDate: false,
   language: false,
+  publisher: false,
+  grouping: false,
+  catalogNumber: false,
+  publishingDate: false,
+  compilation: false,
+  musicBrainzReleaseId: false,
+  musicBrainzReleaseArtistId: false,
+  musicBrainzReleaseGroupId: false,
 };
 
 const emptyDraft: SharedFieldDraft = {
@@ -97,6 +105,14 @@ const emptyDraft: SharedFieldDraft = {
   copyright: "",
   originalReleaseDate: "",
   language: "",
+  publisher: "",
+  grouping: "",
+  catalogNumber: "",
+  publishingDate: "",
+  compilation: "false",
+  musicBrainzReleaseId: "",
+  musicBrainzReleaseArtistId: "",
+  musicBrainzReleaseGroupId: "",
 };
 
 function editor({
@@ -222,6 +238,13 @@ describe("SharedFieldEditor", () => {
     expect(screen.getByLabelText("Batch language value")).toHaveAccessibleName(
       "Batch language value",
     );
+    expect(
+      screen.getByLabelText("Batch compilation value"),
+    ).toHaveAccessibleName("Batch compilation value");
+    expect(screen.getByLabelText("Batch compilation value")).toBeDisabled();
+    expect(
+      screen.getByLabelText("Batch MusicBrainz release ID value"),
+    ).toHaveAccessibleName("Batch MusicBrainz release ID value");
   });
 
   it("reveals and summarizes a selected secondary field", async () => {

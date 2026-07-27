@@ -10,6 +10,8 @@ import type { NormalizedTags } from "../../shared/domain/catalog";
 import {
   changedTrackTags,
   editableTrackTagFields,
+  isValidMusicBrainzId,
+  isValidPartialDate,
   normalizeTrackTagChanges,
   trackTagValueEquals,
   validateTrackTagRelationships,
@@ -66,6 +68,36 @@ function singleValueReplacementWarnings(
     warnings.push(
       "ISRC editing is unavailable for tracks with multiple ISRC values because this writer cannot restore them safely.",
     );
+  for (const [field, label] of [
+    ["publishers", "Publisher"],
+    ["descriptions", "Description"],
+    ["catalogNumbers", "Catalog number"],
+    ["musicBrainzArtistIds", "MusicBrainz track artist ID"],
+    ["musicBrainzReleaseArtistIds", "MusicBrainz release artist ID"],
+  ] as const)
+    if (field in changes && (tags[field]?.length ?? 0) > 1)
+      warnings.push(
+        `${label} editing is unavailable for tracks with multiple current values because this writer cannot restore them safely.`,
+      );
+  for (const [field, label, maximum] of [
+    ["publishers", "Publisher", 400],
+    ["descriptions", "Description", 4000],
+    ["catalogNumbers", "Catalog number", 200],
+  ] as const) {
+    const current = tags[field] ?? [];
+    if (
+      field in changes &&
+      current.length === 1 &&
+      (current[0]?.length ?? 0) > maximum
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is too long to restore safely.`,
+      );
+  }
+  if ("grouping" in changes && (tags.grouping?.length ?? 0) > 1000)
+    warnings.push(
+      "Grouping editing is unavailable because the current value is too long to restore safely.",
+    );
   if (
     "comment" in changes &&
     !(
@@ -78,6 +110,57 @@ function singleValueReplacementWarnings(
     warnings.push(
       "Comment editing is unavailable when the current file has multiple comments or comment language/descriptor data that this writer cannot restore exactly.",
     );
+  if (
+    "publishingDate" in changes &&
+    tags.publishingDate !== null &&
+    tags.publishingDate !== undefined &&
+    !isValidPartialDate(tags.publishingDate)
+  )
+    warnings.push(
+      "Publishing date editing is unavailable because the current value is not a restorable partial date.",
+    );
+  if (
+    "bpm" in changes &&
+    tags.bpm !== null &&
+    tags.bpm !== undefined &&
+    (!Number.isInteger(tags.bpm) || tags.bpm < 1 || tags.bpm > 999)
+  )
+    warnings.push(
+      "BPM editing is unavailable because the current value is not a restorable integer from 1 to 999.",
+    );
+  for (const [field, label] of [
+    ["musicBrainzRecordingId", "MusicBrainz recording ID"],
+    ["musicBrainzReleaseTrackId", "MusicBrainz release track ID"],
+    ["musicBrainzReleaseId", "MusicBrainz release ID"],
+    ["musicBrainzReleaseGroupId", "MusicBrainz release group ID"],
+    ["musicBrainzWorkId", "MusicBrainz work ID"],
+  ] as const) {
+    const current = tags[field];
+    if (
+      field in changes &&
+      current !== null &&
+      current !== undefined &&
+      !isValidMusicBrainzId(current)
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is not a restorable MusicBrainz UUID.`,
+      );
+  }
+  for (const [field, label] of [
+    ["musicBrainzArtistIds", "MusicBrainz track artist ID"],
+    ["musicBrainzReleaseArtistIds", "MusicBrainz release artist ID"],
+  ] as const) {
+    const current = tags[field] ?? [];
+    if (
+      field in changes &&
+      current.length === 1 &&
+      current[0] !== undefined &&
+      !isValidMusicBrainzId(current[0])
+    )
+      warnings.push(
+        `${label} editing is unavailable because the current value is not a restorable MusicBrainz UUID.`,
+      );
+  }
   return warnings;
 }
 
@@ -90,7 +173,12 @@ function restorationValue(
     field === "composers" ||
     field === "conductors" ||
     field === "lyricists" ||
-    field === "isrcs"
+    field === "isrcs" ||
+    field === "publishers" ||
+    field === "descriptions" ||
+    field === "catalogNumbers" ||
+    field === "musicBrainzArtistIds" ||
+    field === "musicBrainzReleaseArtistIds"
   )
     return tags[field] ?? [];
   if (
@@ -99,16 +187,25 @@ function restorationValue(
     field === "copyright" ||
     field === "comment" ||
     field === "originalReleaseDate" ||
-    field === "language"
+    field === "language" ||
+    field === "grouping" ||
+    field === "publishingDate" ||
+    field === "bpm" ||
+    field === "musicBrainzRecordingId" ||
+    field === "musicBrainzReleaseTrackId" ||
+    field === "musicBrainzReleaseId" ||
+    field === "musicBrainzReleaseGroupId" ||
+    field === "musicBrainzWorkId"
   )
     return tags[field] ?? null;
+  if (field === "compilation") return tags.compilation ?? false;
   return tags[field];
 }
 
 function previewValue(
   tags: NormalizedTags,
   field: (typeof editableTrackTagFields)[number],
-): string | number | readonly string[] | null {
+): string | number | boolean | readonly string[] | null {
   if (field !== "comment" || (tags.comments?.length ?? 0) === 0)
     return tags[field] ?? null;
   return (tags.comments ?? []).map((comment) => {
@@ -138,6 +235,14 @@ type BatchTagChangeInput = Pick<
   | "copyright"
   | "originalReleaseDate"
   | "language"
+  | "publishers"
+  | "grouping"
+  | "catalogNumbers"
+  | "publishingDate"
+  | "compilation"
+  | "musicBrainzReleaseId"
+  | "musicBrainzReleaseArtistIds"
+  | "musicBrainzReleaseGroupId"
 >;
 
 function relationshipError(

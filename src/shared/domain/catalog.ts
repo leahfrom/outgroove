@@ -31,6 +31,20 @@ export interface NormalizedTags {
   readonly comments?: readonly NormalizedComment[];
   readonly originalReleaseDate?: string | null;
   readonly language?: string | null;
+  readonly publishers?: readonly string[];
+  readonly descriptions?: readonly string[];
+  readonly grouping?: string | null;
+  readonly catalogNumbers?: readonly string[];
+  readonly publishingDate?: string | null;
+  readonly bpm?: number | null;
+  readonly compilation?: boolean;
+  readonly musicBrainzRecordingId?: string | null;
+  readonly musicBrainzReleaseTrackId?: string | null;
+  readonly musicBrainzReleaseId?: string | null;
+  readonly musicBrainzArtistIds?: readonly string[];
+  readonly musicBrainzReleaseArtistIds?: readonly string[];
+  readonly musicBrainzReleaseGroupId?: string | null;
+  readonly musicBrainzWorkId?: string | null;
 }
 
 export interface ScannedAudioFile {

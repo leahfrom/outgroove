@@ -71,6 +71,20 @@ const unchangedDraft: TrackMetadataDraft = {
   originalReleaseDate: "2020-03",
   language: "deu",
   comment: "First line\nSecond line",
+  publisher: "",
+  description: "",
+  grouping: "",
+  catalogNumber: "",
+  publishingDate: "",
+  bpm: "",
+  compilation: "false",
+  musicBrainzRecordingId: "",
+  musicBrainzReleaseTrackId: "",
+  musicBrainzReleaseId: "",
+  musicBrainzArtistId: "",
+  musicBrainzReleaseArtistId: "",
+  musicBrainzReleaseGroupId: "",
+  musicBrainzWorkId: "",
 };
 
 function editor(
@@ -152,6 +166,15 @@ describe("TrackMetadataEditor", () => {
     expect(
       screen.getByRole("textbox", { name: "Comment proposed value" }),
     ).toHaveAccessibleName("Comment proposed value");
+    expect(
+      screen.getByRole("combobox", { name: "Compilation proposed value" }),
+    ).toHaveValue("false");
+    expect(
+      screen.getByRole("textbox", {
+        name: "MusicBrainz release ID proposed value",
+      }),
+    ).toHaveAccessibleName("MusicBrainz release ID proposed value");
+    expect(screen.getByText("MusicBrainz identifiers")).toBeVisible();
     const commentRow = screen
       .getByRole("textbox", { name: "Comment proposed value" })
       .closest(".tag-comparison-row");
@@ -211,6 +234,31 @@ describe("TrackMetadataEditor", () => {
       screen.getByText("More fields").closest("details"),
     ).not.toHaveAttribute("open");
     expect(screen.getByText("1 change drafted")).toBeVisible();
+  });
+
+  it("shows boolean tag evidence as yes or no in the explicit preview", () => {
+    render(
+      editor(
+        { ...unchangedDraft, compilation: "true" },
+        {
+          operationId: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+          confirmationToken: "track-confirmation-token-long-enough",
+          fileId: track.id,
+          path: track.path,
+          changes: [{ field: "compilation", before: false, after: true }],
+          warnings: [],
+        },
+      ),
+    );
+
+    const confirmation = screen.getByLabelText("Track metadata confirmation");
+    expect(within(confirmation).getByText("No")).toBeVisible();
+    expect(within(confirmation).getByText("Yes")).toBeVisible();
+    expect(
+      within(confirmation).getByRole("button", {
+        name: "Confirm and write track",
+      }),
+    ).toBeEnabled();
   });
 
   it("focuses a blocked preview and keeps confirmation unavailable", () => {

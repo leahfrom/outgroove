@@ -791,6 +791,15 @@ describe("validated IPC handlers", () => {
       handler({}, { fileId, changes: { language: "L".repeat(101) } }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
+      handler({}, { fileId, changes: { bpm: 1000 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        { fileId, changes: { musicBrainzRecordingId: "not-a-uuid" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
       handler(
         {},
         {
@@ -847,6 +856,14 @@ describe("validated IPC handlers", () => {
             comment: "  Fixture comment  ",
             originalReleaseDate: "  1998-04  ",
             language: "  deu  ",
+            publishers: ["  Fixture Publisher  "],
+            descriptions: ["  Fixture description  "],
+            grouping: "  Suite I  ",
+            catalogNumbers: ["  OUT-42  "],
+            publishingDate: "  2025-09  ",
+            bpm: 127,
+            compilation: true,
+            musicBrainzRecordingId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
           },
         },
       ),
@@ -865,6 +882,14 @@ describe("validated IPC handlers", () => {
         comment: "Fixture comment",
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       },
     });
   });
@@ -884,6 +909,15 @@ describe("validated IPC handlers", () => {
       handler(
         {},
         { fileIds: [first, second], changes: { title: "Mass title" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { musicBrainzRecordingId: first },
+        },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
@@ -977,6 +1011,16 @@ describe("validated IPC handlers", () => {
             copyright: null,
             originalReleaseDate: "1998-04",
             language: "deu",
+            publishers: ["Fixture Publisher"],
+            grouping: "Suite I",
+            catalogNumbers: ["OUT-42"],
+            publishingDate: "2025-09",
+            compilation: true,
+            musicBrainzReleaseId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+            musicBrainzReleaseArtistIds: [
+              "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB",
+            ],
+            musicBrainzReleaseGroupId: "CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC",
           },
         },
       ),
@@ -994,6 +1038,14 @@ describe("validated IPC handlers", () => {
         copyright: null,
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        compilation: true,
+        musicBrainzReleaseId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        musicBrainzReleaseArtistIds: ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],
+        musicBrainzReleaseGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       },
     });
   });

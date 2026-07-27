@@ -36,6 +36,20 @@ export interface TrackMetadataDraft {
   originalReleaseDate: string;
   language: string;
   comment: string;
+  publisher: string;
+  description: string;
+  grouping: string;
+  catalogNumber: string;
+  publishingDate: string;
+  bpm: string;
+  compilation: string;
+  musicBrainzRecordingId: string;
+  musicBrainzReleaseTrackId: string;
+  musicBrainzReleaseId: string;
+  musicBrainzArtistId: string;
+  musicBrainzReleaseArtistId: string;
+  musicBrainzReleaseGroupId: string;
+  musicBrainzWorkId: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -45,6 +59,7 @@ interface ComparisonField {
   readonly label: string;
   readonly inputType?: "number";
   readonly multiline?: boolean;
+  readonly select?: "yes-no";
   readonly max?: number;
   readonly placeholder?: string;
 }
@@ -72,63 +87,144 @@ const basicComparisonFields: readonly ComparisonField[] = [
   },
 ];
 
-const moreComparisonFields: readonly ComparisonField[] = [
+const moreComparisonGroups: readonly {
+  readonly label: string;
+  readonly fields: readonly ComparisonField[];
+}[] = [
   {
-    field: "trackTotal",
-    label: "Track total",
-    inputType: "number",
-    max: 9999,
-    placeholder: "Empty clears the total",
+    label: "Numbering and credits",
+    fields: [
+      {
+        field: "trackTotal",
+        label: "Track total",
+        inputType: "number",
+        max: 9999,
+        placeholder: "Empty clears the total",
+      },
+      {
+        field: "discTotal",
+        label: "Disc total",
+        inputType: "number",
+        max: 999,
+        placeholder: "Empty clears the total",
+      },
+      {
+        field: "composer",
+        label: "Composer",
+        placeholder: "One composer; empty clears",
+      },
+      {
+        field: "conductor",
+        label: "Conductor",
+        placeholder: "One conductor; empty clears",
+      },
+      {
+        field: "lyricist",
+        label: "Lyricist",
+        placeholder: "One lyricist; empty clears",
+      },
+      {
+        field: "bpm",
+        label: "BPM",
+        inputType: "number",
+        max: 999,
+        placeholder: "Empty clears",
+      },
+    ],
   },
   {
-    field: "discTotal",
-    label: "Disc total",
-    inputType: "number",
-    max: 999,
-    placeholder: "Empty clears the total",
+    label: "Release and catalog",
+    fields: [
+      {
+        field: "isrc",
+        label: "ISRC",
+        placeholder: "One ISRC; empty clears",
+      },
+      {
+        field: "publisher",
+        label: "Publisher",
+        placeholder: "One publisher; empty clears",
+      },
+      {
+        field: "grouping",
+        label: "Grouping",
+        placeholder: "Empty clears",
+      },
+      {
+        field: "catalogNumber",
+        label: "Catalog number",
+        placeholder: "One catalog number; empty clears",
+      },
+      {
+        field: "originalReleaseDate",
+        label: "Original release date",
+        placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD; empty clears",
+      },
+      {
+        field: "publishingDate",
+        label: "Publishing date",
+        placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD; empty clears",
+      },
+      {
+        field: "compilation",
+        label: "Compilation",
+        select: "yes-no",
+      },
+    ],
   },
   {
-    field: "composer",
-    label: "Composer",
-    placeholder: "One composer; empty clears",
+    label: "Notes and rights",
+    fields: [
+      {
+        field: "copyright",
+        label: "Copyright",
+        placeholder: "Empty clears",
+      },
+      {
+        field: "language",
+        label: "Language",
+        placeholder: "Track language; empty clears",
+      },
+      {
+        field: "description",
+        label: "Description",
+        multiline: true,
+        placeholder: "One description; empty clears",
+      },
+      {
+        field: "comment",
+        label: "Comment",
+        multiline: true,
+        placeholder: "Empty clears the comment",
+      },
+    ],
   },
   {
-    field: "conductor",
-    label: "Conductor",
-    placeholder: "One conductor; empty clears",
-  },
-  {
-    field: "lyricist",
-    label: "Lyricist",
-    placeholder: "One lyricist; empty clears",
-  },
-  {
-    field: "isrc",
-    label: "ISRC",
-    placeholder: "One ISRC; empty clears",
-  },
-  {
-    field: "copyright",
-    label: "Copyright",
-    placeholder: "Empty clears",
-  },
-  {
-    field: "originalReleaseDate",
-    label: "Original release date",
-    placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD; empty clears",
-  },
-  {
-    field: "language",
-    label: "Language",
-    placeholder: "Track language; empty clears",
-  },
-  {
-    field: "comment",
-    label: "Comment",
-    multiline: true,
-    placeholder: "Empty clears the comment",
+    label: "MusicBrainz identifiers",
+    fields: [
+      { field: "musicBrainzRecordingId", label: "MusicBrainz recording ID" },
+      {
+        field: "musicBrainzReleaseTrackId",
+        label: "MusicBrainz release track ID",
+      },
+      { field: "musicBrainzReleaseId", label: "MusicBrainz release ID" },
+      { field: "musicBrainzArtistId", label: "MusicBrainz track artist ID" },
+      {
+        field: "musicBrainzReleaseArtistId",
+        label: "MusicBrainz release artist ID",
+      },
+      {
+        field: "musicBrainzReleaseGroupId",
+        label: "MusicBrainz release group ID",
+      },
+      { field: "musicBrainzWorkId", label: "MusicBrainz work ID" },
+    ],
   },
 ];
+
+const moreComparisonFields = moreComparisonGroups.flatMap(
+  (group) => group.fields,
+);
 
 const comparisonFields = [...basicComparisonFields, ...moreComparisonFields];
 
@@ -150,6 +246,20 @@ const previewFieldLabels: Record<string, string> = {
   originalReleaseDate: "Original release date",
   language: "Language",
   comment: "Comment",
+  publishers: "Publisher",
+  descriptions: "Description",
+  grouping: "Grouping",
+  catalogNumbers: "Catalog number",
+  publishingDate: "Publishing date",
+  bpm: "BPM",
+  compilation: "Compilation",
+  musicBrainzRecordingId: "MusicBrainz recording ID",
+  musicBrainzReleaseTrackId: "MusicBrainz release track ID",
+  musicBrainzReleaseId: "MusicBrainz release ID",
+  musicBrainzArtistIds: "MusicBrainz track artist ID",
+  musicBrainzReleaseArtistIds: "MusicBrainz release artist ID",
+  musicBrainzReleaseGroupId: "MusicBrainz release group ID",
+  musicBrainzWorkId: "MusicBrainz work ID",
 };
 
 function currentValue(
@@ -191,6 +301,34 @@ function currentValue(
       return track.tags.language ?? "";
     case "comment":
       return track.tags.comment ?? "";
+    case "publisher":
+      return (track.tags.publishers ?? []).join(" · ");
+    case "description":
+      return (track.tags.descriptions ?? []).join(" · ");
+    case "grouping":
+      return track.tags.grouping ?? "";
+    case "catalogNumber":
+      return (track.tags.catalogNumbers ?? []).join(" · ");
+    case "publishingDate":
+      return track.tags.publishingDate ?? "";
+    case "bpm":
+      return track.tags.bpm?.toString() ?? "";
+    case "compilation":
+      return track.tags.compilation === true ? "true" : "false";
+    case "musicBrainzRecordingId":
+      return track.tags.musicBrainzRecordingId ?? "";
+    case "musicBrainzReleaseTrackId":
+      return track.tags.musicBrainzReleaseTrackId ?? "";
+    case "musicBrainzReleaseId":
+      return track.tags.musicBrainzReleaseId ?? "";
+    case "musicBrainzArtistId":
+      return (track.tags.musicBrainzArtistIds ?? []).join(" · ");
+    case "musicBrainzReleaseArtistId":
+      return (track.tags.musicBrainzReleaseArtistIds ?? []).join(" · ");
+    case "musicBrainzReleaseGroupId":
+      return track.tags.musicBrainzReleaseGroupId ?? "";
+    case "musicBrainzWorkId":
+      return track.tags.musicBrainzWorkId ?? "";
   }
 }
 
@@ -198,6 +336,8 @@ function currentDisplayValue(
   track: CatalogAlbum["tracks"][number],
   field: TrackMetadataField,
 ): string | readonly string[] {
+  if (field === "compilation")
+    return track.tags.compilation === true ? "Yes" : "No";
   if (field !== "comment" || (track.tags.comments?.length ?? 0) === 0)
     return currentValue(track, field);
   return (track.tags.comments ?? []).map((comment) => {
@@ -212,10 +352,11 @@ function currentDisplayValue(
 }
 
 function displayValue(
-  value: string | number | readonly string[] | null,
+  value: string | number | boolean | readonly string[] | null,
 ): string {
   if (Array.isArray(value))
     return value.length === 0 ? "Not set" : value.join(" · ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
   return value === null || value === "" ? "Not set" : String(value);
 }
 
@@ -268,7 +409,11 @@ function TrackMetadataEditorComponent(
 
   const change =
     (field: keyof TrackMetadataDraft) =>
-    (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+    (
+      event: ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >,
+    ): void => {
       onDraftChange(field, event.target.value);
     };
 
@@ -285,19 +430,13 @@ function TrackMetadataEditorComponent(
         description={
           <>
             Editing <strong>{track.tags.title}</strong>
-            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Current
-            catalog values remain visible beside the editable proposal.
-            Selecting Genre replaces the complete current genre set with one
-            value; an empty proposal clears it. Tracks with multiple current
-            genre values stay read-only for that field so undo remains exact.
-            Composer follows the same one-value rule; tracks with multiple
-            current composer values cannot replace that field. Totals are
-            explicit: changing or clearing one never changes its track or disc
-            number. Conductor and Lyricist follow the same one-value rule as
-            Composer. ISRC also accepts one value. Secondary fields are grouped
-            under More fields. Comment editing accepts one plain comment;
-            multiple comments or comment-specific language and descriptor data
-            remain read-only so a write cannot discard structure.
+            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Core identity
+            and numbering stay visible; secondary credits, catalog details,
+            notes, and identifiers are under More fields. One-value fields
+            replace their complete current set and are blocked when exact
+            restoration is unavailable. Totals never alter their numbers.
+            Comment accepts one plain value. MusicBrainz IDs must be UUIDs, BPM
+            is a whole number from 1 to 999, and nothing is inferred.
           </>
         }
       />
@@ -378,64 +517,84 @@ function TrackMetadataEditorComponent(
           aria-label="Additional track tag comparison"
         >
           <ComparisonHeader currentLabel="Current value" />
-          {moreComparisonFields.map((item) => {
-            const current = currentValue(track, item.field);
-            const changed = draft[item.field] !== current;
-            const currentId = `track-${item.field}-current`;
-            const statusId = `track-${item.field}-status`;
-            return (
-              <div
-                className="tag-comparison-row"
-                data-changed={changed ? "true" : "false"}
-                key={item.field}
-              >
-                <div className="tag-comparison-field">
-                  <span className="comparison-mobile-label">Tag</span>
-                  <label htmlFor={`track-${item.field}`}>{item.label}</label>
-                </div>
-                <div className="tag-comparison-current">
-                  <span className="comparison-mobile-label">Current value</span>
-                  <span id={currentId}>
-                    {displayValue(currentDisplayValue(track, item.field))}
-                  </span>
-                </div>
-                <div className="tag-comparison-proposed">
-                  <span className="comparison-mobile-label">
-                    Proposed value
-                  </span>
-                  {item.multiline ? (
-                    <textarea
-                      aria-describedby={`${currentId} ${statusId}`}
-                      aria-label={`${item.label} proposed value`}
-                      id={`track-${item.field}`}
-                      maxLength={4000}
-                      placeholder={item.placeholder}
-                      value={draft[item.field]}
-                      onChange={change(item.field)}
-                    />
-                  ) : (
-                    <input
-                      aria-describedby={`${currentId} ${statusId}`}
-                      aria-label={`${item.label} proposed value`}
-                      id={`track-${item.field}`}
-                      max={item.max}
-                      min={item.inputType ? 1 : undefined}
-                      placeholder={item.placeholder}
-                      type={item.inputType}
-                      value={draft[item.field]}
-                      onChange={change(item.field)}
-                    />
-                  )}
-                </div>
-                <span
-                  className={`comparison-status ${changed ? "changed" : "unchanged"}`}
-                  id={statusId}
-                >
-                  {changed ? "Changed" : "Unchanged"}
-                </span>
-              </div>
-            );
-          })}
+          {moreComparisonGroups.map((group) => (
+            <div className="metadata-field-group" key={group.label}>
+              <h4>{group.label}</h4>
+              {group.fields.map((item) => {
+                const current = currentValue(track, item.field);
+                const changed = draft[item.field] !== current;
+                const currentId = `track-${item.field}-current`;
+                const statusId = `track-${item.field}-status`;
+                return (
+                  <div
+                    className="tag-comparison-row"
+                    data-changed={changed ? "true" : "false"}
+                    key={item.field}
+                  >
+                    <div className="tag-comparison-field">
+                      <span className="comparison-mobile-label">Tag</span>
+                      <label htmlFor={`track-${item.field}`}>
+                        {item.label}
+                      </label>
+                    </div>
+                    <div className="tag-comparison-current">
+                      <span className="comparison-mobile-label">
+                        Current value
+                      </span>
+                      <span id={currentId}>
+                        {displayValue(currentDisplayValue(track, item.field))}
+                      </span>
+                    </div>
+                    <div className="tag-comparison-proposed">
+                      <span className="comparison-mobile-label">
+                        Proposed value
+                      </span>
+                      {item.select === "yes-no" ? (
+                        <select
+                          aria-describedby={`${currentId} ${statusId}`}
+                          aria-label={`${item.label} proposed value`}
+                          id={`track-${item.field}`}
+                          value={draft[item.field]}
+                          onChange={change(item.field)}
+                        >
+                          <option value="false">No</option>
+                          <option value="true">Yes</option>
+                        </select>
+                      ) : item.multiline ? (
+                        <textarea
+                          aria-describedby={`${currentId} ${statusId}`}
+                          aria-label={`${item.label} proposed value`}
+                          id={`track-${item.field}`}
+                          maxLength={4000}
+                          placeholder={item.placeholder}
+                          value={draft[item.field]}
+                          onChange={change(item.field)}
+                        />
+                      ) : (
+                        <input
+                          aria-describedby={`${currentId} ${statusId}`}
+                          aria-label={`${item.label} proposed value`}
+                          id={`track-${item.field}`}
+                          max={item.max}
+                          min={item.inputType ? 1 : undefined}
+                          placeholder={item.placeholder}
+                          type={item.inputType}
+                          value={draft[item.field]}
+                          onChange={change(item.field)}
+                        />
+                      )}
+                    </div>
+                    <span
+                      className={`comparison-status ${changed ? "changed" : "unchanged"}`}
+                      id={statusId}
+                    >
+                      {changed ? "Changed" : "Unchanged"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </details>
 

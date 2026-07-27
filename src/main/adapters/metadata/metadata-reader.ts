@@ -20,6 +20,21 @@ export interface MetadataReader {
   read(path: string): Promise<ScannedAudioFile>;
 }
 
+function nativeTextValues(
+  native: Awaited<ReturnType<typeof parseFile>>["native"],
+  ids: readonly string[],
+): readonly string[] {
+  const accepted = new Set(ids.map((id) => id.toLocaleUpperCase("en-US")));
+  return Object.values(native)
+    .flat()
+    .filter(
+      (tag) =>
+        accepted.has(tag.id.toLocaleUpperCase("en-US")) &&
+        typeof tag.value === "string",
+    )
+    .map((tag) => tag.value as string);
+}
+
 function serializableNativeValue(value: unknown): string {
   if (
     typeof value === "string" ||
@@ -48,6 +63,23 @@ export class MusicMetadataReader implements MetadataReader {
     }
     const common = metadata.common;
     const comments = normalizeComments(common.comment);
+    const publishers = normalizeTagTextList([
+      ...(common.label ?? []),
+      ...(common.publisher ?? []),
+      ...nativeTextValues(metadata.native, ["PUBLISHER", "TPUB"]),
+    ]);
+    const descriptions = normalizeTagTextList([
+      ...(common.description ?? []),
+      ...nativeTextValues(metadata.native, ["DESCRIPTION", "TDES"]),
+    ]);
+    const catalogNumbers = normalizeTagTextList([
+      ...(common.catalognumber ?? []),
+      ...nativeTextValues(metadata.native, [
+        "CATALOGNUMBER",
+        "PRODUCTNUMBER",
+        "TXXX:CATALOGNUMBER",
+      ]),
+    ]);
     const artist = normalizeTagText(common.artist, "Unknown artist");
     const codec = normalizeTagText(metadata.format.codec, "");
     const tags: NormalizedTags = {
@@ -74,6 +106,32 @@ export class MusicMetadataReader implements MetadataReader {
       comments,
       originalReleaseDate: normalizeTagText(common.originaldate, "") || null,
       language: normalizeTagText(common.language, "") || null,
+      publishers,
+      descriptions,
+      grouping: normalizeTagText(common.grouping, "") || null,
+      catalogNumbers,
+      publishingDate: normalizeTagText(common.releasedate, "") || null,
+      bpm:
+        typeof common.bpm === "number" &&
+        Number.isFinite(common.bpm) &&
+        common.bpm > 0
+          ? common.bpm
+          : null,
+      compilation: common.compilation === true,
+      musicBrainzRecordingId:
+        normalizeTagText(common.musicbrainz_recordingid, "") || null,
+      musicBrainzReleaseTrackId:
+        normalizeTagText(common.musicbrainz_trackid, "") || null,
+      musicBrainzReleaseId:
+        normalizeTagText(common.musicbrainz_albumid, "") || null,
+      musicBrainzArtistIds: normalizeTagTextList(common.musicbrainz_artistid),
+      musicBrainzReleaseArtistIds: normalizeTagTextList(
+        common.musicbrainz_albumartistid,
+      ),
+      musicBrainzReleaseGroupId:
+        normalizeTagText(common.musicbrainz_releasegroupid, "") || null,
+      musicBrainzWorkId:
+        normalizeTagText(common.musicbrainz_workid, "") || null,
     };
     const nativeTags: NativeTagValue[] = Object.entries(
       metadata.native,
