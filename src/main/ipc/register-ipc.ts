@@ -20,6 +20,8 @@ import {
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
+  musicBrainzReleaseLookupRequestSchema,
+  musicBrainzTrackMappingPreviewRequestSchema,
   renameSyncProfileRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
@@ -246,6 +248,14 @@ export function registerIpc(
     channels.findMusicBrainzAlbumCandidates,
     createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
       dependencies.albumCandidates.search(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.loadMusicBrainzReleaseTracks,
+    createValidatedHandler(
+      musicBrainzReleaseLookupRequestSchema,
+      ({ albumId, releaseId }) =>
+        dependencies.albumCandidates.release(albumId, releaseId),
     ),
   );
   ipcMain.handle(
@@ -484,6 +494,18 @@ export function registerIpc(
       trackBatchEditPreviewRequestSchema,
       ({ fileIds, changes }) =>
         dependencies.trackEditor.previewBatch(fileIds, changes),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewMusicBrainzTrackMapping,
+    createValidatedHandler(
+      musicBrainzTrackMappingPreviewRequestSchema,
+      ({ albumId, releaseId, edits }) =>
+        dependencies.trackEditor.previewMusicBrainzMapping(
+          albumId,
+          releaseId,
+          edits,
+        ),
     ),
   );
   ipcMain.handle(

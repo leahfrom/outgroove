@@ -2088,6 +2088,33 @@ export class CatalogDatabase {
     return id;
   }
 
+  createMusicBrainzTrackMappingOperation(
+    albumId: string,
+    releaseId: string,
+    previews: readonly { fileId: string; tags: NormalizedTags }[],
+    proposals: readonly { fileId: string; changes: TrackTagChanges }[],
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, preview_tags_json, proposed_tags_json)
+         VALUES (?, ?, ?, ?, 'previewed', ?, 'track-tags-batch-edit', ?, ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        `MusicBrainz track mapping: ${releaseId}`,
+        confirmationHash,
+        new Date().toISOString(),
+        JSON.stringify(previews),
+        JSON.stringify(proposals),
+      );
+    return id;
+  }
+
   createTrackBatchUndoOperation(
     albumId: string,
     sourceOperationId: string,

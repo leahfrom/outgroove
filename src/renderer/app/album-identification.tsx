@@ -1,4 +1,9 @@
-import type { AlbumIdentificationResultDto } from "../../shared/contracts/api";
+import type {
+  AlbumIdentificationResultDto,
+  MusicBrainzReleaseTracklistDto,
+  TagEditResultDto,
+  TrackBatchEditPreviewDto,
+} from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import {
   createAlbumCandidateTagDraft,
@@ -6,24 +11,56 @@ import {
   type ComparedAlbumCandidate,
 } from "../../shared/domain/album-identification";
 import { ModalSheet } from "./modal-sheet";
+import {
+  MusicBrainzTrackMapper,
+  type MusicBrainzTrackMappingEdit,
+} from "./musicbrainz-track-mapper";
 
 export function AlbumIdentification({
   album,
   error,
   loading,
+  mappingBusy,
+  mappingError,
+  mappingPreview,
+  mappingResult,
+  releaseTracksError,
+  releaseTracksLoading,
+  releaseTracksReleaseId,
+  releaseTracksResult,
   result,
   onCancel,
+  onCancelMappingPreview,
+  onCancelReleaseTracks,
   onClose,
+  onConfirmMapping,
   onCreateDraft,
+  onLoadReleaseTracks,
+  onPreviewMapping,
   onSearch,
 }: {
   readonly album: CatalogAlbum;
   readonly error: string | undefined;
   readonly loading: boolean;
+  readonly mappingBusy: boolean;
+  readonly mappingError: string | undefined;
+  readonly mappingPreview: TrackBatchEditPreviewDto | undefined;
+  readonly mappingResult: TagEditResultDto | undefined;
+  readonly releaseTracksError: string | undefined;
+  readonly releaseTracksLoading: boolean;
+  readonly releaseTracksReleaseId: string | undefined;
+  readonly releaseTracksResult: MusicBrainzReleaseTracklistDto | undefined;
   readonly result: AlbumIdentificationResultDto | undefined;
   readonly onCancel: () => void;
+  readonly onCancelMappingPreview: () => void;
+  readonly onCancelReleaseTracks: () => void;
   readonly onClose: () => void;
+  readonly onConfirmMapping: () => void;
   readonly onCreateDraft: (candidate: ComparedAlbumCandidate) => void;
+  readonly onLoadReleaseTracks: (candidate: ComparedAlbumCandidate) => void;
+  readonly onPreviewMapping: (
+    edits: readonly MusicBrainzTrackMappingEdit[],
+  ) => void;
   readonly onSearch: () => void;
 }): React.JSX.Element {
   return (
@@ -60,7 +97,7 @@ export function AlbumIdentification({
         <div className="actions">
           <button
             className="primary"
-            disabled={loading}
+            disabled={loading || releaseTracksLoading}
             onClick={onSearch}
             type="button"
           >
@@ -200,7 +237,52 @@ export function AlbumIdentification({
                         >
                           Draft supported tags from this release
                         </button>
+                        <button
+                          aria-label={`Map Library tracks to ${candidate.title}, ${candidate.date ?? "unknown date"}`}
+                          disabled={releaseTracksLoading}
+                          onClick={() => onLoadReleaseTracks(candidate)}
+                          type="button"
+                        >
+                          Map tracks from this release
+                        </button>
+                        {releaseTracksReleaseId === candidate.releaseId &&
+                          releaseTracksLoading && (
+                            <div
+                              aria-live="polite"
+                              className="identification-status"
+                              role="status"
+                            >
+                              Loading the selected release tracklist…
+                              <button
+                                onClick={onCancelReleaseTracks}
+                                type="button"
+                              >
+                                Cancel tracklist request
+                              </button>
+                            </div>
+                          )}
+                        {releaseTracksReleaseId === candidate.releaseId &&
+                          !releaseTracksLoading &&
+                          releaseTracksError && (
+                            <p className="workflow-error" role="alert">
+                              Tracklist request failed: {releaseTracksError}
+                            </p>
+                          )}
                       </div>
+                      {releaseTracksResult?.release.releaseId ===
+                        candidate.releaseId && (
+                        <MusicBrainzTrackMapper
+                          album={album}
+                          busy={mappingBusy}
+                          error={mappingError}
+                          preview={mappingPreview}
+                          releaseResult={releaseTracksResult}
+                          result={mappingResult}
+                          onCancelPreview={onCancelMappingPreview}
+                          onConfirm={onConfirmMapping}
+                          onPreview={onPreviewMapping}
+                        />
+                      )}
                     </article>
                   </li>
                 );

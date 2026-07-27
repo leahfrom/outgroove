@@ -31,6 +31,40 @@ const album: CatalogAlbum = {
 };
 
 describe("find album candidates", () => {
+  it("loads only an explicitly selected release ID and returns a read-only tracklist", async () => {
+    const lookupRelease = vi.fn(() =>
+      Promise.resolve({
+        source: "network" as const,
+        fetchedAt: "2026-07-27T12:00:00.000Z",
+        release: {
+          releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+          title: "Fixture Album",
+          tracks: [],
+        },
+      }),
+    );
+    const service = new FindAlbumCandidates(
+      { getAlbum: () => album },
+      { searchReleases: vi.fn(), lookupRelease },
+    );
+    await expect(
+      service.release(album.id, "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef"),
+    ).resolves.toMatchObject({
+      albumId: album.id,
+      readOnly: true,
+      release: {
+        releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      },
+    });
+    expect(lookupRelease).toHaveBeenCalledWith(
+      "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      expect.any(AbortSignal),
+    );
+    expect(JSON.stringify(lookupRelease.mock.calls)).not.toContain(
+      "/private/not-sent.flac",
+    );
+  });
+
   it("derives the narrow provider request from the catalog and returns read-only comparison", async () => {
     const searchReleases = vi.fn(() =>
       Promise.resolve({
@@ -60,7 +94,7 @@ describe("find album candidates", () => {
     );
     const service = new FindAlbumCandidates(
       { getAlbum: () => album },
-      { searchReleases },
+      { searchReleases, lookupRelease: vi.fn() },
     );
 
     await expect(service.search(album.id)).resolves.toMatchObject({
@@ -86,7 +120,7 @@ describe("find album candidates", () => {
     const searchReleases = vi.fn();
     const service = new FindAlbumCandidates(
       { getAlbum: () => undefined },
-      { searchReleases },
+      { searchReleases, lookupRelease: vi.fn() },
     );
     await expect(service.search(album.id)).rejects.toThrow(
       "no longer in the Library",
@@ -99,6 +133,7 @@ describe("find album candidates", () => {
     const service = new FindAlbumCandidates(
       { getAlbum: () => album },
       {
+        lookupRelease: vi.fn(),
         searchReleases: vi.fn(
           (_title: string, _artist: string, candidateSignal: AbortSignal) =>
             new Promise<never>((_resolve, reject) => {

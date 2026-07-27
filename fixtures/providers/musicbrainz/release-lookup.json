@@ -1,0 +1,87 @@
+{
+  "id": "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+  "title": "Fixture Album",
+  "artist-credit": [
+    {
+      "name": "Fixture Artist",
+      "artist": {
+        "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        "name": "Fixture Artist"
+      }
+    }
+  ],
+  "media": [
+    {
+      "position": 1,
+      "track-count": 1,
+      "tracks": [
+        {
+          "id": "11111111-1111-4111-8111-111111111111",
+          "position": 1,
+          "number": "1",
+          "title": "Remote First",
+          "length": 61000,
+          "artist-credit": [
+            {
+              "name": "Fixture Artist",
+              "artist": {
+                "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+                "name": "Fixture Artist"
+              }
+            }
+          ],
+          "recording": {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "title": "Remote First",
+            "length": 61000,
+            "isrcs": ["DEABC2600001"],
+            "artist-credit": [
+              {
+                "name": "Fixture Artist",
+                "artist": {
+                  "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+                  "name": "Fixture Artist"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "position": 2,
+      "track-count": 1,
+      "tracks": [
+        {
+          "id": "33333333-3333-4333-8333-333333333333",
+          "position": 1,
+          "number": "1",
+          "title": "Remote Second",
+          "recording": {
+            "id": "44444444-4444-4444-8444-444444444444",
+            "title": "Remote Second",
+            "length": 62000,
+            "isrcs": ["DEABC2600002", "DEABC2600003"],
+            "artist-credit": [
+              {
+                "name": "Fixture Artist",
+                "joinphrase": " feat. ",
+                "artist": {
+                  "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+                  "name": "Fixture Artist"
+                }
+              },
+              {
+                "name": "Guest Artist",
+                "artist": {
+                  "id": "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+                  "name": "Guest Artist"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

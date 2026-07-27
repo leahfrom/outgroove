@@ -5,6 +5,7 @@ import {
   compareAlbumCandidate,
   compareAlbumCandidates,
   createAlbumCandidateTagDraft,
+  createMusicBrainzMappedTrackDraft,
   formatArtistCredits,
   type AlbumIdentificationCandidate,
 } from "./album-identification";
@@ -172,5 +173,96 @@ describe("album candidate comparison", () => {
         expect.stringContaining("multiple current values"),
       ]),
     );
+  });
+
+  it("drafts only explicitly enabled mapped-track fields without inferring alignment", () => {
+    const local = album.tracks[0];
+    if (!local) throw new Error("Fixture track missing.");
+    const remote = {
+      releaseTrackId: "11111111-1111-4111-8111-111111111111",
+      recordingId: "22222222-2222-4222-8222-222222222222",
+      discNumber: 2,
+      discTotal: 3,
+      trackNumber: 7,
+      trackTotal: 12,
+      title: "Mapped title",
+      artistCredits: candidate.artistCredits,
+      isrcs: ["DEABC2600001"],
+      lengthMs: 181_000,
+    };
+    expect(
+      createMusicBrainzMappedTrackDraft(local, remote, {
+        title: false,
+        artist: false,
+        numbering: false,
+        isrc: false,
+        musicBrainzIds: false,
+      }).changes,
+    ).toEqual({});
+    expect(
+      createMusicBrainzMappedTrackDraft(local, remote, {
+        title: true,
+        artist: false,
+        numbering: true,
+        isrc: false,
+        musicBrainzIds: false,
+      }).changes,
+    ).toEqual({
+      title: "Mapped title",
+      trackNumber: 7,
+      trackTotal: 12,
+      discNumber: 2,
+      discTotal: 3,
+    });
+  });
+
+  it("omits ambiguous list identifiers instead of making a lossy proposal", () => {
+    const local = album.tracks[0];
+    if (!local) throw new Error("Fixture track missing.");
+    const draft = createMusicBrainzMappedTrackDraft(
+      {
+        ...local,
+        tags: {
+          ...local.tags,
+          isrcs: ["OLD-1", "OLD-2"],
+          musicBrainzArtistIds: [
+            "33333333-3333-4333-8333-333333333333",
+            "44444444-4444-4444-8444-444444444444",
+          ],
+        },
+      },
+      {
+        releaseTrackId: "11111111-1111-4111-8111-111111111111",
+        recordingId: "22222222-2222-4222-8222-222222222222",
+        discNumber: 1,
+        discTotal: 1,
+        trackNumber: 1,
+        trackTotal: 2,
+        title: "Track 1",
+        artistCredits: [
+          ...candidate.artistCredits,
+          {
+            name: "Guest",
+            joinPhrase: "",
+            artistId: "55555555-5555-4555-8555-555555555555",
+          },
+        ],
+        isrcs: ["DEABC2600001", "DEABC2600002"],
+        lengthMs: null,
+      },
+      {
+        title: false,
+        artist: false,
+        numbering: false,
+        isrc: true,
+        musicBrainzIds: true,
+      },
+    );
+    expect(draft.changes).toEqual({
+      musicBrainzRecordingId: "22222222-2222-4222-8222-222222222222",
+      musicBrainzReleaseTrackId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(draft.omissions.join(" ")).toContain("multiple values");
+    expect(draft.omissions.join(" ")).toContain("multiple credited artists");
   });
 });

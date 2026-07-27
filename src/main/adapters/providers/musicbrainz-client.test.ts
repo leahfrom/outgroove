@@ -15,6 +15,16 @@ const fixture = readFileSync(
   ),
   "utf8",
 );
+const releaseFixture = readFileSync(
+  join(
+    process.cwd(),
+    "fixtures",
+    "providers",
+    "musicbrainz",
+    "release-lookup.json",
+  ),
+  "utf8",
+);
 
 function cache(): MusicBrainzCache & {
   readonly records: Map<
@@ -35,6 +45,110 @@ function cache(): MusicBrainzCache & {
 }
 
 describe("MusicBrainz release search adapter", () => {
+  it("looks up a selected release through the fixed endpoint and preserves medium order and identities", async () => {
+    const storage = cache();
+    const fetchImplementation = vi.fn(() =>
+      Promise.resolve(new Response(releaseFixture, { status: 200 })),
+    );
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: fetchImplementation,
+      now: () => Date.parse("2026-07-27T12:00:00Z"),
+    });
+
+    const result = await client.lookupRelease(
+      "2F3AD7A7-7D18-4F21-84EC-C5C3EAC2DEEF",
+      new AbortController().signal,
+    );
+
+    expect(result).toMatchObject({
+      source: "network",
+      release: {
+        releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+        title: "Fixture Album",
+        tracks: [
+          {
+            releaseTrackId: "11111111-1111-4111-8111-111111111111",
+            recordingId: "22222222-2222-4222-8222-222222222222",
+            discNumber: 1,
+            discTotal: 2,
+            trackNumber: 1,
+            trackTotal: 1,
+            title: "Remote First",
+            isrcs: ["DEABC2600001"],
+            lengthMs: 61000,
+          },
+          {
+            discNumber: 2,
+            discTotal: 2,
+            trackNumber: 1,
+            trackTotal: 1,
+            artistCredits: [
+              expect.objectContaining({ joinPhrase: " feat. " }),
+              expect.objectContaining({ name: "Guest Artist" }),
+            ],
+            isrcs: ["DEABC2600002", "DEABC2600003"],
+          },
+        ],
+      },
+    });
+    const [url, options] = (fetchImplementation.mock.calls[0] ??
+      []) as unknown as [URL, RequestInit];
+    expect(String(url)).toBe(
+      "https://musicbrainz.org/ws/2/release/2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef?inc=recordings%2Bartist-credits%2Bisrcs&fmt=json",
+    );
+    expect(options.headers).toMatchObject({
+      "User-Agent": "Outgroove/test",
+    });
+    expect(storage.records.size).toBe(1);
+  });
+
+  it("validates a release lookup and falls back to its stale cache without changing the requested identity", async () => {
+    const storage = cache();
+    const key = JSON.stringify({
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    });
+    storage.putProviderCache({
+      provider: "musicbrainz",
+      requestKey: key,
+      responseSchemaVersion: 1,
+      status: 200,
+      fetchedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      payloadJson: releaseFixture,
+    });
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi.fn(() => Promise.reject(new Error("offline"))),
+      now: () => Date.parse("2026-07-27T12:00:00Z"),
+    });
+    await expect(
+      client.lookupRelease(
+        "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      source: "stale-cache",
+      release: {
+        releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      },
+    });
+
+    const mismatched = JSON.parse(releaseFixture) as Record<string, unknown>;
+    mismatched.id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const invalid = new MusicBrainzClient(cache(), "Outgroove/test", {
+      fetch: vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(mismatched), { status: 200 }),
+        ),
+      ),
+    });
+    await expect(
+      invalid.lookupRelease(
+        "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("different release");
+  });
+
   it("uses a fixed endpoint and meaningful identity, validates, maps, and caches a fixture", async () => {
     const storage = cache();
     const fetchImplementation = vi.fn(() =>

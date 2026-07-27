@@ -49,12 +49,29 @@ const result: AlbumIdentificationResultDto = {
   ],
 };
 
+const mappingProps = {
+  mappingBusy: false,
+  mappingError: undefined,
+  mappingPreview: undefined,
+  mappingResult: undefined,
+  releaseTracksError: undefined,
+  releaseTracksLoading: false,
+  releaseTracksReleaseId: undefined,
+  releaseTracksResult: undefined,
+  onCancelMappingPreview: vi.fn(),
+  onCancelReleaseTracks: vi.fn(),
+  onConfirmMapping: vi.fn(),
+  onLoadReleaseTracks: vi.fn(),
+  onPreviewMapping: vi.fn(),
+};
+
 describe("AlbumIdentification", () => {
   it("discloses the exact narrow request and requires an explicit search", async () => {
     const user = userEvent.setup();
     const onSearch = vi.fn();
     render(
       <AlbumIdentification
+        {...mappingProps}
         album={album}
         error={undefined}
         loading={false}
@@ -87,6 +104,7 @@ describe("AlbumIdentification", () => {
   it("shows confidence, evidence, conflicts, IDs, source, and unchanged state", () => {
     render(
       <AlbumIdentification
+        {...mappingProps}
         album={album}
         error={undefined}
         loading={false}
@@ -141,6 +159,7 @@ describe("AlbumIdentification", () => {
     };
     render(
       <AlbumIdentification
+        {...mappingProps}
         album={albumWithTrack}
         error={undefined}
         loading={false}
@@ -160,11 +179,38 @@ describe("AlbumIdentification", () => {
     expect(onCreateDraft).toHaveBeenCalledWith(result.candidates[0]);
   });
 
+  it("loads a selected release tracklist only after an explicit keyboard action", async () => {
+    const user = userEvent.setup();
+    const onLoadReleaseTracks = vi.fn();
+    render(
+      <AlbumIdentification
+        {...mappingProps}
+        album={album}
+        error={undefined}
+        loading={false}
+        result={result}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
+        onLoadReleaseTracks={onLoadReleaseTracks}
+        onSearch={vi.fn()}
+      />,
+    );
+    expect(onLoadReleaseTracks).not.toHaveBeenCalled();
+    const button = screen.getByRole("button", {
+      name: `Map Library tracks to ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
+    });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(onLoadReleaseTracks).toHaveBeenCalledWith(result.candidates[0]);
+  });
+
   it("offers keyboard-reachable cancellation and reports recoverable failure", async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
     const { rerender } = render(
       <AlbumIdentification
+        {...mappingProps}
         album={album}
         error={undefined}
         loading
@@ -182,6 +228,7 @@ describe("AlbumIdentification", () => {
 
     rerender(
       <AlbumIdentification
+        {...mappingProps}
         album={album}
         error="MusicBrainz is unavailable."
         loading={false}

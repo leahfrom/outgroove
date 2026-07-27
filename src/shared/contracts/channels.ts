@@ -12,6 +12,7 @@ export const channels = {
   queryLibrary: "library:query",
   loadAlbumArtwork: "library:load-album-artwork",
   findMusicBrainzAlbumCandidates: "identify:find-musicbrainz-album-candidates",
+  loadMusicBrainzReleaseTracks: "identify:load-musicbrainz-release-tracks",
   cancelMusicBrainzAlbumCandidates:
     "identify:cancel-musicbrainz-album-candidates",
   listSavedLibraryFilters: "library:list-saved-filters",
@@ -37,6 +38,7 @@ export const channels = {
   previewTrackTagUndo: "tagging:preview-track-tags-undo",
   applyTrackTagUndo: "tagging:apply-track-tags-undo",
   previewTrackBatchEdit: "tagging:preview-track-batch",
+  previewMusicBrainzTrackMapping: "tagging:preview-musicbrainz-track-mapping",
   applyTrackBatchEdit: "tagging:apply-track-batch",
   previewTrackBatchUndo: "tagging:preview-track-batch-undo",
   applyTrackBatchUndo: "tagging:apply-track-batch-undo",
