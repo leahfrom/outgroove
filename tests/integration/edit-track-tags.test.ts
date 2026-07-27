@@ -97,7 +97,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "Edited artist",
         albumArtist: "Edited album artist",
         trackNumber: 12,
+        trackTotal: 12,
         discNumber: 3,
+        discTotal: 3,
         year: "2032-02-29",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
@@ -108,7 +110,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "artist",
         "albumArtist",
         "trackNumber",
+        "trackTotal",
         "discNumber",
+        "discTotal",
         "year",
         "genres",
         "composers",
@@ -124,7 +128,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "Edited artist",
         albumArtist: "Edited album artist",
         trackNumber: 12,
+        trackTotal: 12,
         discNumber: 3,
+        discTotal: 3,
         year: "2032-02-29",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
@@ -285,16 +291,89 @@ it("undoes a composer edit from a legacy catalog row without the rebuildable fie
   database.close();
 });
 
+it("rejects invalid totals and refuses a stale targeted total without changing audio", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const payloadBefore = await audioPayloadHash(path);
+  expect(() => editor.preview(fileId, { trackTotal: 0 })).toThrow(
+    "trackTotal must be between",
+  );
+  expect(() => editor.preview(fileId, { trackNumber: null })).toThrow(
+    "Track total requires a track number",
+  );
+
+  const preview = editor.preview(fileId, { trackTotal: 12 });
+  const external = await writer.writeTags(path, { trackTotal: 10 });
+  database.updateFileAfterEdit(fileId, external.file);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+
+  expect(result.results).toMatchObject([
+    {
+      fileId,
+      verified: false,
+      error:
+        "A field in this preview changed after it was created; the edit did not overwrite it.",
+    },
+  ]);
+  expect((await reader.read(path)).tags.trackTotal).toBe(10);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
+it("does not propose or clear legacy-missing totals while editing another field", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("02-second.flac");
+  database.connection
+    .prepare(
+      `UPDATE audio_files
+       SET normalized_tags_json=json_remove(
+         normalized_tags_json, '$.trackTotal', '$.discTotal'
+       )
+       WHERE id=?`,
+    )
+    .run(fileId);
+
+  const preview = editor.preview(fileId, { title: "Title only" });
+  expect(preview.changes).toEqual([
+    { field: "title", before: "Second Track", after: "Title only" },
+  ]);
+  const applied = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+
+  expect(applied.results).toMatchObject([{ verified: true, error: null }]);
+  expect((await reader.read(path)).tags).toMatchObject({
+    title: "Title only",
+    trackNumber: 2,
+    trackTotal: 2,
+    discNumber: 1,
+    discTotal: 1,
+  });
+  database.close();
+});
+
 it("applies and undoes track numbers in the exact confirmed order", async () => {
-  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const { database, reader, writer, editor, files } =
+    await createBatchTrackEditor();
   const first = files[0];
   const second = files[1];
   if (!first || !second) throw new Error("Sequence fixtures missing.");
-  const original = await Promise.all(
-    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
-  );
   const payloads = await Promise.all(
     files.map(({ path }) => audioPayloadHash(path)),
+  );
+  for (const file of files) {
+    const updated = await writer.writeTags(file.path, {
+      trackTotal: 8,
+      discTotal: 3,
+    });
+    database.updateFileAfterEdit(file.fileId, updated.file);
+  }
+  const original = await Promise.all(
+    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
   );
   const preview = editor.previewTrackNumberSequence(
     [second.fileId, first.fileId],
@@ -306,6 +385,14 @@ it("applies and undoes track numbers in the exact confirmed order", async () => 
     first.fileId,
   ]);
   expect(preview.files.map((file) => file.changes[0]?.after)).toEqual([7, 8]);
+  expect(
+    preview.files
+      .flatMap((file) => file.changes)
+      .some(
+        (change) =>
+          change.field === "trackTotal" || change.field === "discTotal",
+      ),
+  ).toBe(false);
   expect(
     preview.files.map(
       (file) =>
@@ -321,12 +408,16 @@ it("applies and undoes track numbers in the exact confirmed order", async () => 
   expect((await reader.read(second.path)).tags).toMatchObject({
     title: original[1]?.title,
     trackNumber: 7,
+    trackTotal: 8,
     discNumber: 3,
+    discTotal: 3,
   });
   expect((await reader.read(first.path)).tags).toMatchObject({
     title: original[0]?.title,
     trackNumber: 8,
+    trackTotal: 8,
     discNumber: 3,
+    discTotal: 3,
   });
   expect(database.getEditOperation(preview.operationId)).toMatchObject({
     kind: "track-number-sequence-edit",
@@ -355,6 +446,10 @@ it("refuses a stale track number without aborting the remaining sequence", async
   const first = files[0];
   const second = files[1];
   if (!first || !second) throw new Error("Sequence fixtures missing.");
+  for (const file of files) {
+    const updated = await writer.writeTags(file.path, { trackTotal: 10 });
+    database.updateFileAfterEdit(file.fileId, updated.file);
+  }
   const preview = editor.previewTrackNumberSequence(
     [first.fileId, second.fileId],
     9,
@@ -415,7 +510,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
     files.map(({ fileId }) => fileId),
     {
       artist: "Batch Artist",
+      trackTotal: 3,
       discNumber: 2,
+      discTotal: 2,
       year: "2031-07",
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
@@ -426,8 +523,24 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   expect(
     preview.files.map((file) => file.changes.map((item) => item.field)),
   ).toEqual([
-    ["artist", "discNumber", "year", "genres", "composers"],
-    ["artist", "discNumber", "year", "genres", "composers"],
+    [
+      "artist",
+      "trackTotal",
+      "discNumber",
+      "discTotal",
+      "year",
+      "genres",
+      "composers",
+    ],
+    [
+      "artist",
+      "trackTotal",
+      "discNumber",
+      "discTotal",
+      "year",
+      "genres",
+      "composers",
+    ],
   ]);
 
   const result = await editor.applyBatch(
@@ -441,7 +554,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   for (const [index, file] of files.entries()) {
     expect((await reader.read(file.path)).tags).toMatchObject({
       artist: "Batch Artist",
+      trackTotal: 3,
       discNumber: 2,
+      discTotal: 2,
       year: "2031-07",
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],

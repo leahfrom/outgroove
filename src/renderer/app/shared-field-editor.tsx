@@ -15,7 +15,9 @@ import {
 export interface SharedFieldDraft {
   artist: string;
   albumArtist: string;
+  trackTotal: string;
   discNumber: string;
+  discTotal: string;
   year: string;
   genre: string;
   composer: string;
@@ -47,12 +49,28 @@ const comparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch album artist value",
   },
   {
+    field: "trackTotal",
+    label: "Track total",
+    inputLabel: "Batch track total value",
+    inputType: "number",
+    max: 9999,
+    placeholder: "Empty clears the total",
+  },
+  {
     field: "discNumber",
     label: "Disc number",
     inputLabel: "Batch disc number value",
     inputType: "number",
     max: 999,
     placeholder: "Empty clears the value",
+  },
+  {
+    field: "discTotal",
+    label: "Disc total",
+    inputLabel: "Batch disc total value",
+    inputType: "number",
+    max: 999,
+    placeholder: "Empty clears the total",
   },
   {
     field: "year",
@@ -77,7 +95,9 @@ const comparisonFields: readonly SharedComparisonField[] = [
 const previewFieldLabels: Record<string, string> = {
   artist: "Track artist",
   albumArtist: "Album artist",
+  trackTotal: "Track total",
   discNumber: "Disc number",
+  discTotal: "Disc total",
   year: "Release date",
   genres: "Genre",
   composers: "Composer",
@@ -89,8 +109,12 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return track.tags.artist;
     case "albumArtist":
       return track.tags.albumArtist;
+    case "trackTotal":
+      return track.tags.trackTotal?.toString() ?? "";
     case "discNumber":
       return track.tags.discNumber?.toString() ?? "";
+    case "discTotal":
+      return track.tags.discTotal?.toString() ?? "";
     case "year":
       return track.tags.year ?? "";
     case "genre":
@@ -191,7 +215,9 @@ function SharedFieldEditorComponent(
             Selecting Genre replaces each track&apos;s complete genre set with
             one shared value; an empty proposal clears it. A track with multiple
             current genre values blocks that genre proposal so undo remains
-            exact. Composer follows the same one-value rule.
+            exact. Composer follows the same one-value rule. Track and disc
+            totals are explicit shared proposals and never renumber the selected
+            tracks.
           </>
         }
       />

@@ -105,7 +105,9 @@ function draftForTrack(track: CatalogAlbum["tracks"][number]) {
     artist: track.tags.artist,
     albumArtist: track.tags.albumArtist,
     trackNumber: track.tags.trackNumber?.toString() ?? "",
+    trackTotal: track.tags.trackTotal?.toString() ?? "",
     discNumber: track.tags.discNumber?.toString() ?? "",
+    discTotal: track.tags.discTotal?.toString() ?? "",
     year: track.tags.year ?? "",
     genre: (track.tags.genres ?? []).join(" · "),
     composer: (track.tags.composers ?? []).join(" · "),
@@ -273,7 +275,9 @@ export function App(): React.JSX.Element {
     artist: "",
     albumArtist: "",
     trackNumber: "",
+    trackTotal: "",
     discNumber: "",
+    discTotal: "",
     year: "",
     genre: "",
     composer: "",
@@ -289,7 +293,9 @@ export function App(): React.JSX.Element {
   const [batchEnabled, setBatchEnabled] = useState({
     artist: false,
     albumArtist: false,
+    trackTotal: false,
     discNumber: false,
+    discTotal: false,
     year: false,
     genre: false,
     composer: false,
@@ -297,7 +303,9 @@ export function App(): React.JSX.Element {
   const [batchDraft, setBatchDraft] = useState({
     artist: "",
     albumArtist: "",
+    trackTotal: "",
     discNumber: "",
+    discTotal: "",
     year: "",
     genre: "",
     composer: "",
@@ -1376,7 +1384,9 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: true,
           albumArtist: false,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: false,
           genre: false,
           composer: false,
@@ -1389,7 +1399,9 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: false,
           albumArtist: true,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: false,
           genre: false,
           composer: false,
@@ -1402,7 +1414,9 @@ export function App(): React.JSX.Element {
         setBatchEnabled({
           artist: false,
           albumArtist: false,
+          trackTotal: false,
           discNumber: false,
+          discTotal: false,
           year: true,
           genre: false,
           composer: false,
@@ -1440,9 +1454,13 @@ export function App(): React.JSX.Element {
         trackNumber: trackDraft.trackNumber
           ? Number(trackDraft.trackNumber)
           : null,
+        trackTotal: trackDraft.trackTotal
+          ? Number(trackDraft.trackTotal)
+          : null,
         discNumber: trackDraft.discNumber
           ? Number(trackDraft.discNumber)
           : null,
+        discTotal: trackDraft.discTotal ? Number(trackDraft.discTotal) : null,
         year: trackDraft.year || null,
         ...(trackDraft.genre !== (selectedTrack.tags.genres ?? []).join(" · ")
           ? { genres: trackDraft.genre ? [trackDraft.genre] : [] }
@@ -1592,16 +1610,26 @@ export function App(): React.JSX.Element {
     const changes: {
       artist?: string;
       albumArtist?: string;
+      trackTotal?: number | null;
       discNumber?: number | null;
+      discTotal?: number | null;
       year?: string | null;
       genres?: string[];
       composers?: string[];
     } = {};
     if (batchEnabled.artist) changes.artist = batchDraft.artist;
     if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
+    if (batchEnabled.trackTotal)
+      changes.trackTotal = batchDraft.trackTotal
+        ? Number(batchDraft.trackTotal)
+        : null;
     if (batchEnabled.discNumber)
       changes.discNumber = batchDraft.discNumber
         ? Number(batchDraft.discNumber)
+        : null;
+    if (batchEnabled.discTotal)
+      changes.discTotal = batchDraft.discTotal
+        ? Number(batchDraft.discTotal)
         : null;
     if (batchEnabled.year) changes.year = batchDraft.year || null;
     if (batchEnabled.genre)

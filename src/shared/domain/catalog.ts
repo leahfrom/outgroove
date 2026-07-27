@@ -11,7 +11,9 @@ export interface NormalizedTags {
   readonly artist: string;
   readonly albumArtist: string;
   readonly trackNumber: number | null;
+  readonly trackTotal?: number | null;
   readonly discNumber: number | null;
+  readonly discTotal?: number | null;
   readonly year: string | null;
   readonly genres?: readonly string[];
   readonly composers?: readonly string[];

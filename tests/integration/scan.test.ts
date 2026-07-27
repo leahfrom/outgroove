@@ -58,6 +58,8 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.composers).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.trackTotal).toBe(2);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.discTotal).toBe(1);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
     expect(
       scannedTracks.find((track) => track.format === "MPEG"),
@@ -84,6 +86,37 @@ describe("incremental library scan", () => {
       errors: 0,
     });
     expect(database.listScanErrors()).toHaveLength(1);
+    database.connection
+      .prepare(
+        `UPDATE audio_files
+         SET normalized_tags_json=json_remove(
+           normalized_tags_json, '$.trackTotal', '$.discTotal'
+         )
+         WHERE scan_state='ok'`,
+      )
+      .run();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags).toMatchObject({
+      trackTotal: null,
+      discTotal: null,
+    });
+    await expect(scanner.execute(root.id)).resolves.toEqual({
+      parsed: 2,
+      unchanged: 1,
+      errors: 0,
+    });
+    expect(
+      database
+        .listAlbums()
+        .flatMap((album) => album.tracks)
+        .every(
+          (track) => track.tags.trackTotal === 2 && track.tags.discTotal === 1,
+        ),
+    ).toBe(true);
+    await expect(scanner.execute(root.id)).resolves.toEqual({
+      parsed: 0,
+      unchanged: 3,
+      errors: 0,
+    });
     database.close();
   });
 

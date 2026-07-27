@@ -167,7 +167,9 @@ export const trackTagEditPreviewRequestSchema = z
         artist: z.string().trim().min(1).max(400).optional(),
         albumArtist: z.string().trim().min(1).max(400).optional(),
         trackNumber: z.number().int().min(1).max(9999).nullable().optional(),
+        trackTotal: z.number().int().min(1).max(9999).nullable().optional(),
         discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        discTotal: z.number().int().min(1).max(999).nullable().optional(),
         year: z
           .string()
           .trim()
@@ -194,7 +196,9 @@ export const trackBatchEditPreviewRequestSchema = z
       .object({
         artist: z.string().trim().min(1).max(400).optional(),
         albumArtist: z.string().trim().min(1).max(400).optional(),
+        trackTotal: z.number().int().min(1).max(9999).nullable().optional(),
         discNumber: z.number().int().min(1).max(999).nullable().optional(),
+        discTotal: z.number().int().min(1).max(999).nullable().optional(),
         year: z
           .string()
           .trim()
