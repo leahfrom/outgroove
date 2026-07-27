@@ -144,6 +144,10 @@ export class DatabaseBackupService {
           .prepare("SELECT COUNT(*) FROM saved_library_filters")
           .pluck()
           .get() as number,
+        favoriteArtists: staged.connection
+          .prepare("SELECT COUNT(*) FROM favorite_artists")
+          .pluck()
+          .get() as number,
       };
       staged.close();
       staged = undefined;

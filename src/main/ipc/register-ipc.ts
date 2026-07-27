@@ -4,6 +4,7 @@ import { normalize, resolve } from "node:path";
 import { dialog, type BrowserWindow, type IpcMain } from "electron";
 
 import {
+  addFavoriteArtistRequestSchema,
   albumEditApplyRequestSchema,
   albumArtworkRequestSchema,
   albumArtworkEditPreviewRequestSchema,
@@ -19,12 +20,15 @@ import {
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
   emptyRequestSchema,
+  favoriteArtistListRequestSchema,
+  favoriteArtistSearchRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
   musicBrainzReleaseLookupRequestSchema,
   musicBrainzTrackMappingPreviewRequestSchema,
   renameSyncProfileRequestSchema,
+  removeFavoriteArtistRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
@@ -56,6 +60,7 @@ import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
+import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -69,6 +74,7 @@ interface Dependencies {
   artwork: LoadAlbumArtwork;
   albumCandidates: FindAlbumCandidates;
   releaseArtwork: FindReleaseArtwork;
+  favoriteArtists: ManageFavoriteArtists;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -292,6 +298,36 @@ export function registerIpc(
     channels.cancelCoverArtArchiveArtwork,
     createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
       dependencies.releaseArtwork.cancel(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.searchMusicBrainzArtists,
+    createValidatedHandler(favoriteArtistSearchRequestSchema, ({ query }) =>
+      dependencies.favoriteArtists.search(query),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelMusicBrainzArtistSearch,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.favoriteArtists.cancel(),
+    ),
+  );
+  ipcMain.handle(
+    channels.listFavoriteArtists,
+    createValidatedHandler(favoriteArtistListRequestSchema, ({ query }) =>
+      dependencies.favoriteArtists.list(query),
+    ),
+  );
+  ipcMain.handle(
+    channels.addFavoriteArtist,
+    createValidatedHandler(addFavoriteArtistRequestSchema, ({ artistId }) =>
+      dependencies.favoriteArtists.add(artistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.removeFavoriteArtist,
+    createValidatedHandler(removeFavoriteArtistRequestSchema, ({ id }) =>
+      dependencies.favoriteArtists.remove(id),
     ),
   );
   ipcMain.handle(

@@ -35,6 +35,16 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.cancelMusicBrainzAlbumCandidates, request),
   cancelCoverArtArchiveArtwork: (request) =>
     ipcRenderer.invoke(channels.cancelCoverArtArchiveArtwork, request),
+  searchMusicBrainzArtists: (request) =>
+    ipcRenderer.invoke(channels.searchMusicBrainzArtists, request),
+  cancelMusicBrainzArtistSearch: () =>
+    ipcRenderer.invoke(channels.cancelMusicBrainzArtistSearch, {}),
+  listFavoriteArtists: (request) =>
+    ipcRenderer.invoke(channels.listFavoriteArtists, request),
+  addFavoriteArtist: (request) =>
+    ipcRenderer.invoke(channels.addFavoriteArtist, request),
+  removeFavoriteArtist: (request) =>
+    ipcRenderer.invoke(channels.removeFavoriteArtist, request),
   listSavedLibraryFilters: () =>
     ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
   createSavedLibraryFilter: (request) =>

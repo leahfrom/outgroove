@@ -25,6 +25,16 @@ const releaseFixture = readFileSync(
   ),
   "utf8",
 );
+const artistFixture = readFileSync(
+  join(
+    process.cwd(),
+    "fixtures",
+    "providers",
+    "musicbrainz",
+    "artist-search.json",
+  ),
+  "utf8",
+);
 
 function cache(): MusicBrainzCache & {
   readonly records: Map<
@@ -45,6 +55,98 @@ function cache(): MusicBrainzCache & {
 }
 
 describe("MusicBrainz release search adapter", () => {
+  it("searches the fixed artist endpoint, maps ambiguous stable identities, and caches the validated response", async () => {
+    const storage = cache();
+    const fetchImplementation = vi.fn(() =>
+      Promise.resolve(new Response(artistFixture, { status: 200 })),
+    );
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: fetchImplementation,
+      now: () => Date.parse("2026-07-28T08:00:00Z"),
+    });
+
+    const result = await client.searchArtists(
+      "Fixture Artist",
+      new AbortController().signal,
+    );
+
+    expect(result).toMatchObject({
+      source: "network",
+      candidates: [
+        {
+          artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+          name: "Fixture Artist",
+          disambiguation: "German electronic duo",
+          type: "Group",
+          country: "DE",
+          area: "Germany",
+          score: 100,
+        },
+        {
+          artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+          disambiguation: "Canadian solo artist",
+        },
+      ],
+    });
+    const [url, options] = (fetchImplementation.mock.calls[0] ??
+      []) as unknown as [URL, RequestInit];
+    expect(String(url)).toContain(
+      "https://musicbrainz.org/ws/2/artist/?query=artist%3A%22Fixture+Artist%22",
+    );
+    expect(String(url)).toContain("limit=8");
+    expect(String(url)).not.toContain("private");
+    expect(options.headers).toMatchObject({
+      "User-Agent": "Outgroove/test",
+    });
+    expect(storage.records.size).toBe(1);
+  });
+
+  it("uses the shared limiter for artist and release requests and falls back to validated stale artist cache", async () => {
+    let time = 0;
+    const sleep = vi.fn((milliseconds: number) => {
+      time += milliseconds;
+      return Promise.resolve();
+    });
+    const client = new MusicBrainzClient(cache(), "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(new Response(artistFixture, { status: 200 }))
+        .mockResolvedValueOnce(new Response(fixture, { status: 200 })),
+      now: () => time,
+      sleep,
+    });
+    await client.searchArtists("Artist", new AbortController().signal);
+    await client.searchReleases(
+      "Album",
+      "Artist",
+      new AbortController().signal,
+    );
+    expect(sleep).toHaveBeenCalledWith(1000, expect.any(AbortSignal));
+
+    const storage = cache();
+    storage.putProviderCache({
+      provider: "musicbrainz",
+      requestKey: JSON.stringify({ artistSearch: "Fixture Artist" }),
+      responseSchemaVersion: 1,
+      status: 200,
+      fetchedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      payloadJson: artistFixture,
+    });
+    const offline = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi.fn(() => Promise.reject(new Error("offline"))),
+      now: () => Date.parse("2026-07-28T08:00:00Z"),
+    });
+    const stale = await offline.searchArtists(
+      "Fixture Artist",
+      new AbortController().signal,
+    );
+    expect(stale.source).toBe("stale-cache");
+    expect(stale.candidates.map((candidate) => candidate.name)).toContain(
+      "Fixture Artist",
+    );
+  });
+
   it("looks up a selected release through the fixed endpoint and preserves medium order and identities", async () => {
     const storage = cache();
     const fetchImplementation = vi.fn(() =>

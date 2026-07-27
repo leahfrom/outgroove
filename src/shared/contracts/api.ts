@@ -7,6 +7,7 @@ import type {
 } from "../domain/album-identification";
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
+import type { MusicBrainzArtistCandidate } from "../domain/favorite-artist";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
 
@@ -85,6 +86,18 @@ export const albumArtworkRequestSchema = z
   .strict();
 export const albumIdentificationRequestSchema = z
   .object({ albumId: z.uuid() })
+  .strict();
+export const favoriteArtistSearchRequestSchema = z
+  .object({ query: z.string().trim().min(1).max(200) })
+  .strict();
+export const favoriteArtistListRequestSchema = z
+  .object({ query: z.string().trim().max(200) })
+  .strict();
+export const addFavoriteArtistRequestSchema = z
+  .object({ artistId: musicBrainzIdSchema })
+  .strict();
+export const removeFavoriteArtistRequestSchema = z
+  .object({ id: z.uuid() })
   .strict();
 export const musicBrainzReleaseLookupRequestSchema = z
   .object({
@@ -552,6 +565,7 @@ export interface DatabaseRestorePreviewDto {
     readonly tracks: number;
     readonly syncProfiles: number;
     readonly savedLibraryFilters: number;
+    readonly favoriteArtists: number;
   };
 }
 export interface TagEditFilePreviewDto {
@@ -777,6 +791,27 @@ export interface AlbumIdentificationResultDto {
   readonly readOnly: true;
 }
 
+export interface FavoriteArtistSearchResultDto {
+  readonly sent: {
+    readonly artistName: string;
+  };
+  readonly candidates: readonly MusicBrainzArtistCandidate[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
+export interface FavoriteArtistDto {
+  readonly id: string;
+  readonly musicBrainzArtistId: string;
+  readonly name: string;
+  readonly sortName: string;
+  readonly disambiguation: string | null;
+  readonly type: string | null;
+  readonly country: string | null;
+  readonly createdAt: string;
+}
+
 export interface MusicBrainzReleaseTracklistDto {
   readonly albumId: string;
   readonly release: MusicBrainzReleaseTracklist;
@@ -855,6 +890,21 @@ export interface OutgrooveApi {
   cancelCoverArtArchiveArtwork(
     request: z.infer<typeof albumIdentificationRequestSchema>,
   ): Promise<Result<{ readonly cancelled: boolean }>>;
+  searchMusicBrainzArtists(
+    request: z.infer<typeof favoriteArtistSearchRequestSchema>,
+  ): Promise<Result<FavoriteArtistSearchResultDto>>;
+  cancelMusicBrainzArtistSearch(): Promise<
+    Result<{ readonly cancelled: boolean }>
+  >;
+  listFavoriteArtists(
+    request: z.infer<typeof favoriteArtistListRequestSchema>,
+  ): Promise<Result<readonly FavoriteArtistDto[]>>;
+  addFavoriteArtist(
+    request: z.infer<typeof addFavoriteArtistRequestSchema>,
+  ): Promise<Result<FavoriteArtistDto>>;
+  removeFavoriteArtist(
+    request: z.infer<typeof removeFavoriteArtistRequestSchema>,
+  ): Promise<Result<{ readonly id: string }>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,

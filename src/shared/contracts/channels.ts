@@ -19,6 +19,11 @@ export const channels = {
   cancelMusicBrainzAlbumCandidates:
     "identify:cancel-musicbrainz-album-candidates",
   cancelCoverArtArchiveArtwork: "identify:cancel-cover-art-archive-artwork",
+  searchMusicBrainzArtists: "radar:search-musicbrainz-artists",
+  cancelMusicBrainzArtistSearch: "radar:cancel-musicbrainz-artist-search",
+  listFavoriteArtists: "radar:list-favorite-artists",
+  addFavoriteArtist: "radar:add-favorite-artist",
+  removeFavoriteArtist: "radar:remove-favorite-artist",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
   updateSavedLibraryFilter: "library:update-saved-filter",

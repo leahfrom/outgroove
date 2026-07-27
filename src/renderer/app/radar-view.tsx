@@ -1,0 +1,307 @@
+import type {
+  FavoriteArtistDto,
+  FavoriteArtistSearchResultDto,
+} from "../../shared/contracts/api";
+import { ModalSheet } from "./modal-sheet";
+
+export function RadarView({
+  artistSearchError,
+  artistSearchLoading,
+  artistSearchResult,
+  artistSearchText,
+  favoriteFilter,
+  favoriteFilterText,
+  favoriteArtistIds,
+  favorites,
+  mutationBusy,
+  removal,
+  onAdd,
+  onArtistSearchTextChange,
+  onCancelArtistSearch,
+  onCancelRemoval,
+  onClearFavoriteFilter,
+  onConfirmRemoval,
+  onFavoriteFilterTextChange,
+  onFilterFavorites,
+  onRemove,
+  onSearchArtists,
+}: {
+  readonly artistSearchError: string | undefined;
+  readonly artistSearchLoading: boolean;
+  readonly artistSearchResult: FavoriteArtistSearchResultDto | undefined;
+  readonly artistSearchText: string;
+  readonly favoriteFilter: string;
+  readonly favoriteFilterText: string;
+  readonly favoriteArtistIds: readonly string[];
+  readonly favorites: readonly FavoriteArtistDto[];
+  readonly mutationBusy: boolean;
+  readonly removal: FavoriteArtistDto | undefined;
+  readonly onAdd: (artistId: string) => void;
+  readonly onArtistSearchTextChange: (value: string) => void;
+  readonly onCancelArtistSearch: () => void;
+  readonly onCancelRemoval: () => void;
+  readonly onClearFavoriteFilter: () => void;
+  readonly onConfirmRemoval: () => void;
+  readonly onFavoriteFilterTextChange: (value: string) => void;
+  readonly onFilterFavorites: () => void;
+  readonly onRemove: (favorite: FavoriteArtistDto) => void;
+  readonly onSearchArtists: () => void;
+}): React.JSX.Element {
+  const favoriteIds = new Set(favoriteArtistIds);
+  return (
+    <main className="radar-view">
+      <section className="radar-introduction">
+        <div>
+          <p className="eyebrow">Radar foundation</p>
+          <h2>Favorite artists</h2>
+          <p>
+            Save exact MusicBrainz artist identities now. Release discovery and
+            Radar refresh will remain separate, explicit future actions.
+          </p>
+        </div>
+        <strong>
+          {favorites.length} matching{" "}
+          {favorites.length === 1 ? "favorite" : "favorites"}
+        </strong>
+      </section>
+
+      <section className="favorite-artists" aria-labelledby="saved-favorites">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Durable local state</p>
+            <h2 id="saved-favorites">Saved favorites</h2>
+            <p>
+              This list is stored in Outgroove’s database and stays available
+              offline, through catalog rebuilds, and in verified backups.
+            </p>
+          </div>
+          <form
+            aria-label="Search saved favorite artists"
+            className="inline"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onFilterFavorites();
+            }}
+          >
+            <label htmlFor="favorite-artist-filter">Search favorites</label>
+            <input
+              id="favorite-artist-filter"
+              maxLength={200}
+              type="search"
+              value={favoriteFilterText}
+              onChange={(event) =>
+                onFavoriteFilterTextChange(event.target.value)
+              }
+            />
+            <button type="submit">Search saved favorites</button>
+            {(favoriteFilter || favoriteFilterText) && (
+              <button type="button" onClick={onClearFavoriteFilter}>
+                Clear favorite search
+              </button>
+            )}
+          </form>
+        </div>
+        {favorites.length === 0 ? (
+          <div className="empty">
+            <h3>
+              {favoriteFilter
+                ? "No favorites match this search"
+                : "No favorite artists yet"}
+            </h3>
+            <p>
+              {favoriteFilter
+                ? `Nothing matches “${favoriteFilter}”. Your other favorites remain unchanged.`
+                : "Search MusicBrainz below, review the identities, then choose one explicitly."}
+            </p>
+          </div>
+        ) : (
+          <ul aria-label="Favorite artists">
+            {favorites.map((favorite) => (
+              <li key={favorite.id}>
+                <article>
+                  <div>
+                    <h3>{favorite.name}</h3>
+                    {favorite.disambiguation && (
+                      <p>{favorite.disambiguation}</p>
+                    )}
+                    <p>
+                      {[favorite.type, favorite.country]
+                        .filter(Boolean)
+                        .join(" · ") || "Artist details unavailable"}
+                    </p>
+                    <code>{favorite.musicBrainzArtistId}</code>
+                  </div>
+                  <button
+                    aria-label={`Remove ${favorite.name} from favorites`}
+                    className="secondary"
+                    disabled={mutationBusy}
+                    onClick={() => onRemove(favorite)}
+                    type="button"
+                  >
+                    Remove favorite
+                  </button>
+                </article>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section
+        className="artist-search"
+        aria-labelledby="musicbrainz-artist-search"
+      >
+        <div className="artist-search-heading">
+          <div>
+            <p className="eyebrow">Explicit network action</p>
+            <h2 id="musicbrainz-artist-search">Find an artist</h2>
+          </div>
+          <p>
+            Searching sends only the artist name typed below to MusicBrainz.
+            Audio, paths, tags, artwork, fingerprints, and your saved favorites
+            stay local.
+          </p>
+        </div>
+        <form
+          aria-label="Search MusicBrainz for artists"
+          className="artist-search-form"
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearchArtists();
+          }}
+        >
+          <label htmlFor="musicbrainz-artist-name">Artist name</label>
+          <input
+            autoComplete="off"
+            id="musicbrainz-artist-name"
+            maxLength={200}
+            value={artistSearchText}
+            onChange={(event) => onArtistSearchTextChange(event.target.value)}
+          />
+          <button
+            className="primary"
+            disabled={artistSearchLoading || !artistSearchText.trim()}
+            type="submit"
+          >
+            Search MusicBrainz
+          </button>
+          {artistSearchLoading && (
+            <button type="button" onClick={onCancelArtistSearch}>
+              Cancel artist search
+            </button>
+          )}
+        </form>
+        {artistSearchLoading && (
+          <p aria-live="polite">Searching MusicBrainz for artist candidates…</p>
+        )}
+        {artistSearchError && (
+          <p className="field-error" role="alert">
+            {artistSearchError}
+          </p>
+        )}
+        {artistSearchResult && !artistSearchLoading && (
+          <div className="artist-search-results">
+            <p className="identification-status">
+              Reviewed results for “{artistSearchResult.sent.artistName}” ·{" "}
+              {artistSearchResult.source === "network"
+                ? "loaded from MusicBrainz"
+                : artistSearchResult.source === "cache"
+                  ? "loaded from local cache"
+                  : "showing an expired local cache because MusicBrainz was unavailable"}
+            </p>
+            {artistSearchResult.candidates.length === 0 ? (
+              <div className="empty compact">
+                <h3>No artist candidates found</h3>
+                <p>Try a more specific or alternate artist name.</p>
+              </div>
+            ) : (
+              <ol aria-label="MusicBrainz artist candidates">
+                {artistSearchResult.candidates.map((candidate) => {
+                  const alreadyFavorite = favoriteIds.has(candidate.artistId);
+                  return (
+                    <li key={candidate.artistId}>
+                      <article>
+                        <header>
+                          <div>
+                            <h3>{candidate.name}</h3>
+                            {candidate.disambiguation && (
+                              <p>{candidate.disambiguation}</p>
+                            )}
+                          </div>
+                          <span>{candidate.score}% MusicBrainz score</span>
+                        </header>
+                        <dl>
+                          <div>
+                            <dt>Type</dt>
+                            <dd>{candidate.type ?? "Unknown"}</dd>
+                          </div>
+                          <div>
+                            <dt>Country / area</dt>
+                            <dd>
+                              {[candidate.country, candidate.area]
+                                .filter(Boolean)
+                                .join(" · ") || "Unknown"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Stable artist ID</dt>
+                            <dd>{candidate.artistId}</dd>
+                          </div>
+                        </dl>
+                        <button
+                          disabled={mutationBusy || alreadyFavorite}
+                          onClick={() => onAdd(candidate.artistId)}
+                          type="button"
+                        >
+                          {alreadyFavorite
+                            ? `${candidate.name} is already a favorite`
+                            : `Add ${candidate.name} to favorites`}
+                        </button>
+                      </article>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        )}
+      </section>
+
+      {removal && (
+        <ModalSheet
+          ariaLabel={`Remove ${removal.name} from favorites`}
+          closeLabel="Keep favorite"
+          onClose={onCancelRemoval}
+        >
+          <section className="favorite-removal-confirmation">
+            <p className="eyebrow">Confirmation required</p>
+            <h2>Remove {removal.name}?</h2>
+            <p>
+              This removes only Outgroove’s saved favorite identity. It does not
+              change audio, Library tags, provider caches, or DAP files.
+            </p>
+            <div className="actions">
+              <button
+                className="primary"
+                disabled={mutationBusy}
+                onClick={onConfirmRemoval}
+                type="button"
+              >
+                Confirm remove favorite
+              </button>
+              <button
+                disabled={mutationBusy}
+                onClick={onCancelRemoval}
+                type="button"
+              >
+                Keep favorite
+              </button>
+            </div>
+          </section>
+        </ModalSheet>
+      )}
+    </main>
+  );
+}

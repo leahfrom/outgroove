@@ -10,6 +10,8 @@ import type {
   AlbumFolderArtworkResultDto,
   CoverArtArchiveResultDto,
   DatabaseRestorePreviewDto,
+  FavoriteArtistDto,
+  FavoriteArtistSearchResultDto,
   LibraryArtistDto,
   LibraryFormatDto,
   LibraryFolderDto,
@@ -84,6 +86,7 @@ import {
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { ModalSheet } from "./modal-sheet";
+import { RadarView } from "./radar-view";
 import type { MusicBrainzTrackMappingEdit } from "./musicbrainz-track-mapper";
 import {
   SharedFieldEditor,
@@ -236,6 +239,21 @@ export function App(): React.JSX.Element {
     Record<string, string>
   >({});
   const [savedFilterBusy, setSavedFilterBusy] = useState(false);
+  const [favoriteArtists, setFavoriteArtists] = useState<
+    readonly FavoriteArtistDto[]
+  >([]);
+  const [favoriteArtistIds, setFavoriteArtistIds] = useState<readonly string[]>(
+    [],
+  );
+  const [favoriteFilterText, setFavoriteFilterText] = useState("");
+  const [favoriteFilter, setFavoriteFilter] = useState("");
+  const [artistSearchText, setArtistSearchText] = useState("");
+  const [artistSearchLoading, setArtistSearchLoading] = useState(false);
+  const [artistSearchResult, setArtistSearchResult] =
+    useState<FavoriteArtistSearchResultDto>();
+  const [artistSearchError, setArtistSearchError] = useState<string>();
+  const [favoriteMutationBusy, setFavoriteMutationBusy] = useState(false);
+  const [favoriteRemoval, setFavoriteRemoval] = useState<FavoriteArtistDto>();
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
@@ -502,6 +520,7 @@ export function App(): React.JSX.Element {
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
+  const artistSearchRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
   const coverArtRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
@@ -795,6 +814,23 @@ export function App(): React.JSX.Element {
     return false;
   }, []);
 
+  const refreshFavoriteArtists = useCallback(
+    async (query: string): Promise<boolean> => {
+      const result = await window.outgroove.listFavoriteArtists({ query });
+      if (result.ok) {
+        setFavoriteArtists(result.value);
+        if (!query)
+          setFavoriteArtistIds(
+            result.value.map((favorite) => favorite.musicBrainzArtistId),
+          );
+        return true;
+      }
+      setNotice(result.error.message, "error");
+      return false;
+    },
+    [],
+  );
+
   const refreshSyncProfiles = useCallback(async (): Promise<
     readonly SyncProfileDto[] | undefined
   > => {
@@ -881,6 +917,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSavedFilters();
   }, [refreshSavedFilters]);
+  useEffect(() => {
+    void refreshFavoriteArtists("");
+  }, [refreshFavoriteArtists]);
   useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
@@ -1088,6 +1127,85 @@ export function App(): React.JSX.Element {
     const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
     if (cancelled.ok) setScanJob(cancelled.value);
     else setNotice(cancelled.error.message, "error");
+  };
+
+  const filterFavoriteArtists = (): void => {
+    const next = favoriteFilterText.trim();
+    setFavoriteFilter(next);
+    void refreshFavoriteArtists(next);
+  };
+
+  const clearFavoriteArtistFilter = (): void => {
+    setFavoriteFilterText("");
+    setFavoriteFilter("");
+    void refreshFavoriteArtists("");
+  };
+
+  const searchMusicBrainzArtists = async (): Promise<void> => {
+    const query = artistSearchText.trim();
+    if (!query) return;
+    const requestId = ++artistSearchRequestId.current;
+    setArtistSearchLoading(true);
+    setArtistSearchResult(undefined);
+    setArtistSearchError(undefined);
+    const result = await window.outgroove.searchMusicBrainzArtists({ query });
+    if (requestId !== artistSearchRequestId.current) return;
+    setArtistSearchLoading(false);
+    if (result.ok) {
+      setArtistSearchResult(result.value);
+      return;
+    }
+    setArtistSearchError(result.error.message);
+  };
+
+  const cancelMusicBrainzArtistSearch = (): void => {
+    artistSearchRequestId.current += 1;
+    setArtistSearchLoading(false);
+    setArtistSearchError(undefined);
+    void window.outgroove.cancelMusicBrainzArtistSearch().then((result) => {
+      if (!result.ok) {
+        setArtistSearchError(result.error.message);
+        return;
+      }
+      if (result.value.cancelled)
+        setNotice("Cancelled the MusicBrainz artist search.");
+    });
+  };
+
+  const addFavoriteArtist = async (artistId: string): Promise<void> => {
+    setFavoriteMutationBusy(true);
+    const result = await window.outgroove.addFavoriteArtist({ artistId });
+    setFavoriteMutationBusy(false);
+    if (!result.ok) {
+      setArtistSearchError(result.error.message);
+      return;
+    }
+    setFavoriteArtistIds((artistIds) => [
+      ...new Set([...artistIds, result.value.musicBrainzArtistId]),
+    ]);
+    await refreshFavoriteArtists(favoriteFilter);
+    setNotice(`Added ${result.value.name} to favorite artists.`, "success");
+  };
+
+  const removeFavoriteArtist = async (): Promise<void> => {
+    if (!favoriteRemoval) return;
+    setFavoriteMutationBusy(true);
+    const result = await window.outgroove.removeFavoriteArtist({
+      id: favoriteRemoval.id,
+    });
+    setFavoriteMutationBusy(false);
+    if (!result.ok) {
+      setNotice(result.error.message, "error");
+      return;
+    }
+    const removedName = favoriteRemoval.name;
+    const removedArtistId = favoriteRemoval.musicBrainzArtistId;
+    setFavoriteRemoval(undefined);
+    setFavoriteArtistIds((artistIds) =>
+      artistIds.filter((artistId) => artistId !== removedArtistId),
+    );
+    await refreshFavoriteArtists(favoriteFilter);
+    setNotice(`Removed ${removedName} from favorite artists.`, "success");
   };
 
   const createBackup = async (): Promise<void> => {
@@ -3065,6 +3183,30 @@ export function App(): React.JSX.Element {
             setActiveView("library");
           }}
           onRetry={(selectedRootId) => void startScan(selectedRootId)}
+        />
+      )}
+      {activeView === "radar" && (
+        <RadarView
+          artistSearchError={artistSearchError}
+          artistSearchLoading={artistSearchLoading}
+          artistSearchResult={artistSearchResult}
+          artistSearchText={artistSearchText}
+          favoriteArtistIds={favoriteArtistIds}
+          favoriteFilter={favoriteFilter}
+          favoriteFilterText={favoriteFilterText}
+          favorites={favoriteArtists}
+          mutationBusy={favoriteMutationBusy}
+          removal={favoriteRemoval}
+          onAdd={(artistId) => void addFavoriteArtist(artistId)}
+          onArtistSearchTextChange={setArtistSearchText}
+          onCancelArtistSearch={cancelMusicBrainzArtistSearch}
+          onCancelRemoval={() => setFavoriteRemoval(undefined)}
+          onClearFavoriteFilter={clearFavoriteArtistFilter}
+          onConfirmRemoval={() => void removeFavoriteArtist()}
+          onFavoriteFilterTextChange={setFavoriteFilterText}
+          onFilterFavorites={filterFavoriteArtists}
+          onRemove={setFavoriteRemoval}
+          onSearchArtists={() => void searchMusicBrainzArtists()}
         />
       )}
       {activeView === "library" && (
