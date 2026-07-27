@@ -28,7 +28,13 @@ const result: AlbumIdentificationResultDto = {
       releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
       releaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
       title: "A very long Fixture Album title",
-      artistCredit: "Fixture Artist",
+      artistCredits: [
+        {
+          name: "Fixture Artist",
+          joinPhrase: "",
+          artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        },
+      ],
       date: "2026-04-02",
       country: "DE",
       status: "Official",
@@ -55,6 +61,7 @@ describe("AlbumIdentification", () => {
         result={undefined}
         onCancel={vi.fn()}
         onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
         onSearch={onSearch}
       />,
     );
@@ -68,7 +75,7 @@ describe("AlbumIdentification", () => {
       "never sends audio, artwork, file paths, native tags, or fingerprints",
     );
     expect(dialog).toHaveTextContent(
-      "cannot propose, apply, or write metadata",
+      "cannot preview, apply, or write metadata",
     );
     expect(onSearch).not.toHaveBeenCalled();
     await user.click(
@@ -86,6 +93,7 @@ describe("AlbumIdentification", () => {
         result={result}
         onCancel={vi.fn()}
         onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
         onSearch={vi.fn()}
       />,
     );
@@ -104,6 +112,54 @@ describe("AlbumIdentification", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("requires an explicit keyboard-reachable choice before creating a limited draft", async () => {
+    const user = userEvent.setup();
+    const onCreateDraft = vi.fn();
+    const albumWithTrack: CatalogAlbum = {
+      ...album,
+      tracks: [
+        {
+          id: "d3a52a1d-f00b-46d8-ac01-e848675a2139",
+          path: "/not-sent/track.flac",
+          size: 1,
+          modifiedMs: 1,
+          format: "FLAC",
+          durationSeconds: 1,
+          tags: {
+            title: "Track",
+            album: album.title,
+            artist: album.albumArtist,
+            albumArtist: album.albumArtist,
+            trackNumber: 1,
+            discNumber: 1,
+            year: "2025",
+          },
+          nativeTags: [],
+          scanError: null,
+        },
+      ],
+    };
+    render(
+      <AlbumIdentification
+        album={albumWithTrack}
+        error={undefined}
+        loading={false}
+        result={result}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onCreateDraft={onCreateDraft}
+        onSearch={vi.fn()}
+      />,
+    );
+    expect(onCreateDraft).not.toHaveBeenCalled();
+    const button = screen.getByRole("button", {
+      name: `Draft supported tags from ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
+    });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(onCreateDraft).toHaveBeenCalledWith(result.candidates[0]);
+  });
+
   it("offers keyboard-reachable cancellation and reports recoverable failure", async () => {
     const user = userEvent.setup();
     const onCancel = vi.fn();
@@ -115,6 +171,7 @@ describe("AlbumIdentification", () => {
         result={undefined}
         onCancel={onCancel}
         onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
         onSearch={vi.fn()}
       />,
     );
@@ -131,6 +188,7 @@ describe("AlbumIdentification", () => {
         result={undefined}
         onCancel={onCancel}
         onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
         onSearch={vi.fn()}
       />,
     );

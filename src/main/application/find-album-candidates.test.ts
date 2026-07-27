@@ -41,7 +41,13 @@ describe("find album candidates", () => {
             releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
             releaseGroupId: null,
             title: "Fixture Album",
-            artistCredit: "Fixture Artist",
+            artistCredits: [
+              {
+                name: "Fixture Artist",
+                joinPhrase: "",
+                artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+              },
+            ],
             date: "2026-04",
             country: "DE",
             status: "Official",

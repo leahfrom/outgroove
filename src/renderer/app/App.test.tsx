@@ -846,7 +846,7 @@ describe("tag edit UI safety states", () => {
     expect(applyEdit).not.toHaveBeenCalled();
   });
 
-  it("routes an explicit read-only album search through the narrow candidate API", async () => {
+  it("routes an explicit candidate into a single-track draft without previewing or writing", async () => {
     const mockApi = api(true);
     const findCandidates = vi
       .spyOn(mockApi, "findMusicBrainzAlbumCandidates")
@@ -866,7 +866,13 @@ describe("tag edit UI safety states", () => {
               releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
               releaseGroupId: null,
               title: "Fixture Album",
-              artistCredit: "Fixture Artist",
+              artistCredits: [
+                {
+                  name: "Fixture Artist",
+                  joinPhrase: "",
+                  artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+                },
+              ],
               date: "2026",
               country: "DE",
               status: "Official",
@@ -888,6 +894,7 @@ describe("tag edit UI safety states", () => {
       });
     const applyTrack = vi.spyOn(mockApi, "applyTrackTagEdit");
     const applyAlbum = vi.spyOn(mockApi, "applyAlbumTitleEdit");
+    const previewTrack = vi.spyOn(mockApi, "previewTrackTagEdit");
     Object.defineProperty(window, "outgroove", {
       configurable: true,
       value: mockApi,
@@ -896,7 +903,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    const trigger = await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
     const dialog = screen.getByRole("dialog", {
       name: "Find MusicBrainz matches for Fixture Album",
     });
@@ -911,9 +918,169 @@ describe("tag edit UI safety states", () => {
     );
     expect(applyTrack).not.toHaveBeenCalled();
     expect(applyAlbum).not.toHaveBeenCalled();
-    await user.keyboard("{Escape}");
+    expect(previewTrack).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Draft supported tags from Fixture Album, 2026",
+      }),
+    );
     expect(dialog).not.toBeInTheDocument();
-    expect(trigger).toHaveFocus();
+    const editor = screen.getByRole("dialog", {
+      name: "Edit metadata for Track",
+    });
+    expect(editor).toHaveTextContent(
+      "Drafted 2 supported fields from MusicBrainz release",
+    );
+    expect(
+      within(editor).getByLabelText("MusicBrainz release ID proposed value"),
+    ).toHaveValue("2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef");
+    expect(
+      within(editor).getByLabelText(
+        "MusicBrainz release artist ID proposed value",
+      ),
+    ).toHaveValue("7c08e5aa-3d6a-480f-8763-156120bc9bd9");
+    expect(
+      within(editor).getByLabelText("Track title proposed value"),
+    ).toHaveValue("Track");
+    expect(previewTrack).not.toHaveBeenCalled();
+    expect(applyTrack).not.toHaveBeenCalled();
+
+    await user.click(
+      within(editor).getByRole("button", { name: "Review 2 changes" }),
+    );
+    expect(previewTrack).toHaveBeenCalledOnce();
+    expect(applyTrack).not.toHaveBeenCalled();
+  });
+
+  it("routes a release candidate for multiple tracks into explicit shared fields", async () => {
+    const mockApi = api(true);
+    const firstTrack = album.tracks[0];
+    if (!firstTrack) throw new Error("Test track missing");
+    const secondTrack = {
+      ...firstTrack,
+      id: "759ac296-141d-44f8-a8b5-39ea5d421688",
+      path: "/fixture/track-2.flac",
+      format: "FLAC",
+      tags: {
+        ...firstTrack.tags,
+        title: "Track 2",
+        trackNumber: 2,
+      },
+    };
+    const multiTrackAlbum: CatalogAlbum = {
+      ...album,
+      tracks: [...album.tracks, secondTrack],
+    };
+    vi.spyOn(mockApi, "queryLibrary").mockResolvedValue({
+      ok: true,
+      value: {
+        albums: [multiTrackAlbum],
+        artists: [],
+        formats: [],
+        folders: [],
+        tracks: [],
+        scanErrors: [],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    vi.spyOn(mockApi, "findMusicBrainzAlbumCandidates").mockResolvedValue({
+      ok: true,
+      value: {
+        albumId: album.id,
+        sent: {
+          albumTitle: album.title,
+          albumArtist: album.albumArtist,
+        },
+        source: "cache",
+        fetchedAt: "2026-07-27T12:00:00.000Z",
+        readOnly: true,
+        candidates: [
+          {
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+            releaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
+            title: "Fixture Album",
+            artistCredits: [
+              {
+                name: "MusicBrainz Artist",
+                joinPhrase: "",
+                artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+              },
+            ],
+            date: "2027-04",
+            country: "DE",
+            status: "Official",
+            trackCount: 2,
+            catalogNumbers: ["MB-2027"],
+            musicBrainzScore: 100,
+            score: 65,
+            confidence: "possible",
+            matches: ["Album title matches", "Track count matches (2)"],
+            conflicts: ["Album artist differs"],
+          },
+        ],
+      },
+    });
+    const previewBatch = vi
+      .spyOn(mockApi, "previewTrackBatchEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "57b1e44b-e00a-4daa-bd6f-985472166116",
+          confirmationToken: "candidate-batch-confirmation-token",
+          files: [],
+        },
+      });
+    const applyBatch = vi.spyOn(mockApi, "applyTrackBatchEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const finder = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    await user.click(
+      within(finder).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    await user.click(
+      await within(finder).findByRole("button", {
+        name: "Draft supported tags from Fixture Album, 2027-04",
+      }),
+    );
+
+    const editor = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(editor).toHaveTextContent("2 tracks selected");
+    expect(editor).toHaveTextContent("6 shared fields selected for review");
+    expect(within(editor).getByLabelText("Change album artist")).toBeChecked();
+    expect(
+      within(editor).getByLabelText("Batch catalog number value"),
+    ).toHaveValue("MB-2027");
+    expect(previewBatch).not.toHaveBeenCalled();
+    expect(applyBatch).not.toHaveBeenCalled();
+
+    await user.click(
+      within(editor).getByRole("button", {
+        name: "Preview selected tracks",
+      }),
+    );
+    expect(previewBatch).toHaveBeenCalledWith({
+      fileIds: multiTrackAlbum.tracks.map((track) => track.id),
+      changes: {
+        albumArtist: "MusicBrainz Artist",
+        year: "2027-04",
+        catalogNumbers: ["MB-2027"],
+        musicBrainzReleaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+        musicBrainzReleaseArtistIds: ["7c08e5aa-3d6a-480f-8763-156120bc9bd9"],
+        musicBrainzReleaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
+      },
+    });
+    expect(applyBatch).not.toHaveBeenCalled();
   });
 
   it("routes local artwork through a preserved preview and explicit keyboard confirmation", async () => {

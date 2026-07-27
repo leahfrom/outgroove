@@ -25,6 +25,12 @@ const musicBrainzResponseSchema = z
                   .object({
                     name: z.string().max(1000),
                     joinphrase: z.string().max(100).optional(),
+                    artist: z
+                      .object({
+                        id: z.uuid(),
+                      })
+                      .loose()
+                      .optional(),
                   })
                   .loose(),
               )
@@ -138,10 +144,12 @@ function mapResponse(
     releaseGroupId:
       release["release-group"]?.id.toLocaleLowerCase("en-US") ?? null,
     title: release.title,
-    artistCredit:
-      release["artist-credit"]
-        ?.map((credit) => `${credit.name}${credit.joinphrase ?? ""}`)
-        .join("") ?? "",
+    artistCredits:
+      release["artist-credit"]?.map((credit) => ({
+        name: credit.name,
+        joinPhrase: credit.joinphrase ?? "",
+        artistId: credit.artist?.id.toLocaleLowerCase("en-US") ?? null,
+      })) ?? [],
     date: release.date ?? null,
     country: release.country ?? null,
     status: release.status ?? null,

@@ -52,6 +52,10 @@ import {
   type AlbumDiagnosticFilter,
   type AlbumDiagnosticWorkflow,
 } from "../../shared/domain/album-diagnostics";
+import {
+  createAlbumCandidateTagDraft,
+  type ComparedAlbumCandidate,
+} from "../../shared/domain/album-identification";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { AlbumActionsMenu } from "./album-actions-menu";
 import { AlbumIdentification } from "./album-identification";
@@ -78,7 +82,11 @@ import {
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { ModalSheet } from "./modal-sheet";
-import { SharedFieldEditor } from "./shared-field-editor";
+import {
+  SharedFieldEditor,
+  type SharedFieldDraft,
+  type SharedFieldEnabled,
+} from "./shared-field-editor";
 import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
@@ -343,7 +351,8 @@ export function App(): React.JSX.Element {
     useState<TrackTagEditPreviewDto>();
   const [trackUndoResult, setTrackUndoResult] = useState<TagEditResultDto>();
   const [batchTrackIds, setBatchTrackIds] = useState<string[]>([]);
-  const [batchEnabled, setBatchEnabled] = useState({
+  const [metadataDraftSource, setMetadataDraftSource] = useState<string>();
+  const [batchEnabled, setBatchEnabled] = useState<SharedFieldEnabled>({
     artist: false,
     albumArtist: false,
     trackTotal: false,
@@ -367,7 +376,7 @@ export function App(): React.JSX.Element {
     musicBrainzReleaseArtistId: false,
     musicBrainzReleaseGroupId: false,
   });
-  const [batchDraft, setBatchDraft] = useState({
+  const [batchDraft, setBatchDraft] = useState<SharedFieldDraft>({
     artist: "",
     albumArtist: "",
     trackTotal: "",
@@ -1420,6 +1429,7 @@ export function App(): React.JSX.Element {
   };
 
   const editLibraryTrack = (track: CatalogAlbum["tracks"][number]): void => {
+    setMetadataDraftSource(undefined);
     trackEditorReturnFocusId.current = track.id;
     trackEditorReturnFocusElement.current =
       document.activeElement instanceof HTMLElement
@@ -2543,6 +2553,7 @@ export function App(): React.JSX.Element {
 
   const openLibraryAlbumEditingTool = (tool: LibraryAlbumEditingTool): void => {
     if (!selectedAlbum) return;
+    setMetadataDraftSource(undefined);
     setAlbumTitleSection(tool === "history" ? "history" : "edit");
     setLibraryAlbumEditingTool(tool);
     if (tool === "history") void refreshEditHistory(selectedAlbum.id);
@@ -2595,6 +2606,58 @@ export function App(): React.JSX.Element {
     setAlbumIdentificationOpen(false);
   };
 
+  const createMusicBrainzTagDraft = (
+    candidate: ComparedAlbumCandidate,
+  ): void => {
+    if (!selectedAlbum) return;
+    const candidateDraft = createAlbumCandidateTagDraft(
+      selectedAlbum,
+      candidate,
+    );
+    if (candidateDraft.fields.length === 0) {
+      setNotice(
+        "All safely supported MusicBrainz values are already current or unavailable. No draft was created.",
+      );
+      return;
+    }
+    const source = `Drafted ${candidateDraft.fields.length} supported ${
+      candidateDraft.fields.length === 1 ? "field" : "fields"
+    } from MusicBrainz release ${candidate.releaseId}. Review every selected value; no preview or write has started.`;
+    setMetadataDraftSource(source);
+    setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
+    setBatchPreview(undefined);
+    setBatchResult(undefined);
+    setBatchError(undefined);
+    setAlbumIdentificationOpen(false);
+
+    if (selectedAlbum.tracks.length === 1) {
+      const track = selectedAlbum.tracks[0];
+      if (!track) return;
+      const nextDraft: TrackMetadataDraft = draftForTrack(track);
+      for (const field of candidateDraft.fields)
+        nextDraft[field.field] = field.value;
+      setSelectedTrackId(track.id);
+      setTrackDraft(nextDraft);
+      setLibraryTrackEditorOpen(true);
+    } else {
+      const enabled = Object.fromEntries(
+        Object.keys(batchEnabled).map((field) => [field, false]),
+      ) as SharedFieldEnabled;
+      const nextDraft = { ...batchDraft };
+      for (const field of candidateDraft.fields) {
+        enabled[field.field] = true;
+        nextDraft[field.field] = field.value;
+      }
+      setBatchTrackIds(selectedAlbum.tracks.map((track) => track.id));
+      setBatchEnabled(enabled);
+      setBatchDraft(nextDraft);
+      setLibraryAlbumEditingTool("shared");
+    }
+    setNotice(source);
+  };
+
   const closeLibraryAlbum = (): void => {
     if (albumIdentificationOpen) closeAlbumIdentification();
     if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
@@ -2624,6 +2687,7 @@ export function App(): React.JSX.Element {
     <SharedFieldEditor
       busy={busy}
       draft={batchDraft}
+      {...(metadataDraftSource ? { draftSource: metadataDraftSource } : {})}
       enabled={batchEnabled}
       error={batchError}
       preview={batchPreview}
@@ -3892,6 +3956,7 @@ export function App(): React.JSX.Element {
             result={albumIdentificationResult}
             onCancel={cancelAlbumIdentification}
             onClose={closeAlbumIdentification}
+            onCreateDraft={createMusicBrainzTagDraft}
             onSearch={() => void searchAlbumIdentification()}
           />
         )}
@@ -3982,6 +4047,9 @@ export function App(): React.JSX.Element {
             <TrackMetadataEditor
               busy={busy}
               draft={trackDraft}
+              {...(metadataDraftSource
+                ? { draftSource: metadataDraftSource }
+                : {})}
               error={trackEditError}
               onCancelPreview={() => {
                 setTrackEditPreview(undefined);

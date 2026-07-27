@@ -12,6 +12,11 @@ import {
 } from "../../src/main/adapters/metadata/metadata-writer";
 import { EditTrackTags } from "../../src/main/application/edit-track-tags";
 import { pathComparisonKey } from "../../src/main/application/scan-library";
+import {
+  createAlbumCandidateTagDraft,
+  type AlbumCandidateTagField,
+  type AlbumIdentificationCandidate,
+} from "../../src/shared/domain/album-identification";
 
 const temporary: string[] = [];
 
@@ -1236,6 +1241,121 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
     source_operation_id: preview.operationId,
     state: "completed",
   });
+  database.close();
+});
+
+it("applies and verifies an explicit MusicBrainz release draft across MP3 and FLAC, then undoes it", async () => {
+  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const album = database.listAlbums()[0];
+  if (!album) throw new Error("Candidate draft album missing.");
+  const candidate: AlbumIdentificationCandidate = {
+    releaseId: "33333333-3333-4333-8333-333333333333",
+    releaseGroupId: "66666666-6666-4666-8666-666666666666",
+    title: album.title,
+    artistCredits: [
+      {
+        name: "MusicBrainz Fixture Artist",
+        joinPhrase: "",
+        artistId: "55555555-5555-4555-8555-555555555555",
+      },
+    ],
+    date: "2034-09",
+    country: "DE",
+    status: "Official",
+    trackCount: files.length,
+    catalogNumbers: ["MB-FIX-2034"],
+    musicBrainzScore: 100,
+  };
+  const draft = createAlbumCandidateTagDraft(album, candidate);
+  const value = (field: AlbumCandidateTagField): string => {
+    const proposed = draft.fields.find((item) => item.field === field)?.value;
+    if (!proposed) throw new Error(`Candidate draft field missing: ${field}`);
+    return proposed;
+  };
+  expect(draft.fields.map((field) => field.field)).toEqual([
+    "albumArtist",
+    "year",
+    "catalogNumber",
+    "musicBrainzReleaseId",
+    "musicBrainzReleaseGroupId",
+    "musicBrainzReleaseArtistId",
+  ]);
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const originalTags = await Promise.all(
+    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
+  );
+  const preview = editor.previewBatch(
+    files.map(({ fileId }) => fileId),
+    {
+      albumArtist: value("albumArtist"),
+      year: value("year"),
+      catalogNumbers: [value("catalogNumber")],
+      musicBrainzReleaseId: value("musicBrainzReleaseId"),
+      musicBrainzReleaseArtistIds: [value("musicBrainzReleaseArtistId")],
+      musicBrainzReleaseGroupId: value("musicBrainzReleaseGroupId"),
+    },
+  );
+  expect(preview.files).toHaveLength(2);
+  expect(preview.files.every((file) => file.willWrite)).toBe(true);
+  expect(
+    preview.files.map((file) => file.changes.map((change) => change.field)),
+  ).toEqual([
+    [
+      "albumArtist",
+      "year",
+      "catalogNumbers",
+      "musicBrainzReleaseId",
+      "musicBrainzReleaseArtistIds",
+      "musicBrainzReleaseGroupId",
+    ],
+    [
+      "albumArtist",
+      "year",
+      "catalogNumbers",
+      "musicBrainzReleaseId",
+      "musicBrainzReleaseArtistIds",
+      "musicBrainzReleaseGroupId",
+    ],
+  ]);
+
+  const applied = await editor.applyBatch(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([
+    { verified: true, error: null },
+    { verified: true, error: null },
+  ]);
+  for (const [index, file] of files.entries()) {
+    expect((await reader.read(file.path)).tags).toMatchObject({
+      albumArtist: "MusicBrainz Fixture Artist",
+      year: "2034-09",
+      catalogNumbers: ["MB-FIX-2034"],
+      musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+      musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+      musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+    });
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  }
+
+  const undoPreview = editor.previewBatchUndo(preview.operationId);
+  expect(undoPreview.files.every((file) => file.warnings.length === 0)).toBe(
+    true,
+  );
+  const undone = await editor.applyBatchUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results).toMatchObject([
+    { verified: true, error: null },
+    { verified: true, error: null },
+  ]);
+  for (const [index, file] of files.entries()) {
+    expect((await reader.read(file.path)).tags).toEqual(originalTags[index]);
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  }
   database.close();
 });
 

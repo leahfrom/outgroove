@@ -316,6 +316,7 @@ interface SharedFieldEditorProps {
   readonly result: TagEditResultDto | undefined;
   readonly error: string | undefined;
   readonly busy: boolean;
+  readonly draftSource?: string;
   readonly onEnabledChange: (field: SharedField, enabled: boolean) => void;
   readonly onDraftChange: (field: SharedField, value: string) => void;
   readonly onPreview: () => void;
@@ -332,6 +333,7 @@ function SharedFieldEditorComponent(
     result,
     error,
     busy,
+    draftSource,
     onEnabledChange,
     onDraftChange,
     onPreview,
@@ -378,6 +380,11 @@ function SharedFieldEditorComponent(
           </>
         }
       />
+      {draftSource && (
+        <p className="metadata-draft-source" role="status">
+          {draftSource}
+        </p>
+      )}
 
       <div className="tag-comparison" aria-label="Basic shared tag comparison">
         <ComparisonHeader />

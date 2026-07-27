@@ -65,7 +65,13 @@ describe("MusicBrainz release search adapter", () => {
     });
     expect(result.candidates[0]).toMatchObject({
       title: "Fixture Album",
-      artistCredit: "Fixture Artist",
+      artistCredits: [
+        {
+          name: "Fixture Artist",
+          joinPhrase: "",
+          artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        },
+      ],
       trackCount: 2,
       catalogNumbers: ["FIX-2026"],
     });
