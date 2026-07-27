@@ -35,7 +35,12 @@ Both stages operate only on the same-volume candidate file. Neither stage
 receives permission to edit the source path. Outgroove then flushes, re-reads,
 verifies every targeted normalized value, checks the audio-payload hash,
 installs the candidate through the existing rollback replacement, and re-reads
-again. A failure at either stage leaves or restores the source.
+again. A failure at either stage leaves or restores the source. The second
+stage uses TagLib-Wasm's Emscripten buffer backend on every platform rather
+than allowing runtime backend selection. Its WASI property-map saver in 1.5.3
+normalizes unrelated MP3 totals and FLAC descriptions differently, which can
+make a combined edit fail verification even though each individual field is
+supported.
 
 The WebAssembly files remain external Vite dependencies and are unpacked from
 the Electron ASAR so a recipient can replace them with a compatible modified
@@ -49,6 +54,8 @@ unpacked runtime layout loads successfully.
 - The renderer, preload API, IPC surface, and database schema do not gain a new
   privilege or durable metadata table.
 - The production dependency and packaged application become larger.
+- Extended-field edits temporarily hold the candidate audio file in memory;
+  the source path still never reaches TagLib-Wasm.
 - The package now carries an LGPL compliance surface that must be reviewed at
   every release; dependency upgrades cannot be folded into unrelated work.
 - Write support remains MP3 and FLAC only. Passing fixtures do not justify

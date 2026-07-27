@@ -325,6 +325,9 @@ describe.each(["preservation.mp3", "preservation.flac"])(
       const picturesBefore = (await loadTrack(path)).pictures;
 
       await writer.writeTags(path, {
+        trackNumber: 7,
+        trackTotal: 12,
+        comment: "First line\nSecond line",
         publishers: ["Fixture Publisher"],
         descriptions: ["Fixture description"],
         grouping: "Suite I",
@@ -341,6 +344,9 @@ describe.each(["preservation.mp3", "preservation.flac"])(
         musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       });
       expect((await reader.read(path)).tags).toMatchObject({
+        trackNumber: 7,
+        trackTotal: 12,
+        comment: "First line\nSecond line",
         publishers: ["Fixture Publisher"],
         descriptions: ["Fixture description"],
         grouping: "Suite I",
@@ -358,6 +364,8 @@ describe.each(["preservation.mp3", "preservation.flac"])(
       });
 
       const result = await writer.writeTags(path, {
+        trackTotal: null,
+        comment: null,
         publishers: [],
         descriptions: [],
         grouping: null,
@@ -375,6 +383,8 @@ describe.each(["preservation.mp3", "preservation.flac"])(
       });
       const after = await reader.read(path);
       expect(after.tags).toMatchObject({
+        trackTotal: null,
+        comment: null,
         publishers: [],
         descriptions: [],
         grouping: null,

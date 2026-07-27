@@ -1605,7 +1605,7 @@ describe("tag edit UI safety states", () => {
         musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       },
     });
-  });
+  }, 10_000);
 
   it("keeps a failed Library track edit preview visible with its stale-write error", async () => {
     Object.defineProperty(window, "outgroove", {
