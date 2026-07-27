@@ -23,6 +23,7 @@ export interface TrackMetadataDraft {
   year: string;
   genre: string;
   composer: string;
+  conductor: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -75,6 +76,11 @@ const comparisonFields: readonly ComparisonField[] = [
     label: "Composer",
     placeholder: "One composer; empty clears",
   },
+  {
+    field: "conductor",
+    label: "Conductor",
+    placeholder: "One conductor; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -88,6 +94,7 @@ const previewFieldLabels: Record<string, string> = {
   year: "Release date",
   genres: "Genre",
   composers: "Composer",
+  conductors: "Conductor",
 };
 
 function currentValue(
@@ -115,6 +122,8 @@ function currentValue(
       return (track.tags.genres ?? []).join(" · ");
     case "composer":
       return (track.tags.composers ?? []).join(" · ");
+    case "conductor":
+      return (track.tags.conductors ?? []).join(" · ");
   }
 }
 
@@ -189,7 +198,7 @@ function TrackMetadataEditorComponent(
             Composer follows the same one-value rule; tracks with multiple
             current composer values cannot replace that field. Totals are
             explicit: changing or clearing one never changes its track or disc
-            number.
+            number. Conductor follows the same one-value rule as Composer.
           </>
         }
       />

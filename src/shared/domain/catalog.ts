@@ -17,6 +17,7 @@ export interface NormalizedTags {
   readonly year: string | null;
   readonly genres?: readonly string[];
   readonly composers?: readonly string[];
+  readonly conductors?: readonly string[];
 }
 
 export interface ScannedAudioFile {

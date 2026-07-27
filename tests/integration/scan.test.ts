@@ -58,6 +58,7 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.composers).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.conductors).toEqual([]);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.trackTotal).toBe(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.discTotal).toBe(1);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
@@ -90,7 +91,7 @@ describe("incremental library scan", () => {
       .prepare(
         `UPDATE audio_files
          SET normalized_tags_json=json_remove(
-           normalized_tags_json, '$.trackTotal', '$.discTotal'
+           normalized_tags_json, '$.trackTotal', '$.discTotal', '$.conductors'
          )
          WHERE scan_state='ok'`,
       )

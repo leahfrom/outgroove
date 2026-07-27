@@ -31,6 +31,7 @@ export interface MetadataTagChanges {
   readonly year?: string | null;
   readonly genres?: readonly string[];
   readonly composers?: readonly string[];
+  readonly conductors?: readonly string[];
 }
 
 export interface MetadataWriter {
@@ -107,6 +108,12 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
       throw new Error("This writer supports one proposed composer value.");
     updated.composer = composers[0] ?? "";
   }
+  if (changes.conductors !== undefined) {
+    const conductors = changes.conductors;
+    if (conductors.length > 1)
+      throw new Error("This writer supports one proposed conductor value.");
+    updated.conductor = conductors[0] ?? "";
+  }
   return updated;
 }
 
@@ -134,10 +141,22 @@ function changesMatch(
     )
       return false;
   }
+  if (changes.conductors !== undefined) {
+    const proposedConductors = changes.conductors;
+    const conductors = file.tags.conductors ?? [];
+    if (
+      conductors.length !== proposedConductors.length ||
+      !conductors.every(
+        (conductor, index) => conductor === proposedConductors[index],
+      )
+    )
+      return false;
+  }
   return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
     (field) =>
       field === "genres" ||
       field === "composers" ||
+      field === "conductors" ||
       file.tags[field] === changes[field],
   );
 }

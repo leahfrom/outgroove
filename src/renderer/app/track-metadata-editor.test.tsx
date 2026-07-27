@@ -34,6 +34,7 @@ const track: CatalogAlbum["tracks"][number] = {
     year: "2026-07",
     genres: ["Post Rock"],
     composers: ["Fixture Composer"],
+    conductors: ["Fixture Conductor"],
   },
   nativeTags: [],
   scanError: null,
@@ -50,6 +51,7 @@ const unchangedDraft: TrackMetadataDraft = {
   year: track.tags.year ?? "",
   genre: "Post Rock",
   composer: "Fixture Composer",
+  conductor: "Fixture Conductor",
 };
 
 function editor(
@@ -80,7 +82,7 @@ describe("TrackMetadataEditor", () => {
     const { rerender } = render(editor(unchangedDraft));
 
     const comparison = screen.getByLabelText("Track tag comparison");
-    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(10);
+    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(11);
     expect(
       screen.getByRole("spinbutton", { name: "Track total proposed value" }),
     ).toHaveValue(12);
@@ -97,6 +99,9 @@ describe("TrackMetadataEditor", () => {
     expect(
       screen.getByRole("textbox", { name: "Composer proposed value" }),
     ).toHaveValue("Fixture Composer");
+    expect(
+      screen.getByRole("textbox", { name: "Conductor proposed value" }),
+    ).toHaveValue("Fixture Conductor");
 
     const changedDraft = {
       ...unchangedDraft,

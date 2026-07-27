@@ -103,6 +103,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         year: "2032-02-29",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -116,6 +117,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "year",
         "genres",
         "composers",
+        "conductors",
       ]);
 
       const result = await editor.apply(
@@ -134,6 +136,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         year: "2032-02-29",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -288,6 +291,114 @@ it("undoes a composer edit from a legacy catalog row without the rebuildable fie
   );
   expect(undone.results).toMatchObject([{ verified: true, error: null }]);
   expect((await reader.read(path)).tags.composers).toEqual([]);
+  database.close();
+});
+
+it("blocks replacing multiple conductor values when exact undo is unavailable", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("02-second.flac");
+  const scanned = await reader.read(path);
+  const payloadBefore = await audioPayloadHash(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: {
+      ...scanned.tags,
+      conductors: ["First Conductor", "Second Conductor"],
+    },
+  });
+
+  const preview = editor.preview(fileId, {
+    conductors: ["Replacement Conductor"],
+  });
+  expect(preview.warnings).toContain(
+    "Conductor editing is unavailable for tracks with multiple conductor values because this writer cannot restore them safely.",
+  );
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+
+  expect(result.results).toMatchObject([
+    {
+      verified: false,
+      error:
+        "Conductor editing is unavailable for tracks with multiple conductor values because this writer cannot restore them safely.",
+    },
+  ]);
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
+it("undoes a conductor edit from a legacy catalog row without the rebuildable field", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  const legacyTags = { ...scanned.tags };
+  delete legacyTags.conductors;
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: legacyTags,
+  });
+
+  const preview = editor.preview(fileId, {
+    conductors: ["Fixture Conductor"],
+  });
+  const applied = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([{ verified: true, error: null }]);
+
+  const undoPreview = editor.previewUndo(preview.operationId);
+  expect(undoPreview.changes).toEqual([
+    {
+      field: "conductors",
+      before: ["Fixture Conductor"],
+      after: [],
+    },
+  ]);
+  const undone = await editor.applyUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results).toMatchObject([{ verified: true, error: null }]);
+  expect((await reader.read(path)).tags.conductors).toEqual([]);
+  database.close();
+});
+
+it("rejects a no-op conductor proposal and refuses a stale targeted conductor", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const payloadBefore = await audioPayloadHash(path);
+  expect(() => editor.preview(fileId, { conductors: [] })).toThrow(
+    "already matches this track",
+  );
+
+  const preview = editor.preview(fileId, {
+    conductors: ["Fixture Conductor"],
+  });
+  const external = await writer.writeTags(path, {
+    conductors: ["External Conductor"],
+  });
+  database.updateFileAfterEdit(fileId, external.file);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+
+  expect(result.results).toMatchObject([
+    {
+      fileId,
+      verified: false,
+      error:
+        "A field in this preview changed after it was created; the edit did not overwrite it.",
+    },
+  ]);
+  expect((await reader.read(path)).tags.conductors).toEqual([
+    "External Conductor",
+  ]);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
   database.close();
 });
 
@@ -516,6 +627,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       year: "2031-07",
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
+      conductors: ["Fixture Conductor"],
     },
   );
   expect(preview.files).toHaveLength(2);
@@ -531,6 +643,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "year",
       "genres",
       "composers",
+      "conductors",
     ],
     [
       "artist",
@@ -540,6 +653,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "year",
       "genres",
       "composers",
+      "conductors",
     ],
   ]);
 
@@ -560,6 +674,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       year: "2031-07",
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
+      conductors: ["Fixture Conductor"],
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }

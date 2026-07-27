@@ -54,6 +54,10 @@ function singleValueReplacementWarnings(
     warnings.push(
       "Composer editing is unavailable for tracks with multiple composer values because this writer cannot restore them safely.",
     );
+  if ("conductors" in changes && (tags.conductors?.length ?? 0) > 1)
+    warnings.push(
+      "Conductor editing is unavailable for tracks with multiple conductor values because this writer cannot restore them safely.",
+    );
   return warnings;
 }
 
@@ -61,7 +65,8 @@ function restorationValue(
   tags: NormalizedTags,
   field: (typeof editableTrackTagFields)[number],
 ): NormalizedTags[typeof field] {
-  if (field === "genres" || field === "composers") return tags[field] ?? [];
+  if (field === "genres" || field === "composers" || field === "conductors")
+    return tags[field] ?? [];
   if (field === "trackTotal" || field === "discTotal")
     return tags[field] ?? null;
   return tags[field];
@@ -77,6 +82,7 @@ type BatchTagChangeInput = Pick<
   | "year"
   | "genres"
   | "composers"
+  | "conductors"
 >;
 
 function relationshipError(

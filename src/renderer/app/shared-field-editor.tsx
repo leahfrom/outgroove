@@ -21,6 +21,7 @@ export interface SharedFieldDraft {
   year: string;
   genre: string;
   composer: string;
+  conductor: string;
 }
 
 export type SharedFieldEnabled = Record<keyof SharedFieldDraft, boolean>;
@@ -90,6 +91,12 @@ const comparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch composer value",
     placeholder: "One composer; empty clears",
   },
+  {
+    field: "conductor",
+    label: "Conductor",
+    inputLabel: "Batch conductor value",
+    placeholder: "One conductor; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -101,6 +108,7 @@ const previewFieldLabels: Record<string, string> = {
   year: "Release date",
   genres: "Genre",
   composers: "Composer",
+  conductors: "Conductor",
 };
 
 function currentValue(track: CatalogTrack, field: SharedField): string {
@@ -121,6 +129,8 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return (track.tags.genres ?? []).join(" · ");
     case "composer":
       return (track.tags.composers ?? []).join(" · ");
+    case "conductor":
+      return (track.tags.conductors ?? []).join(" · ");
   }
 }
 
@@ -217,7 +227,7 @@ function SharedFieldEditorComponent(
             current genre values blocks that genre proposal so undo remains
             exact. Composer follows the same one-value rule. Track and disc
             totals are explicit shared proposals and never renumber the selected
-            tracks.
+            tracks. Conductor follows the same one-value rule as Composer.
           </>
         }
       />
