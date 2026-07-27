@@ -2525,6 +2525,15 @@ pre {
   background: #fff9eb;
   box-shadow: inset 3px 0 #9a6822;
 }
+.metadata-field-group > h4 {
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  border-top: 1px solid #cbd3cd;
+  background: #f7f9f7;
+  color: #425149;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+}
 .tag-comparison-field label {
   font-weight: 750;
 }
@@ -2538,6 +2547,7 @@ pre {
   color: #425149;
 }
 .tag-comparison-proposed input,
+.tag-comparison-proposed select,
 .tag-comparison-proposed textarea {
   width: 100%;
   min-width: 0;

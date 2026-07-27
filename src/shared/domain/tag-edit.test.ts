@@ -154,6 +154,67 @@ describe("track metadata validation", () => {
     ).not.toThrow();
   });
 
+  it("normalizes completed catalog fields and enforces bounded, lossless proposals", () => {
+    expect(
+      normalizeTrackTagChanges({
+        publishers: ["  Example   Label "],
+        descriptions: ["  Liner   note "],
+        grouping: "  Suite   One ",
+        catalogNumbers: [" OUT-42 "],
+        publishingDate: " 2024-08 ",
+        bpm: 128,
+        compilation: true,
+        musicBrainzRecordingId: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        musicBrainzReleaseTrackId: null,
+        musicBrainzReleaseId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        musicBrainzArtistIds: ["CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC"],
+        musicBrainzReleaseArtistIds: [],
+        musicBrainzReleaseGroupId: null,
+        musicBrainzWorkId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      }),
+    ).toEqual({
+      publishers: ["Example Label"],
+      descriptions: ["Liner note"],
+      grouping: "Suite One",
+      catalogNumbers: ["OUT-42"],
+      publishingDate: "2024-08",
+      bpm: 128,
+      compilation: true,
+      musicBrainzRecordingId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      musicBrainzReleaseTrackId: null,
+      musicBrainzReleaseId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      musicBrainzArtistIds: ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
+      musicBrainzReleaseArtistIds: [],
+      musicBrainzReleaseGroupId: null,
+      musicBrainzWorkId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    });
+    expect(() => normalizeTrackTagChanges({ bpm: 0 })).toThrow(
+      "BPM must be between 1 and 999",
+    );
+    expect(() => normalizeTrackTagChanges({ bpm: 1000 })).toThrow(
+      "BPM must be between 1 and 999",
+    );
+    expect(() =>
+      normalizeTrackTagChanges({ publishingDate: "2024-02-30" }),
+    ).toThrow("publishing date must be YYYY");
+    expect(() =>
+      normalizeTrackTagChanges({ publishers: ["One", "Two"] }),
+    ).toThrow("one proposed publisher");
+    expect(() =>
+      normalizeTrackTagChanges({
+        musicBrainzRecordingId: "not-a-musicbrainz-id",
+      }),
+    ).toThrow("valid MusicBrainz UUID");
+    expect(() =>
+      normalizeTrackTagChanges({
+        musicBrainzArtistIds: [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ],
+      }),
+    ).toThrow("one proposed musicBrainzArtistIds");
+  });
+
   it("removes unchanged scalar and genre values from a proposal", () => {
     const before = {
       title: "Track",

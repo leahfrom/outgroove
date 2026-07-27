@@ -306,6 +306,104 @@ describe.each(["preservation.mp3", "preservation.flac"])(
   },
 );
 
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe catalog and identifier round trip: %s",
+  (fixture) => {
+    it("sets, clears, and verifies every completed field without changing private tags, artwork, or audio", async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "outgroove-complete-tags-"),
+      );
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const writer = new SafeMetadataWriter(reader);
+      const payloadBefore = await audioPayloadHash(path);
+      const picturesBefore = (await loadTrack(path)).pictures;
+
+      await writer.writeTags(path, {
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-0042"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-0042"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
+      });
+
+      const result = await writer.writeTags(path, {
+        publishers: [],
+        descriptions: [],
+        grouping: null,
+        catalogNumbers: [],
+        publishingDate: null,
+        bpm: null,
+        compilation: false,
+        musicBrainzRecordingId: null,
+        musicBrainzReleaseTrackId: null,
+        musicBrainzReleaseId: null,
+        musicBrainzArtistIds: [],
+        musicBrainzReleaseArtistIds: [],
+        musicBrainzReleaseGroupId: null,
+        musicBrainzWorkId: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        publishers: [],
+        descriptions: [],
+        grouping: null,
+        catalogNumbers: [],
+        publishingDate: null,
+        bpm: null,
+        compilation: false,
+        musicBrainzRecordingId: null,
+        musicBrainzReleaseTrackId: null,
+        musicBrainzReleaseId: null,
+        musicBrainzArtistIds: [],
+        musicBrainzReleaseArtistIds: [],
+        musicBrainzReleaseGroupId: null,
+        musicBrainzWorkId: null,
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect((await loadTrack(path)).pictures).toEqual(picturesBefore);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
 it("rejects unsupported writes without changing the source", async () => {
   const directory = await mkdtemp(join(tmpdir(), "outgroove-tags-fail-"));
   temporary.push(directory);
@@ -354,6 +452,41 @@ it("leaves the source untouched when temporary metadata verification fails", asy
   ).rejects.toThrow("Temporary write verification failed");
   expect(await readFile(path)).toEqual(before);
   expect(await readdir(directory)).toEqual(["verification-failure.mp3"]);
+});
+
+it("leaves the source untouched when an extended-field candidate fails verification", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-extended-verify-"));
+  temporary.push(directory);
+  const path = join(directory, "extended-verification-failure.flac");
+  await copyFile(
+    join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.flac",
+    ),
+    path,
+  );
+  const before = await readFile(path);
+  const realReader = new MusicMetadataReader();
+  const mismatchingReader = {
+    async read(candidatePath: string) {
+      const file = await realReader.read(candidatePath);
+      return candidatePath === path
+        ? file
+        : { ...file, tags: { ...file.tags, grouping: "Wrong grouping" } };
+    },
+  };
+  await expect(
+    new SafeMetadataWriter(mismatchingReader).writeTags(path, {
+      grouping: "Expected grouping",
+    }),
+  ).rejects.toThrow("Temporary write verification failed");
+  expect(await readFile(path)).toEqual(before);
+  expect(await readdir(directory)).toEqual([
+    "extended-verification-failure.flac",
+  ]);
 });
 
 it("streams a large MP3 payload while excluding leading and trailing tags", async () => {

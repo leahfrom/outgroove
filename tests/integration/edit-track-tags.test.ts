@@ -110,6 +110,20 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         comment: "First line\nSecond line",
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -130,6 +144,20 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "comment",
         "originalReleaseDate",
         "language",
+        "publishers",
+        "descriptions",
+        "grouping",
+        "catalogNumbers",
+        "publishingDate",
+        "bpm",
+        "compilation",
+        "musicBrainzRecordingId",
+        "musicBrainzReleaseTrackId",
+        "musicBrainzReleaseId",
+        "musicBrainzArtistIds",
+        "musicBrainzReleaseArtistIds",
+        "musicBrainzReleaseGroupId",
+        "musicBrainzWorkId",
       ]);
 
       const result = await editor.apply(
@@ -155,6 +183,20 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         comment: "First line\nSecond line",
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -495,7 +537,7 @@ it("shows structured comment evidence and blocks a lossy comment replacement", a
   database.close();
 });
 
-it("undoes advanced edits from a legacy catalog row with explicit empty values", async () => {
+it("undoes completed-tag edits from a legacy catalog row with explicit empty values", async () => {
   const { database, reader, editor, fileId, path } =
     await createTrackEditor("01-first.mp3");
   const scanned = await reader.read(path);
@@ -507,6 +549,20 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
   delete legacyTags.comments;
   delete legacyTags.originalReleaseDate;
   delete legacyTags.language;
+  delete legacyTags.publishers;
+  delete legacyTags.descriptions;
+  delete legacyTags.grouping;
+  delete legacyTags.catalogNumbers;
+  delete legacyTags.publishingDate;
+  delete legacyTags.bpm;
+  delete legacyTags.compilation;
+  delete legacyTags.musicBrainzRecordingId;
+  delete legacyTags.musicBrainzReleaseTrackId;
+  delete legacyTags.musicBrainzReleaseId;
+  delete legacyTags.musicBrainzArtistIds;
+  delete legacyTags.musicBrainzReleaseArtistIds;
+  delete legacyTags.musicBrainzReleaseGroupId;
+  delete legacyTags.musicBrainzWorkId;
   database.updateFileAfterEdit(fileId, { ...scanned, tags: legacyTags });
 
   const preview = editor.preview(fileId, {
@@ -516,6 +572,20 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
     comment: "Fixture comment",
     originalReleaseDate: "1998-04",
     language: "deu",
+    publishers: ["Fixture Publisher"],
+    descriptions: ["Fixture description"],
+    grouping: "Suite I",
+    catalogNumbers: ["OUT-42"],
+    publishingDate: "2025-09",
+    bpm: 127,
+    compilation: true,
+    musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+    musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+    musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+    musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+    musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+    musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+    musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
   });
   const applied = await editor.apply(
     preview.operationId,
@@ -547,6 +617,56 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
       after: null,
     },
     { field: "language", before: "deu", after: null },
+    {
+      field: "publishers",
+      before: ["Fixture Publisher"],
+      after: [],
+    },
+    {
+      field: "descriptions",
+      before: ["Fixture description"],
+      after: [],
+    },
+    { field: "grouping", before: "Suite I", after: null },
+    { field: "catalogNumbers", before: ["OUT-42"], after: [] },
+    { field: "publishingDate", before: "2025-09", after: null },
+    { field: "bpm", before: 127, after: null },
+    { field: "compilation", before: true, after: false },
+    {
+      field: "musicBrainzRecordingId",
+      before: "11111111-1111-4111-8111-111111111111",
+      after: null,
+    },
+    {
+      field: "musicBrainzReleaseTrackId",
+      before: "22222222-2222-4222-8222-222222222222",
+      after: null,
+    },
+    {
+      field: "musicBrainzReleaseId",
+      before: "33333333-3333-4333-8333-333333333333",
+      after: null,
+    },
+    {
+      field: "musicBrainzArtistIds",
+      before: ["44444444-4444-4444-8444-444444444444"],
+      after: [],
+    },
+    {
+      field: "musicBrainzReleaseArtistIds",
+      before: ["55555555-5555-4555-8555-555555555555"],
+      after: [],
+    },
+    {
+      field: "musicBrainzReleaseGroupId",
+      before: "66666666-6666-4666-8666-666666666666",
+      after: null,
+    },
+    {
+      field: "musicBrainzWorkId",
+      before: "77777777-7777-4777-8777-777777777777",
+      after: null,
+    },
   ]);
   const undone = await editor.applyUndo(
     undoPreview.operationId,
@@ -561,6 +681,20 @@ it("undoes advanced edits from a legacy catalog row with explicit empty values",
     comments: [],
     originalReleaseDate: null,
     language: null,
+    publishers: [],
+    descriptions: [],
+    grouping: null,
+    catalogNumbers: [],
+    publishingDate: null,
+    bpm: null,
+    compilation: false,
+    musicBrainzRecordingId: null,
+    musicBrainzReleaseTrackId: null,
+    musicBrainzReleaseId: null,
+    musicBrainzArtistIds: [],
+    musicBrainzReleaseArtistIds: [],
+    musicBrainzReleaseGroupId: null,
+    musicBrainzWorkId: null,
   });
   database.close();
 });
@@ -596,6 +730,104 @@ it("rejects new-field no-ops and refuses a stale targeted comment", async () => 
   ]);
   expect((await reader.read(path)).tags.comment).toBe("External comment");
   expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
+it("keeps completed fields no-op safe, blocks multi-value replacement, and refuses a stale identifier", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  const payloadBefore = await audioPayloadHash(path);
+  expect(() =>
+    editor.preview(fileId, {
+      publishers: [],
+      descriptions: [],
+      grouping: null,
+      catalogNumbers: [],
+      publishingDate: null,
+      bpm: null,
+      compilation: false,
+      musicBrainzReleaseId: null,
+      musicBrainzArtistIds: [],
+      musicBrainzReleaseArtistIds: [],
+      musicBrainzReleaseGroupId: null,
+      musicBrainzWorkId: null,
+    }),
+  ).toThrow("already matches this track");
+
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: { ...scanned.tags, publishers: ["First Label", "Second Label"] },
+  });
+  const blocked = editor.preview(fileId, {
+    publishers: ["Replacement Label"],
+  });
+  expect(blocked.warnings).toEqual([
+    "Publisher editing is unavailable for tracks with multiple current values because this writer cannot restore them safely.",
+  ]);
+  expect(
+    await editor.apply(blocked.operationId, blocked.confirmationToken),
+  ).toMatchObject({
+    results: [{ verified: false }],
+  });
+
+  database.updateFileAfterEdit(fileId, scanned);
+  const preview = editor.preview(fileId, {
+    musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+  });
+  const external = await writer.writeTags(path, {
+    musicBrainzReleaseId: "99999999-9999-4999-8999-999999999999",
+  });
+  database.updateFileAfterEdit(fileId, external.file);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results[0]).toMatchObject({
+    verified: false,
+    error:
+      "A field in this preview changed after it was created; the edit did not overwrite it.",
+  });
+  expect((await reader.read(path)).tags.musicBrainzReleaseId).toBe(
+    "99999999-9999-4999-8999-999999999999",
+  );
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
+it("keeps non-restorable BPM and MusicBrainz values readable but blocks replacing them", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: {
+      ...scanned.tags,
+      bpm: 127.5,
+      musicBrainzReleaseId: "legacy-not-a-uuid",
+    },
+  });
+
+  const preview = editor.preview(fileId, {
+    bpm: 128,
+    musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+  });
+  expect(preview.changes).toEqual([
+    { field: "bpm", before: 127.5, after: 128 },
+    {
+      field: "musicBrainzReleaseId",
+      before: "legacy-not-a-uuid",
+      after: "33333333-3333-4333-8333-333333333333",
+    },
+  ]);
+  expect(preview.warnings).toEqual([
+    "BPM editing is unavailable because the current value is not a restorable integer from 1 to 999.",
+    "MusicBrainz release ID editing is unavailable because the current value is not a restorable MusicBrainz UUID.",
+  ]);
+  expect(
+    await editor.apply(preview.operationId, preview.confirmationToken),
+  ).toMatchObject({ results: [{ verified: false }] });
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
   database.close();
 });
 
@@ -864,6 +1096,14 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       copyright: "Copyright Fixture",
       originalReleaseDate: "1998-04",
       language: "deu",
+      publishers: ["Fixture Publisher"],
+      grouping: "Suite I",
+      catalogNumbers: ["OUT-42"],
+      publishingDate: "2025-09",
+      compilation: true,
+      musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+      musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+      musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
     },
   );
   expect(preview.files).toHaveLength(2);
@@ -885,6 +1125,14 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "copyright",
       "originalReleaseDate",
       "language",
+      "publishers",
+      "grouping",
+      "catalogNumbers",
+      "publishingDate",
+      "compilation",
+      "musicBrainzReleaseId",
+      "musicBrainzReleaseArtistIds",
+      "musicBrainzReleaseGroupId",
     ],
     [
       "artist",
@@ -900,6 +1148,14 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "copyright",
       "originalReleaseDate",
       "language",
+      "publishers",
+      "grouping",
+      "catalogNumbers",
+      "publishingDate",
+      "compilation",
+      "musicBrainzReleaseId",
+      "musicBrainzReleaseArtistIds",
+      "musicBrainzReleaseGroupId",
     ],
   ]);
 
@@ -926,6 +1182,14 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       copyright: "Copyright Fixture",
       originalReleaseDate: "1998-04",
       language: "deu",
+      publishers: ["Fixture Publisher"],
+      grouping: "Suite I",
+      catalogNumbers: ["OUT-42"],
+      publishingDate: "2025-09",
+      compilation: true,
+      musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+      musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+      musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }

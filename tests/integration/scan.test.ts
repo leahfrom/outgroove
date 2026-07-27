@@ -68,6 +68,18 @@ describe("incremental library scan", () => {
       database.listAlbums()[0]?.tracks[0]?.tags.originalReleaseDate,
     ).toBeNull();
     expect(database.listAlbums()[0]?.tracks[0]?.tags.language).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.publishers).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.descriptions).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.grouping).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.catalogNumbers).toEqual(
+      [],
+    );
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.publishingDate).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.bpm).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.compilation).toBe(false);
+    expect(
+      database.listAlbums()[0]?.tracks[0]?.tags.musicBrainzReleaseId,
+    ).toBeNull();
     expect(database.listAlbums()[0]?.tracks[0]?.tags.trackTotal).toBe(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.discTotal).toBe(1);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
@@ -102,7 +114,13 @@ describe("incremental library scan", () => {
          SET normalized_tags_json=json_remove(
            normalized_tags_json, '$.trackTotal', '$.discTotal', '$.conductors',
            '$.lyricists', '$.isrcs', '$.copyright', '$.comment', '$.comments',
-           '$.originalReleaseDate', '$.language'
+           '$.originalReleaseDate', '$.language', '$.publishers',
+           '$.descriptions', '$.grouping', '$.catalogNumbers',
+           '$.publishingDate', '$.bpm', '$.compilation',
+           '$.musicBrainzRecordingId', '$.musicBrainzReleaseTrackId',
+           '$.musicBrainzReleaseId', '$.musicBrainzArtistIds',
+           '$.musicBrainzReleaseArtistIds', '$.musicBrainzReleaseGroupId',
+           '$.musicBrainzWorkId'
          )
          WHERE scan_state='ok'`,
       )
@@ -122,6 +140,20 @@ describe("incremental library scan", () => {
         .flatMap((album) => album.tracks)
         .every(
           (track) => track.tags.trackTotal === 2 && track.tags.discTotal === 1,
+        ),
+    ).toBe(true);
+    expect(
+      database
+        .listAlbums()
+        .flatMap((album) => album.tracks)
+        .every(
+          (track) =>
+            Array.isArray(track.tags.publishers) &&
+            Array.isArray(track.tags.descriptions) &&
+            Array.isArray(track.tags.catalogNumbers) &&
+            typeof track.tags.compilation === "boolean" &&
+            Array.isArray(track.tags.musicBrainzArtistIds) &&
+            Array.isArray(track.tags.musicBrainzReleaseArtistIds),
         ),
     ).toBe(true);
     await expect(scanner.execute(root.id)).resolves.toEqual({

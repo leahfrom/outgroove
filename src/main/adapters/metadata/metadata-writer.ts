@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { open, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  open,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
 import {
@@ -8,6 +15,7 @@ import {
   writeMetadata,
 } from "@akabeko/music-metadata-editor";
 import type { PictureInfo, TagData } from "@akabeko/music-metadata-editor";
+import { TagLib } from "taglib-wasm";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
 import { streamingFileHash } from "../filesystem/streaming-hash";
@@ -38,6 +46,20 @@ export interface MetadataTagChanges {
   readonly comment?: string | null;
   readonly originalReleaseDate?: string | null;
   readonly language?: string | null;
+  readonly publishers?: readonly string[];
+  readonly descriptions?: readonly string[];
+  readonly grouping?: string | null;
+  readonly catalogNumbers?: readonly string[];
+  readonly publishingDate?: string | null;
+  readonly bpm?: number | null;
+  readonly compilation?: boolean;
+  readonly musicBrainzRecordingId?: string | null;
+  readonly musicBrainzReleaseTrackId?: string | null;
+  readonly musicBrainzReleaseId?: string | null;
+  readonly musicBrainzArtistIds?: readonly string[];
+  readonly musicBrainzReleaseArtistIds?: readonly string[];
+  readonly musicBrainzReleaseGroupId?: string | null;
+  readonly musicBrainzWorkId?: string | null;
 }
 
 export interface MetadataWriter {
@@ -137,71 +159,130 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
   if ("originalReleaseDate" in changes)
     updated.originalReleaseDate = changes.originalReleaseDate ?? "";
   if ("language" in changes) updated.language = changes.language ?? "";
+  if ("publishers" in changes) {
+    const publishers = changes.publishers;
+    if (publishers.length > 1)
+      throw new Error("This writer supports one proposed publisher.");
+    updated.publisher = publishers[0] ?? "";
+  }
+  if ("descriptions" in changes) {
+    const descriptions = changes.descriptions;
+    if (descriptions.length > 1)
+      throw new Error("This writer supports one proposed description.");
+    updated.description = descriptions[0] ?? "";
+  }
+  if ("publishingDate" in changes)
+    updated.publishingDate = changes.publishingDate ?? "";
+  if ("bpm" in changes) {
+    // Akabeko treats an explicit empty runtime value as "manage and remove"
+    // for both ID3 TBPM and Vorbis BPM. Its public numeric type omits that
+    // clearing sentinel, so the regression fixtures guard this narrow cast.
+    updated.bpm = (changes.bpm ?? "") as number;
+  }
   return updated;
+}
+
+const extendedPropertyFields = [
+  "grouping",
+  "catalogNumbers",
+  "compilation",
+  "musicBrainzRecordingId",
+  "musicBrainzReleaseTrackId",
+  "musicBrainzReleaseId",
+  "musicBrainzArtistIds",
+  "musicBrainzReleaseArtistIds",
+  "musicBrainzReleaseGroupId",
+  "musicBrainzWorkId",
+] as const;
+
+type ExtendedPropertyField = (typeof extendedPropertyFields)[number];
+
+const extendedPropertyKeys: Readonly<Record<ExtendedPropertyField, string>> = {
+  grouping: "GROUPING",
+  catalogNumbers: "CATALOGNUMBER",
+  compilation: "COMPILATION",
+  musicBrainzRecordingId: "MUSICBRAINZ_TRACKID",
+  musicBrainzReleaseTrackId: "MUSICBRAINZ_RELEASETRACKID",
+  musicBrainzReleaseId: "MUSICBRAINZ_ALBUMID",
+  musicBrainzArtistIds: "MUSICBRAINZ_ARTISTID",
+  musicBrainzReleaseArtistIds: "MUSICBRAINZ_ALBUMARTISTID",
+  musicBrainzReleaseGroupId: "MUSICBRAINZ_RELEASEGROUPID",
+  musicBrainzWorkId: "MUSICBRAINZ_WORKID",
+};
+
+let tagLibPromise: Promise<TagLib> | undefined;
+
+function tagLib(): Promise<TagLib> {
+  tagLibPromise ??= TagLib.initialize();
+  return tagLibPromise;
+}
+
+function extendedPropertyValue(
+  field: ExtendedPropertyField,
+  changes: MetadataTagChanges,
+): string {
+  const value = changes[field];
+  if (value !== null && typeof value === "object") {
+    const [first] = value;
+    return first ?? "";
+  }
+  if (typeof value === "boolean") return value ? "1" : "0";
+  return value ?? "";
+}
+
+async function applyExtendedProperties(
+  path: string,
+  changes: MetadataTagChanges,
+): Promise<void> {
+  const fields = extendedPropertyFields.filter((field) => field in changes);
+  if (fields.length === 0) return;
+  const writer = await tagLib();
+  await writer.edit(path, (file) => {
+    for (const field of fields)
+      file.setProperty(
+        extendedPropertyKeys[field],
+        extendedPropertyValue(field, changes),
+      );
+  });
+}
+
+function akabekoChanges(changes: MetadataTagChanges): MetadataTagChanges {
+  const result: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(changes))
+    if (!(extendedPropertyFields as readonly string[]).includes(field))
+      result[field] = value;
+  return result;
 }
 
 function changesMatch(
   file: ScannedAudioFile,
   changes: MetadataTagChanges,
 ): boolean {
-  if (changes.genres !== undefined) {
-    const proposedGenres = changes.genres;
-    const genres = file.tags.genres ?? [];
+  const listFields = [
+    "genres",
+    "composers",
+    "conductors",
+    "lyricists",
+    "isrcs",
+    "publishers",
+    "descriptions",
+    "catalogNumbers",
+    "musicBrainzArtistIds",
+    "musicBrainzReleaseArtistIds",
+  ] as const;
+  for (const field of listFields) {
+    const proposed = changes[field];
+    if (proposed === undefined) continue;
+    const actual = file.tags[field] ?? [];
     if (
-      genres.length !== proposedGenres.length ||
-      !genres.every((genre, index) => genre === proposedGenres[index])
-    )
-      return false;
-  }
-  if (changes.composers !== undefined) {
-    const proposedComposers = changes.composers;
-    const composers = file.tags.composers ?? [];
-    if (
-      composers.length !== proposedComposers.length ||
-      !composers.every(
-        (composer, index) => composer === proposedComposers[index],
-      )
-    )
-      return false;
-  }
-  if (changes.conductors !== undefined) {
-    const proposedConductors = changes.conductors;
-    const conductors = file.tags.conductors ?? [];
-    if (
-      conductors.length !== proposedConductors.length ||
-      !conductors.every(
-        (conductor, index) => conductor === proposedConductors[index],
-      )
-    )
-      return false;
-  }
-  if (changes.lyricists !== undefined) {
-    const proposedLyricists = changes.lyricists;
-    const lyricists = file.tags.lyricists ?? [];
-    if (
-      lyricists.length !== proposedLyricists.length ||
-      !lyricists.every(
-        (lyricist, index) => lyricist === proposedLyricists[index],
-      )
-    )
-      return false;
-  }
-  if (changes.isrcs !== undefined) {
-    const proposedIsrcs = changes.isrcs;
-    const isrcs = file.tags.isrcs ?? [];
-    if (
-      isrcs.length !== proposedIsrcs.length ||
-      !isrcs.every((isrc, index) => isrc === proposedIsrcs[index])
+      actual.length !== proposed.length ||
+      !actual.every((value, index) => value === proposed[index])
     )
       return false;
   }
   return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
     (field) =>
-      field === "genres" ||
-      field === "composers" ||
-      field === "conductors" ||
-      field === "lyricists" ||
-      field === "isrcs" ||
+      (listFields as readonly string[]).includes(field) ||
       file.tags[field] === changes[field],
   );
 }
@@ -352,24 +433,30 @@ export class SafeMetadataWriter implements MetadataWriter {
     const hashBefore = await audioPayloadHash(path);
     let originalMoved = false;
     try {
-      const loaded = await loadTrack(path);
-      const updatedTag = applyChanges(loaded.tag, changes);
-      if (extension === ".mp3") {
-        // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
-        // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
-        const bytes = await writeMetadata(path, {
-          tag: updatedTag,
-          id3v2MajorVersion: 4,
-        } as Parameters<typeof writeMetadata>[1] & {
-          id3v2MajorVersion: 4;
-        });
-        await writeFile(temporary, bytes, { flag: "wx" });
+      const highLevelChanges = akabekoChanges(changes);
+      if (Object.keys(highLevelChanges).length === 0) {
+        await copyFile(path, temporary);
       } else {
-        await saveTrack(
-          { ...loaded, tag: updatedTag },
-          { source: path, outputPath: temporary },
-        );
+        const loaded = await loadTrack(path);
+        const updatedTag = applyChanges(loaded.tag, highLevelChanges);
+        if (extension === ".mp3") {
+          // ID3v2.3 uses Latin-1 in this adapter and corrupts existing Unicode
+          // fields during an otherwise unrelated edit. ID3v2.4 writes UTF-8.
+          const bytes = await writeMetadata(path, {
+            tag: updatedTag,
+            id3v2MajorVersion: 4,
+          } as Parameters<typeof writeMetadata>[1] & {
+            id3v2MajorVersion: 4;
+          });
+          await writeFile(temporary, bytes, { flag: "wx" });
+        } else {
+          await saveTrack(
+            { ...loaded, tag: updatedTag },
+            { source: path, outputPath: temporary },
+          );
+        }
       }
+      await applyExtendedProperties(temporary, changes);
       await flushPath(temporary);
       const temporaryRead = await this.reader.read(temporary);
       if (!changesMatch(temporaryRead, changes))

@@ -33,6 +33,14 @@ export interface SharedFieldDraft {
   copyright: string;
   originalReleaseDate: string;
   language: string;
+  publisher: string;
+  grouping: string;
+  catalogNumber: string;
+  publishingDate: string;
+  compilation: string;
+  musicBrainzReleaseId: string;
+  musicBrainzReleaseArtistId: string;
+  musicBrainzReleaseGroupId: string;
 }
 
 export type SharedFieldEnabled = Record<keyof SharedFieldDraft, boolean>;
@@ -45,6 +53,7 @@ interface SharedComparisonField {
   readonly label: string;
   readonly inputLabel: string;
   readonly inputType?: "number";
+  readonly select?: "yes-no";
   readonly max?: number;
   readonly placeholder?: string;
 }
@@ -141,6 +150,51 @@ const moreComparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch language value",
     placeholder: "Track language; empty clears",
   },
+  {
+    field: "publisher",
+    label: "Publisher",
+    inputLabel: "Batch publisher value",
+    placeholder: "One publisher; empty clears",
+  },
+  {
+    field: "grouping",
+    label: "Grouping",
+    inputLabel: "Batch grouping value",
+    placeholder: "Empty clears",
+  },
+  {
+    field: "catalogNumber",
+    label: "Catalog number",
+    inputLabel: "Batch catalog number value",
+    placeholder: "One catalog number; empty clears",
+  },
+  {
+    field: "publishingDate",
+    label: "Publishing date",
+    inputLabel: "Batch publishing date value",
+    placeholder: "YYYY, YYYY-MM, YYYY-MM-DD; empty clears",
+  },
+  {
+    field: "compilation",
+    label: "Compilation",
+    inputLabel: "Batch compilation value",
+    select: "yes-no",
+  },
+  {
+    field: "musicBrainzReleaseId",
+    label: "MusicBrainz release ID",
+    inputLabel: "Batch MusicBrainz release ID value",
+  },
+  {
+    field: "musicBrainzReleaseArtistId",
+    label: "MusicBrainz release artist ID",
+    inputLabel: "Batch MusicBrainz release artist ID value",
+  },
+  {
+    field: "musicBrainzReleaseGroupId",
+    label: "MusicBrainz release group ID",
+    inputLabel: "Batch MusicBrainz release group ID value",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -158,6 +212,14 @@ const previewFieldLabels: Record<string, string> = {
   copyright: "Copyright",
   originalReleaseDate: "Original release date",
   language: "Language",
+  publishers: "Publisher",
+  grouping: "Grouping",
+  catalogNumbers: "Catalog number",
+  publishingDate: "Publishing date",
+  compilation: "Compilation",
+  musicBrainzReleaseId: "MusicBrainz release ID",
+  musicBrainzReleaseArtistIds: "MusicBrainz release artist ID",
+  musicBrainzReleaseGroupId: "MusicBrainz release group ID",
 };
 
 function currentValue(track: CatalogTrack, field: SharedField): string {
@@ -190,14 +252,34 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return track.tags.originalReleaseDate ?? "";
     case "language":
       return track.tags.language ?? "";
+    case "publisher":
+      return (track.tags.publishers ?? []).join(" · ");
+    case "grouping":
+      return track.tags.grouping ?? "";
+    case "catalogNumber":
+      return (track.tags.catalogNumbers ?? []).join(" · ");
+    case "publishingDate":
+      return track.tags.publishingDate ?? "";
+    case "compilation":
+      return track.tags.compilation === true ? "true" : "false";
+    case "musicBrainzReleaseId":
+      return track.tags.musicBrainzReleaseId ?? "";
+    case "musicBrainzReleaseArtistId":
+      return (track.tags.musicBrainzReleaseArtistIds ?? []).join(" · ");
+    case "musicBrainzReleaseGroupId":
+      return track.tags.musicBrainzReleaseGroupId ?? "";
   }
 }
 
 function displayValue(
-  value: string | number | readonly string[] | null,
+  value: string | number | boolean | readonly string[] | null,
+  field?: SharedField,
 ): string {
+  if (field === "compilation" && typeof value === "string")
+    return value === "true" ? "Yes" : "No";
   if (Array.isArray(value))
     return value.length === 0 ? "Not set" : value.join(" · ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
   return value === null || value === "" ? "Not set" : String(value);
 }
 
@@ -270,7 +352,7 @@ function SharedFieldEditorComponent(
 
   const changeDraft =
     (field: SharedField) =>
-    (event: ChangeEvent<HTMLInputElement>): void => {
+    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>): void => {
       onDraftChange(field, event.target.value);
     };
 
@@ -287,17 +369,12 @@ function SharedFieldEditorComponent(
         description={
           <>
             {tracks.length} tracks selected. Select only fields you intend to
-            write, then compare their current values with one shared proposal.
-            Track titles and track numbers stay in the single-track editor.
-            Selecting Genre replaces each track&apos;s complete genre set with
-            one shared value; an empty proposal clears it. A track with multiple
-            current genre values blocks that genre proposal so undo remains
-            exact. Composer follows the same one-value rule. Track and disc
-            totals are explicit shared proposals and never renumber the selected
-            tracks. Conductor and Lyricist follow the same one-value rule as
-            Composer. ISRC also accepts one value. Secondary fields are grouped
-            under More fields. Original release date and track language are
-            opt-in shared proposals.
+            write. Mixed values remain explicit. One-value list fields replace
+            each complete current set and block where exact restoration is
+            unavailable. Totals never renumber tracks. More fields contains
+            catalog and release details plus release-level MusicBrainz IDs;
+            track-specific descriptions, BPM, comments, and identifiers stay in
+            the single-track editor.
           </>
         }
       />
@@ -333,7 +410,7 @@ function SharedFieldEditorComponent(
                     }
                   />
                   Change{" "}
-                  {item.label === "ISRC"
+                  {item.label === "ISRC" || item.label.startsWith("MusicBrainz")
                     ? item.label
                     : item.label.toLocaleLowerCase("en-US")}
                 </label>
@@ -350,14 +427,17 @@ function SharedFieldEditorComponent(
                         <li key={track.id}>
                           <strong>{track.tags.title}</strong>
                           <span>
-                            {displayValue(currentValue(track, item.field))}
+                            {displayValue(
+                              currentValue(track, item.field),
+                              item.field,
+                            )}
                           </span>
                         </li>
                       ))}
                     </ul>
                   </details>
                 ) : (
-                  <span>{displayValue(values[0] ?? "")}</span>
+                  <span>{displayValue(values[0] ?? "", item.field)}</span>
                 )}
               </div>
               <div className="tag-comparison-proposed">
@@ -431,7 +511,8 @@ function SharedFieldEditorComponent(
                       }
                     />
                     Change{" "}
-                    {item.label === "ISRC"
+                    {item.label === "ISRC" ||
+                    item.label.startsWith("MusicBrainz")
                       ? item.label
                       : item.label.toLocaleLowerCase("en-US")}
                   </label>
@@ -450,31 +531,47 @@ function SharedFieldEditorComponent(
                           <li key={track.id}>
                             <strong>{track.tags.title}</strong>
                             <span>
-                              {displayValue(currentValue(track, item.field))}
+                              {displayValue(
+                                currentValue(track, item.field),
+                                item.field,
+                              )}
                             </span>
                           </li>
                         ))}
                       </ul>
                     </details>
                   ) : (
-                    <span>{displayValue(values[0] ?? "")}</span>
+                    <span>{displayValue(values[0] ?? "", item.field)}</span>
                   )}
                 </div>
                 <div className="tag-comparison-proposed">
                   <span className="comparison-mobile-label">
                     Proposed value
                   </span>
-                  <input
-                    aria-describedby={`${currentId} ${statusId}`}
-                    aria-label={item.inputLabel}
-                    disabled={busy || !enabled[item.field]}
-                    max={item.max}
-                    min={item.inputType ? 1 : undefined}
-                    placeholder={item.placeholder}
-                    type={item.inputType}
-                    value={draft[item.field]}
-                    onChange={changeDraft(item.field)}
-                  />
+                  {item.select === "yes-no" ? (
+                    <select
+                      aria-describedby={`${currentId} ${statusId}`}
+                      aria-label={item.inputLabel}
+                      disabled={busy || !enabled[item.field]}
+                      value={draft[item.field]}
+                      onChange={changeDraft(item.field)}
+                    >
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  ) : (
+                    <input
+                      aria-describedby={`${currentId} ${statusId}`}
+                      aria-label={item.inputLabel}
+                      disabled={busy || !enabled[item.field]}
+                      max={item.max}
+                      min={item.inputType ? 1 : undefined}
+                      placeholder={item.placeholder}
+                      type={item.inputType}
+                      value={draft[item.field]}
+                      onChange={changeDraft(item.field)}
+                    />
+                  )}
                 </div>
                 <span
                   className={`comparison-status ${status.className}`}

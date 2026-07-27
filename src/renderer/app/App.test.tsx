@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1489,6 +1496,40 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Comment proposed value"),
       "Fixture comment",
     );
+    fireEvent.change(screen.getByLabelText("Publisher proposed value"), {
+      target: { value: "Fixture Publisher" },
+    });
+    fireEvent.change(screen.getByLabelText("Description proposed value"), {
+      target: { value: "Fixture description" },
+    });
+    fireEvent.change(screen.getByLabelText("Grouping proposed value"), {
+      target: { value: "Suite I" },
+    });
+    fireEvent.change(screen.getByLabelText("Catalog number proposed value"), {
+      target: { value: "OUT-42" },
+    });
+    fireEvent.change(screen.getByLabelText("Publishing date proposed value"), {
+      target: { value: "2025-09" },
+    });
+    fireEvent.change(screen.getByLabelText("BPM proposed value"), {
+      target: { value: "127" },
+    });
+    await user.selectOptions(
+      screen.getByLabelText("Compilation proposed value"),
+      "true",
+    );
+    for (const [label, value] of [
+      ["MusicBrainz recording ID", "11111111-1111-4111-8111-111111111111"],
+      ["MusicBrainz release track ID", "22222222-2222-4222-8222-222222222222"],
+      ["MusicBrainz release ID", "33333333-3333-4333-8333-333333333333"],
+      ["MusicBrainz track artist ID", "44444444-4444-4444-8444-444444444444"],
+      ["MusicBrainz release artist ID", "55555555-5555-4555-8555-555555555555"],
+      ["MusicBrainz release group ID", "66666666-6666-4666-8666-666666666666"],
+      ["MusicBrainz work ID", "77777777-7777-4777-8777-777777777777"],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(`${label} proposed value`), {
+        target: { value },
+      });
     await user.clear(screen.getByLabelText("Track total proposed value"));
     await user.type(screen.getByLabelText("Track total proposed value"), "12");
     await user.clear(screen.getByLabelText("Disc total proposed value"));
@@ -1497,7 +1538,7 @@ describe("tag edit UI safety states", () => {
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 13 changes",
+      name: "Review 27 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1548,6 +1589,20 @@ describe("tag edit UI safety states", () => {
         originalReleaseDate: "1998-04",
         language: "deu",
         comment: "Fixture comment",
+        publishers: ["Fixture Publisher"],
+        descriptions: ["Fixture description"],
+        grouping: "Suite I",
+        catalogNumbers: ["OUT-42"],
+        publishingDate: "2025-09",
+        bpm: 127,
+        compilation: true,
+        musicBrainzRecordingId: "11111111-1111-4111-8111-111111111111",
+        musicBrainzReleaseTrackId: "22222222-2222-4222-8222-222222222222",
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
+        musicBrainzArtistIds: ["44444444-4444-4444-8444-444444444444"],
+        musicBrainzReleaseArtistIds: ["55555555-5555-4555-8555-555555555555"],
+        musicBrainzReleaseGroupId: "66666666-6666-4666-8666-666666666666",
+        musicBrainzWorkId: "77777777-7777-4777-8777-777777777777",
       },
     });
   });
@@ -1933,6 +1988,29 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(screen.getByRole("checkbox", { name: "Change language" }));
     await user.type(screen.getByLabelText("Batch language value"), "deu");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change publisher" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch publisher value"),
+      "Fixture Publisher",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change compilation" }),
+    );
+    await user.selectOptions(
+      screen.getByLabelText("Batch compilation value"),
+      "true",
+    );
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "Change MusicBrainz release ID",
+      }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch MusicBrainz release ID value"),
+      "33333333-3333-4333-8333-333333333333",
+    );
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1962,6 +2040,9 @@ describe("tag edit UI safety states", () => {
         copyright: "Copyright Fixture",
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        compilation: true,
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
       },
     });
     await user.type(
@@ -1984,6 +2065,9 @@ describe("tag edit UI safety states", () => {
         copyright: "Copyright Fixture",
         originalReleaseDate: "1998-04",
         language: "deu",
+        publishers: ["Fixture Publisher"],
+        compilation: true,
+        musicBrainzReleaseId: "33333333-3333-4333-8333-333333333333",
       },
     });
     expect(

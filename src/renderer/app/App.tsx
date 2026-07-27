@@ -118,6 +118,22 @@ function draftForTrack(track: CatalogAlbum["tracks"][number]) {
     originalReleaseDate: track.tags.originalReleaseDate ?? "",
     language: track.tags.language ?? "",
     comment: track.tags.comment ?? "",
+    publisher: (track.tags.publishers ?? []).join(" · "),
+    description: (track.tags.descriptions ?? []).join(" · "),
+    grouping: track.tags.grouping ?? "",
+    catalogNumber: (track.tags.catalogNumbers ?? []).join(" · "),
+    publishingDate: track.tags.publishingDate ?? "",
+    bpm: track.tags.bpm?.toString() ?? "",
+    compilation: track.tags.compilation === true ? "true" : "false",
+    musicBrainzRecordingId: track.tags.musicBrainzRecordingId ?? "",
+    musicBrainzReleaseTrackId: track.tags.musicBrainzReleaseTrackId ?? "",
+    musicBrainzReleaseId: track.tags.musicBrainzReleaseId ?? "",
+    musicBrainzArtistId: (track.tags.musicBrainzArtistIds ?? []).join(" · "),
+    musicBrainzReleaseArtistId: (
+      track.tags.musicBrainzReleaseArtistIds ?? []
+    ).join(" · "),
+    musicBrainzReleaseGroupId: track.tags.musicBrainzReleaseGroupId ?? "",
+    musicBrainzWorkId: track.tags.musicBrainzWorkId ?? "",
   };
 }
 
@@ -295,6 +311,20 @@ export function App(): React.JSX.Element {
     originalReleaseDate: "",
     language: "",
     comment: "",
+    publisher: "",
+    description: "",
+    grouping: "",
+    catalogNumber: "",
+    publishingDate: "",
+    bpm: "",
+    compilation: "false",
+    musicBrainzRecordingId: "",
+    musicBrainzReleaseTrackId: "",
+    musicBrainzReleaseId: "",
+    musicBrainzArtistId: "",
+    musicBrainzReleaseArtistId: "",
+    musicBrainzReleaseGroupId: "",
+    musicBrainzWorkId: "",
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
@@ -319,6 +349,14 @@ export function App(): React.JSX.Element {
     copyright: false,
     originalReleaseDate: false,
     language: false,
+    publisher: false,
+    grouping: false,
+    catalogNumber: false,
+    publishingDate: false,
+    compilation: false,
+    musicBrainzReleaseId: false,
+    musicBrainzReleaseArtistId: false,
+    musicBrainzReleaseGroupId: false,
   });
   const [batchDraft, setBatchDraft] = useState({
     artist: "",
@@ -335,6 +373,14 @@ export function App(): React.JSX.Element {
     copyright: "",
     originalReleaseDate: "",
     language: "",
+    publisher: "",
+    grouping: "",
+    catalogNumber: "",
+    publishingDate: "",
+    compilation: "false",
+    musicBrainzReleaseId: "",
+    musicBrainzReleaseArtistId: "",
+    musicBrainzReleaseGroupId: "",
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
@@ -1422,6 +1468,14 @@ export function App(): React.JSX.Element {
           copyright: false,
           originalReleaseDate: false,
           language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
@@ -1443,6 +1497,14 @@ export function App(): React.JSX.Element {
           copyright: false,
           originalReleaseDate: false,
           language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
@@ -1464,6 +1526,14 @@ export function App(): React.JSX.Element {
           copyright: false,
           originalReleaseDate: false,
           language: false,
+          publisher: false,
+          grouping: false,
+          catalogNumber: false,
+          publishingDate: false,
+          compilation: false,
+          musicBrainzReleaseId: false,
+          musicBrainzReleaseArtistId: false,
+          musicBrainzReleaseGroupId: false,
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
@@ -1538,6 +1608,84 @@ export function App(): React.JSX.Element {
           : {}),
         ...(trackDraft.comment !== (selectedTrack.tags.comment ?? "")
           ? { comment: trackDraft.comment || null }
+          : {}),
+        ...(trackDraft.publisher !==
+        (selectedTrack.tags.publishers ?? []).join(" · ")
+          ? { publishers: trackDraft.publisher ? [trackDraft.publisher] : [] }
+          : {}),
+        ...(trackDraft.description !==
+        (selectedTrack.tags.descriptions ?? []).join(" · ")
+          ? {
+              descriptions: trackDraft.description
+                ? [trackDraft.description]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.grouping !== (selectedTrack.tags.grouping ?? "")
+          ? { grouping: trackDraft.grouping || null }
+          : {}),
+        ...(trackDraft.catalogNumber !==
+        (selectedTrack.tags.catalogNumbers ?? []).join(" · ")
+          ? {
+              catalogNumbers: trackDraft.catalogNumber
+                ? [trackDraft.catalogNumber]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.publishingDate !==
+        (selectedTrack.tags.publishingDate ?? "")
+          ? { publishingDate: trackDraft.publishingDate || null }
+          : {}),
+        ...(trackDraft.bpm !== (selectedTrack.tags.bpm?.toString() ?? "")
+          ? { bpm: trackDraft.bpm ? Number(trackDraft.bpm) : null }
+          : {}),
+        ...(trackDraft.compilation !==
+        (selectedTrack.tags.compilation === true ? "true" : "false")
+          ? { compilation: trackDraft.compilation === "true" }
+          : {}),
+        ...(trackDraft.musicBrainzRecordingId !==
+        (selectedTrack.tags.musicBrainzRecordingId ?? "")
+          ? {
+              musicBrainzRecordingId: trackDraft.musicBrainzRecordingId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseTrackId !==
+        (selectedTrack.tags.musicBrainzReleaseTrackId ?? "")
+          ? {
+              musicBrainzReleaseTrackId:
+                trackDraft.musicBrainzReleaseTrackId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseId !==
+        (selectedTrack.tags.musicBrainzReleaseId ?? "")
+          ? { musicBrainzReleaseId: trackDraft.musicBrainzReleaseId || null }
+          : {}),
+        ...(trackDraft.musicBrainzArtistId !==
+        (selectedTrack.tags.musicBrainzArtistIds ?? []).join(" · ")
+          ? {
+              musicBrainzArtistIds: trackDraft.musicBrainzArtistId
+                ? [trackDraft.musicBrainzArtistId]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseArtistId !==
+        (selectedTrack.tags.musicBrainzReleaseArtistIds ?? []).join(" · ")
+          ? {
+              musicBrainzReleaseArtistIds: trackDraft.musicBrainzReleaseArtistId
+                ? [trackDraft.musicBrainzReleaseArtistId]
+                : [],
+            }
+          : {}),
+        ...(trackDraft.musicBrainzReleaseGroupId !==
+        (selectedTrack.tags.musicBrainzReleaseGroupId ?? "")
+          ? {
+              musicBrainzReleaseGroupId:
+                trackDraft.musicBrainzReleaseGroupId || null,
+            }
+          : {}),
+        ...(trackDraft.musicBrainzWorkId !==
+        (selectedTrack.tags.musicBrainzWorkId ?? "")
+          ? { musicBrainzWorkId: trackDraft.musicBrainzWorkId || null }
           : {}),
       },
     });
@@ -1692,6 +1840,14 @@ export function App(): React.JSX.Element {
       copyright?: string | null;
       originalReleaseDate?: string | null;
       language?: string | null;
+      publishers?: string[];
+      grouping?: string | null;
+      catalogNumbers?: string[];
+      publishingDate?: string | null;
+      compilation?: boolean;
+      musicBrainzReleaseId?: string | null;
+      musicBrainzReleaseArtistIds?: string[];
+      musicBrainzReleaseGroupId?: string | null;
     } = {};
     if (batchEnabled.artist) changes.artist = batchDraft.artist;
     if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
@@ -1723,6 +1879,27 @@ export function App(): React.JSX.Element {
     if (batchEnabled.originalReleaseDate)
       changes.originalReleaseDate = batchDraft.originalReleaseDate || null;
     if (batchEnabled.language) changes.language = batchDraft.language || null;
+    if (batchEnabled.publisher)
+      changes.publishers = batchDraft.publisher ? [batchDraft.publisher] : [];
+    if (batchEnabled.grouping) changes.grouping = batchDraft.grouping || null;
+    if (batchEnabled.catalogNumber)
+      changes.catalogNumbers = batchDraft.catalogNumber
+        ? [batchDraft.catalogNumber]
+        : [];
+    if (batchEnabled.publishingDate)
+      changes.publishingDate = batchDraft.publishingDate || null;
+    if (batchEnabled.compilation)
+      changes.compilation = batchDraft.compilation === "true";
+    if (batchEnabled.musicBrainzReleaseId)
+      changes.musicBrainzReleaseId = batchDraft.musicBrainzReleaseId || null;
+    if (batchEnabled.musicBrainzReleaseArtistId)
+      changes.musicBrainzReleaseArtistIds =
+        batchDraft.musicBrainzReleaseArtistId
+          ? [batchDraft.musicBrainzReleaseArtistId]
+          : [];
+    if (batchEnabled.musicBrainzReleaseGroupId)
+      changes.musicBrainzReleaseGroupId =
+        batchDraft.musicBrainzReleaseGroupId || null;
     const result = await window.outgroove.previewTrackBatchEdit({
       fileIds: batchTrackIds,
       changes,

@@ -6,6 +6,11 @@ import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
 
+const musicBrainzIdSchema = z
+  .uuid()
+  .transform((value) => value.toLocaleLowerCase("en-US"));
+const musicBrainzIdListSchema = z.array(musicBrainzIdSchema).max(1);
+
 export const emptyRequestSchema = z.object({}).strict();
 export const scanRequestSchema = z.object({ rootId: z.uuid() }).strict();
 export const scanCancelRequestSchema = z.object({ jobId: z.uuid() }).strict();
@@ -193,6 +198,34 @@ export const trackTagEditPreviewRequestSchema = z
           .nullable()
           .optional(),
         language: z.string().trim().max(100).nullable().optional(),
+        publishers: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        descriptions: z
+          .array(z.string().trim().min(1).max(4000))
+          .max(1)
+          .optional(),
+        grouping: z.string().trim().max(1000).nullable().optional(),
+        catalogNumbers: z
+          .array(z.string().trim().min(1).max(200))
+          .max(1)
+          .optional(),
+        publishingDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        bpm: z.number().int().min(1).max(999).nullable().optional(),
+        compilation: z.boolean().optional(),
+        musicBrainzRecordingId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseTrackId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseGroupId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzWorkId: musicBrainzIdSchema.nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -236,6 +269,25 @@ export const trackBatchEditPreviewRequestSchema = z
           .nullable()
           .optional(),
         language: z.string().trim().max(100).nullable().optional(),
+        publishers: z
+          .array(z.string().trim().min(1).max(400))
+          .max(1)
+          .optional(),
+        grouping: z.string().trim().max(1000).nullable().optional(),
+        catalogNumbers: z
+          .array(z.string().trim().min(1).max(200))
+          .max(1)
+          .optional(),
+        publishingDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        compilation: z.boolean().optional(),
+        musicBrainzReleaseId: musicBrainzIdSchema.nullable().optional(),
+        musicBrainzReleaseArtistIds: musicBrainzIdListSchema.optional(),
+        musicBrainzReleaseGroupId: musicBrainzIdSchema.nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -512,8 +564,8 @@ export interface TrackTagEditPreviewDto {
   readonly path: string;
   readonly changes: readonly {
     field: EditableTrackTagField;
-    before: string | number | readonly string[] | null;
-    after: string | number | readonly string[] | null;
+    before: string | number | boolean | readonly string[] | null;
+    after: string | number | boolean | readonly string[] | null;
   }[];
   readonly warnings: readonly string[];
 }

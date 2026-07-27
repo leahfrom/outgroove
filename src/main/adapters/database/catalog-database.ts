@@ -106,6 +106,20 @@ interface AudioFileRow {
   language_type?: string | null;
   track_total_type?: string | null;
   disc_total_type?: string | null;
+  publishers_type?: string | null;
+  descriptions_type?: string | null;
+  grouping_type?: string | null;
+  catalog_numbers_type?: string | null;
+  publishing_date_type?: string | null;
+  bpm_type?: string | null;
+  compilation_type?: string | null;
+  musicbrainz_recording_id_type?: string | null;
+  musicbrainz_release_track_id_type?: string | null;
+  musicbrainz_release_id_type?: string | null;
+  musicbrainz_artist_ids_type?: string | null;
+  musicbrainz_release_artist_ids_type?: string | null;
+  musicbrainz_release_group_id_type?: string | null;
+  musicbrainz_work_id_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -341,7 +355,21 @@ export class CatalogDatabase {
            json_type(normalized_tags_json, '$.originalReleaseDate') AS original_release_date_type,
            json_type(normalized_tags_json, '$.language') AS language_type,
            json_type(normalized_tags_json, '$.trackTotal') AS track_total_type,
-           json_type(normalized_tags_json, '$.discTotal') AS disc_total_type
+           json_type(normalized_tags_json, '$.discTotal') AS disc_total_type,
+           json_type(normalized_tags_json, '$.publishers') AS publishers_type,
+           json_type(normalized_tags_json, '$.descriptions') AS descriptions_type,
+           json_type(normalized_tags_json, '$.grouping') AS grouping_type,
+           json_type(normalized_tags_json, '$.catalogNumbers') AS catalog_numbers_type,
+           json_type(normalized_tags_json, '$.publishingDate') AS publishing_date_type,
+           json_type(normalized_tags_json, '$.bpm') AS bpm_type,
+           json_type(normalized_tags_json, '$.compilation') AS compilation_type,
+           json_type(normalized_tags_json, '$.musicBrainzRecordingId') AS musicbrainz_recording_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseTrackId') AS musicbrainz_release_track_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseId') AS musicbrainz_release_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzArtistIds') AS musicbrainz_artist_ids_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseArtistIds') AS musicbrainz_release_artist_ids_type,
+           json_type(normalized_tags_json, '$.musicBrainzReleaseGroupId') AS musicbrainz_release_group_id_type,
+           json_type(normalized_tags_json, '$.musicBrainzWorkId') AS musicbrainz_work_id_type
          FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
@@ -1016,6 +1044,21 @@ export class CatalogDatabase {
         comments: file.tags.comments ?? [],
         originalReleaseDate: file.tags.originalReleaseDate ?? null,
         language: file.tags.language ?? null,
+        publishers: file.tags.publishers ?? [],
+        descriptions: file.tags.descriptions ?? [],
+        grouping: file.tags.grouping ?? null,
+        catalogNumbers: file.tags.catalogNumbers ?? [],
+        publishingDate: file.tags.publishingDate ?? null,
+        bpm: file.tags.bpm ?? null,
+        compilation: file.tags.compilation ?? false,
+        musicBrainzRecordingId: file.tags.musicBrainzRecordingId ?? null,
+        musicBrainzReleaseTrackId: file.tags.musicBrainzReleaseTrackId ?? null,
+        musicBrainzReleaseId: file.tags.musicBrainzReleaseId ?? null,
+        musicBrainzArtistIds: file.tags.musicBrainzArtistIds ?? [],
+        musicBrainzReleaseArtistIds:
+          file.tags.musicBrainzReleaseArtistIds ?? [],
+        musicBrainzReleaseGroupId: file.tags.musicBrainzReleaseGroupId ?? null,
+        musicBrainzWorkId: file.tags.musicBrainzWorkId ?? null,
       }),
       JSON.stringify(file.nativeTags),
       now,
@@ -1153,6 +1196,30 @@ export class CatalogDatabase {
                 existing.track_total_type === "null") &&
               (existing.disc_total_type === "integer" ||
                 existing.disc_total_type === "null") &&
+              existing.publishers_type === "array" &&
+              existing.descriptions_type === "array" &&
+              (existing.grouping_type === "text" ||
+                existing.grouping_type === "null") &&
+              existing.catalog_numbers_type === "array" &&
+              (existing.publishing_date_type === "text" ||
+                existing.publishing_date_type === "null") &&
+              (existing.bpm_type === "integer" ||
+                existing.bpm_type === "real" ||
+                existing.bpm_type === "null") &&
+              (existing.compilation_type === "true" ||
+                existing.compilation_type === "false") &&
+              (existing.musicbrainz_recording_id_type === "text" ||
+                existing.musicbrainz_recording_id_type === "null") &&
+              (existing.musicbrainz_release_track_id_type === "text" ||
+                existing.musicbrainz_release_track_id_type === "null") &&
+              (existing.musicbrainz_release_id_type === "text" ||
+                existing.musicbrainz_release_id_type === "null") &&
+              existing.musicbrainz_artist_ids_type === "array" &&
+              existing.musicbrainz_release_artist_ids_type === "array" &&
+              (existing.musicbrainz_release_group_id_type === "text" ||
+                existing.musicbrainz_release_group_id_type === "null") &&
+              (existing.musicbrainz_work_id_type === "text" ||
+                existing.musicbrainz_work_id_type === "null") &&
               existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
