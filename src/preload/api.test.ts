@@ -68,6 +68,28 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("readFile");
   });
 
+  it("maps optional folder artwork through fixed preview and apply channels", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: null });
+    const preview = {
+      albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+    };
+    await api.previewAlbumFolderArtwork(preview);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewAlbumFolderArtwork,
+      preview,
+    );
+
+    const apply = {
+      operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+      confirmationToken: "folder-confirmation-token-long-enough",
+    };
+    await api.applyAlbumFolderArtwork(apply);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.applyAlbumFolderArtwork,
+      apply,
+    );
+  });
+
   it("maps a multi-album DAP selection to the fixed profile channel", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const request = {

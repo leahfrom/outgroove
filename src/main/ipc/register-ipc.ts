@@ -8,6 +8,7 @@ import {
   albumArtworkRequestSchema,
   albumArtworkEditPreviewRequestSchema,
   albumArtworkExportPreviewRequestSchema,
+  albumFolderArtworkPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
@@ -44,6 +45,7 @@ import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import type { EditAlbumArtwork } from "../application/edit-album-artwork";
 import type { ExportAlbumArtwork } from "../application/export-album-artwork";
+import type { CreateAlbumFolderArtwork } from "../application/create-album-folder-artwork";
 import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
@@ -61,6 +63,7 @@ interface Dependencies {
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
+  folderArtworkCreator: CreateAlbumFolderArtwork;
   trackEditor: EditTrackTags;
   sync: DeviceSync;
   window: BrowserWindow;
@@ -404,6 +407,21 @@ export function registerIpc(
               normalize(resolve(selected.filePath)),
             );
       },
+    ),
+  );
+  ipcMain.handle(
+    channels.previewAlbumFolderArtwork,
+    createValidatedHandler(
+      albumFolderArtworkPreviewRequestSchema,
+      ({ albumId }) => dependencies.folderArtworkCreator.preview(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyAlbumFolderArtwork,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.folderArtworkCreator.apply(operationId, confirmationToken),
     ),
   );
   ipcMain.handle(

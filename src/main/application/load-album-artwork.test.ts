@@ -57,6 +57,10 @@ describe("LoadAlbumArtwork", () => {
 
     expect(getAlbum).toHaveBeenCalledWith(selected.id);
     expect(encode).toHaveBeenCalledTimes(1);
+
+    loader.invalidate(selected.id);
+    await loader.load([selected.id]);
+    expect(encode).toHaveBeenCalledTimes(2);
   });
 
   it("returns a path-free missing result for an unknown album", async () => {

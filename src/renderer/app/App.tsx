@@ -5,6 +5,8 @@ import type {
   AlbumArtworkExportPreviewDto,
   AlbumArtworkExportResultDto,
   AlbumArtworkThumbnailDto,
+  AlbumFolderArtworkPreviewDto,
+  AlbumFolderArtworkResultDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -251,6 +253,11 @@ export function App(): React.JSX.Element {
   const [artworkExportResult, setArtworkExportResult] =
     useState<AlbumArtworkExportResultDto>();
   const [artworkExportError, setArtworkExportError] = useState<string>();
+  const [folderArtworkPreview, setFolderArtworkPreview] =
+    useState<AlbumFolderArtworkPreviewDto>();
+  const [folderArtworkResult, setFolderArtworkResult] =
+    useState<AlbumFolderArtworkResultDto>();
+  const [folderArtworkError, setFolderArtworkError] = useState<string>();
   const [artworkUndoPreview, setArtworkUndoPreview] =
     useState<AlbumArtworkEditPreviewDto>();
   const [artworkUndoResult, setArtworkUndoResult] =
@@ -781,6 +788,9 @@ export function App(): React.JSX.Element {
     setArtworkExportPreview(undefined);
     setArtworkExportResult(undefined);
     setArtworkExportError(undefined);
+    setFolderArtworkPreview(undefined);
+    setFolderArtworkResult(undefined);
+    setFolderArtworkError(undefined);
     setArtworkUndoPreview(undefined);
     setArtworkUndoResult(undefined);
     setHistoryError(undefined);
@@ -1214,6 +1224,49 @@ export function App(): React.JSX.Element {
         setArtworkExportPreview(undefined);
         setArtworkExportResult(result.value);
         setNotice("Artwork exported and verified.", "success");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareFolderArtwork = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setFolderArtworkError(undefined);
+    setFolderArtworkResult(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumFolderArtwork({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setFolderArtworkPreview(result.value);
+      } else {
+        setFolderArtworkError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyFolderArtwork = async (): Promise<void> => {
+    if (!folderArtworkPreview) return;
+    setBusy(true);
+    setFolderArtworkError(undefined);
+    try {
+      const result = await window.outgroove.applyAlbumFolderArtwork({
+        operationId: folderArtworkPreview.operationId,
+        confirmationToken: folderArtworkPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setFolderArtworkPreview(undefined);
+        setFolderArtworkResult(result.value);
+        setNotice("Folder artwork created and verified.", "success");
+        await refreshCatalog();
+      } else {
+        setFolderArtworkError(result.error.message);
+        setNotice(result.error.message, "error");
       }
     } finally {
       setBusy(false);
@@ -3504,6 +3557,9 @@ export function App(): React.JSX.Element {
                 exportError={artworkExportError}
                 exportPreview={artworkExportPreview}
                 exportResult={artworkExportResult}
+                folderError={folderArtworkError}
+                folderPreview={folderArtworkPreview}
+                folderResult={folderArtworkResult}
                 preview={artworkEditPreview}
                 result={artworkEditResult}
                 resultAction={artworkEditResultAction}
@@ -3514,6 +3570,12 @@ export function App(): React.JSX.Element {
                 onChoose={() => void chooseArtwork()}
                 onConfirm={() => void applyArtwork()}
                 onExport={() => void exportArtwork()}
+                onCancelFolderArtwork={() => {
+                  setFolderArtworkPreview(undefined);
+                  setFolderArtworkError(undefined);
+                }}
+                onConfirmFolderArtwork={() => void applyFolderArtwork()}
+                onPrepareFolderArtwork={() => void prepareFolderArtwork()}
                 onPrepareExport={() => void prepareArtworkExport()}
                 onPrepareRemoval={() => void prepareArtworkRemoval()}
               />

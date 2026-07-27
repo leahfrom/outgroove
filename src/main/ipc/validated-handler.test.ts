@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   albumArtworkRequestSchema,
+  albumFolderArtworkPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
   databaseRestoreApplyRequestSchema,
@@ -48,6 +49,26 @@ describe("validated IPC handlers", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+  });
+
+  it("does not accept renderer-supplied paths for folder artwork", async () => {
+    const useCase = vi.fn();
+    const handler = createValidatedHandler(
+      albumFolderArtworkPreviewRequestSchema,
+      useCase,
+    );
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { albumId })).resolves.toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await expect(
+      handler({}, { albumId, destinationPath: "/tmp/cover.jpg" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    expect(useCase).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed and unknown request fields without calling the use case", async () => {

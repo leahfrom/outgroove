@@ -219,7 +219,13 @@ The edit flow is always **select → propose → validate → preview → write 
 - Create a tag snapshot before the write.
 - Write through a same-volume temporary file when the format/library requires rewriting the container, flush it, then replace atomically where the OS permits.
 - Re-read the file after writing and compare intended values.
-- If artwork embedding is unsupported or undesirable, offer `cover.jpg`/`folder.jpg` according to a configurable policy.
+- If artwork embedding is unsupported or undesirable, offer an explicitly
+  optional compatibility action that creates a conventional `cover.jpg` or
+  `cover.png` beside a single-folder album. Embedded artwork remains the
+  default workflow. Folder artwork is never created automatically, never
+  replaces an existing conventional cover, and always requires an exact
+  destination preview and confirmation. Replacement or removal of existing
+  folder artwork is a separate future workflow with its own recovery design.
 - Renaming/moving files is a separate operation from editing tags and has its own preview.
 
 “Undo” must be described honestly: it can restore recorded metadata if the file is still the same audio asset, but it cannot promise recovery from external edits, disk failure, or unsupported tag frames. Recommend normal filesystem backups.
