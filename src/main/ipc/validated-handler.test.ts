@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   albumArtworkRequestSchema,
+  albumIdentificationRequestSchema,
   albumFolderArtworkPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
@@ -31,6 +32,30 @@ import {
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
+  it("accepts only an album identity for remote candidate lookup", async () => {
+    const useCase = vi.fn(() => ({ readOnly: true }));
+    const handler = createValidatedHandler(
+      albumIdentificationRequestSchema,
+      useCase,
+    );
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(handler({}, { albumId })).resolves.toMatchObject({
+      ok: true,
+      value: { readOnly: true },
+    });
+    expect(useCase).toHaveBeenCalledWith({ albumId });
+    for (const request of [
+      { albumId: "not-an-id" },
+      { albumId, query: "arbitrary provider query" },
+      { albumId, path: "/private/library/album" },
+      { albumId, audio: "bytes" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
   it("accepts only bounded album identities for artwork queries", async () => {
     const useCase = vi.fn(() => []);
     const handler = createValidatedHandler(albumArtworkRequestSchema, useCase);

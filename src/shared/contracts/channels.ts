@@ -11,6 +11,9 @@ export const channels = {
   applyDatabaseRestore: "database:apply-restore",
   queryLibrary: "library:query",
   loadAlbumArtwork: "library:load-album-artwork",
+  findMusicBrainzAlbumCandidates: "identify:find-musicbrainz-album-candidates",
+  cancelMusicBrainzAlbumCandidates:
+    "identify:cancel-musicbrainz-album-candidates",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
   updateSavedLibraryFilter: "library:update-saved-filter",
