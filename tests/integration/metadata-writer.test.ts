@@ -84,6 +84,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         trackNumber: 7,
         discNumber: 2,
         year: "2031-04",
+        genres: ["Post Rock"],
       });
       const after = await reader.read(path);
       expect(after.tags).toEqual({
@@ -94,6 +95,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         trackNumber: 7,
         discNumber: 2,
         year: "2031-04",
+        genres: ["Post Rock"],
       });
       expect(
         after.nativeTags.some(

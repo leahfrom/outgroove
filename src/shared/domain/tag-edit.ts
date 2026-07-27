@@ -1,4 +1,4 @@
-import type { NormalizedTags } from "./catalog";
+import { normalizeGenres, type NormalizedTags } from "./catalog";
 import { isValidPartialDate } from "./partial-date";
 
 export { isValidPartialDate } from "./partial-date";
@@ -10,6 +10,7 @@ export const editableTrackTagFields = [
   "trackNumber",
   "discNumber",
   "year",
+  "genres",
 ] as const;
 
 export type EditableTrackTagField = (typeof editableTrackTagFields)[number];
@@ -53,6 +54,18 @@ export function normalizeTrackTagChanges(
       throw new Error("year must be YYYY, YYYY-MM, or a valid YYYY-MM-DD.");
     Object.assign(output, { year: value });
   }
+  if ("genres" in input) {
+    const submitted = input.genres;
+    if (!submitted) throw new Error("genres are invalid.");
+    const genres = normalizeGenres(submitted);
+    if (genres.length > 1)
+      throw new Error(
+        "This writer currently supports one proposed genre value.",
+      );
+    if (genres.some((genre) => genre.length > 100))
+      throw new Error("genre is too long.");
+    Object.assign(output, { genres });
+  }
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");
   return output;
@@ -64,7 +77,24 @@ export function changedTrackTags(
 ): TrackTagChanges {
   const changes: TrackTagChanges = {};
   for (const field of editableTrackTagFields)
-    if (field in proposed && proposed[field] !== before[field])
+    if (
+      field in proposed &&
+      !trackTagValueEquals(proposed[field], before[field])
+    )
       Object.assign(changes, { [field]: proposed[field] });
   return changes;
+}
+
+export function trackTagValueEquals(
+  left: NormalizedTags[EditableTrackTagField] | undefined,
+  right: NormalizedTags[EditableTrackTagField] | undefined,
+): boolean {
+  if (Array.isArray(left) || Array.isArray(right))
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => value === right[index])
+    );
+  return left === right;
 }

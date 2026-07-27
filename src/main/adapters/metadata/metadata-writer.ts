@@ -27,6 +27,7 @@ export interface MetadataTagChanges {
   readonly trackNumber?: number | null;
   readonly discNumber?: number | null;
   readonly year?: string | null;
+  readonly genres?: readonly string[];
 }
 
 export interface MetadataWriter {
@@ -83,6 +84,12 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
     if (year && /^\d{4}$/u.test(year)) updated.year = Number(year);
     else if (year) updated.recordingDate = year;
   }
+  if (changes.genres !== undefined) {
+    const genres = changes.genres;
+    if (genres.length > 1)
+      throw new Error("This writer supports one proposed genre value.");
+    updated.genre = genres[0] ?? "";
+  }
   return updated;
 }
 
@@ -90,8 +97,17 @@ function changesMatch(
   file: ScannedAudioFile,
   changes: MetadataTagChanges,
 ): boolean {
+  if (changes.genres !== undefined) {
+    const proposedGenres = changes.genres;
+    const genres = file.tags.genres ?? [];
+    if (
+      genres.length !== proposedGenres.length ||
+      !genres.every((genre, index) => genre === proposedGenres[index])
+    )
+      return false;
+  }
   return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
-    (field) => file.tags[field] === changes[field],
+    (field) => field === "genres" || file.tags[field] === changes[field],
   );
 }
 

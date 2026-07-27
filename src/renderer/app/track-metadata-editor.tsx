@@ -19,6 +19,7 @@ export interface TrackMetadataDraft {
   trackNumber: string;
   discNumber: string;
   year: string;
+  genre: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -47,6 +48,11 @@ const comparisonFields: readonly ComparisonField[] = [
     label: "Release date",
     placeholder: "YYYY, YYYY-MM, or YYYY-MM-DD",
   },
+  {
+    field: "genre",
+    label: "Genre",
+    placeholder: "One genre; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -56,6 +62,7 @@ const previewFieldLabels: Record<string, string> = {
   trackNumber: "Track number",
   discNumber: "Disc number",
   year: "Release date",
+  genres: "Genre",
 };
 
 function currentValue(
@@ -75,10 +82,16 @@ function currentValue(
       return track.tags.discNumber?.toString() ?? "";
     case "year":
       return track.tags.year ?? "";
+    case "genre":
+      return (track.tags.genres ?? []).join(" · ");
   }
 }
 
-function displayValue(value: string | number | null): string {
+function displayValue(
+  value: string | number | readonly string[] | null,
+): string {
+  if (Array.isArray(value))
+    return value.length === 0 ? "Not set" : value.join(" · ");
   return value === null || value === "" ? "Not set" : String(value);
 }
 
@@ -139,6 +152,9 @@ function TrackMetadataEditorComponent(
             Editing <strong>{track.tags.title}</strong>
             {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Current
             catalog values remain visible beside the editable proposal.
+            Selecting Genre replaces the complete current genre set with one
+            value; an empty proposal clears it. Tracks with multiple current
+            genre values stay read-only for that field so undo remains exact.
           </>
         }
       />

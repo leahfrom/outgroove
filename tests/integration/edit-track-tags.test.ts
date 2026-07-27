@@ -99,6 +99,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         trackNumber: 12,
         discNumber: 3,
         year: "2032-02-29",
+        genres: ["Post Rock"],
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -108,6 +109,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "trackNumber",
         "discNumber",
         "year",
+        "genres",
       ]);
 
       const result = await editor.apply(
@@ -122,6 +124,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         trackNumber: 12,
         discNumber: 3,
         year: "2032-02-29",
+        genres: ["Post Rock"],
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -160,6 +163,44 @@ describe.each(["01-first.mp3", "02-second.flac"])(
     });
   },
 );
+
+it("blocks replacing multiple genre values when exact undo is unavailable", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  const bytesBefore = await audioPayloadHash(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: { ...scanned.tags, genres: ["Rock", "Metal"] },
+  });
+
+  const preview = editor.preview(fileId, { genres: ["Post Rock"] });
+  expect(preview.changes).toEqual([
+    {
+      field: "genres",
+      before: ["Rock", "Metal"],
+      after: ["Post Rock"],
+    },
+  ]);
+  expect(preview.warnings).toContain(
+    "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely.",
+  );
+
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      verified: false,
+      error:
+        "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely.",
+    },
+  ]);
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
+  expect(await audioPayloadHash(path)).toBe(bytesBefore);
+  database.close();
+});
 
 it("applies and undoes track numbers in the exact confirmed order", async () => {
   const { database, reader, editor, files } = await createBatchTrackEditor();
@@ -289,15 +330,20 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   );
   const preview = editor.previewBatch(
     files.map(({ fileId }) => fileId),
-    { artist: "Batch Artist", discNumber: 2, year: "2031-07" },
+    {
+      artist: "Batch Artist",
+      discNumber: 2,
+      year: "2031-07",
+      genres: ["Post Rock"],
+    },
   );
   expect(preview.files).toHaveLength(2);
   expect(preview.files.every((file) => file.willWrite)).toBe(true);
   expect(
     preview.files.map((file) => file.changes.map((item) => item.field)),
   ).toEqual([
-    ["artist", "discNumber", "year"],
-    ["artist", "discNumber", "year"],
+    ["artist", "discNumber", "year", "genres"],
+    ["artist", "discNumber", "year", "genres"],
   ]);
 
   const result = await editor.applyBatch(
@@ -313,6 +359,7 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       artist: "Batch Artist",
       discNumber: 2,
       year: "2031-07",
+      genres: ["Post Rock"],
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }
