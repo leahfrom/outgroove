@@ -55,6 +55,10 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.previewAlbumArtworkExport, request),
   exportAlbumArtwork: (request) =>
     ipcRenderer.invoke(channels.exportAlbumArtwork, request),
+  previewAlbumFolderArtwork: (request) =>
+    ipcRenderer.invoke(channels.previewAlbumFolderArtwork, request),
+  applyAlbumFolderArtwork: (request) =>
+    ipcRenderer.invoke(channels.applyAlbumFolderArtwork, request),
   previewTrackTagEdit: (request) =>
     ipcRenderer.invoke(channels.previewTrackTagEdit, request),
   applyTrackTagEdit: (request) =>

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AlbumArtworkEditPreviewDto,
   AlbumArtworkExportPreviewDto,
+  AlbumFolderArtworkPreviewDto,
 } from "../../shared/contracts/api";
 import { AlbumArtworkEditor } from "./album-artwork-editor";
 
@@ -72,6 +73,17 @@ const removalPreview: AlbumArtworkEditPreviewDto = {
       warnings: [],
     },
   ],
+};
+
+const folderPreview: AlbumFolderArtworkPreviewDto = {
+  operationId: "d99ef593-c0db-4835-8c42-d688e053e864",
+  confirmationToken: "folder-confirmation-token-long-enough",
+  artworkDataUrl: "data:image/png;base64,cHJldmlldw==",
+  mimeType: "image/png",
+  byteLength: 1024,
+  width: 800,
+  height: 800,
+  destinationPath: "/fixture/album/cover.png",
 };
 
 describe("AlbumArtworkEditor", () => {
@@ -284,5 +296,84 @@ describe("AlbumArtworkEditor", () => {
     confirm.focus();
     await user.keyboard("{Enter}");
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("keeps optional folder artwork behind disclosure, preview, and keyboard confirmation", async () => {
+    const user = userEvent.setup();
+    const onPrepareFolderArtwork = vi.fn();
+    const onConfirmFolderArtwork = vi.fn();
+    const onCancelFolderArtwork = vi.fn();
+    const { rerender } = render(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
+        preview={undefined}
+        result={undefined}
+        resultAction={undefined}
+        onCancelPreview={vi.fn()}
+        onChoose={vi.fn()}
+        onConfirm={vi.fn()}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
+        onPrepareRemoval={vi.fn()}
+        onCancelFolderArtwork={onCancelFolderArtwork}
+        onConfirmFolderArtwork={onConfirmFolderArtwork}
+        onPrepareFolderArtwork={onPrepareFolderArtwork}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Preview folder artwork" }),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Create folder artwork"));
+    const prepare = screen.getByRole("button", {
+      name: "Preview folder artwork",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    expect(onPrepareFolderArtwork).toHaveBeenCalledOnce();
+    expect(onConfirmFolderArtwork).not.toHaveBeenCalled();
+
+    rerender(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
+        folderPreview={folderPreview}
+        preview={undefined}
+        result={undefined}
+        resultAction={undefined}
+        onCancelPreview={vi.fn()}
+        onChoose={vi.fn()}
+        onConfirm={vi.fn()}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
+        onPrepareRemoval={vi.fn()}
+        onCancelFolderArtwork={onCancelFolderArtwork}
+        onConfirmFolderArtwork={onConfirmFolderArtwork}
+        onPrepareFolderArtwork={onPrepareFolderArtwork}
+      />,
+    );
+
+    const confirmation = screen.getByLabelText("Folder artwork confirmation");
+    expect(confirmation).toHaveTextContent("/fixture/album/cover.png");
+    expect(confirmation).toHaveTextContent("Audio files remain unchanged");
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm and create folder artwork",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(onConfirmFolderArtwork).toHaveBeenCalledOnce();
+
+    const cancel = within(confirmation).getByRole("button", {
+      name: "Keep embedded artwork only",
+    });
+    await user.click(cancel);
+    expect(onCancelFolderArtwork).toHaveBeenCalledOnce();
   });
 });

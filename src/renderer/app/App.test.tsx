@@ -253,6 +253,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     applyAlbumArtworkUndo: vi.fn(),
     previewAlbumArtworkExport: vi.fn(),
     exportAlbumArtwork: vi.fn(),
+    previewAlbumFolderArtwork: vi.fn(),
+    applyAlbumFolderArtwork: vi.fn(),
     previewTrackTagEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -1058,6 +1060,76 @@ describe("tag edit UI safety states", () => {
     expect(
       within(dialog).queryByLabelText("Artwork export preview"),
     ).not.toBeInTheDocument();
+  });
+
+  it("routes optional folder artwork through preview and explicit keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const previewFolderArtwork = vi
+      .spyOn(mockApi, "previewAlbumFolderArtwork")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "6be02533-46aa-4622-9af7-59d9af9fb6dd",
+          confirmationToken: "folder-confirmation-token-long-enough",
+          artworkDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+          mimeType: "image/jpeg",
+          byteLength: 4096,
+          width: 1200,
+          height: 1200,
+          destinationPath: "/fixture/album/cover.jpg",
+        },
+      });
+    const applyFolderArtwork = vi
+      .spyOn(mockApi, "applyAlbumFolderArtwork")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          destinationPath: "/fixture/album/cover.jpg",
+          byteLength: 4096,
+          sha256:
+            "a29157d168e67be11f7c8e6a338fef458b72da9f8aecd8e0c7be78d4cf9702fe",
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Create folder artwork"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Preview folder artwork",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewFolderArtwork).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(applyFolderArtwork).not.toHaveBeenCalled();
+
+    const confirmation = await within(dialog).findByLabelText(
+      "Folder artwork confirmation",
+    );
+    expect(confirmation).toHaveTextContent("/fixture/album/cover.jpg");
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm and create folder artwork",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyFolderArtwork).toHaveBeenCalledWith({
+        operationId: "6be02533-46aa-4622-9af7-59d9af9fb6dd",
+        confirmationToken: "folder-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Folder artwork result"),
+    ).toHaveTextContent("/fixture/album/cover.jpg");
   });
 
   it("previews shared album metadata contextually without applying it", async () => {

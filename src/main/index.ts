@@ -13,6 +13,7 @@ import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { EditAlbumArtwork } from "./application/edit-album-artwork";
+import { CreateAlbumFolderArtwork } from "./application/create-album-folder-artwork";
 import { ExportAlbumArtwork } from "./application/export-album-artwork";
 import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
@@ -80,6 +81,11 @@ async function createWindow(): Promise<void> {
     editor: new EditAlbumTitle(database, writer),
     artworkEditor: new EditAlbumArtwork(database, writer, artworkEncoder),
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
+    folderArtworkCreator: new CreateAlbumFolderArtwork(
+      database,
+      artworkEncoder,
+      { afterCreated: (albumId) => artwork.invalidate(albumId) },
+    ),
     trackEditor: new EditTrackTags(database, writer),
     sync: new DeviceSync(database),
     window,

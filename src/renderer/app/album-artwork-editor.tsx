@@ -2,6 +2,8 @@ import type {
   AlbumArtworkEditPreviewDto,
   AlbumArtworkExportPreviewDto,
   AlbumArtworkExportResultDto,
+  AlbumFolderArtworkPreviewDto,
+  AlbumFolderArtworkResultDto,
   TagEditResultDto,
 } from "../../shared/contracts/api";
 import {
@@ -22,6 +24,9 @@ export function AlbumArtworkEditor({
   exportError,
   exportPreview,
   exportResult,
+  folderError,
+  folderPreview,
+  folderResult,
   preview,
   result,
   resultAction,
@@ -29,6 +34,9 @@ export function AlbumArtworkEditor({
   onChoose,
   onConfirm,
   onExport,
+  onCancelFolderArtwork,
+  onConfirmFolderArtwork,
+  onPrepareFolderArtwork,
   onPrepareExport,
   onPrepareRemoval,
 }: {
@@ -37,6 +45,9 @@ export function AlbumArtworkEditor({
   readonly exportError: string | undefined;
   readonly exportPreview: AlbumArtworkExportPreviewDto | undefined;
   readonly exportResult: AlbumArtworkExportResultDto | undefined;
+  readonly folderError?: string | undefined;
+  readonly folderPreview?: AlbumFolderArtworkPreviewDto | undefined;
+  readonly folderResult?: AlbumFolderArtworkResultDto | undefined;
   readonly preview: AlbumArtworkEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
   readonly resultAction: "remove" | "replace" | undefined;
@@ -44,6 +55,9 @@ export function AlbumArtworkEditor({
   readonly onChoose: () => void;
   readonly onConfirm: () => void;
   readonly onExport: () => void;
+  readonly onCancelFolderArtwork?: () => void;
+  readonly onConfirmFolderArtwork?: () => void;
+  readonly onPrepareFolderArtwork?: () => void;
   readonly onPrepareExport: () => void;
   readonly onPrepareRemoval: () => void;
 }): React.JSX.Element {
@@ -208,6 +222,109 @@ export function AlbumArtworkEditor({
           }
         />
       )}
+
+      <details className="artwork-export-disclosure">
+        <summary>
+          <span>
+            <strong>Create folder artwork</strong>
+            <small>
+              Optional compatibility for players that require a conventional
+              cover file.
+            </small>
+          </span>
+        </summary>
+        <div className="artwork-export-content">
+          <p>
+            Outgroove can copy the current embedded cover to a new{" "}
+            <strong>cover.jpg</strong> or <strong>cover.png</strong> beside a
+            single-folder album. It never runs automatically and never replaces
+            existing folder artwork.
+          </p>
+
+          {folderError && (
+            <div className="workflow-error" role="alert">
+              <strong>Folder artwork could not be prepared.</strong>
+              <span>{folderError}</span>
+            </div>
+          )}
+
+          {folderPreview && (
+            <WorkbenchConfirmation
+              blocked={false}
+              busy={busy}
+              cancelLabel="Keep embedded artwork only"
+              confirmLabel="Confirm and create folder artwork"
+              description="Outgroove will re-check the album folder and embedded cover, write a same-folder temporary image, install only a missing destination, then verify it byte-for-byte. Audio files remain unchanged."
+              label="Folder artwork confirmation"
+              onCancel={() => onCancelFolderArtwork?.()}
+              onConfirm={() => onConfirmFolderArtwork?.()}
+              title="Review optional folder artwork"
+            >
+              <div className="artwork-proposal">
+                <img
+                  alt="Embedded cover prepared for folder artwork"
+                  src={folderPreview.artworkDataUrl}
+                />
+                <dl>
+                  <div>
+                    <dt>Format</dt>
+                    <dd>
+                      {folderPreview.mimeType === "image/jpeg" ? "JPEG" : "PNG"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Dimensions</dt>
+                    <dd>
+                      {folderPreview.width} × {folderPreview.height}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>File size</dt>
+                    <dd>{formatBytes(folderPreview.byteLength)}</dd>
+                  </div>
+                  <div>
+                    <dt>Exact destination</dt>
+                    <dd className="artwork-export-path">
+                      {folderPreview.destinationPath}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </WorkbenchConfirmation>
+          )}
+
+          {folderResult && (
+            <div
+              className="workflow-result artwork-export-result"
+              aria-label="Folder artwork result"
+              role="status"
+            >
+              <strong>Folder artwork created and verified.</strong>
+              <span className="artwork-export-path">
+                {folderResult.destinationPath}
+              </span>
+              <span>
+                {formatBytes(folderResult.byteLength)} · SHA-256{" "}
+                {folderResult.sha256}
+              </span>
+            </div>
+          )}
+
+          {!folderPreview && (
+            <div className="workflow-actions">
+              <button
+                disabled={busy}
+                onClick={() => onPrepareFolderArtwork?.()}
+                type="button"
+              >
+                {folderResult
+                  ? "Prepare another folder cover"
+                  : "Preview folder artwork"}
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
 
       <details className="artwork-export-disclosure artwork-removal-disclosure">
         <summary>
