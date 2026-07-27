@@ -8,6 +8,7 @@ import { WorkerLibraryQualityQuery } from "./adapters/database/worker-library-qu
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
 import { MusicBrainzClient } from "./adapters/providers/musicbrainz-client";
+import { CoverArtArchiveClient } from "./adapters/providers/cover-art-archive-client";
 import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
@@ -20,6 +21,7 @@ import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { FindAlbumCandidates } from "./application/find-album-candidates";
+import { FindReleaseArtwork } from "./application/find-release-artwork";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -69,6 +71,10 @@ async function createWindow(): Promise<void> {
     database,
     `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`,
   );
+  const coverArtArchive = new CoverArtArchiveClient(
+    database,
+    `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`,
+  );
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
@@ -85,6 +91,11 @@ async function createWindow(): Promise<void> {
     libraryRoots: new ManageLibraryRoots(database),
     artwork,
     albumCandidates: new FindAlbumCandidates(database, musicBrainz),
+    releaseArtwork: new FindReleaseArtwork(
+      database,
+      coverArtArchive,
+      artworkEncoder,
+    ),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor: new EditAlbumArtwork(database, writer, artworkEncoder),
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),

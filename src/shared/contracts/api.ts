@@ -92,6 +92,8 @@ export const musicBrainzReleaseLookupRequestSchema = z
     releaseId: musicBrainzIdSchema,
   })
   .strict();
+export const coverArtArchiveRequestSchema =
+  musicBrainzReleaseLookupRequestSchema;
 export const savedLibraryFilterDefinitionSchema = z
   .object({
     query: z.string().trim().max(200),
@@ -771,6 +773,31 @@ export interface MusicBrainzReleaseTracklistDto {
   readonly readOnly: true;
 }
 
+export interface CoverArtArchiveArtworkDto {
+  readonly id: string;
+  readonly types: readonly string[];
+  readonly front: boolean;
+  readonly back: boolean;
+  readonly approved: boolean;
+  readonly comment: string | null;
+  readonly previewDataUrl: string;
+  readonly width: number;
+  readonly height: number;
+  readonly mimeType: "image/jpeg" | "image/png";
+  readonly byteLength: number;
+}
+
+export interface CoverArtArchiveResultDto {
+  readonly albumId: string;
+  readonly sent: {
+    readonly releaseId: string;
+  };
+  readonly artwork: CoverArtArchiveArtworkDto | null;
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
   listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
@@ -804,7 +831,13 @@ export interface OutgrooveApi {
   loadMusicBrainzReleaseTracks(
     request: z.infer<typeof musicBrainzReleaseLookupRequestSchema>,
   ): Promise<Result<MusicBrainzReleaseTracklistDto>>;
+  loadCoverArtArchiveArtwork(
+    request: z.infer<typeof coverArtArchiveRequestSchema>,
+  ): Promise<Result<CoverArtArchiveResultDto>>;
   cancelMusicBrainzAlbumCandidates(
+    request: z.infer<typeof albumIdentificationRequestSchema>,
+  ): Promise<Result<{ readonly cancelled: boolean }>>;
+  cancelCoverArtArchiveArtwork(
     request: z.infer<typeof albumIdentificationRequestSchema>,
   ): Promise<Result<{ readonly cancelled: boolean }>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
