@@ -1,6 +1,6 @@
 # Release verification matrix
 
-The v0.11.0 release candidate requires fresh verification on native macOS arm64
+The v0.12.0 release candidate requires fresh verification on native macOS arm64
 and Windows x64, plus an x86-64 Debian Docker container on Apple Silicon.
 Results are recorded on the release pull request before the prerelease is
 published.
@@ -11,9 +11,9 @@ state.
 
 | Area                                                              | macOS arm64                         | Windows x64                                                                               | Linux x64                                                 |
 | ----------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Strict TypeScript / lint / unit + temp integration tests          | v0.11.0 native verification pending | v0.11.0 native verification pending                                                       | v0.11.0 x86-64 Debian Docker verification pending         |
-| Forge package                                                     | v0.11.0 native packaging pending    | v0.11.0 native packaging pending                                                          | v0.11.0 x86-64 Debian Docker packaging pending; beta only |
-| Packaged launch + native SQLite worker + sandboxed renderer smoke | v0.11.0 native smoke pending        | v0.11.0 native smoke pending                                                              | v0.11.0 Xvfb packaged smoke pending                       |
+| Strict TypeScript / lint / unit + temp integration tests          | v0.12.0 native verification pending | v0.12.0 native verification pending                                                       | v0.12.0 x86-64 Debian Docker verification pending         |
+| Forge package                                                     | v0.12.0 native packaging pending    | v0.12.0 native packaging pending                                                          | v0.12.0 x86-64 Debian Docker packaging pending; beta only |
+| Packaged launch + native SQLite worker + sandboxed renderer smoke | v0.12.0 native smoke pending        | v0.12.0 native smoke pending                                                              | v0.12.0 Xvfb packaged smoke pending                       |
 | MP3/FLAC safe replacement on native filesystem                    | Passed on APFS fixture copies       | Passed on CI runner filesystem, including `FileShare.None`; manual packaged check pending | Unverified                                                |
 | Locked manifest-owned sync destination                            | Passed simulated failure test       | Passed real `FileShare.None` CI test; manual packaged check pending                       | Unverified                                                |
 | exFAT safe replacement and copy                                   | Manual probe available; not run     | Manual probe available; not run                                                           | Manual probe available; not run                           |
