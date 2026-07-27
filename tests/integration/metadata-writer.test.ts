@@ -12,6 +12,7 @@ import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 
 import { parseFile } from "music-metadata";
+import { loadTrack, PictureKind } from "@akabeko/music-metadata-editor";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
@@ -198,6 +199,79 @@ describe.each(["preservation.mp3", "preservation.flac"])(
     });
   },
 );
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe embedded artwork round trip: %s",
+  (fixture) => {
+    it("replaces the complete picture set while preserving tags, private fields, and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-artwork-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const before = await preservationFingerprint(path);
+      const loaded = await loadTrack(path);
+      const original = loaded.pictures[0];
+      if (!original) throw new Error("Preservation artwork fixture missing");
+      const pictures = [
+        {
+          ...original,
+          kind: PictureKind.CoverBack,
+          description: "Preserved back cover",
+        },
+        {
+          ...original,
+          kind: PictureKind.CoverFront,
+          description: "New front cover",
+        },
+      ];
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(
+        new MusicMetadataReader(),
+      ).writePictures(path, pictures);
+      const after = await preservationFingerprint(path);
+
+      expect(after.pictures).toHaveLength(2);
+      expect(after.pictures.map((picture) => picture.description)).toEqual([
+        "Preserved back cover",
+        "New front cover",
+      ]);
+      expect({ ...after, pictures: before.pictures }).toEqual(before);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+it("restores the source if final artwork verification cannot complete", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-artwork-fail-"));
+  temporary.push(directory);
+  const path = join(directory, "artwork-failure.flac");
+  await copyFile(
+    join(
+      process.cwd(),
+      "fixtures",
+      "audio",
+      "preservation",
+      "preservation.flac",
+    ),
+    path,
+  );
+  const before = await readFile(path);
+  const loaded = await loadTrack(path);
+  const reader = {
+    read() {
+      return Promise.reject(new Error("simulated final reader failure"));
+    },
+  };
+  await expect(
+    new SafeMetadataWriter(reader).writePictures(path, loaded.pictures),
+  ).rejects.toThrow("simulated final reader failure");
+  expect(await readFile(path)).toEqual(before);
+  expect(await readdir(directory)).toEqual(["artwork-failure.flac"]);
+});
 
 async function preservationFingerprint(path: string) {
   const metadata = await parseFile(path, { duration: true });

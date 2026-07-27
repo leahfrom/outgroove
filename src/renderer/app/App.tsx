@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AlbumArtworkThumbnailDto,
+  AlbumArtworkEditPreviewDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -48,6 +49,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { AlbumActionsMenu } from "./album-actions-menu";
+import { AlbumArtworkEditor } from "./album-artwork-editor";
 import {
   AlbumTitleWorkbench,
   type AlbumTitleSection,
@@ -234,6 +236,15 @@ export function App(): React.JSX.Element {
   >([]);
   const [undoPreview, setUndoPreview] = useState<TagEditPreviewDto>();
   const [undoResult, setUndoResult] = useState<TagEditResultDto>();
+  const [artworkEditPreview, setArtworkEditPreview] =
+    useState<AlbumArtworkEditPreviewDto>();
+  const [artworkEditResult, setArtworkEditResult] =
+    useState<TagEditResultDto>();
+  const [artworkEditError, setArtworkEditError] = useState<string>();
+  const [artworkUndoPreview, setArtworkUndoPreview] =
+    useState<AlbumArtworkEditPreviewDto>();
+  const [artworkUndoResult, setArtworkUndoResult] =
+    useState<TagEditResultDto>();
   const [historyError, setHistoryError] = useState<string>();
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
   const [libraryTrackEditorOpen, setLibraryTrackEditorOpen] = useState(false);
@@ -1055,6 +1066,101 @@ export function App(): React.JSX.Element {
           failures.length === 0 ? "success" : "error",
         );
         setUndoPreview(undefined);
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else {
+        setHistoryError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseArtwork = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkEditError(undefined);
+    setArtworkEditResult(undefined);
+    try {
+      const result = await window.outgroove.chooseAlbumArtworkEdit({
+        albumId: selectedAlbum.id,
+      });
+      if (!result.ok) {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      } else if (result.value) {
+        setArtworkEditPreview(result.value);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyArtwork = async (): Promise<void> => {
+    if (!artworkEditPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyAlbumArtworkEdit({
+        operationId: artworkEditPreview.operationId,
+        confirmationToken: artworkEditPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setArtworkEditResult(result.value);
+        setArtworkEditPreview(undefined);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Verified embedded artwork for ${result.value.results.length} files.`
+            : `${failures.length} files kept their previous artwork.`,
+          failures.length === 0 ? "success" : "error",
+        );
+        await refreshCatalog();
+        if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
+      } else {
+        setArtworkEditError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewArtworkUndo = async (operationId: string): Promise<void> => {
+    setHistoryError(undefined);
+    const result = await window.outgroove.previewAlbumArtworkUndo({
+      operationId,
+    });
+    if (result.ok) {
+      setArtworkUndoResult(undefined);
+      setUndoPreview(undefined);
+      setTrackUndoPreview(undefined);
+      setBatchUndoPreview(undefined);
+      setArtworkUndoPreview(result.value);
+    } else {
+      setHistoryError(result.error.message);
+      setNotice(result.error.message, "error");
+    }
+  };
+
+  const applyArtworkUndo = async (): Promise<void> => {
+    if (!artworkUndoPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applyAlbumArtworkUndo({
+        operationId: artworkUndoPreview.operationId,
+        confirmationToken: artworkUndoPreview.confirmationToken,
+      });
+      if (result.ok) {
+        setArtworkUndoResult(result.value);
+        setArtworkUndoPreview(undefined);
+        const failures = result.value.results.filter((item) => !item.verified);
+        setNotice(
+          failures.length === 0
+            ? `Verified artwork restore for ${result.value.results.length} files.`
+            : `${failures.length} files were not restored because they changed or failed verification.`,
+          failures.length === 0 ? "success" : "error",
+        );
         await refreshCatalog();
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
@@ -2079,6 +2185,8 @@ export function App(): React.JSX.Element {
     selectedAlbum ? (
       <AlbumTitleWorkbench
         albumTitle={selectedAlbum.title}
+        artworkUndoPreview={artworkUndoPreview}
+        artworkUndoResult={artworkUndoResult}
         batchUndoKind={batchUndoKind}
         batchUndoPreview={batchUndoPreview}
         batchUndoResult={batchUndoResult}
@@ -2091,6 +2199,10 @@ export function App(): React.JSX.Element {
         historyError={historyError}
         onCancelBatchUndo={() => {
           setBatchUndoPreview(undefined);
+          setHistoryError(undefined);
+        }}
+        onCancelArtworkUndo={() => {
+          setArtworkUndoPreview(undefined);
           setHistoryError(undefined);
         }}
         onCancelEditPreview={() => {
@@ -2106,6 +2218,7 @@ export function App(): React.JSX.Element {
           setHistoryError(undefined);
         }}
         onConfirmBatchUndo={() => void applyBatchUndo()}
+        onConfirmArtworkUndo={() => void applyArtworkUndo()}
         onConfirmEdit={() => void applyEdit()}
         onConfirmTrackUndo={() => void applyTrackUndo()}
         onConfirmUndo={() => void applyUndo()}
@@ -2117,6 +2230,9 @@ export function App(): React.JSX.Element {
         }}
         onPreviewBatchUndo={(operationId, kind) =>
           void previewBatchUndo(operationId, kind)
+        }
+        onPreviewArtworkUndo={(operationId) =>
+          void previewArtworkUndo(operationId)
         }
         onPreviewEdit={() => void previewEdit()}
         onPreviewTrackUndo={(operationId) => void previewTrackUndo(operationId)}
@@ -2971,6 +3087,9 @@ export function App(): React.JSX.Element {
                         onEditMetadata={() =>
                           openLibraryAlbumEditingTool("title")
                         }
+                        onEditArtwork={() =>
+                          openLibraryAlbumEditingTool("artwork")
+                        }
                         onEditTrackOrder={() =>
                           openLibraryAlbumEditingTool("sequence")
                         }
@@ -3282,6 +3401,20 @@ export function App(): React.JSX.Element {
             )}
             {libraryAlbumEditingTool === "shared" && sharedFieldEditor}
             {libraryAlbumEditingTool === "sequence" && trackOrderEditor}
+            {libraryAlbumEditingTool === "artwork" && (
+              <AlbumArtworkEditor
+                busy={busy}
+                error={artworkEditError}
+                preview={artworkEditPreview}
+                result={artworkEditResult}
+                onCancelPreview={() => {
+                  setArtworkEditPreview(undefined);
+                  setArtworkEditError(undefined);
+                }}
+                onChoose={() => void chooseArtwork()}
+                onConfirm={() => void applyArtwork()}
+              />
+            )}
             {(libraryAlbumEditingTool === "title" ||
               libraryAlbumEditingTool === "history") && (
               <>{renderAlbumTitleWorkbench(false)}</>

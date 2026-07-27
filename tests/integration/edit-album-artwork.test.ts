@@ -1,0 +1,185 @@
+import { createHash } from "node:crypto";
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { loadTrack, PictureKind } from "@akabeko/music-metadata-editor";
+import { afterEach, expect, it } from "vitest";
+
+import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
+import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
+import {
+  audioPayloadHash,
+  SafeMetadataWriter,
+} from "../../src/main/adapters/metadata/metadata-writer";
+import { EditAlbumArtwork } from "../../src/main/application/edit-album-artwork";
+import { pathComparisonKey } from "../../src/main/application/scan-library";
+
+const temporary: string[] = [];
+const selectedPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X8r1AAAAAElFTkSuQmCC",
+  "base64",
+);
+
+afterEach(async () =>
+  Promise.all(
+    temporary
+      .splice(0)
+      .map((path) => rm(path, { recursive: true, force: true })),
+  ),
+);
+
+function picturesFingerprint(
+  pictures: Awaited<ReturnType<typeof loadTrack>>["pictures"],
+): string {
+  const hash = createHash("sha256");
+  for (const picture of pictures) {
+    hash.update(
+      JSON.stringify([
+        picture.mimeType,
+        picture.kind,
+        picture.description ?? null,
+      ]),
+    );
+    hash.update(picture.data);
+  }
+  return hash.digest("hex");
+}
+
+async function createArtworkEditor() {
+  const directory = await mkdtemp(join(tmpdir(), "outgroove-artwork-edit-"));
+  temporary.push(directory);
+  const reader = new MusicMetadataReader();
+  const writer = new SafeMetadataWriter(reader);
+  const database = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+  const root = database.addLibraryRoot(directory, pathComparisonKey(directory));
+  const files = await Promise.all(
+    ["preservation.mp3", "preservation.flac"].map(async (fixture) => {
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const fileId = database.upsertScannedFile(
+        root.id,
+        pathComparisonKey(path),
+        await reader.read(path),
+      );
+      return { fileId, path };
+    }),
+  );
+  const albumId = database.getTrackAlbumId(files[0]?.fileId ?? "");
+  if (!albumId) throw new Error("Preservation album missing");
+  const selectedPath = join(directory, "selected.png");
+  await writeFile(selectedPath, selectedPng);
+  return {
+    albumId,
+    database,
+    files,
+    selectedPath,
+    writer,
+    editor: new EditAlbumArtwork(database, writer, {
+      encode: () => "data:image/png;base64,preview",
+    }),
+  };
+}
+
+it("previews, confirms, verifies, deduplicates snapshots, and restores album artwork", async () => {
+  const { albumId, database, editor, files, selectedPath } =
+    await createArtworkEditor();
+  const beforePictures = await Promise.all(
+    files.map(({ path }) =>
+      loadTrack(path).then((track) => picturesFingerprint(track.pictures)),
+    ),
+  );
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+
+  const preview = await editor.preview(albumId, selectedPath);
+  expect(preview).toMatchObject({
+    action: "replace",
+    mimeType: "image/png",
+    width: 1,
+    height: 1,
+  });
+  expect(preview.files.every((file) => file.willWrite)).toBe(true);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(result.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries()) {
+    const pictures = (await loadTrack(file.path)).pictures;
+    expect(
+      pictures.find((picture) => picture.kind === PictureKind.CoverFront)?.data,
+    ).toEqual(new Uint8Array(selectedPng));
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  }
+  expect(
+    database.connection
+      .prepare("SELECT count(*) FROM artwork_assets")
+      .pluck()
+      .get(),
+  ).toBe(2);
+  expect(database.listArtworkSnapshots(preview.operationId)).toHaveLength(2);
+  expect(database.listEditHistory(albumId)[0]).toMatchObject({
+    kind: "album-artwork-edit",
+    verifiedFiles: 2,
+  });
+
+  const undoPreview = await editor.previewUndo(preview.operationId);
+  expect(undoPreview.action).toBe("restore");
+  const undo = await editor.apply(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+    "album-artwork-undo",
+  );
+  expect(undo.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries())
+    expect(picturesFingerprint((await loadTrack(file.path)).pictures)).toBe(
+      beforePictures[index],
+    );
+  database.close();
+});
+
+it("refuses one stale file without aborting the other confirmed artwork write", async () => {
+  const { albumId, database, editor, files, selectedPath, writer } =
+    await createArtworkEditor();
+  const preview = await editor.preview(albumId, selectedPath);
+  const first = files[0];
+  if (!first) throw new Error("Fixture file missing");
+  const current = await writer.readPictures(first.path);
+  await writer.writePictures(first.path, [
+    ...current,
+    {
+      mimeType: "image/png",
+      kind: PictureKind.CoverBack,
+      description: "External change",
+      data: selectedPng,
+    },
+  ]);
+
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(
+    result.results.find((item) => item.fileId === first.fileId),
+  ).toMatchObject({
+    verified: false,
+    error:
+      "Embedded artwork changed after the preview; this file was not overwritten.",
+  });
+  expect(
+    result.results.filter((item) => item.fileId !== first.fileId),
+  ).toMatchObject([{ verified: true, error: null }]);
+  expect(database.listEditHistory(albumId)[0]).toMatchObject({
+    state: "failed",
+    verifiedFiles: 1,
+    failedFiles: 1,
+  });
+  database.close();
+});

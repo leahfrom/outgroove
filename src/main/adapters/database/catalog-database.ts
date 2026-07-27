@@ -1,6 +1,6 @@
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { randomUUID } from "node:crypto";
 
 import Database from "better-sqlite3";
 
@@ -228,6 +228,18 @@ export interface StoredTagSnapshot {
   readonly scanState: "ok" | "error" | "missing";
   readonly verified: boolean;
   readonly error: string | null;
+}
+
+export interface StoredArtworkPicture {
+  readonly mimeType: string;
+  readonly kind: number;
+  readonly description?: string;
+  readonly data: Uint8Array;
+}
+
+export interface StoredArtworkSnapshot extends StoredTagSnapshot {
+  readonly beforePictures: readonly StoredArtworkPicture[];
+  readonly afterPictures: readonly StoredArtworkPicture[];
 }
 
 export class CatalogDatabase {
@@ -1934,6 +1946,46 @@ export class CatalogDatabase {
     return id;
   }
 
+  createArtworkEditOperation(
+    albumId: string,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at, kind)
+         VALUES (?, ?, 'Replace embedded front cover', ?, 'previewed', ?,
+          'album-artwork-edit')`,
+      )
+      .run(id, albumId, confirmationHash, new Date().toISOString());
+    return id;
+  }
+
+  createArtworkUndoOperation(
+    albumId: string,
+    sourceOperationId: string,
+    confirmationHash: string,
+  ): string {
+    const id = randomUUID();
+    this.connection
+      .prepare(
+        `INSERT INTO edit_operations
+         (id, album_id, proposed_title, confirmation_hash, state, created_at,
+          kind, source_operation_id)
+         VALUES (?, ?, 'Restore embedded artwork', ?, 'previewed', ?,
+          'album-artwork-undo', ?)`,
+      )
+      .run(
+        id,
+        albumId,
+        confirmationHash,
+        new Date().toISOString(),
+        sourceOperationId,
+      );
+    return id;
+  }
+
   getEditOperation(id: string):
     | {
         id: string;
@@ -1948,7 +2000,9 @@ export class CatalogDatabase {
           | "track-tags-undo"
           | "track-tags-batch-edit"
           | "track-tags-batch-undo"
-          | "track-number-sequence-edit";
+          | "track-number-sequence-edit"
+          | "album-artwork-edit"
+          | "album-artwork-undo";
         source_operation_id: string | null;
         target_file_id: string | null;
         preview_tags_json: string | null;
@@ -1975,7 +2029,9 @@ export class CatalogDatabase {
             | "track-tags-undo"
             | "track-tags-batch-edit"
             | "track-tags-batch-undo"
-            | "track-number-sequence-edit";
+            | "track-number-sequence-edit"
+            | "album-artwork-edit"
+            | "album-artwork-undo";
           source_operation_id: string | null;
           target_file_id: string | null;
           preview_tags_json: string | null;
@@ -2013,7 +2069,9 @@ export class CatalogDatabase {
         | "track-tags-undo"
         | "track-tags-batch-edit"
         | "track-tags-batch-undo"
-        | "track-number-sequence-edit";
+        | "track-number-sequence-edit"
+        | "album-artwork-edit"
+        | "album-artwork-undo";
       source_operation_id: string | null;
       proposed_title: string;
       state: "completed" | "failed";
@@ -2098,6 +2156,95 @@ export class CatalogDatabase {
         JSON.stringify(after),
       );
     return id;
+  }
+
+  saveArtworkSnapshot(
+    operationId: string,
+    fileId: string,
+    tags: NormalizedTags,
+    before: readonly StoredArtworkPicture[],
+    after: readonly StoredArtworkPicture[],
+  ): string {
+    return this.connection.transaction(() => {
+      const snapshotId = this.saveSnapshot(operationId, fileId, tags, tags);
+      const insertAsset = this.connection.prepare(
+        `INSERT INTO artwork_assets (sha256, mime_type, data)
+         VALUES (?, ?, ?) ON CONFLICT(sha256) DO NOTHING`,
+      );
+      const insertPicture = this.connection.prepare(
+        `INSERT INTO artwork_snapshot_pictures
+         (snapshot_id, side, position, asset_sha256, kind, description)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const [side, pictures] of [
+        ["before", before],
+        ["after", after],
+      ] as const) {
+        pictures.forEach((picture, position) => {
+          const sha256 = createHash("sha256")
+            .update(picture.data)
+            .digest("hex");
+          insertAsset.run(sha256, picture.mimeType, Buffer.from(picture.data));
+          insertPicture.run(
+            snapshotId,
+            side,
+            position,
+            sha256,
+            picture.kind,
+            picture.description ?? null,
+          );
+        });
+      }
+      return snapshotId;
+    })();
+  }
+
+  listArtworkSnapshots(operationId: string): readonly StoredArtworkSnapshot[] {
+    const snapshots = this.listSnapshots(operationId);
+    const rows = this.connection
+      .prepare(
+        `SELECT picture.snapshot_id, picture.side, picture.position,
+          picture.kind, picture.description, asset.mime_type, asset.data
+         FROM artwork_snapshot_pictures picture
+         JOIN artwork_assets asset ON asset.sha256=picture.asset_sha256
+         JOIN tag_snapshots snapshot ON snapshot.id=picture.snapshot_id
+         WHERE snapshot.operation_id=?
+         ORDER BY picture.snapshot_id, picture.side, picture.position`,
+      )
+      .all(operationId) as {
+      snapshot_id: string;
+      side: "before" | "after";
+      position: number;
+      kind: number;
+      description: string | null;
+      mime_type: string;
+      data: Buffer;
+    }[];
+    const pictures = new Map<
+      string,
+      { before: StoredArtworkPicture[]; after: StoredArtworkPicture[] }
+    >();
+    for (const row of rows) {
+      const entry = pictures.get(row.snapshot_id) ?? {
+        before: [],
+        after: [],
+      };
+      entry[row.side].push({
+        mimeType: row.mime_type,
+        kind: row.kind,
+        ...(row.description === null ? {} : { description: row.description }),
+        data: new Uint8Array(row.data),
+      });
+      pictures.set(row.snapshot_id, entry);
+    }
+    return snapshots.map((snapshot) => {
+      const stored = pictures.get(snapshot.id) ?? { before: [], after: [] };
+      return {
+        ...snapshot,
+        beforePictures: stored.before,
+        afterPictures: stored.after,
+      };
+    });
   }
 
   finishSnapshot(id: string, verified: boolean, error: string | null): void {

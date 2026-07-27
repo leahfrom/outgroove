@@ -10,6 +10,7 @@ describe("AlbumActionsMenu", () => {
     const user = userEvent.setup();
     const onEditMetadata = vi.fn();
     const onEditTrackOrder = vi.fn();
+    const onEditArtwork = vi.fn();
     const onOpenHistory = vi.fn();
     const onAddToSync = vi.fn();
     render(
@@ -19,6 +20,7 @@ describe("AlbumActionsMenu", () => {
         syncDisabled={false}
         onAddToSync={onAddToSync}
         onEditMetadata={onEditMetadata}
+        onEditArtwork={onEditArtwork}
         onEditTrackOrder={onEditTrackOrder}
         onOpenHistory={onOpenHistory}
       />,
@@ -36,7 +38,7 @@ describe("AlbumActionsMenu", () => {
       name: "Edit album metadata",
     });
     expect(editMetadata).toHaveFocus();
-    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
     expect(onOpenHistory).toHaveBeenCalledOnce();
     expect(trigger).toHaveFocus();
 
@@ -55,6 +57,7 @@ describe("AlbumActionsMenu", () => {
         syncDisabled
         onAddToSync={vi.fn()}
         onEditMetadata={vi.fn()}
+        onEditArtwork={vi.fn()}
         onEditTrackOrder={vi.fn()}
         onOpenHistory={vi.fn()}
       />,

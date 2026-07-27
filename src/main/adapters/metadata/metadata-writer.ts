@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { open, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
@@ -7,7 +7,7 @@ import {
   saveTrack,
   writeMetadata,
 } from "@akabeko/music-metadata-editor";
-import type { TagData } from "@akabeko/music-metadata-editor";
+import type { PictureInfo, TagData } from "@akabeko/music-metadata-editor";
 
 import type { ScannedAudioFile } from "../../../shared/domain/catalog";
 import { streamingFileHash } from "../filesystem/streaming-hash";
@@ -31,6 +31,11 @@ export interface MetadataTagChanges {
 
 export interface MetadataWriter {
   readonly writableExtensions: ReadonlySet<string>;
+  readPictures(path: string): Promise<readonly PictureInfo[]>;
+  writePictures(
+    path: string,
+    pictures: readonly PictureInfo[],
+  ): Promise<MetadataWriteResult>;
   writeTags(
     path: string,
     changes: MetadataTagChanges,
@@ -39,6 +44,20 @@ export interface MetadataWriter {
     path: string,
     albumTitle: string,
   ): Promise<MetadataWriteResult>;
+}
+
+function pictureFingerprint(pictures: readonly PictureInfo[]): string {
+  const hash = createHash("sha256");
+  for (const picture of pictures) {
+    hash.update(picture.mimeType);
+    hash.update("\0");
+    hash.update(String(picture.kind));
+    hash.update("\0");
+    hash.update(picture.description ?? "");
+    hash.update("\0");
+    hash.update(picture.data);
+  }
+  return hash.digest("hex");
 }
 
 function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
@@ -182,6 +201,15 @@ export class SafeMetadataWriter implements MetadataWriter {
 
   constructor(private readonly reader: MetadataReader) {}
 
+  async readPictures(path: string): Promise<readonly PictureInfo[]> {
+    const extension = extname(path).toLocaleLowerCase("en-US");
+    if (!this.writableExtensions.has(extension))
+      throw new Error(
+        `Reading embedded artwork from ${extension || "this format"} is not supported in this slice.`,
+      );
+    return (await loadTrack(path)).pictures;
+  }
+
   async writeAlbumTitle(
     path: string,
     albumTitle: string,
@@ -251,6 +279,91 @@ export class SafeMetadataWriter implements MetadataWriter {
       const hashAfter = await audioPayloadHash(path);
       if (!changesMatch(finalRead, changes) || hashAfter !== hashBefore)
         throw new Error("Post-replacement verification failed.");
+      await bestEffortUnlink(rollback);
+      return {
+        file: finalRead,
+        payloadHashBefore: hashBefore,
+        payloadHashAfter: hashAfter,
+      };
+    } catch (error) {
+      if (originalMoved) {
+        await bestEffortUnlink(path);
+        await rename(rollback, path);
+      }
+      await bestEffortUnlink(temporary);
+      throw error;
+    }
+  }
+
+  async writePictures(
+    path: string,
+    pictures: readonly PictureInfo[],
+  ): Promise<MetadataWriteResult> {
+    const extension = extname(path).toLocaleLowerCase("en-US");
+    if (!this.writableExtensions.has(extension))
+      throw new Error(
+        `Writing embedded artwork to ${extension || "this format"} is not supported in this slice.`,
+      );
+    const directory = dirname(path);
+    const nonce = randomUUID();
+    const temporary = join(
+      directory,
+      `.${basename(path, extension)}.outgroove-${nonce}.tmp${extension}`,
+    );
+    const rollback = join(
+      directory,
+      `.${basename(path)}.outgroove-${nonce}.rollback`,
+    );
+    // The format adapter receives owned byte arrays so it cannot mutate the
+    // previewed proposal that the application layer later verifies.
+    const ownedPictures = pictures.map((picture) => ({
+      ...picture,
+      data: picture.data.slice(),
+    }));
+    const expectedPictures = pictureFingerprint(ownedPictures);
+    const hashBefore = await audioPayloadHash(path);
+    let originalMoved = false;
+    try {
+      const loaded = await loadTrack(path);
+      if (extension === ".mp3") {
+        const bytes = await writeMetadata(path, {
+          tag: loaded.tag,
+          pictures: ownedPictures,
+          id3v2MajorVersion: 4,
+        } as Parameters<typeof writeMetadata>[1] & {
+          id3v2MajorVersion: 4;
+        });
+        await writeFile(temporary, bytes, { flag: "wx" });
+      } else {
+        await saveTrack(
+          { ...loaded, pictures: ownedPictures },
+          { source: path, outputPath: temporary },
+        );
+      }
+      await flushPath(temporary);
+      const temporaryTrack = await loadTrack(temporary);
+      if (pictureFingerprint(temporaryTrack.pictures) !== expectedPictures)
+        throw new Error(
+          "Temporary artwork verification failed; original was left untouched.",
+        );
+      const temporaryHash = await audioPayloadHash(temporary);
+      if (temporaryHash !== hashBefore)
+        throw new Error(
+          "Writer changed the audio payload; original was left untouched.",
+        );
+
+      await rename(path, rollback);
+      originalMoved = true;
+      await rename(temporary, path);
+      await flushPath(path);
+      const finalTrack = await loadTrack(path);
+      const finalRead = await this.reader.read(path);
+      const hashAfter = await audioPayloadHash(path);
+      if (
+        pictureFingerprint(finalTrack.pictures) !== expectedPictures ||
+        hashAfter !== hashBefore
+      )
+        throw new Error("Post-replacement artwork verification failed.");
       await bestEffortUnlink(rollback);
       return {
         file: finalRead,

@@ -35,11 +35,14 @@ function renderWorkbench({
 } = {}) {
   const onSectionChange = vi.fn();
   const onPreviewUndo = vi.fn();
+  const onPreviewArtworkUndo = vi.fn();
   const onConfirmBatchUndo = vi.fn();
 
   render(
     <AlbumTitleWorkbench
       albumTitle="Fixture Album"
+      artworkUndoPreview={undefined}
+      artworkUndoResult={undefined}
       batchUndoKind="shared-fields"
       batchUndoPreview={batchUndoPreview}
       batchUndoResult={undefined}
@@ -51,15 +54,18 @@ function renderWorkbench({
       editResult={undefined}
       historyError={undefined}
       onCancelBatchUndo={vi.fn()}
+      onCancelArtworkUndo={vi.fn()}
       onCancelEditPreview={vi.fn()}
       onCancelTrackUndo={vi.fn()}
       onCancelUndo={vi.fn()}
       onConfirmBatchUndo={onConfirmBatchUndo}
+      onConfirmArtworkUndo={vi.fn()}
       onConfirmEdit={vi.fn()}
       onConfirmTrackUndo={vi.fn()}
       onConfirmUndo={vi.fn()}
       onDraftTitleChange={vi.fn()}
       onPreviewBatchUndo={vi.fn()}
+      onPreviewArtworkUndo={onPreviewArtworkUndo}
       onPreviewEdit={vi.fn()}
       onPreviewTrackUndo={vi.fn()}
       onPreviewUndo={onPreviewUndo}
@@ -72,10 +78,37 @@ function renderWorkbench({
     />,
   );
 
-  return { onConfirmBatchUndo, onPreviewUndo, onSectionChange };
+  return {
+    onConfirmBatchUndo,
+    onPreviewArtworkUndo,
+    onPreviewUndo,
+    onSectionChange,
+  };
 }
 
 describe("AlbumTitleWorkbench", () => {
+  it("offers verified artwork edits through the same reviewed undo history", async () => {
+    const user = userEvent.setup();
+    const artworkHistory: TagEditHistoryItemDto = {
+      ...historyItem,
+      kind: "album-artwork-edit",
+      proposedTitle: "Replace embedded front cover",
+    };
+    const { onPreviewArtworkUndo } = renderWorkbench({
+      section: "history",
+      editHistory: [artworkHistory],
+    });
+
+    const button = screen.getByRole("button", {
+      name: "Preview artwork undo",
+    });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(onPreviewArtworkUndo).toHaveBeenCalledWith(
+      artworkHistory.operationId,
+    );
+  });
+
   it("discloses history contextually and supports keyboard navigation", async () => {
     const user = userEvent.setup();
     const { onSectionChange } = renderWorkbench();

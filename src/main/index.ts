@@ -12,6 +12,7 @@ import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
+import { EditAlbumArtwork } from "./application/edit-album-artwork";
 import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
@@ -78,6 +79,11 @@ async function createWindow(): Promise<void> {
     libraryRoots: new ManageLibraryRoots(database),
     artwork,
     editor: new EditAlbumTitle(database, writer),
+    artworkEditor: new EditAlbumArtwork(
+      database,
+      writer,
+      new ElectronArtworkThumbnailEncoder(),
+    ),
     trackEditor: new EditTrackTags(database, writer),
     sync: new DeviceSync(database),
     window,

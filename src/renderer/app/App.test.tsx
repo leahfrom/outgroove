@@ -45,6 +45,7 @@ async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
     | "Edit album metadata"
+    | "Change album artwork"
     | "Edit track order"
     | "History & undo"
     | `Add ${string} to Sync`,
@@ -245,6 +246,10 @@ function api(applyVerified: boolean): OutgrooveApi {
     listAlbumEditHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     previewAlbumTitleUndo: vi.fn(),
     applyAlbumTitleUndo: vi.fn(),
+    chooseAlbumArtworkEdit: vi.fn(),
+    applyAlbumArtworkEdit: vi.fn(),
+    previewAlbumArtworkUndo: vi.fn(),
+    applyAlbumArtworkUndo: vi.fn(),
     previewTrackTagEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -791,6 +796,101 @@ describe("tag edit UI safety states", () => {
       ).getByLabelText("Tag edit confirmation"),
     ).toBeVisible();
     expect(applyEdit).not.toHaveBeenCalled();
+  });
+
+  it("routes local artwork through a preserved preview and explicit keyboard confirmation", async () => {
+    const mockApi = api(true);
+    const chooseArtwork = vi
+      .spyOn(mockApi, "chooseAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          confirmationToken: "artwork-confirmation-token-long-enough",
+          action: "replace",
+          proposedArtworkDataUrl: "data:image/png;base64,cHJldmlldw==",
+          mimeType: "image/png",
+          byteLength: 2048,
+          width: 900,
+          height: 900,
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              currentFrontCovers: 1,
+              preservedPictures: 0,
+              willWrite: true,
+              warnings: [],
+            },
+          ],
+        },
+      });
+    const applyArtwork = vi
+      .spyOn(mockApi, "applyAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    expect(
+      within(dialog).getByRole("button", { name: /^Artwork/u }),
+    ).toHaveAttribute("aria-current", "page");
+    const choose = within(dialog).getByRole("button", {
+      name: "Choose JPEG or PNG",
+    });
+    choose.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(chooseArtwork).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork edit confirmation"),
+    ).toBeVisible();
+    expect(applyArtwork).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    expect(
+      within(dialog).queryByLabelText("Artwork edit confirmation"),
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: /^Artwork/u }));
+    const confirmation = within(dialog).getByLabelText(
+      "Artwork edit confirmation",
+    );
+    const confirm = within(confirmation).getByRole("button", {
+      name: "Confirm and write 1 file",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyArtwork).toHaveBeenCalledWith({
+        operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+        confirmationToken: "artwork-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork edit result"),
+    ).toBeVisible();
   });
 
   it("previews shared album metadata contextually without applying it", async () => {

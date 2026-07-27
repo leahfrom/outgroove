@@ -149,6 +149,9 @@ export const albumEditHistoryRequestSchema = z
 export const albumEditUndoPreviewRequestSchema = z
   .object({ operationId: z.uuid() })
   .strict();
+export const albumArtworkEditPreviewRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
 export const trackTagEditPreviewRequestSchema = z
   .object({
     fileId: z.uuid(),
@@ -409,6 +412,24 @@ export interface TagEditResultDto {
     error: string | null;
   }[];
 }
+export interface AlbumArtworkEditPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly action: "replace" | "restore";
+  readonly proposedArtworkDataUrl?: string;
+  readonly mimeType?: string;
+  readonly byteLength?: number;
+  readonly width?: number;
+  readonly height?: number;
+  readonly files: readonly {
+    readonly fileId: string;
+    readonly path: string;
+    readonly currentFrontCovers: number;
+    readonly preservedPictures: number;
+    readonly willWrite: boolean;
+    readonly warnings: readonly string[];
+  }[];
+}
 export interface TrackTagEditPreviewDto {
   readonly operationId: string;
   readonly confirmationToken: string;
@@ -440,7 +461,9 @@ export interface TagEditHistoryItemDto {
     | "track-tags-undo"
     | "track-tags-batch-edit"
     | "track-tags-batch-undo"
-    | "track-number-sequence-edit";
+    | "track-number-sequence-edit"
+    | "album-artwork-edit"
+    | "album-artwork-undo";
   readonly sourceOperationId: string | null;
   readonly proposedTitle: string;
   readonly state: "completed" | "failed";
@@ -592,6 +615,18 @@ export interface OutgrooveApi {
     request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
   ): Promise<Result<TagEditPreviewDto>>;
   applyAlbumTitleUndo(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  chooseAlbumArtworkEdit(
+    request: z.infer<typeof albumArtworkEditPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto | null>>;
+  applyAlbumArtworkEdit(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<TagEditResultDto>>;
+  previewAlbumArtworkUndo(
+    request: z.infer<typeof albumEditUndoPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto>>;
+  applyAlbumArtworkUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
   previewTrackTagEdit(

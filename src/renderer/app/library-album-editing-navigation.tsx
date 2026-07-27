@@ -1,5 +1,5 @@
 export type LibraryAlbumEditingTool =
-  "title" | "shared" | "sequence" | "history";
+  "title" | "shared" | "sequence" | "artwork" | "history";
 
 const tools: readonly {
   readonly id: LibraryAlbumEditingTool;
@@ -20,6 +20,11 @@ const tools: readonly {
     id: "sequence",
     label: "Track order",
     description: "Review explicit track and disc numbering.",
+  },
+  {
+    id: "artwork",
+    label: "Artwork",
+    description: "Preview a local embedded front-cover change.",
   },
   {
     id: "history",

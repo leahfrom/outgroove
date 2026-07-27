@@ -2072,7 +2072,7 @@ h1 {
 }
 .album-editing-tools {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.6rem;
   margin-bottom: 1rem;
 }
@@ -2094,6 +2094,7 @@ h1 {
   background: #eef8f1;
 }
 .album-editing-sheet .album-title-workbench,
+.album-editing-sheet .album-artwork-editor,
 .album-editing-sheet .shared-field-editor,
 .album-editing-sheet .track-order-editor {
   margin: 0;
@@ -2621,6 +2622,45 @@ pre {
 }
 .confirmation-panel {
   margin-top: 1.5rem;
+}
+.workflow-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.workflow-note {
+  color: #526159;
+}
+.artwork-proposal,
+.artwork-undo-preview {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+.artwork-proposal img,
+.artwork-undo-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid #b9c4bc;
+  border-radius: 10px;
+  object-fit: contain;
+  background: #f4f6f3;
+}
+.artwork-proposal dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+.artwork-proposal dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr;
+  gap: 0.8rem;
+}
+.artwork-proposal dt {
+  font-weight: 750;
 }
 .confirmation-panel > .actions {
   justify-content: flex-end;
@@ -3283,6 +3323,14 @@ td {
   }
   .sequence-settings {
     grid-template-columns: 1fr;
+  }
+  .artwork-proposal,
+  .artwork-undo-preview {
+    grid-template-columns: 1fr;
+  }
+  .artwork-proposal img,
+  .artwork-undo-preview img {
+    max-width: 16rem;
   }
   dd {
     margin-bottom: 0.5rem;
