@@ -29,6 +29,7 @@ const firstTrack: CatalogAlbum["tracks"][number] = {
     year: null,
     genres: ["Post Rock"],
     composers: ["First Composer"],
+    conductors: ["First Conductor"],
   },
   nativeTags: [],
   scanError: null,
@@ -50,6 +51,7 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
     year: "2026-07",
     genres: ["Metal"],
     composers: ["Second Composer"],
+    conductors: ["Second Conductor"],
   },
 };
 
@@ -62,6 +64,7 @@ const disabledFields: SharedFieldEnabled = {
   year: false,
   genre: false,
   composer: false,
+  conductor: false,
 };
 
 const emptyDraft: SharedFieldDraft = {
@@ -73,6 +76,7 @@ const emptyDraft: SharedFieldDraft = {
   year: "",
   genre: "",
   composer: "",
+  conductor: "",
 };
 
 function editor({
@@ -112,7 +116,7 @@ describe("SharedFieldEditor", () => {
     render(editor());
 
     const comparison = screen.getByLabelText("Shared tag comparison");
-    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(7);
+    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(8);
     expect(within(comparison).getByText("Shared Album Artist")).toBeVisible();
     expect(screen.getByText("No shared fields selected.")).toBeVisible();
     expect(
@@ -161,6 +165,14 @@ describe("SharedFieldEditor", () => {
     await user.click(within(composerRow).getByText("Mixed values"));
     expect(within(composerRow).getByText("First Composer")).toBeVisible();
     expect(within(composerRow).getByText("Second Composer")).toBeVisible();
+
+    const conductorInput = screen.getByLabelText("Batch conductor value");
+    const conductorRow = conductorInput.closest(".tag-comparison-row");
+    if (!(conductorRow instanceof HTMLElement))
+      throw new Error("Conductor comparison row missing");
+    await user.click(within(conductorRow).getByText("Mixed values"));
+    expect(within(conductorRow).getByText("First Conductor")).toBeVisible();
+    expect(within(conductorRow).getByText("Second Conductor")).toBeVisible();
   });
 
   it("keeps proposals opt-in and exposes the comparison in keyboard order", async () => {

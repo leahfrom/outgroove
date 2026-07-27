@@ -30,6 +30,7 @@ describe("track metadata validation", () => {
         year: null,
         genres: ["  Post   Rock  "],
         composers: ["  Fixture   Composer  "],
+        conductors: ["  Fixture   Conductor  "],
       }),
     ).toEqual({
       title: "Ä track",
@@ -39,6 +40,7 @@ describe("track metadata validation", () => {
       year: null,
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
+      conductors: ["Fixture Conductor"],
     });
     expect(() => normalizeTrackTagChanges({ title: "   " })).toThrow(
       "title cannot be empty",
@@ -61,6 +63,11 @@ describe("track metadata validation", () => {
         composers: ["First Composer", "Second Composer"],
       }),
     ).toThrow("one proposed composer value");
+    expect(() =>
+      normalizeTrackTagChanges({
+        conductors: ["First Conductor", "Second Conductor"],
+      }),
+    ).toThrow("one proposed conductor value");
   });
 
   it("validates explicit number and total relationships without correcting values", () => {
@@ -112,6 +119,7 @@ describe("track metadata validation", () => {
       year: "2026",
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
+      conductors: ["Fixture Conductor"],
     };
     expect(
       changedTrackTags(before, {
@@ -120,11 +128,15 @@ describe("track metadata validation", () => {
         year: "2026",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       }),
     ).toEqual({ artist: "New Artist" });
     expect(changedTrackTags(before, { genres: [] })).toEqual({ genres: [] });
     expect(changedTrackTags(before, { composers: [] })).toEqual({
       composers: [],
+    });
+    expect(changedTrackTags(before, { conductors: [] })).toEqual({
+      conductors: [],
     });
   });
 });

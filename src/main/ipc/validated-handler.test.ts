@@ -796,10 +796,22 @@ describe("validated IPC handlers", () => {
         {
           fileId,
           changes: {
+            conductors: ["First Conductor", "Second Conductor"],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
             trackTotal: 12,
             discTotal: null,
             genres: ["  Post Rock  "],
             composers: ["  Fixture Composer  "],
+            conductors: ["  Fixture Conductor  "],
           },
         },
       ),
@@ -811,6 +823,7 @@ describe("validated IPC handlers", () => {
         discTotal: null,
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       },
     });
   });
@@ -830,6 +843,17 @@ describe("validated IPC handlers", () => {
       handler(
         {},
         { fileIds: [first, second], changes: { title: "Mass title" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: {
+            conductors: ["First Conductor", "Second Conductor"],
+          },
+        },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
@@ -879,6 +903,7 @@ describe("validated IPC handlers", () => {
             discTotal: 2,
             genres: [],
             composers: ["Fixture Composer"],
+            conductors: ["Fixture Conductor"],
           },
         },
       ),
@@ -890,6 +915,7 @@ describe("validated IPC handlers", () => {
         discTotal: 2,
         genres: [],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       },
     });
   });

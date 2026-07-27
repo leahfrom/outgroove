@@ -274,6 +274,11 @@ function api(applyVerified: boolean): OutgrooveApi {
             },
             { field: "trackTotal", before: 2, after: 12 },
             { field: "discTotal", before: 1, after: 2 },
+            {
+              field: "conductors",
+              before: [],
+              after: ["Fixture Conductor"],
+            },
           ],
           warnings: [],
         },
@@ -1436,6 +1441,10 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Composer proposed value"),
       "Fixture Composer",
     );
+    await user.type(
+      screen.getByLabelText("Conductor proposed value"),
+      "Fixture Conductor",
+    );
     await user.clear(screen.getByLabelText("Track total proposed value"));
     await user.type(screen.getByLabelText("Track total proposed value"), "12");
     await user.clear(screen.getByLabelText("Disc total proposed value"));
@@ -1444,7 +1453,7 @@ describe("tag edit UI safety states", () => {
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 6 changes",
+      name: "Review 7 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1453,6 +1462,7 @@ describe("tag edit UI safety states", () => {
     expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
     expect(within(preview).getByText("Track total")).toBeInTheDocument();
     expect(within(preview).getByText("Disc total")).toBeInTheDocument();
+    expect(within(preview).getByText("Conductor")).toBeInTheDocument();
     const confirmButton = within(preview).getByRole("button", {
       name: "Confirm and write track",
     });
@@ -1479,6 +1489,7 @@ describe("tag edit UI safety states", () => {
         discTotal: 2,
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       },
     });
   });
@@ -1833,6 +1844,13 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Batch composer value"),
       "Fixture Composer",
     );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change conductor" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch conductor value"),
+      "Fixture Conductor",
+    );
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1856,6 +1874,7 @@ describe("tag edit UI safety states", () => {
         artist: "Batch Artist",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       },
     });
     await user.type(
@@ -1872,6 +1891,7 @@ describe("tag edit UI safety states", () => {
         artist: "Batch Artist revised",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       },
     });
     expect(

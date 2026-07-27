@@ -64,6 +64,7 @@ export class MusicMetadataReader implements MetadataReader {
           : null,
       genres: normalizeGenres(common.genre),
       composers: normalizeTagTextList(common.composer),
+      conductors: normalizeTagTextList(common.conductor),
     };
     const nativeTags: NativeTagValue[] = Object.entries(
       metadata.native,

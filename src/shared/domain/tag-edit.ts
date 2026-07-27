@@ -18,6 +18,7 @@ export const editableTrackTagFields = [
   "year",
   "genres",
   "composers",
+  "conductors",
 ] as const;
 
 export type EditableTrackTagField = (typeof editableTrackTagFields)[number];
@@ -86,6 +87,18 @@ export function normalizeTrackTagChanges(
     if (composers.some((composer) => composer.length > 400))
       throw new Error("composer is too long.");
     Object.assign(output, { composers });
+  }
+  if ("conductors" in input) {
+    const submitted = input.conductors;
+    if (!submitted) throw new Error("conductors are invalid.");
+    const conductors = normalizeTagTextList(submitted);
+    if (conductors.length > 1)
+      throw new Error(
+        "This writer currently supports one proposed conductor value.",
+      );
+    if (conductors.some((conductor) => conductor.length > 400))
+      throw new Error("conductor is too long.");
+    Object.assign(output, { conductors });
   }
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");

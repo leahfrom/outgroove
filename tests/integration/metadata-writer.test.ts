@@ -88,6 +88,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         year: "2031-04",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       });
       const after = await reader.read(path);
       expect(after.tags).toEqual({
@@ -102,6 +103,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         year: "2031-04",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
+        conductors: ["Fixture Conductor"],
       });
       expect(
         after.nativeTags.some(
@@ -140,6 +142,41 @@ describe.each(["preservation.mp3", "preservation.flac"])(
       expect(after.tags.discNumber).toBe(before.tags.discNumber);
       expect(after.tags.trackTotal).toBeNull();
       expect(after.tags.discTotal).toBeNull();
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe conductor clearing: %s",
+  (fixture) => {
+    it("sets and clears conductor while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-conductor-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, { conductors: ["Fixture Conductor"] });
+      expect((await reader.read(path)).tags.conductors).toEqual([
+        "Fixture Conductor",
+      ]);
+      const result = await writer.writeTags(path, { conductors: [] });
+      const after = await reader.read(path);
+      expect(after.tags.conductors).toEqual([]);
       expect(
         after.nativeTags.some(
           (tag) =>
