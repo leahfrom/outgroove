@@ -96,6 +96,8 @@ interface AudioFileRow {
   scan_error: string | null;
   genres_type?: string | null;
   composers_type?: string | null;
+  track_total_type?: string | null;
+  disc_total_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -243,6 +245,14 @@ export interface StoredArtworkSnapshot extends StoredTagSnapshot {
   readonly afterPictures: readonly StoredArtworkPicture[];
 }
 
+function hydrateRebuildableTotals(tags: NormalizedTags): NormalizedTags {
+  return {
+    ...tags,
+    trackTotal: tags.trackTotal ?? null,
+    discTotal: tags.discTotal ?? null,
+  };
+}
+
 export class CatalogDatabase {
   readonly connection: Database.Database;
   private readonly scanStatements: ScanStatements;
@@ -313,7 +323,9 @@ export class CatalogDatabase {
       getFileByPathKey: this.connection.prepare(
         `SELECT *,
            json_type(normalized_tags_json, '$.genres') AS genres_type,
-           json_type(normalized_tags_json, '$.composers') AS composers_type
+           json_type(normalized_tags_json, '$.composers') AS composers_type,
+           json_type(normalized_tags_json, '$.trackTotal') AS track_total_type,
+           json_type(normalized_tags_json, '$.discTotal') AS disc_total_type
          FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
@@ -976,6 +988,8 @@ export class CatalogDatabase {
       file.channels ?? null,
       JSON.stringify({
         ...file.tags,
+        trackTotal: file.tags.trackTotal ?? null,
+        discTotal: file.tags.discTotal ?? null,
         genres: file.tags.genres ?? [],
         composers: file.tags.composers ?? [],
       }),
@@ -1099,6 +1113,10 @@ export class CatalogDatabase {
           (existing.scan_state === "error" ||
             (existing.genres_type === "array" &&
               existing.composers_type === "array" &&
+              (existing.track_total_type === "integer" ||
+                existing.track_total_type === "null") &&
+              (existing.disc_total_type === "integer" ||
+                existing.disc_total_type === "null") &&
               existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(
@@ -1671,9 +1689,9 @@ export class CatalogDatabase {
       { id: string; title: string; albumArtist: string; tracks: CatalogTrack[] }
     >();
     for (const row of rows) {
-      const tags = JSON.parse(
-        row.normalized_tags_json ?? "{}",
-      ) as NormalizedTags;
+      const tags = hydrateRebuildableTotals(
+        JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      );
       const album = albums.get(row.album_id) ?? {
         id: row.album_id,
         title: row.album_title,
@@ -1756,7 +1774,9 @@ export class CatalogDatabase {
     return row?.normalized_tags_json
       ? {
           path: row.path,
-          tags: JSON.parse(row.normalized_tags_json) as NormalizedTags,
+          tags: hydrateRebuildableTotals(
+            JSON.parse(row.normalized_tags_json) as NormalizedTags,
+          ),
           scanState: row.scan_state,
         }
       : undefined;
@@ -2135,9 +2155,15 @@ export class CatalogDatabase {
       id: row.id,
       fileId: row.file_id,
       path: row.path,
-      before: JSON.parse(row.before_tags_json) as NormalizedTags,
-      after: JSON.parse(row.after_tags_json) as NormalizedTags,
-      current: JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      before: hydrateRebuildableTotals(
+        JSON.parse(row.before_tags_json) as NormalizedTags,
+      ),
+      after: hydrateRebuildableTotals(
+        JSON.parse(row.after_tags_json) as NormalizedTags,
+      ),
+      current: hydrateRebuildableTotals(
+        JSON.parse(row.normalized_tags_json ?? "{}") as NormalizedTags,
+      ),
       scanState: row.scan_state,
       verified: row.verified === 1,
       error: row.error,

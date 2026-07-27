@@ -12,7 +12,9 @@ export const editableTrackTagFields = [
   "artist",
   "albumArtist",
   "trackNumber",
+  "trackTotal",
   "discNumber",
+  "discTotal",
   "year",
   "genres",
   "composers",
@@ -39,7 +41,9 @@ export function normalizeTrackTagChanges(
   }
   for (const [field, maximum] of [
     ["trackNumber", 9999],
+    ["trackTotal", 9999],
     ["discNumber", 999],
+    ["discTotal", 999],
   ] as const) {
     if (!(field in input)) continue;
     const value = input[field];
@@ -86,6 +90,32 @@ export function normalizeTrackTagChanges(
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");
   return output;
+}
+
+export function validateTrackTagRelationships(
+  before: NormalizedTags,
+  changes: TrackTagChanges,
+): void {
+  for (const [numberField, totalField, label] of [
+    ["trackNumber", "trackTotal", "Track"],
+    ["discNumber", "discTotal", "Disc"],
+  ] as const) {
+    if (!(numberField in changes) && !(totalField in changes)) continue;
+    const number =
+      (numberField in changes ? changes[numberField] : before[numberField]) ??
+      null;
+    const total =
+      (totalField in changes ? changes[totalField] : before[totalField]) ??
+      null;
+    if (total !== null && number === null)
+      throw new Error(
+        `${label} total requires a ${label.toLocaleLowerCase("en-US")} number; set both or clear the total.`,
+      );
+    if (number !== null && total !== null && number > total)
+      throw new Error(
+        `${label} number ${number} cannot exceed ${label.toLocaleLowerCase("en-US")} total ${total}.`,
+      );
+  }
 }
 
 export function changedTrackTags(

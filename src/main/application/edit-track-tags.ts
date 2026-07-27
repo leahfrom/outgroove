@@ -12,6 +12,7 @@ import {
   editableTrackTagFields,
   normalizeTrackTagChanges,
   trackTagValueEquals,
+  validateTrackTagRelationships,
 } from "../../shared/domain/tag-edit";
 import type { TrackTagChanges } from "../../shared/domain/tag-edit";
 import type { TrackTagChangeInput } from "../../shared/domain/tag-edit";
@@ -61,13 +62,34 @@ function restorationValue(
   field: (typeof editableTrackTagFields)[number],
 ): NormalizedTags[typeof field] {
   if (field === "genres" || field === "composers") return tags[field] ?? [];
+  if (field === "trackTotal" || field === "discTotal")
+    return tags[field] ?? null;
   return tags[field];
 }
 
 type BatchTagChangeInput = Pick<
   TrackTagChangeInput,
-  "artist" | "albumArtist" | "discNumber" | "year" | "genres" | "composers"
+  | "artist"
+  | "albumArtist"
+  | "trackTotal"
+  | "discNumber"
+  | "discTotal"
+  | "year"
+  | "genres"
+  | "composers"
 >;
+
+function relationshipError(
+  tags: NormalizedTags,
+  changes: TrackTagChanges,
+): string | null {
+  try {
+    validateTrackTagRelationships(tags, changes);
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
 
 interface StoredBatchPreview {
   readonly fileId: string;
@@ -95,6 +117,7 @@ export class EditTrackTags {
     );
     if (Object.keys(changes).length === 0)
       throw new Error("The proposed metadata already matches this track.");
+    validateTrackTagRelationships(track.tags, changes);
     const confirmationToken = randomBytes(24).toString("base64url");
     const operationId = this.database.createTrackEditOperation(
       albumId,
@@ -168,11 +191,13 @@ export class EditTrackTags {
       current,
       changes,
     )[0];
+    const invalidRelationship = relationshipError(current, changes);
     let verified = false;
     let error: string | null = null;
     if (target?.scanState !== "ok")
       error = "The file is not currently available for writing.";
     else if (replacementError) error = replacementError;
+    else if (invalidRelationship) error = invalidRelationship;
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -325,6 +350,7 @@ export class EditTrackTags {
     const target = this.database.getFileEditState(operation.target_file_id);
     const current = target?.tags ?? previewTags;
     const after = applyChanges(current, changes);
+    const invalidRelationship = relationshipError(current, changes);
     const snapshotId = this.database.saveSnapshot(
       operationId,
       operation.target_file_id,
@@ -341,6 +367,7 @@ export class EditTrackTags {
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field changed after the undo preview; undo did not overwrite it.";
+    else if (invalidRelationship) error = invalidRelationship;
     else {
       try {
         const write = await this.writer.writeTags(target.path, changes);
@@ -394,6 +421,7 @@ export class EditTrackTags {
 
     const files = tracks.map(({ fileId, track }) => {
       const changes = changedTrackTags(track.tags, proposed);
+      validateTrackTagRelationships(track.tags, changes);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
       const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
       return {
@@ -483,11 +511,13 @@ export class EditTrackTags {
         current,
         changes,
       )[0];
+      const invalidRelationship = relationshipError(current, changes);
       let verified = false;
       let error: string | null = null;
       if (target?.scanState !== "ok")
         error = "The file is not currently available for writing.";
       else if (replacementError) error = replacementError;
+      else if (invalidRelationship) error = invalidRelationship;
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -538,6 +568,7 @@ export class EditTrackTags {
         trackNumber: startNumber + index,
         ...(discNumber === undefined ? {} : { discNumber }),
       });
+      validateTrackTagRelationships(track.tags, changes);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
       return {
         fileId,
@@ -636,6 +667,9 @@ export class EditTrackTags {
       const target = this.database.getFileEditState(preview.fileId);
       const current = target?.tags ?? preview.tags;
       const after = changes ? applyChanges(current, changes) : current;
+      const invalidRelationship = changes
+        ? relationshipError(current, changes)
+        : null;
       const snapshotId = this.database.saveSnapshot(
         operationId,
         preview.fileId,
@@ -650,6 +684,7 @@ export class EditTrackTags {
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A track or disc number changed after this preview; sequencing did not overwrite it.";
+      else if (invalidRelationship) error = invalidRelationship;
       else {
         try {
           const write = await this.writer.writeTags(target.path, changes);
@@ -737,6 +772,8 @@ export class EditTrackTags {
       const target = this.database.getFileEditState(snapshot.fileId);
       const current = target?.tags ?? snapshot.current;
       const changes = changedTrackTags(current, restore);
+      if (Object.keys(changes).length > 0)
+        validateTrackTagRelationships(current, changes);
       const willWrite = Object.keys(changes).length > 0;
       const warnings: string[] = [];
       if (willWrite && target?.scanState !== "ok")
@@ -848,6 +885,9 @@ export class EditTrackTags {
       const target = this.database.getFileEditState(preview.fileId);
       const current = target?.tags ?? preview.tags;
       const after = changes ? applyChanges(current, changes) : current;
+      const invalidRelationship = changes
+        ? relationshipError(current, changes)
+        : null;
       const snapshotId = this.database.saveSnapshot(
         operationId,
         preview.fileId,
@@ -866,6 +906,7 @@ export class EditTrackTags {
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field changed after the batch undo preview; undo did not overwrite it.";
+      else if (invalidRelationship) error = invalidRelationship;
       else {
         try {
           const write = await this.writer.writeTags(target.path, changes);

@@ -25,7 +25,9 @@ export interface MetadataTagChanges {
   readonly artist?: string;
   readonly albumArtist?: string;
   readonly trackNumber?: number | null;
+  readonly trackTotal?: number | null;
   readonly discNumber?: number | null;
+  readonly discTotal?: number | null;
   readonly year?: string | null;
   readonly genres?: readonly string[];
   readonly composers?: readonly string[];
@@ -74,9 +76,17 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
     if (changes.trackNumber === null) delete updated.trackNumber;
     else updated.trackNumber = changes.trackNumber;
   }
+  if ("trackTotal" in changes) {
+    if (changes.trackTotal === null) delete updated.trackTotal;
+    else updated.trackTotal = changes.trackTotal;
+  }
   if ("discNumber" in changes) {
     if (changes.discNumber === null) delete updated.discNumber;
     else updated.discNumber = changes.discNumber;
+  }
+  if ("discTotal" in changes) {
+    if (changes.discTotal === null) delete updated.discTotal;
+    else updated.discTotal = changes.discTotal;
   }
   if ("year" in changes) {
     const year = changes.year;

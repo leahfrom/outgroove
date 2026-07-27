@@ -28,7 +28,9 @@ const track: CatalogAlbum["tracks"][number] = {
     artist: "Fixture Artist",
     albumArtist: "Fixture Album Artist",
     trackNumber: 1,
+    trackTotal: 12,
     discNumber: 1,
+    discTotal: 2,
     year: "2026-07",
     genres: ["Post Rock"],
     composers: ["Fixture Composer"],
@@ -42,7 +44,9 @@ const unchangedDraft: TrackMetadataDraft = {
   artist: track.tags.artist,
   albumArtist: track.tags.albumArtist,
   trackNumber: String(track.tags.trackNumber),
+  trackTotal: String(track.tags.trackTotal),
   discNumber: String(track.tags.discNumber),
+  discTotal: String(track.tags.discTotal),
   year: track.tags.year ?? "",
   genre: "Post Rock",
   composer: "Fixture Composer",
@@ -76,7 +80,13 @@ describe("TrackMetadataEditor", () => {
     const { rerender } = render(editor(unchangedDraft));
 
     const comparison = screen.getByLabelText("Track tag comparison");
-    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(8);
+    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(10);
+    expect(
+      screen.getByRole("spinbutton", { name: "Track total proposed value" }),
+    ).toHaveValue(12);
+    expect(
+      screen.getByRole("spinbutton", { name: "Disc total proposed value" }),
+    ).toHaveValue(2);
     expect(
       screen.getByRole("button", { name: "Review exact changes" }),
     ).toBeDisabled();

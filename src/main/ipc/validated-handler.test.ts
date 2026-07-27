@@ -776,6 +776,12 @@ describe("validated IPC handlers", () => {
       handler({}, { fileId, changes: { genres: ["Rock", "Metal"] } }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
+      handler({}, { fileId, changes: { trackTotal: 10_000 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { discTotal: 0 } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
       handler(
         {},
         {
@@ -790,6 +796,8 @@ describe("validated IPC handlers", () => {
         {
           fileId,
           changes: {
+            trackTotal: 12,
+            discTotal: null,
             genres: ["  Post Rock  "],
             composers: ["  Fixture Composer  "],
           },
@@ -799,6 +807,8 @@ describe("validated IPC handlers", () => {
     expect(useCase).toHaveBeenCalledWith({
       fileId,
       changes: {
+        trackTotal: 12,
+        discTotal: null,
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
       },
@@ -820,6 +830,15 @@ describe("validated IPC handlers", () => {
       handler(
         {},
         { fileIds: [first, second], changes: { title: "Mass title" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { trackTotal: 10_000, discTotal: 0 },
+        },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
@@ -855,13 +874,23 @@ describe("validated IPC handlers", () => {
         {},
         {
           fileIds: [first, second],
-          changes: { genres: [], composers: ["Fixture Composer"] },
+          changes: {
+            trackTotal: 12,
+            discTotal: 2,
+            genres: [],
+            composers: ["Fixture Composer"],
+          },
         },
       ),
     ).resolves.toMatchObject({ ok: true });
     expect(useCase).toHaveBeenCalledWith({
       fileIds: [first, second],
-      changes: { genres: [], composers: ["Fixture Composer"] },
+      changes: {
+        trackTotal: 12,
+        discTotal: 2,
+        genres: [],
+        composers: ["Fixture Composer"],
+      },
     });
   });
 

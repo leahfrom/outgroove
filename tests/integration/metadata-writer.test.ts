@@ -82,7 +82,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "New track artist",
         albumArtist: "New album artist",
         trackNumber: 7,
+        trackTotal: 12,
         discNumber: 2,
+        discTotal: 3,
         year: "2031-04",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
@@ -94,11 +96,50 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         artist: "New track artist",
         albumArtist: "New album artist",
         trackNumber: 7,
+        trackTotal: 12,
         discNumber: 2,
+        discTotal: 3,
         year: "2031-04",
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
       });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe track/disc-total clearing: %s",
+  (fixture) => {
+    it("clears only totals while preserving numbers, private tags, and audio", async () => {
+      const directory = await mkdtemp(join(tmpdir(), "outgroove-totals-"));
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const before = await reader.read(path);
+      const payloadBefore = await audioPayloadHash(path);
+      const result = await new SafeMetadataWriter(reader).writeTags(path, {
+        trackTotal: null,
+        discTotal: null,
+      });
+      const after = await reader.read(path);
+
+      expect(after.tags.trackNumber).toBe(before.tags.trackNumber);
+      expect(after.tags.discNumber).toBe(before.tags.discNumber);
+      expect(after.tags.trackTotal).toBeNull();
+      expect(after.tags.discTotal).toBeNull();
       expect(
         after.nativeTags.some(
           (tag) =>

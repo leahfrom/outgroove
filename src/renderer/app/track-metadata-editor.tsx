@@ -17,7 +17,9 @@ export interface TrackMetadataDraft {
   artist: string;
   albumArtist: string;
   trackNumber: string;
+  trackTotal: string;
   discNumber: string;
+  discTotal: string;
   year: string;
   genre: string;
   composer: string;
@@ -43,7 +45,21 @@ const comparisonFields: readonly ComparisonField[] = [
     inputType: "number",
     max: 9999,
   },
+  {
+    field: "trackTotal",
+    label: "Track total",
+    inputType: "number",
+    max: 9999,
+    placeholder: "Empty clears the total",
+  },
   { field: "discNumber", label: "Disc number", inputType: "number", max: 999 },
+  {
+    field: "discTotal",
+    label: "Disc total",
+    inputType: "number",
+    max: 999,
+    placeholder: "Empty clears the total",
+  },
   {
     field: "year",
     label: "Release date",
@@ -66,7 +82,9 @@ const previewFieldLabels: Record<string, string> = {
   artist: "Track artist",
   albumArtist: "Album artist",
   trackNumber: "Track number",
+  trackTotal: "Track total",
   discNumber: "Disc number",
+  discTotal: "Disc total",
   year: "Release date",
   genres: "Genre",
   composers: "Composer",
@@ -85,8 +103,12 @@ function currentValue(
       return track.tags.albumArtist;
     case "trackNumber":
       return track.tags.trackNumber?.toString() ?? "";
+    case "trackTotal":
+      return track.tags.trackTotal?.toString() ?? "";
     case "discNumber":
       return track.tags.discNumber?.toString() ?? "";
+    case "discTotal":
+      return track.tags.discTotal?.toString() ?? "";
     case "year":
       return track.tags.year ?? "";
     case "genre":
@@ -165,7 +187,9 @@ function TrackMetadataEditorComponent(
             value; an empty proposal clears it. Tracks with multiple current
             genre values stay read-only for that field so undo remains exact.
             Composer follows the same one-value rule; tracks with multiple
-            current composer values cannot replace that field.
+            current composer values cannot replace that field. Totals are
+            explicit: changing or clearing one never changes its track or disc
+            number.
           </>
         }
       />

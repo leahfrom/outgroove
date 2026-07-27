@@ -23,7 +23,9 @@ const firstTrack: CatalogAlbum["tracks"][number] = {
     artist: "First Artist",
     albumArtist: "Shared Album Artist",
     trackNumber: 1,
+    trackTotal: 10,
     discNumber: 1,
+    discTotal: 2,
     year: null,
     genres: ["Post Rock"],
     composers: ["First Composer"],
@@ -42,7 +44,9 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
     title: "Second Track",
     artist: "Second Artist",
     trackNumber: 2,
+    trackTotal: 12,
     discNumber: null,
+    discTotal: 3,
     year: "2026-07",
     genres: ["Metal"],
     composers: ["Second Composer"],
@@ -52,7 +56,9 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
 const disabledFields: SharedFieldEnabled = {
   artist: false,
   albumArtist: false,
+  trackTotal: false,
   discNumber: false,
+  discTotal: false,
   year: false,
   genre: false,
   composer: false,
@@ -61,7 +67,9 @@ const disabledFields: SharedFieldEnabled = {
 const emptyDraft: SharedFieldDraft = {
   artist: "",
   albumArtist: "",
+  trackTotal: "",
   discNumber: "",
+  discTotal: "",
   year: "",
   genre: "",
   composer: "",
@@ -104,7 +112,7 @@ describe("SharedFieldEditor", () => {
     render(editor());
 
     const comparison = screen.getByLabelText("Shared tag comparison");
-    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(5);
+    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(7);
     expect(within(comparison).getByText("Shared Album Artist")).toBeVisible();
     expect(screen.getByText("No shared fields selected.")).toBeVisible();
     expect(
@@ -130,6 +138,13 @@ describe("SharedFieldEditor", () => {
       throw new Error("Disc number comparison row missing");
     await user.click(within(discRow).getByText("Mixed values"));
     expect(within(discRow).getByText("Not set")).toBeVisible();
+
+    expect(
+      screen.getByLabelText("Batch track total value"),
+    ).toHaveAccessibleName("Batch track total value");
+    expect(
+      screen.getByLabelText("Batch disc total value"),
+    ).toHaveAccessibleName("Batch disc total value");
 
     const genreInput = screen.getByLabelText("Batch genre value");
     const genreRow = genreInput.closest(".tag-comparison-row");

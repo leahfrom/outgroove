@@ -138,7 +138,9 @@ const album: CatalogAlbum = {
         artist: "Fixture Artist",
         albumArtist: "Fixture Artist",
         trackNumber: 1,
+        trackTotal: 2,
         discNumber: 1,
+        discTotal: 1,
         year: "2026",
       },
       nativeTags: [{ id: "ID3v2:TALB", value: "Fixture Album" }],
@@ -270,6 +272,8 @@ function api(applyVerified: boolean): OutgrooveApi {
               before: "Fixture Artist",
               after: "Different Artist",
             },
+            { field: "trackTotal", before: 2, after: 12 },
+            { field: "discTotal", before: 1, after: 2 },
           ],
           warnings: [],
         },
@@ -1432,17 +1436,23 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Composer proposed value"),
       "Fixture Composer",
     );
+    await user.clear(screen.getByLabelText("Track total proposed value"));
+    await user.type(screen.getByLabelText("Track total proposed value"), "12");
+    await user.clear(screen.getByLabelText("Disc total proposed value"));
+    await user.type(screen.getByLabelText("Disc total proposed value"), "2");
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 4 changes",
+      name: "Review 6 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
     const preview = await screen.findByLabelText("Track metadata confirmation");
     expect(within(preview).getByText("Renamed Track")).toBeInTheDocument();
     expect(within(preview).getByText("Different Artist")).toBeInTheDocument();
+    expect(within(preview).getByText("Track total")).toBeInTheDocument();
+    expect(within(preview).getByText("Disc total")).toBeInTheDocument();
     const confirmButton = within(preview).getByRole("button", {
       name: "Confirm and write track",
     });
@@ -1465,6 +1475,8 @@ describe("tag edit UI safety states", () => {
       changes: {
         title: "Renamed Track",
         artist: "Different Artist",
+        trackTotal: 12,
+        discTotal: 2,
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
       },

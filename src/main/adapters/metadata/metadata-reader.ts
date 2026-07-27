@@ -54,7 +54,9 @@ export class MusicMetadataReader implements MetadataReader {
       artist,
       albumArtist: normalizeTagText(common.albumartist, artist),
       trackNumber: normalizeNumber(common.track.no),
+      trackTotal: normalizeNumber(common.track.of),
       discNumber: normalizeNumber(common.disk.no),
+      discTotal: normalizeNumber(common.disk.of),
       year: common.date?.trim()
         ? common.date.trim()
         : common.year
