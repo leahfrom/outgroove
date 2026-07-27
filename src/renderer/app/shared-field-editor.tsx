@@ -1,4 +1,10 @@
-import { forwardRef, type ChangeEvent, type Ref } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type Ref,
+} from "react";
 
 import type {
   TagEditResultDto,
@@ -22,6 +28,9 @@ export interface SharedFieldDraft {
   genre: string;
   composer: string;
   conductor: string;
+  lyricist: string;
+  isrc: string;
+  copyright: string;
 }
 
 export type SharedFieldEnabled = Record<keyof SharedFieldDraft, boolean>;
@@ -38,7 +47,7 @@ interface SharedComparisonField {
   readonly placeholder?: string;
 }
 
-const comparisonFields: readonly SharedComparisonField[] = [
+const basicComparisonFields: readonly SharedComparisonField[] = [
   {
     field: "artist",
     label: "Track artist",
@@ -50,28 +59,12 @@ const comparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch album artist value",
   },
   {
-    field: "trackTotal",
-    label: "Track total",
-    inputLabel: "Batch track total value",
-    inputType: "number",
-    max: 9999,
-    placeholder: "Empty clears the total",
-  },
-  {
     field: "discNumber",
     label: "Disc number",
     inputLabel: "Batch disc number value",
     inputType: "number",
     max: 999,
     placeholder: "Empty clears the value",
-  },
-  {
-    field: "discTotal",
-    label: "Disc total",
-    inputLabel: "Batch disc total value",
-    inputType: "number",
-    max: 999,
-    placeholder: "Empty clears the total",
   },
   {
     field: "year",
@@ -85,6 +78,25 @@ const comparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch genre value",
     placeholder: "One genre; empty clears",
   },
+];
+
+const moreComparisonFields: readonly SharedComparisonField[] = [
+  {
+    field: "trackTotal",
+    label: "Track total",
+    inputLabel: "Batch track total value",
+    inputType: "number",
+    max: 9999,
+    placeholder: "Empty clears the total",
+  },
+  {
+    field: "discTotal",
+    label: "Disc total",
+    inputLabel: "Batch disc total value",
+    inputType: "number",
+    max: 999,
+    placeholder: "Empty clears the total",
+  },
   {
     field: "composer",
     label: "Composer",
@@ -96,6 +108,24 @@ const comparisonFields: readonly SharedComparisonField[] = [
     label: "Conductor",
     inputLabel: "Batch conductor value",
     placeholder: "One conductor; empty clears",
+  },
+  {
+    field: "lyricist",
+    label: "Lyricist",
+    inputLabel: "Batch lyricist value",
+    placeholder: "One lyricist; empty clears",
+  },
+  {
+    field: "isrc",
+    label: "ISRC",
+    inputLabel: "Batch ISRC value",
+    placeholder: "One ISRC; empty clears",
+  },
+  {
+    field: "copyright",
+    label: "Copyright",
+    inputLabel: "Batch copyright value",
+    placeholder: "Empty clears",
   },
 ];
 
@@ -109,6 +139,9 @@ const previewFieldLabels: Record<string, string> = {
   genres: "Genre",
   composers: "Composer",
   conductors: "Conductor",
+  lyricists: "Lyricist",
+  isrcs: "ISRC",
+  copyright: "Copyright",
 };
 
 function currentValue(track: CatalogTrack, field: SharedField): string {
@@ -131,6 +164,12 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return (track.tags.composers ?? []).join(" · ");
     case "conductor":
       return (track.tags.conductors ?? []).join(" · ");
+    case "lyricist":
+      return (track.tags.lyricists ?? []).join(" · ");
+    case "isrc":
+      return (track.tags.isrcs ?? []).join(" · ");
+    case "copyright":
+      return track.tags.copyright ?? "";
   }
 }
 
@@ -199,7 +238,15 @@ function SharedFieldEditorComponent(
   }: SharedFieldEditorProps,
   ref: Ref<HTMLElement>,
 ): React.JSX.Element {
+  const [moreOpen, setMoreOpen] = useState(false);
   const enabledCount = Object.values(enabled).filter(Boolean).length;
+  const moreEnabledCount = moreComparisonFields.filter(
+    ({ field }) => enabled[field],
+  ).length;
+
+  useEffect(() => {
+    if (moreEnabledCount > 0) setMoreOpen(true);
+  }, [moreEnabledCount]);
 
   const changeDraft =
     (field: SharedField) =>
@@ -227,19 +274,16 @@ function SharedFieldEditorComponent(
             current genre values blocks that genre proposal so undo remains
             exact. Composer follows the same one-value rule. Track and disc
             totals are explicit shared proposals and never renumber the selected
-            tracks. Conductor follows the same one-value rule as Composer.
+            tracks. Conductor and Lyricist follow the same one-value rule as
+            Composer. ISRC also accepts one value. Secondary fields are grouped
+            under More fields.
           </>
         }
       />
 
-      <div className="tag-comparison" aria-label="Shared tag comparison">
-        <div className="tag-comparison-header" aria-hidden="true">
-          <span>Tag</span>
-          <span>Current values</span>
-          <span>Proposed value</span>
-          <span>State</span>
-        </div>
-        {comparisonFields.map((item) => {
+      <div className="tag-comparison" aria-label="Basic shared tag comparison">
+        <ComparisonHeader />
+        {basicComparisonFields.map((item) => {
           const values = uniqueCurrentValues(tracks, item.field);
           const mixed = values.length > 1;
           const status = proposalState(
@@ -267,7 +311,10 @@ function SharedFieldEditorComponent(
                       onEnabledChange(item.field, event.target.checked)
                     }
                   />
-                  Change {item.label.toLocaleLowerCase("en-US")}
+                  Change{" "}
+                  {item.label === "ISRC"
+                    ? item.label
+                    : item.label.toLocaleLowerCase("en-US")}
                 </label>
               </div>
               <div className="tag-comparison-current" id={currentId}>
@@ -316,6 +363,109 @@ function SharedFieldEditorComponent(
           );
         })}
       </div>
+      <details
+        className="metadata-more-fields"
+        open={moreOpen}
+        onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span>More fields</span>
+          <small>
+            {moreEnabledCount > 0
+              ? `${moreEnabledCount} ${moreEnabledCount === 1 ? "field" : "fields"} selected`
+              : "Totals, credits, identifiers, and rights"}
+          </small>
+        </summary>
+        <div
+          className="tag-comparison"
+          aria-label="Additional shared tag comparison"
+        >
+          <ComparisonHeader />
+          {moreComparisonFields.map((item) => {
+            const values = uniqueCurrentValues(tracks, item.field);
+            const mixed = values.length > 1;
+            const status = proposalState(
+              enabled[item.field],
+              draft[item.field],
+              values,
+            );
+            const currentId = `shared-${item.field}-current`;
+            const statusId = `shared-${item.field}-status`;
+            return (
+              <div
+                className="tag-comparison-row"
+                data-changed={status.className === "changed" ? "true" : "false"}
+                key={item.field}
+              >
+                <div className="tag-comparison-field">
+                  <span className="comparison-mobile-label">Tag</span>
+                  <label className="checkbox-label">
+                    <input
+                      aria-describedby={`${currentId} ${statusId}`}
+                      checked={enabled[item.field]}
+                      disabled={busy}
+                      type="checkbox"
+                      onChange={(event) =>
+                        onEnabledChange(item.field, event.target.checked)
+                      }
+                    />
+                    Change{" "}
+                    {item.label === "ISRC"
+                      ? item.label
+                      : item.label.toLocaleLowerCase("en-US")}
+                  </label>
+                </div>
+                <div className="tag-comparison-current" id={currentId}>
+                  <span className="comparison-mobile-label">
+                    Current values
+                  </span>
+                  {tracks.length === 0 ? (
+                    <span>No tracks selected</span>
+                  ) : mixed ? (
+                    <details className="mixed-values">
+                      <summary>Mixed values</summary>
+                      <ul>
+                        {tracks.map((track) => (
+                          <li key={track.id}>
+                            <strong>{track.tags.title}</strong>
+                            <span>
+                              {displayValue(currentValue(track, item.field))}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : (
+                    <span>{displayValue(values[0] ?? "")}</span>
+                  )}
+                </div>
+                <div className="tag-comparison-proposed">
+                  <span className="comparison-mobile-label">
+                    Proposed value
+                  </span>
+                  <input
+                    aria-describedby={`${currentId} ${statusId}`}
+                    aria-label={item.inputLabel}
+                    disabled={busy || !enabled[item.field]}
+                    max={item.max}
+                    min={item.inputType ? 1 : undefined}
+                    placeholder={item.placeholder}
+                    type={item.inputType}
+                    value={draft[item.field]}
+                    onChange={changeDraft(item.field)}
+                  />
+                </div>
+                <span
+                  className={`comparison-status ${status.className}`}
+                  id={statusId}
+                >
+                  {status.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </details>
 
       <div className="track-comparison-summary">
         <p aria-live="polite">
@@ -411,3 +561,14 @@ function SharedFieldEditorComponent(
 }
 
 export const SharedFieldEditor = forwardRef(SharedFieldEditorComponent);
+
+function ComparisonHeader(): React.JSX.Element {
+  return (
+    <div className="tag-comparison-header" aria-hidden="true">
+      <span>Tag</span>
+      <span>Current values</span>
+      <span>Proposed value</span>
+      <span>State</span>
+    </div>
+  );
+}

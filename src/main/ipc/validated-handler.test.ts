@@ -807,11 +807,34 @@ describe("validated IPC handlers", () => {
         {
           fileId,
           changes: {
+            lyricists: ["First Lyricist", "Second Lyricist"],
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: { isrcs: ["DEABC2600001", "DEABC2600002"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
             trackTotal: 12,
             discTotal: null,
             genres: ["  Post Rock  "],
             composers: ["  Fixture Composer  "],
             conductors: ["  Fixture Conductor  "],
+            lyricists: ["  Fixture Lyricist  "],
+            isrcs: ["  DEABC2600001  "],
+            copyright: "  Copyright Fixture  ",
           },
         },
       ),
@@ -824,6 +847,9 @@ describe("validated IPC handlers", () => {
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       },
     });
   });
@@ -843,6 +869,24 @@ describe("validated IPC handlers", () => {
       handler(
         {},
         { fileIds: [first, second], changes: { title: "Mass title" } },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { lyricists: ["First Lyricist", "Second Lyricist"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { isrcs: ["DEABC2600001", "DEABC2600002"] },
+        },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
@@ -904,6 +948,9 @@ describe("validated IPC handlers", () => {
             genres: [],
             composers: ["Fixture Composer"],
             conductors: ["Fixture Conductor"],
+            lyricists: ["Fixture Lyricist"],
+            isrcs: ["DEABC2600001"],
+            copyright: null,
           },
         },
       ),
@@ -916,6 +963,9 @@ describe("validated IPC handlers", () => {
         genres: [],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: null,
       },
     });
   });

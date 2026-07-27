@@ -19,6 +19,9 @@ export const editableTrackTagFields = [
   "genres",
   "composers",
   "conductors",
+  "lyricists",
+  "isrcs",
+  "copyright",
 ] as const;
 
 export type EditableTrackTagField = (typeof editableTrackTagFields)[number];
@@ -99,6 +102,37 @@ export function normalizeTrackTagChanges(
     if (conductors.some((conductor) => conductor.length > 400))
       throw new Error("conductor is too long.");
     Object.assign(output, { conductors });
+  }
+  if ("lyricists" in input) {
+    const submitted = input.lyricists;
+    if (!submitted) throw new Error("lyricists are invalid.");
+    const lyricists = normalizeTagTextList(submitted);
+    if (lyricists.length > 1)
+      throw new Error(
+        "This writer currently supports one proposed lyricist value.",
+      );
+    if (lyricists.some((lyricist) => lyricist.length > 400))
+      throw new Error("lyricist is too long.");
+    Object.assign(output, { lyricists });
+  }
+  if ("isrcs" in input) {
+    const submitted = input.isrcs;
+    if (!submitted) throw new Error("ISRC values are invalid.");
+    const isrcs = normalizeTagTextList(submitted);
+    if (isrcs.length > 1)
+      throw new Error("This writer currently supports one proposed ISRC.");
+    if (isrcs.some((isrc) => isrc.length > 100))
+      throw new Error("ISRC is too long.");
+    Object.assign(output, { isrcs });
+  }
+  if ("copyright" in input) {
+    if (input.copyright === undefined) throw new Error("copyright is invalid.");
+    const normalized =
+      input.copyright?.normalize("NFC").replace(/\s+/gu, " ").trim() ?? null;
+    const copyright = normalized === "" ? null : normalized;
+    if (copyright !== null && copyright.length > 1000)
+      throw new Error("copyright is too long.");
+    Object.assign(output, { copyright });
   }
   if (Object.keys(output).length === 0)
     throw new Error("Choose at least one metadata field to change.");

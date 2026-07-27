@@ -31,6 +31,9 @@ describe("track metadata validation", () => {
         genres: ["  Post   Rock  "],
         composers: ["  Fixture   Composer  "],
         conductors: ["  Fixture   Conductor  "],
+        lyricists: ["  Fixture   Lyricist  "],
+        isrcs: ["  DEABC2600001  "],
+        copyright: "  Copyright   Fixture  ",
       }),
     ).toEqual({
       title: "Ä track",
@@ -41,6 +44,9 @@ describe("track metadata validation", () => {
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
       conductors: ["Fixture Conductor"],
+      lyricists: ["Fixture Lyricist"],
+      isrcs: ["DEABC2600001"],
+      copyright: "Copyright Fixture",
     });
     expect(() => normalizeTrackTagChanges({ title: "   " })).toThrow(
       "title cannot be empty",
@@ -68,6 +74,28 @@ describe("track metadata validation", () => {
         conductors: ["First Conductor", "Second Conductor"],
       }),
     ).toThrow("one proposed conductor value");
+    expect(() =>
+      normalizeTrackTagChanges({
+        lyricists: ["First Lyricist", "Second Lyricist"],
+      }),
+    ).toThrow("one proposed lyricist value");
+    expect(() =>
+      normalizeTrackTagChanges({
+        isrcs: ["DEABC2600001", "DEABC2600002"],
+      }),
+    ).toThrow("one proposed ISRC");
+    expect(normalizeTrackTagChanges({ copyright: "" })).toEqual({
+      copyright: null,
+    });
+    expect(() =>
+      normalizeTrackTagChanges({ lyricists: ["L".repeat(401)] }),
+    ).toThrow("lyricist is too long");
+    expect(() =>
+      normalizeTrackTagChanges({ isrcs: ["I".repeat(101)] }),
+    ).toThrow("ISRC is too long");
+    expect(() =>
+      normalizeTrackTagChanges({ copyright: "C".repeat(1001) }),
+    ).toThrow("copyright is too long");
   });
 
   it("validates explicit number and total relationships without correcting values", () => {
@@ -120,6 +148,9 @@ describe("track metadata validation", () => {
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
       conductors: ["Fixture Conductor"],
+      lyricists: ["Fixture Lyricist"],
+      isrcs: ["DEABC2600001"],
+      copyright: "Copyright Fixture",
     };
     expect(
       changedTrackTags(before, {
@@ -129,6 +160,9 @@ describe("track metadata validation", () => {
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       }),
     ).toEqual({ artist: "New Artist" });
     expect(changedTrackTags(before, { genres: [] })).toEqual({ genres: [] });
@@ -137,6 +171,13 @@ describe("track metadata validation", () => {
     });
     expect(changedTrackTags(before, { conductors: [] })).toEqual({
       conductors: [],
+    });
+    expect(changedTrackTags(before, { lyricists: [] })).toEqual({
+      lyricists: [],
+    });
+    expect(changedTrackTags(before, { isrcs: [] })).toEqual({ isrcs: [] });
+    expect(changedTrackTags(before, { copyright: null })).toEqual({
+      copyright: null,
     });
   });
 });

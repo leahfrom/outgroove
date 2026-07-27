@@ -279,6 +279,17 @@ function api(applyVerified: boolean): OutgrooveApi {
               before: [],
               after: ["Fixture Conductor"],
             },
+            {
+              field: "lyricists",
+              before: [],
+              after: ["Fixture Lyricist"],
+            },
+            { field: "isrcs", before: [], after: ["DEABC2600001"] },
+            {
+              field: "copyright",
+              before: null,
+              after: "Copyright Fixture",
+            },
           ],
           warnings: [],
         },
@@ -1437,6 +1448,7 @@ describe("tag edit UI safety states", () => {
     await user.clear(screen.getByLabelText("Track artist"));
     await user.type(screen.getByLabelText("Track artist"), "Different Artist");
     await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
+    await user.click(screen.getByText("More fields"));
     await user.type(
       screen.getByLabelText("Composer proposed value"),
       "Fixture Composer",
@@ -1444,6 +1456,18 @@ describe("tag edit UI safety states", () => {
     await user.type(
       screen.getByLabelText("Conductor proposed value"),
       "Fixture Conductor",
+    );
+    await user.type(
+      screen.getByLabelText("Lyricist proposed value"),
+      "Fixture Lyricist",
+    );
+    await user.type(
+      screen.getByLabelText("ISRC proposed value"),
+      "DEABC2600001",
+    );
+    await user.type(
+      screen.getByLabelText("Copyright proposed value"),
+      "Copyright Fixture",
     );
     await user.clear(screen.getByLabelText("Track total proposed value"));
     await user.type(screen.getByLabelText("Track total proposed value"), "12");
@@ -1453,7 +1477,7 @@ describe("tag edit UI safety states", () => {
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 7 changes",
+      name: "Review 10 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1463,6 +1487,9 @@ describe("tag edit UI safety states", () => {
     expect(within(preview).getByText("Track total")).toBeInTheDocument();
     expect(within(preview).getByText("Disc total")).toBeInTheDocument();
     expect(within(preview).getByText("Conductor")).toBeInTheDocument();
+    expect(within(preview).getByText("Lyricist")).toBeInTheDocument();
+    expect(within(preview).getByText("ISRC")).toBeInTheDocument();
+    expect(within(preview).getByText("Copyright")).toBeInTheDocument();
     const confirmButton = within(preview).getByRole("button", {
       name: "Confirm and write track",
     });
@@ -1490,6 +1517,9 @@ describe("tag edit UI safety states", () => {
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       },
     });
   });
@@ -1839,6 +1869,7 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(screen.getByRole("checkbox", { name: "Change genre" }));
     await user.type(screen.getByLabelText("Batch genre value"), "Post Rock");
+    await user.click(screen.getByText("More fields"));
     await user.click(screen.getByRole("checkbox", { name: "Change composer" }));
     await user.type(
       screen.getByLabelText("Batch composer value"),
@@ -1850,6 +1881,20 @@ describe("tag edit UI safety states", () => {
     await user.type(
       screen.getByLabelText("Batch conductor value"),
       "Fixture Conductor",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change lyricist" }));
+    await user.type(
+      screen.getByLabelText("Batch lyricist value"),
+      "Fixture Lyricist",
+    );
+    await user.click(screen.getByRole("checkbox", { name: "Change ISRC" }));
+    await user.type(screen.getByLabelText("Batch ISRC value"), "DEABC2600001");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Change copyright" }),
+    );
+    await user.type(
+      screen.getByLabelText("Batch copyright value"),
+      "Copyright Fixture",
     );
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
@@ -1875,6 +1920,9 @@ describe("tag edit UI safety states", () => {
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       },
     });
     await user.type(
@@ -1892,6 +1940,9 @@ describe("tag edit UI safety states", () => {
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       },
     });
     expect(

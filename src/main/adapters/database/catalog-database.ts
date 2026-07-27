@@ -97,6 +97,9 @@ interface AudioFileRow {
   genres_type?: string | null;
   composers_type?: string | null;
   conductors_type?: string | null;
+  lyricists_type?: string | null;
+  isrcs_type?: string | null;
+  copyright_type?: string | null;
   track_total_type?: string | null;
   disc_total_type?: string | null;
 }
@@ -326,6 +329,9 @@ export class CatalogDatabase {
            json_type(normalized_tags_json, '$.genres') AS genres_type,
            json_type(normalized_tags_json, '$.composers') AS composers_type,
            json_type(normalized_tags_json, '$.conductors') AS conductors_type,
+           json_type(normalized_tags_json, '$.lyricists') AS lyricists_type,
+           json_type(normalized_tags_json, '$.isrcs') AS isrcs_type,
+           json_type(normalized_tags_json, '$.copyright') AS copyright_type,
            json_type(normalized_tags_json, '$.trackTotal') AS track_total_type,
            json_type(normalized_tags_json, '$.discTotal') AS disc_total_type
          FROM audio_files WHERE path_key = ?`,
@@ -995,6 +1001,9 @@ export class CatalogDatabase {
         genres: file.tags.genres ?? [],
         composers: file.tags.composers ?? [],
         conductors: file.tags.conductors ?? [],
+        lyricists: file.tags.lyricists ?? [],
+        isrcs: file.tags.isrcs ?? [],
+        copyright: file.tags.copyright ?? null,
       }),
       JSON.stringify(file.nativeTags),
       now,
@@ -1117,6 +1126,10 @@ export class CatalogDatabase {
             (existing.genres_type === "array" &&
               existing.composers_type === "array" &&
               existing.conductors_type === "array" &&
+              existing.lyricists_type === "array" &&
+              existing.isrcs_type === "array" &&
+              (existing.copyright_type === "text" ||
+                existing.copyright_type === "null") &&
               (existing.track_total_type === "integer" ||
                 existing.track_total_type === "null") &&
               (existing.disc_total_type === "integer" ||

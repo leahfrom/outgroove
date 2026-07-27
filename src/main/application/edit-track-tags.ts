@@ -58,6 +58,14 @@ function singleValueReplacementWarnings(
     warnings.push(
       "Conductor editing is unavailable for tracks with multiple conductor values because this writer cannot restore them safely.",
     );
+  if ("lyricists" in changes && (tags.lyricists?.length ?? 0) > 1)
+    warnings.push(
+      "Lyricist editing is unavailable for tracks with multiple lyricist values because this writer cannot restore them safely.",
+    );
+  if ("isrcs" in changes && (tags.isrcs?.length ?? 0) > 1)
+    warnings.push(
+      "ISRC editing is unavailable for tracks with multiple ISRC values because this writer cannot restore them safely.",
+    );
   return warnings;
 }
 
@@ -65,9 +73,15 @@ function restorationValue(
   tags: NormalizedTags,
   field: (typeof editableTrackTagFields)[number],
 ): NormalizedTags[typeof field] {
-  if (field === "genres" || field === "composers" || field === "conductors")
+  if (
+    field === "genres" ||
+    field === "composers" ||
+    field === "conductors" ||
+    field === "lyricists" ||
+    field === "isrcs"
+  )
     return tags[field] ?? [];
-  if (field === "trackTotal" || field === "discTotal")
+  if (field === "trackTotal" || field === "discTotal" || field === "copyright")
     return tags[field] ?? null;
   return tags[field];
 }
@@ -83,6 +97,9 @@ type BatchTagChangeInput = Pick<
   | "genres"
   | "composers"
   | "conductors"
+  | "lyricists"
+  | "isrcs"
+  | "copyright"
 >;
 
 function relationshipError(
