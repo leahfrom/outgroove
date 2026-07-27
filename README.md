@@ -105,6 +105,13 @@ macOS arm64, Windows x64, and Linux x64 plus a `SHA256SUMS.txt` file. Release
 publication happens only after verification, packaging, and packaged-app smoke
 tests pass on all three runners.
 
+If GitHub Actions cannot start because of the known budget restriction, follow
+the complete [release runbook](docs/release-runbook.md). It documents the exact
+tag requirement, native Windows handoff and direct upload, Linux x64 container
+fallback, manual UI evidence, checksums and asset audit, honest CI reporting,
+and required Gitflow back-merge/cleanup. A release is not complete while any
+platform ZIP or `SHA256SUMS.txt` is missing.
+
 Current downloads are unsigned and not notarized. macOS Gatekeeper and Windows
 SmartScreen may warn or block first launch; these builds are for controlled
 testing, not a claim of production readiness. See the repository's **Releases**

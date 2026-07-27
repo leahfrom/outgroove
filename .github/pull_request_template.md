@@ -18,3 +18,4 @@
 - [ ] `feature/*` targets `develop`
 - [ ] Only `release/*` or `hotfix/*` targets `main`
 - [ ] Release/hotfix changes are merged back to `develop`
+- [ ] Release/hotfix platform evidence and assets follow `docs/release-runbook.md` (or not applicable)
