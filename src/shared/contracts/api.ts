@@ -94,6 +94,13 @@ export const musicBrainzReleaseLookupRequestSchema = z
   .strict();
 export const coverArtArchiveRequestSchema =
   musicBrainzReleaseLookupRequestSchema;
+export const coverArtArchiveArtworkEditPreviewRequestSchema = z
+  .object({
+    albumId: z.uuid(),
+    releaseId: musicBrainzIdSchema,
+    artworkId: z.string().regex(/^\d+$/u).max(32),
+  })
+  .strict();
 export const savedLibraryFilterDefinitionSchema = z
   .object({
     query: z.string().trim().max(200),
@@ -577,6 +584,11 @@ export interface AlbumArtworkEditPreviewDto {
   readonly byteLength?: number;
   readonly width?: number;
   readonly height?: number;
+  readonly proposedArtworkSource?: {
+    readonly kind: "cover-art-archive";
+    readonly releaseId: string;
+    readonly artworkId: string;
+  };
   readonly files: readonly {
     readonly fileId: string;
     readonly path: string;
@@ -834,6 +846,9 @@ export interface OutgrooveApi {
   loadCoverArtArchiveArtwork(
     request: z.infer<typeof coverArtArchiveRequestSchema>,
   ): Promise<Result<CoverArtArchiveResultDto>>;
+  previewCoverArtArchiveArtworkEdit(
+    request: z.infer<typeof coverArtArchiveArtworkEditPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkEditPreviewDto>>;
   cancelMusicBrainzAlbumCandidates(
     request: z.infer<typeof albumIdentificationRequestSchema>,
   ): Promise<Result<{ readonly cancelled: boolean }>>;

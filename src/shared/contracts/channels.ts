@@ -14,6 +14,8 @@ export const channels = {
   findMusicBrainzAlbumCandidates: "identify:find-musicbrainz-album-candidates",
   loadMusicBrainzReleaseTracks: "identify:load-musicbrainz-release-tracks",
   loadCoverArtArchiveArtwork: "identify:load-cover-art-archive-artwork",
+  previewCoverArtArchiveArtworkEdit:
+    "identify:preview-cover-art-archive-artwork-edit",
   cancelMusicBrainzAlbumCandidates:
     "identify:cancel-musicbrainz-album-candidates",
   cancelCoverArtArchiveArtwork: "identify:cancel-cover-art-archive-artwork",

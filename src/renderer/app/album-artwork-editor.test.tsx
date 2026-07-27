@@ -157,6 +157,56 @@ describe("AlbumArtworkEditor", () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
+  it("identifies a prepared remote original without bypassing confirmation", async () => {
+    const user = userEvent.setup();
+    const onCancelPreview = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
+        preview={{
+          ...preview,
+          proposedArtworkSource: {
+            kind: "cover-art-archive",
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+            artworkId: "829521842",
+          },
+        }}
+        result={undefined}
+        resultAction={undefined}
+        onCancelPreview={onCancelPreview}
+        onChoose={vi.fn()}
+        onConfirm={onConfirm}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
+        onPrepareRemoval={vi.fn()}
+      />,
+    );
+
+    const confirmation = screen.getByLabelText("Artwork edit confirmation");
+    expect(confirmation).toHaveTextContent(
+      "Cover Art Archive original from exact MusicBrainz release",
+    );
+    expect(confirmation).toHaveTextContent(
+      "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    );
+    expect(confirmation).toHaveTextContent("artwork 829521842");
+    expect(confirmation).toHaveTextContent("nothing has been written");
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    const cancel = within(confirmation).getByRole("button", {
+      name: "Return without replacing",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(onCancelPreview).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("progressively discloses and keyboard-operates a read-only artwork export", async () => {
     const user = userEvent.setup();
     const onPrepareExport = vi.fn();

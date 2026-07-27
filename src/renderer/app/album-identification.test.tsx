@@ -52,6 +52,8 @@ const result: AlbumIdentificationResultDto = {
 const mappingProps = {
   coverArtError: undefined,
   coverArtLoading: false,
+  coverArtPrepareError: undefined,
+  coverArtPreparing: false,
   coverArtReleaseId: undefined,
   coverArtResult: undefined,
   mappingBusy: false,
@@ -68,6 +70,7 @@ const mappingProps = {
   onConfirmMapping: vi.fn(),
   onLoadReleaseTracks: vi.fn(),
   onLoadCoverArt: vi.fn(),
+  onPrepareCoverArt: vi.fn(),
   onPreviewMapping: vi.fn(),
 };
 

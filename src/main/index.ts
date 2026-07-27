@@ -75,6 +75,7 @@ async function createWindow(): Promise<void> {
     database,
     `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`,
   );
+  const artworkEditor = new EditAlbumArtwork(database, writer, artworkEncoder);
   const metadataRunner = new WorkerMetadataJobRunner();
   const scanner = new ScanLibrary(
     database,
@@ -95,9 +96,10 @@ async function createWindow(): Promise<void> {
       database,
       coverArtArchive,
       artworkEncoder,
+      artworkEditor,
     ),
     editor: new EditAlbumTitle(database, writer),
-    artworkEditor: new EditAlbumArtwork(database, writer, artworkEncoder),
+    artworkEditor,
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
     folderArtworkCreator: new CreateAlbumFolderArtwork(
       database,

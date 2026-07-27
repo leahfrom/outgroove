@@ -22,6 +22,8 @@ export function AlbumIdentification({
   album,
   coverArtError,
   coverArtLoading,
+  coverArtPrepareError,
+  coverArtPreparing,
   coverArtReleaseId,
   coverArtResult,
   error,
@@ -44,12 +46,15 @@ export function AlbumIdentification({
   onCreateDraft,
   onLoadReleaseTracks,
   onLoadCoverArt,
+  onPrepareCoverArt,
   onPreviewMapping,
   onSearch,
 }: {
   readonly album: CatalogAlbum;
   readonly coverArtError: string | undefined;
   readonly coverArtLoading: boolean;
+  readonly coverArtPrepareError: string | undefined;
+  readonly coverArtPreparing: boolean;
   readonly coverArtReleaseId: string | undefined;
   readonly coverArtResult: CoverArtArchiveResultDto | undefined;
   readonly error: string | undefined;
@@ -72,6 +77,10 @@ export function AlbumIdentification({
   readonly onCreateDraft: (candidate: ComparedAlbumCandidate) => void;
   readonly onLoadReleaseTracks: (candidate: ComparedAlbumCandidate) => void;
   readonly onLoadCoverArt: (candidate: ComparedAlbumCandidate) => void;
+  readonly onPrepareCoverArt: (
+    candidate: ComparedAlbumCandidate,
+    artworkId: string,
+  ) => void;
   readonly onPreviewMapping: (
     edits: readonly MusicBrainzTrackMappingEdit[],
   ) => void;
@@ -111,7 +120,12 @@ export function AlbumIdentification({
         <div className="actions">
           <button
             className="primary"
-            disabled={loading || releaseTracksLoading || coverArtLoading}
+            disabled={
+              loading ||
+              releaseTracksLoading ||
+              coverArtLoading ||
+              coverArtPreparing
+            }
             onClick={onSearch}
             type="button"
           >
@@ -229,6 +243,15 @@ export function AlbumIdentification({
                           coverArtReleaseId === candidate.releaseId &&
                           coverArtLoading
                         }
+                        prepareError={
+                          coverArtReleaseId === candidate.releaseId
+                            ? coverArtPrepareError
+                            : undefined
+                        }
+                        preparing={
+                          coverArtReleaseId === candidate.releaseId &&
+                          coverArtPreparing
+                        }
                         result={
                           coverArtResult?.sent.releaseId === candidate.releaseId
                             ? coverArtResult
@@ -236,6 +259,9 @@ export function AlbumIdentification({
                         }
                         onCancel={onCancelCoverArt}
                         onLoad={() => onLoadCoverArt(candidate)}
+                        onPrepare={(artworkId) =>
+                          onPrepareCoverArt(candidate, artworkId)
+                        }
                       />
                       <div className="candidate-draft">
                         <h4>Supported tag draft</h4>

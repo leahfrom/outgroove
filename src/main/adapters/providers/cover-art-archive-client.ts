@@ -7,6 +7,7 @@ const responseSchemaVersion = 1;
 const cacheLifetimeMs = 24 * 60 * 60 * 1000;
 const maxMetadataBytes = 2_000_000;
 const maxThumbnailBytes = 2 * 1024 * 1024;
+const maxOriginalArtworkBytes = 8 * 1024 * 1024;
 const maxRedirects = 4;
 const maxMemoryThumbnails = 8;
 const maxRetryDelayMs = 30_000;
@@ -29,6 +30,7 @@ const coverArtArchiveResponseSchema = z
             back: z.boolean(),
             approved: z.boolean(),
             comment: z.string().max(2000),
+            image: z.url().max(2000),
           })
           .loose(),
       )
@@ -67,6 +69,7 @@ export interface CoverArtArchiveArtwork {
   readonly back: boolean;
   readonly approved: boolean;
   readonly comment: string | null;
+  readonly originalExtension: "jpg" | "jpeg" | "png";
   readonly data: Uint8Array;
   readonly width: number;
   readonly height: number;
@@ -94,6 +97,7 @@ interface CachedMetadata {
     readonly back: boolean;
     readonly approved: boolean;
     readonly comment: string | null;
+    readonly originalExtension: "jpg" | "jpeg" | "png";
   } | null;
   readonly fetchedAt: string;
   readonly expired: boolean;
@@ -135,6 +139,16 @@ function thumbnailUrl(
 ): URL {
   return new URL(
     `https://coverartarchive.org/release/${encodeURIComponent(releaseId)}/${encodeURIComponent(artworkId)}-${size}.jpg`,
+  );
+}
+
+function originalArtworkUrl(
+  releaseId: string,
+  artworkId: string,
+  extension: CoverArtArchiveArtwork["originalExtension"],
+): URL {
+  return new URL(
+    `https://coverartarchive.org/release/${encodeURIComponent(releaseId)}/${encodeURIComponent(artworkId)}.${extension}`,
   );
 }
 
@@ -201,16 +215,52 @@ function primaryFront(
   payload: z.infer<typeof coverArtArchiveResponseSchema>,
 ): CachedMetadata["artwork"] {
   const image = payload.images.find((candidate) => candidate.front);
-  return image
-    ? {
-        id: image.id,
-        types: image.types,
-        front: image.front,
-        back: image.back,
-        approved: image.approved,
-        comment: image.comment.trim() || null,
-      }
-    : null;
+  if (!image) return null;
+  const originalExtension = originalImageExtension(
+    image.image,
+    responseReleaseId(payload.release),
+    image.id,
+  );
+  if (!originalExtension)
+    throw new Error(
+      "Cover Art Archive returned an unsafe original-image identity.",
+    );
+  return {
+    id: image.id,
+    types: image.types,
+    front: image.front,
+    back: image.back,
+    approved: image.approved,
+    comment: image.comment.trim() || null,
+    originalExtension,
+  };
+}
+
+function originalImageExtension(
+  value: string,
+  releaseId: string | undefined,
+  artworkId: string,
+): CoverArtArchiveArtwork["originalExtension"] | undefined {
+  if (!releaseId) return;
+  try {
+    const url = new URL(value);
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      url.hostname !== "coverartarchive.org"
+    )
+      return;
+    const match = /^\/release\/([^/]+)\/(\d+)\.(jpg|jpeg|png)$/iu.exec(
+      url.pathname,
+    );
+    if (match?.[1]?.toLowerCase() !== releaseId || match[2] !== artworkId)
+      return;
+    const extension = match[3]?.toLowerCase();
+    return extension === "jpg" || extension === "jpeg" || extension === "png"
+      ? extension
+      : undefined;
+  } catch {
+    return;
+  }
 }
 
 export class CoverArtArchiveClient {
@@ -226,7 +276,13 @@ export class CoverArtArchiveClient {
     string,
     Omit<
       CoverArtArchiveArtwork,
-      "id" | "types" | "front" | "back" | "approved" | "comment"
+      | "id"
+      | "types"
+      | "front"
+      | "back"
+      | "approved"
+      | "comment"
+      | "originalExtension"
     >
   >();
 
@@ -253,6 +309,53 @@ export class CoverArtArchiveClient {
     );
     this.inFlight.set(normalizedId, pending);
     return pending;
+  }
+
+  async loadOriginalFrontArtwork(
+    releaseId: string,
+    expectedArtworkId: string,
+    signal: AbortSignal,
+  ): Promise<CoverArtArchiveArtwork> {
+    const normalizedId = releaseId.toLowerCase();
+    const preview = await this.loadFrontArtwork(normalizedId, signal);
+    if (!preview.artwork)
+      throw new Error(
+        "This release no longer has a front cover in the Cover Art Archive.",
+      );
+    if (preview.artwork.id !== expectedArtworkId)
+      throw new Error(
+        "The release front cover changed after it was displayed. Load it again before preparing a replacement.",
+      );
+    const response = await this.performRequest(
+      originalArtworkUrl(
+        normalizedId,
+        expectedArtworkId,
+        preview.artwork.originalExtension,
+      ),
+      "image/jpeg, image/png",
+      signal,
+    );
+    if (!response.ok)
+      throw new Error(
+        `Cover Art Archive original image returned HTTP ${response.status}. Try again later.`,
+      );
+    const data = await readBoundedBody(
+      response,
+      maxOriginalArtworkBytes,
+      "The Cover Art Archive original image exceeds Outgroove's 8 MiB artwork limit.",
+    );
+    const info = validatedArtworkInfo(data);
+    if (!info)
+      throw new Error(
+        "Cover Art Archive returned an invalid or unsafe original JPEG/PNG image.",
+      );
+    return {
+      ...preview.artwork,
+      data,
+      width: info.width,
+      height: info.height,
+      mimeType: info.mimeType,
+    };
   }
 
   private async execute(
@@ -316,11 +419,15 @@ export class CoverArtArchiveClient {
     const parsed = coverArtArchiveResponseSchema.safeParse(payload);
     if (!parsed.success || responseReleaseId(parsed.data.release) !== releaseId)
       return;
-    return {
-      artwork: primaryFront(parsed.data),
-      fetchedAt: cached.fetchedAt,
-      expired,
-    };
+    try {
+      return {
+        artwork: primaryFront(parsed.data),
+        fetchedAt: cached.fetchedAt,
+        expired,
+      };
+    } catch {
+      return;
+    }
   }
 
   private async fetchMetadata(
@@ -373,7 +480,13 @@ export class CoverArtArchiveClient {
   ): Promise<
     Omit<
       CoverArtArchiveArtwork,
-      "id" | "types" | "front" | "back" | "approved" | "comment"
+      | "id"
+      | "types"
+      | "front"
+      | "back"
+      | "approved"
+      | "comment"
+      | "originalExtension"
     >
   > {
     let response = await this.performRequest(
@@ -477,7 +590,13 @@ export class CoverArtArchiveClient {
     key: string,
     thumbnail: Omit<
       CoverArtArchiveArtwork,
-      "id" | "types" | "front" | "back" | "approved" | "comment"
+      | "id"
+      | "types"
+      | "front"
+      | "back"
+      | "approved"
+      | "comment"
+      | "originalExtension"
     >,
   ): void {
     this.thumbnails.delete(key);
