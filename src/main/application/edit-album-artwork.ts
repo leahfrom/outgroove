@@ -13,7 +13,7 @@ import type {
   StoredArtworkPicture,
 } from "../adapters/database/catalog-database";
 import type { ArtworkThumbnailEncoder } from "../adapters/artwork/artwork-thumbnail";
-import { validatedArtworkSize } from "../adapters/artwork/artwork-image-shape";
+import { validatedArtworkInfo } from "../adapters/artwork/artwork-image-shape";
 import type { MetadataWriter } from "../adapters/metadata/metadata-writer";
 
 const MAX_ARTWORK_BYTES = 8 * 1024 * 1024;
@@ -32,10 +32,17 @@ interface PendingArtworkOperation {
   readonly files: readonly PendingArtworkFile[];
 }
 
+interface SelectedArtwork {
+  readonly picture: PictureInfo;
+  readonly width: number;
+  readonly height: number;
+  readonly source?: AlbumArtworkEditPreviewDto["proposedArtworkSource"];
+}
+
 type ArtworkProposal =
   | {
       readonly action: "replace";
-      readonly selected: Awaited<ReturnType<typeof readSelectedArtwork>>;
+      readonly selected: SelectedArtwork;
     }
   | { readonly action: "remove" };
 
@@ -97,11 +104,28 @@ function asPictures(
   }));
 }
 
-async function readSelectedArtwork(path: string): Promise<{
-  picture: PictureInfo;
-  width: number;
-  height: number;
-}> {
+function selectedArtwork(
+  sourceData: Uint8Array,
+  source?: AlbumArtworkEditPreviewDto["proposedArtworkSource"],
+): SelectedArtwork {
+  if (sourceData.byteLength <= 0 || sourceData.byteLength > MAX_ARTWORK_BYTES)
+    throw new Error("Artwork must be between 1 byte and 8 MiB.");
+  const data = new Uint8Array(sourceData);
+  const info = validatedArtworkInfo(data);
+  if (!info) throw new Error("Choose a valid JPEG or PNG image.");
+  return {
+    picture: {
+      mimeType: info.mimeType,
+      kind: PictureKind.CoverFront,
+      data,
+    },
+    width: info.width,
+    height: info.height,
+    ...(source ? { source } : {}),
+  };
+}
+
+async function readSelectedArtwork(path: string): Promise<SelectedArtwork> {
   let entry: Awaited<ReturnType<typeof lstat>>;
   try {
     entry = await lstat(path);
@@ -140,24 +164,7 @@ async function readSelectedArtwork(path: string): Promise<{
         throw new Error("The selected artwork could not be read completely.");
       completed += read.bytesRead;
     }
-    const size = validatedArtworkSize(data);
-    if (!size) throw new Error("Choose a valid JPEG or PNG image.");
-    const mimeType =
-      data[0] === 0x89 && data[1] === 0x50
-        ? "image/png"
-        : data[0] === 0xff && data[1] === 0xd8
-          ? "image/jpeg"
-          : undefined;
-    if (!mimeType) throw new Error("Choose a valid JPEG or PNG image.");
-    return {
-      picture: {
-        mimeType,
-        kind: PictureKind.CoverFront,
-        data: new Uint8Array(data),
-      },
-      width: size.width,
-      height: size.height,
-    };
+    return selectedArtwork(data);
   } finally {
     await handle.close();
   }
@@ -178,6 +185,17 @@ export class EditAlbumArtwork {
   ): Promise<AlbumArtworkEditPreviewDto> {
     const selected = await readSelectedArtwork(selectedPath);
     return this.previewChange(albumId, { action: "replace", selected });
+  }
+
+  async previewData(
+    albumId: string,
+    data: Uint8Array,
+    source: NonNullable<AlbumArtworkEditPreviewDto["proposedArtworkSource"]>,
+  ): Promise<AlbumArtworkEditPreviewDto> {
+    return this.previewChange(albumId, {
+      action: "replace",
+      selected: selectedArtwork(data, source),
+    });
   }
 
   async previewRemoval(albumId: string): Promise<AlbumArtworkEditPreviewDto> {
@@ -249,6 +267,9 @@ export class EditAlbumArtwork {
             byteLength: proposal.selected.picture.data.byteLength,
             width: proposal.selected.width,
             height: proposal.selected.height,
+            ...(proposal.selected.source
+              ? { proposedArtworkSource: proposal.selected.source }
+              : {}),
           }
         : {}),
       files: files.map((file) => ({

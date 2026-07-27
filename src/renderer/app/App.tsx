@@ -8,6 +8,7 @@ import type {
   AlbumArtworkThumbnailDto,
   AlbumFolderArtworkPreviewDto,
   AlbumFolderArtworkResultDto,
+  CoverArtArchiveResultDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -281,6 +282,13 @@ export function App(): React.JSX.Element {
   const [releaseTracksResult, setReleaseTracksResult] =
     useState<MusicBrainzReleaseTracklistDto>();
   const [releaseTracksError, setReleaseTracksError] = useState<string>();
+  const [coverArtLoading, setCoverArtLoading] = useState(false);
+  const [coverArtReleaseId, setCoverArtReleaseId] = useState<string>();
+  const [coverArtResult, setCoverArtResult] =
+    useState<CoverArtArchiveResultDto>();
+  const [coverArtError, setCoverArtError] = useState<string>();
+  const [coverArtPreparing, setCoverArtPreparing] = useState(false);
+  const [coverArtPrepareError, setCoverArtPrepareError] = useState<string>();
   const [musicBrainzMappingPreview, setMusicBrainzMappingPreview] =
     useState<TrackBatchEditPreviewDto>();
   const [musicBrainzMappingResult, setMusicBrainzMappingResult] =
@@ -495,6 +503,7 @@ export function App(): React.JSX.Element {
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
+  const coverArtRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
@@ -2590,6 +2599,12 @@ export function App(): React.JSX.Element {
     setReleaseTracksReleaseId(undefined);
     setReleaseTracksResult(undefined);
     setReleaseTracksError(undefined);
+    setCoverArtLoading(false);
+    setCoverArtReleaseId(undefined);
+    setCoverArtResult(undefined);
+    setCoverArtError(undefined);
+    setCoverArtPreparing(false);
+    setCoverArtPrepareError(undefined);
     setMusicBrainzMappingPreview(undefined);
     setMusicBrainzMappingResult(undefined);
     setMusicBrainzMappingError(undefined);
@@ -2603,6 +2618,11 @@ export function App(): React.JSX.Element {
     setAlbumIdentificationError(undefined);
     setReleaseTracksResult(undefined);
     setReleaseTracksReleaseId(undefined);
+    setCoverArtResult(undefined);
+    setCoverArtReleaseId(undefined);
+    setCoverArtError(undefined);
+    setCoverArtPreparing(false);
+    setCoverArtPrepareError(undefined);
     setMusicBrainzMappingPreview(undefined);
     setMusicBrainzMappingResult(undefined);
     setMusicBrainzMappingError(undefined);
@@ -2661,6 +2681,77 @@ export function App(): React.JSX.Element {
     });
   };
 
+  const loadCoverArtArchiveArtwork = async (
+    candidate: ComparedAlbumCandidate,
+  ): Promise<void> => {
+    if (!selectedAlbum) return;
+    const requestId = ++coverArtRequestId.current;
+    setCoverArtReleaseId(candidate.releaseId);
+    setCoverArtLoading(true);
+    setCoverArtResult(undefined);
+    setCoverArtError(undefined);
+    setCoverArtPrepareError(undefined);
+    const result = await window.outgroove.loadCoverArtArchiveArtwork({
+      albumId: selectedAlbum.id,
+      releaseId: candidate.releaseId,
+    });
+    if (requestId !== coverArtRequestId.current) return;
+    setCoverArtLoading(false);
+    if (result.ok) setCoverArtResult(result.value);
+    else setCoverArtError(result.error.message);
+  };
+
+  const prepareCoverArtArchiveReplacement = async (
+    candidate: ComparedAlbumCandidate,
+    artworkId: string,
+  ): Promise<void> => {
+    if (!selectedAlbum) return;
+    const requestId = ++coverArtRequestId.current;
+    setCoverArtReleaseId(candidate.releaseId);
+    setCoverArtPreparing(true);
+    setCoverArtPrepareError(undefined);
+    const result = await window.outgroove.previewCoverArtArchiveArtworkEdit({
+      albumId: selectedAlbum.id,
+      releaseId: candidate.releaseId,
+      artworkId,
+    });
+    if (requestId !== coverArtRequestId.current) return;
+    setCoverArtPreparing(false);
+    if (!result.ok) {
+      setCoverArtPrepareError(result.error.message);
+      return;
+    }
+    setArtworkEditPreview(result.value);
+    setArtworkEditResult(undefined);
+    setArtworkEditResultAction(undefined);
+    setArtworkEditError(undefined);
+    setArtworkExportPreview(undefined);
+    setArtworkExportResult(undefined);
+    setArtworkExportError(undefined);
+    setFolderArtworkPreview(undefined);
+    setFolderArtworkResult(undefined);
+    setFolderArtworkError(undefined);
+    setAlbumIdentificationOpen(false);
+    setLibraryAlbumEditingTool("artwork");
+  };
+
+  const cancelCoverArtArchiveArtwork = (): void => {
+    if (!selectedAlbum) return;
+    const preparing = coverArtPreparing;
+    coverArtRequestId.current += 1;
+    setCoverArtLoading(false);
+    setCoverArtPreparing(false);
+    if (preparing)
+      setCoverArtPrepareError(
+        "Artwork preparation cancelled. No Library artwork changed.",
+      );
+    else
+      setCoverArtError("Cover request cancelled. No Library artwork changed.");
+    void window.outgroove.cancelCoverArtArchiveArtwork({
+      albumId: selectedAlbum.id,
+    });
+  };
+
   const previewMusicBrainzTrackMapping = async (
     edits: readonly MusicBrainzTrackMappingEdit[],
   ): Promise<void> => {
@@ -2707,6 +2798,7 @@ export function App(): React.JSX.Element {
   const closeAlbumIdentification = (): void => {
     if (albumIdentificationLoading) cancelAlbumIdentification();
     if (releaseTracksLoading) cancelMusicBrainzReleaseTracks();
+    if (coverArtLoading || coverArtPreparing) cancelCoverArtArchiveArtwork();
     setAlbumIdentificationOpen(false);
   };
 
@@ -4055,6 +4147,12 @@ export function App(): React.JSX.Element {
         selectedAlbum && (
           <AlbumIdentification
             album={selectedAlbum}
+            coverArtError={coverArtError}
+            coverArtLoading={coverArtLoading}
+            coverArtPrepareError={coverArtPrepareError}
+            coverArtPreparing={coverArtPreparing}
+            coverArtReleaseId={coverArtReleaseId}
+            coverArtResult={coverArtResult}
             error={albumIdentificationError}
             loading={albumIdentificationLoading}
             mappingBusy={busy}
@@ -4067,6 +4165,7 @@ export function App(): React.JSX.Element {
             releaseTracksResult={releaseTracksResult}
             result={albumIdentificationResult}
             onCancel={cancelAlbumIdentification}
+            onCancelCoverArt={cancelCoverArtArchiveArtwork}
             onCancelMappingPreview={() => {
               setMusicBrainzMappingPreview(undefined);
               setMusicBrainzMappingError(undefined);
@@ -4077,6 +4176,12 @@ export function App(): React.JSX.Element {
             onCreateDraft={createMusicBrainzTagDraft}
             onLoadReleaseTracks={(candidate) =>
               void loadMusicBrainzReleaseTracks(candidate)
+            }
+            onLoadCoverArt={(candidate) =>
+              void loadCoverArtArchiveArtwork(candidate)
+            }
+            onPrepareCoverArt={(candidate, artworkId) =>
+              void prepareCoverArtArchiveReplacement(candidate, artworkId)
             }
             onPreviewMapping={(edits) =>
               void previewMusicBrainzTrackMapping(edits)

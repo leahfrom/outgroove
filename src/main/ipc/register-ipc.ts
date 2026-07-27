@@ -13,6 +13,8 @@ import {
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
   albumIdentificationRequestSchema,
+  coverArtArchiveArtworkEditPreviewRequestSchema,
+  coverArtArchiveRequestSchema,
   databaseRestoreApplyRequestSchema,
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
@@ -53,6 +55,7 @@ import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import type { FindAlbumCandidates } from "../application/find-album-candidates";
+import type { FindReleaseArtwork } from "../application/find-release-artwork";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -65,6 +68,7 @@ interface Dependencies {
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
   albumCandidates: FindAlbumCandidates;
+  releaseArtwork: FindReleaseArtwork;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -259,9 +263,35 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.loadCoverArtArchiveArtwork,
+    createValidatedHandler(
+      coverArtArchiveRequestSchema,
+      ({ albumId, releaseId }) =>
+        dependencies.releaseArtwork.load(albumId, releaseId),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewCoverArtArchiveArtworkEdit,
+    createValidatedHandler(
+      coverArtArchiveArtworkEditPreviewRequestSchema,
+      ({ albumId, releaseId, artworkId }) =>
+        dependencies.releaseArtwork.previewReplacement(
+          albumId,
+          releaseId,
+          artworkId,
+        ),
+    ),
+  );
+  ipcMain.handle(
     channels.cancelMusicBrainzAlbumCandidates,
     createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
       dependencies.albumCandidates.cancel(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelCoverArtArchiveArtwork,
+    createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
+      dependencies.releaseArtwork.cancel(albumId),
     ),
   );
   ipcMain.handle(

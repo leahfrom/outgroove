@@ -221,7 +221,12 @@ function api(applyVerified: boolean): OutgrooveApi {
     ),
     findMusicBrainzAlbumCandidates: vi.fn(),
     loadMusicBrainzReleaseTracks: vi.fn(),
+    loadCoverArtArchiveArtwork: vi.fn(),
+    previewCoverArtArchiveArtworkEdit: vi.fn(),
     cancelMusicBrainzAlbumCandidates: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    cancelCoverArtArchiveArtwork: vi.fn(() =>
       Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
     previewAlbumTitleEdit: vi.fn(() =>
@@ -953,6 +958,190 @@ describe("tag edit UI safety states", () => {
     );
     expect(previewTrack).toHaveBeenCalledOnce();
     expect(applyTrack).not.toHaveBeenCalled();
+  });
+
+  it("routes an exact release cover through preparation and separate explicit confirmation", async () => {
+    const mockApi = api(true);
+    vi.spyOn(mockApi, "findMusicBrainzAlbumCandidates").mockResolvedValue({
+      ok: true,
+      value: {
+        albumId: album.id,
+        sent: {
+          albumTitle: album.title,
+          albumArtist: album.albumArtist,
+        },
+        source: "network",
+        fetchedAt: "2026-07-27T12:00:00.000Z",
+        readOnly: true,
+        candidates: [
+          {
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+            releaseGroupId: null,
+            title: "Fixture Album",
+            artistCredits: [],
+            date: "2026",
+            country: "DE",
+            status: "Official",
+            trackCount: 1,
+            catalogNumbers: [],
+            musicBrainzScore: 100,
+            score: 95,
+            confidence: "strong",
+            matches: ["Album title matches"],
+            conflicts: [],
+          },
+        ],
+      },
+    });
+    const loadCover = vi
+      .spyOn(mockApi, "loadCoverArtArchiveArtwork")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          sent: {
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+          },
+          artwork: {
+            id: "829521842",
+            types: ["Front"],
+            front: true,
+            back: false,
+            approved: true,
+            comment: "Exact fixture edition",
+            previewDataUrl: "data:image/png;base64,fixture",
+            width: 500,
+            height: 500,
+            mimeType: "image/png",
+            byteLength: 1024,
+          },
+          source: "network",
+          fetchedAt: "2026-07-27T12:00:00.000Z",
+          readOnly: true,
+        },
+      });
+    const chooseArtwork = vi.spyOn(mockApi, "chooseAlbumArtworkEdit");
+    const previewRemoval = vi.spyOn(mockApi, "previewAlbumArtworkRemoval");
+    const prepareArtwork = vi
+      .spyOn(mockApi, "previewCoverArtArchiveArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          confirmationToken: "remote-artwork-confirmation-token",
+          action: "replace",
+          proposedArtworkDataUrl: "data:image/png;base64,b3JpZ2luYWw=",
+          proposedArtworkSource: {
+            kind: "cover-art-archive",
+            releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+            artworkId: "829521842",
+          },
+          mimeType: "image/png",
+          byteLength: 4096,
+          width: 1200,
+          height: 1200,
+          files: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              currentFrontCovers: 1,
+              preservedPictures: 0,
+              willWrite: true,
+              warnings: [],
+            },
+          ],
+        },
+      });
+    const applyArtwork = vi
+      .spyOn(mockApi, "applyAlbumArtworkEdit")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+          results: [
+            {
+              fileId: album.tracks[0]?.id ?? "",
+              path: album.tracks[0]?.path ?? "",
+              verified: true,
+              error: null,
+            },
+          ],
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+
+    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const dialog = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    const loadButton = await within(dialog).findByRole("button", {
+      name: "Load Cover Art Archive front cover for Fixture Album, 2026",
+    });
+    expect(loadCover).not.toHaveBeenCalled();
+    loadButton.focus();
+    await user.keyboard("{Enter}");
+    expect(loadCover).toHaveBeenCalledWith({
+      albumId: album.id,
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    });
+    expect(
+      await within(dialog).findByRole("img", {
+        name: "Cover Art Archive front cover for Fixture Album",
+      }),
+    ).toHaveAttribute("src", "data:image/png;base64,fixture");
+    expect(dialog).toHaveTextContent("No Library artwork changed");
+    expect(prepareArtwork).not.toHaveBeenCalled();
+    expect(chooseArtwork).not.toHaveBeenCalled();
+    expect(previewRemoval).not.toHaveBeenCalled();
+    expect(applyArtwork).not.toHaveBeenCalled();
+
+    const prepare = within(dialog).getByRole("button", {
+      name: "Prepare Cover Art Archive artwork from Fixture Album, 2026, for replacement review",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    expect(prepareArtwork).toHaveBeenCalledWith({
+      albumId: album.id,
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      artworkId: "829521842",
+    });
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Find MusicBrainz matches for Fixture Album",
+      }),
+    ).not.toBeInTheDocument();
+
+    const artworkEditor = screen.getByRole("dialog", {
+      name: "Edit Fixture Album",
+    });
+    expect(artworkEditor).toHaveTextContent(
+      "Cover Art Archive original from exact MusicBrainz release",
+    );
+    expect(
+      within(artworkEditor).getByRole("img", {
+        name: "Proposed album cover",
+      }),
+    ).toHaveAttribute("src", "data:image/png;base64,b3JpZ2luYWw=");
+    expect(applyArtwork).not.toHaveBeenCalled();
+
+    const confirm = within(artworkEditor).getByRole("button", {
+      name: "Confirm and write 1 file",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    expect(applyArtwork).toHaveBeenCalledWith({
+      operationId: "8da49e0c-dce1-41bf-853f-89d02c65f826",
+      confirmationToken: "remote-artwork-confirmation-token",
+    });
   });
 
   it("routes only explicitly mapped MusicBrainz track fields through batch preview and confirmation", async () => {

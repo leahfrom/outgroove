@@ -2149,6 +2149,49 @@ h1 {
 .candidate-evidence p {
   margin: 0;
 }
+.candidate-artwork {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d9e0da;
+  padding-top: 1rem;
+}
+.candidate-artwork h4,
+.candidate-artwork p {
+  margin: 0;
+}
+.candidate-artwork .workflow-actions {
+  justify-content: flex-start;
+}
+.candidate-artwork-preview {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr);
+  gap: 1rem;
+  margin: 0;
+  border: 1px solid #d9e0da;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: #f7f9f6;
+}
+.candidate-artwork-preview img {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: #e4e9e3;
+  object-fit: contain;
+}
+.candidate-artwork-preview figcaption {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.candidate-artwork-preview figcaption span {
+  overflow-wrap: anywhere;
+}
+.candidate-artwork-preview figcaption button {
+  justify-self: start;
+}
 .candidate-draft {
   display: grid;
   gap: 0.65rem;
@@ -2946,6 +2989,10 @@ pre {
   gap: 0.55rem;
   margin: 0;
 }
+.artwork-proposal > .metadata-draft-source {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 .artwork-proposal dl div {
   display: grid;
   grid-template-columns: minmax(7rem, auto) 1fr;
@@ -3466,6 +3513,12 @@ td {
   }
 }
 @media (max-width: 600px) {
+  .candidate-artwork-preview {
+    grid-template-columns: 1fr;
+  }
+  .candidate-artwork-preview img {
+    width: min(100%, 15rem);
+  }
   .candidate-track-mapper > header {
     align-items: stretch;
     flex-direction: column;

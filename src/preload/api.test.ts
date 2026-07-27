@@ -92,6 +92,22 @@ describe("preload saved-filter allowlist", () => {
       channels.loadMusicBrainzReleaseTracks,
       release,
     );
+    await api.loadCoverArtArchiveArtwork(release);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.loadCoverArtArchiveArtwork,
+      release,
+    );
+    const artwork = { ...release, artworkId: "829521842" };
+    await api.previewCoverArtArchiveArtworkEdit(artwork);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewCoverArtArchiveArtworkEdit,
+      artwork,
+    );
+    await api.cancelCoverArtArchiveArtwork(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelCoverArtArchiveArtwork,
+      request,
+    );
     const mapping = {
       ...release,
       edits: [

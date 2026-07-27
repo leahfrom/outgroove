@@ -65,6 +65,7 @@ export function AlbumArtworkEditor({
   const blockedFiles =
     preview?.files.filter((file) => file.warnings.length > 0) ?? [];
   const removing = preview?.action === "remove";
+  const remoteSource = preview?.proposedArtworkSource;
 
   return (
     <section
@@ -74,7 +75,11 @@ export function AlbumArtworkEditor({
       <WorkbenchDraftHeading
         context="Embedded artwork"
         title="Replace the front cover"
-        description="Choose one local JPEG or PNG. Outgroove embeds it only in supported MP3 and FLAC files; folder artwork and every non-front embedded picture remain untouched."
+        description={
+          remoteSource
+            ? "Review the validated original image from the exact Cover Art Archive release. Outgroove embeds it only in supported MP3 and FLAC files; folder artwork and every non-front embedded picture remain untouched."
+            : "Choose one local JPEG or PNG. Outgroove embeds it only in supported MP3 and FLAC files; folder artwork and every non-front embedded picture remain untouched."
+        }
       />
       <div className="workflow-actions">
         <button
@@ -99,7 +104,11 @@ export function AlbumArtworkEditor({
           blocked={writableFiles.length === 0}
           busy={busy}
           cancelLabel={
-            removing ? "Return without removing" : "Choose different artwork"
+            removing
+              ? "Return without removing"
+              : remoteSource
+                ? "Return without replacing"
+                : "Choose different artwork"
           }
           confirmLabel={
             removing
@@ -139,6 +148,16 @@ export function AlbumArtworkEditor({
             </div>
           ) : (
             <div className="artwork-proposal">
+              {remoteSource && (
+                <p className="metadata-draft-source">
+                  Cover Art Archive original from exact MusicBrainz release{" "}
+                  <span className="identifier">{remoteSource.releaseId}</span>,
+                  artwork{" "}
+                  <span className="identifier">{remoteSource.artworkId}</span>.
+                  This is the proposed image shown below; nothing has been
+                  written.
+                </p>
+              )}
               {preview.proposedArtworkDataUrl && (
                 <img
                   alt="Proposed album cover"

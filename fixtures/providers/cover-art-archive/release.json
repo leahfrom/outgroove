@@ -1,0 +1,19 @@
+{
+  "release": "https://musicbrainz.org/release/2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+  "images": [
+    {
+      "id": "829521842",
+      "types": ["Front"],
+      "front": true,
+      "back": false,
+      "approved": true,
+      "comment": "Exact fixture edition",
+      "edit": 12345,
+      "image": "https://coverartarchive.org/release/2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef/829521842.jpg",
+      "thumbnails": {
+        "250": "https://coverartarchive.org/release/2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef/829521842-250.jpg",
+        "500": "https://coverartarchive.org/release/2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef/829521842-500.jpg"
+      }
+    }
+  ]
+}

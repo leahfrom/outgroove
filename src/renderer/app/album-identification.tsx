@@ -1,5 +1,6 @@
 import type {
   AlbumIdentificationResultDto,
+  CoverArtArchiveResultDto,
   MusicBrainzReleaseTracklistDto,
   TagEditResultDto,
   TrackBatchEditPreviewDto,
@@ -10,6 +11,7 @@ import {
   formatArtistCredits,
   type ComparedAlbumCandidate,
 } from "../../shared/domain/album-identification";
+import { CoverArtArchivePreview } from "./cover-art-archive-preview";
 import { ModalSheet } from "./modal-sheet";
 import {
   MusicBrainzTrackMapper,
@@ -18,6 +20,12 @@ import {
 
 export function AlbumIdentification({
   album,
+  coverArtError,
+  coverArtLoading,
+  coverArtPrepareError,
+  coverArtPreparing,
+  coverArtReleaseId,
+  coverArtResult,
   error,
   loading,
   mappingBusy,
@@ -30,16 +38,25 @@ export function AlbumIdentification({
   releaseTracksResult,
   result,
   onCancel,
+  onCancelCoverArt,
   onCancelMappingPreview,
   onCancelReleaseTracks,
   onClose,
   onConfirmMapping,
   onCreateDraft,
   onLoadReleaseTracks,
+  onLoadCoverArt,
+  onPrepareCoverArt,
   onPreviewMapping,
   onSearch,
 }: {
   readonly album: CatalogAlbum;
+  readonly coverArtError: string | undefined;
+  readonly coverArtLoading: boolean;
+  readonly coverArtPrepareError: string | undefined;
+  readonly coverArtPreparing: boolean;
+  readonly coverArtReleaseId: string | undefined;
+  readonly coverArtResult: CoverArtArchiveResultDto | undefined;
   readonly error: string | undefined;
   readonly loading: boolean;
   readonly mappingBusy: boolean;
@@ -52,12 +69,18 @@ export function AlbumIdentification({
   readonly releaseTracksResult: MusicBrainzReleaseTracklistDto | undefined;
   readonly result: AlbumIdentificationResultDto | undefined;
   readonly onCancel: () => void;
+  readonly onCancelCoverArt: () => void;
   readonly onCancelMappingPreview: () => void;
   readonly onCancelReleaseTracks: () => void;
   readonly onClose: () => void;
   readonly onConfirmMapping: () => void;
   readonly onCreateDraft: (candidate: ComparedAlbumCandidate) => void;
   readonly onLoadReleaseTracks: (candidate: ComparedAlbumCandidate) => void;
+  readonly onLoadCoverArt: (candidate: ComparedAlbumCandidate) => void;
+  readonly onPrepareCoverArt: (
+    candidate: ComparedAlbumCandidate,
+    artworkId: string,
+  ) => void;
   readonly onPreviewMapping: (
     edits: readonly MusicBrainzTrackMappingEdit[],
   ) => void;
@@ -97,7 +120,12 @@ export function AlbumIdentification({
         <div className="actions">
           <button
             className="primary"
-            disabled={loading || releaseTracksLoading}
+            disabled={
+              loading ||
+              releaseTracksLoading ||
+              coverArtLoading ||
+              coverArtPreparing
+            }
             onClick={onSearch}
             type="button"
           >
@@ -204,6 +232,37 @@ export function AlbumIdentification({
                           )}
                         </div>
                       </div>
+                      <CoverArtArchivePreview
+                        candidate={candidate}
+                        error={
+                          coverArtReleaseId === candidate.releaseId
+                            ? coverArtError
+                            : undefined
+                        }
+                        loading={
+                          coverArtReleaseId === candidate.releaseId &&
+                          coverArtLoading
+                        }
+                        prepareError={
+                          coverArtReleaseId === candidate.releaseId
+                            ? coverArtPrepareError
+                            : undefined
+                        }
+                        preparing={
+                          coverArtReleaseId === candidate.releaseId &&
+                          coverArtPreparing
+                        }
+                        result={
+                          coverArtResult?.sent.releaseId === candidate.releaseId
+                            ? coverArtResult
+                            : undefined
+                        }
+                        onCancel={onCancelCoverArt}
+                        onLoad={() => onLoadCoverArt(candidate)}
+                        onPrepare={(artworkId) =>
+                          onPrepareCoverArt(candidate, artworkId)
+                        }
+                      />
                       <div className="candidate-draft">
                         <h4>Supported tag draft</h4>
                         {tagDraft.fields.length > 0 ? (

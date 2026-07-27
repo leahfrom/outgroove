@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   albumArtworkRequestSchema,
   albumIdentificationRequestSchema,
+  coverArtArchiveArtworkEditPreviewRequestSchema,
+  coverArtArchiveRequestSchema,
   albumFolderArtworkPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditUndoPreviewRequestSchema,
@@ -32,6 +34,60 @@ import {
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
+  it("accepts only an album and release identity for Cover Art Archive preview", async () => {
+    const useCase = vi.fn(() => ({ readOnly: true }));
+    const handler = createValidatedHandler(
+      coverArtArchiveRequestSchema,
+      useCase,
+    );
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const releaseId = "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef";
+    await expect(handler({}, { albumId, releaseId })).resolves.toMatchObject({
+      ok: true,
+      value: { readOnly: true },
+    });
+    expect(useCase).toHaveBeenCalledWith({ albumId, releaseId });
+    for (const request of [
+      { albumId, releaseId: "not-an-id" },
+      { albumId, releaseId, url: "https://example.com/image.jpg" },
+      { albumId, releaseId, path: "/private/library/album" },
+      { albumId, releaseId, audio: "bytes" },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only exact provider identities for a Cover Art Archive artwork-edit preview", async () => {
+    const useCase = vi.fn(() => ({ action: "replace" }));
+    const handler = createValidatedHandler(
+      coverArtArchiveArtworkEditPreviewRequestSchema,
+      useCase,
+    );
+    const request = {
+      albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      artworkId: "829521842",
+    };
+    await expect(handler({}, request)).resolves.toMatchObject({
+      ok: true,
+      value: { action: "replace" },
+    });
+    expect(useCase).toHaveBeenCalledWith(request);
+    for (const invalid of [
+      { ...request, artworkId: "" },
+      { ...request, artworkId: "../image" },
+      { ...request, url: "https://example.com/image.jpg" },
+      { ...request, bytes: "image bytes" },
+      { ...request, path: "/private/library/cover.jpg" },
+    ])
+      await expect(handler({}, invalid)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
   it("accepts only an album identity for remote candidate lookup", async () => {
     const useCase = vi.fn(() => ({ readOnly: true }));
     const handler = createValidatedHandler(
