@@ -1866,79 +1866,70 @@ describe("tag edit UI safety states", () => {
     await user.click(
       screen.getByRole("button", { name: "Edit metadata for Track" }),
     );
-    await user.clear(screen.getByLabelText("Track title"));
-    await user.type(screen.getByLabelText("Track title"), "Renamed Track");
-    await user.clear(screen.getByLabelText("Track artist"));
-    await user.type(screen.getByLabelText("Track artist"), "Different Artist");
-    await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
-    await user.click(screen.getByText("More fields"));
-    await user.type(
-      screen.getByLabelText("Composer proposed value"),
-      "Fixture Composer",
-    );
-    await user.type(
-      screen.getByLabelText("Conductor proposed value"),
-      "Fixture Conductor",
-    );
-    await user.type(
-      screen.getByLabelText("Lyricist proposed value"),
-      "Fixture Lyricist",
-    );
-    await user.type(
-      screen.getByLabelText("ISRC proposed value"),
-      "DEABC2600001",
-    );
-    await user.type(
-      screen.getByLabelText("Copyright proposed value"),
-      "Copyright Fixture",
-    );
-    await user.type(
-      screen.getByLabelText("Original release date proposed value"),
-      "1998-04",
-    );
-    await user.type(screen.getByLabelText("Language proposed value"), "deu");
-    await user.type(
-      screen.getByLabelText("Comment proposed value"),
-      "Fixture comment",
-    );
-    fireEvent.change(screen.getByLabelText("Publisher proposed value"), {
-      target: { value: "Fixture Publisher" },
-    });
-    fireEvent.change(screen.getByLabelText("Description proposed value"), {
-      target: { value: "Fixture description" },
-    });
-    fireEvent.change(screen.getByLabelText("Grouping proposed value"), {
-      target: { value: "Suite I" },
-    });
-    fireEvent.change(screen.getByLabelText("Catalog number proposed value"), {
-      target: { value: "OUT-42" },
-    });
-    fireEvent.change(screen.getByLabelText("Publishing date proposed value"), {
-      target: { value: "2025-09" },
-    });
-    fireEvent.change(screen.getByLabelText("BPM proposed value"), {
-      target: { value: "127" },
-    });
-    await user.selectOptions(
-      screen.getByLabelText("Compilation proposed value"),
-      "true",
-    );
     for (const [label, value] of [
-      ["MusicBrainz recording ID", "11111111-1111-4111-8111-111111111111"],
-      ["MusicBrainz release track ID", "22222222-2222-4222-8222-222222222222"],
-      ["MusicBrainz release ID", "33333333-3333-4333-8333-333333333333"],
-      ["MusicBrainz track artist ID", "44444444-4444-4444-8444-444444444444"],
-      ["MusicBrainz release artist ID", "55555555-5555-4555-8555-555555555555"],
-      ["MusicBrainz release group ID", "66666666-6666-4666-8666-666666666666"],
-      ["MusicBrainz work ID", "77777777-7777-4777-8777-777777777777"],
+      ["Track title", "Renamed Track"],
+      ["Track artist", "Different Artist"],
+      ["Genre proposed value", "Post Rock"],
     ] as const)
-      fireEvent.change(screen.getByLabelText(`${label} proposed value`), {
+      fireEvent.change(screen.getByLabelText(label), {
         target: { value },
       });
-    await user.clear(screen.getByLabelText("Track total proposed value"));
-    await user.type(screen.getByLabelText("Track total proposed value"), "12");
-    await user.clear(screen.getByLabelText("Disc total proposed value"));
-    await user.type(screen.getByLabelText("Disc total proposed value"), "2");
+    await user.click(screen.getByText("More fields"));
+    for (const [label, value] of [
+      ["Composer proposed value", "Fixture Composer"],
+      ["Conductor proposed value", "Fixture Conductor"],
+      ["Lyricist proposed value", "Fixture Lyricist"],
+      ["ISRC proposed value", "DEABC2600001"],
+      ["Copyright proposed value", "Copyright Fixture"],
+      ["Original release date proposed value", "1998-04"],
+      ["Language proposed value", "deu"],
+      ["Comment proposed value", "Fixture comment"],
+      ["Publisher proposed value", "Fixture Publisher"],
+      ["Description proposed value", "Fixture description"],
+      ["Grouping proposed value", "Suite I"],
+      ["Catalog number proposed value", "OUT-42"],
+      ["Publishing date proposed value", "2025-09"],
+      ["BPM proposed value", "127"],
+      ["Compilation proposed value", "true"],
+      [
+        "MusicBrainz recording ID proposed value",
+        "11111111-1111-4111-8111-111111111111",
+      ],
+      [
+        "MusicBrainz release track ID proposed value",
+        "22222222-2222-4222-8222-222222222222",
+      ],
+      [
+        "MusicBrainz release ID proposed value",
+        "33333333-3333-4333-8333-333333333333",
+      ],
+      [
+        "MusicBrainz track artist ID proposed value",
+        "44444444-4444-4444-8444-444444444444",
+      ],
+      [
+        "MusicBrainz release artist ID proposed value",
+        "55555555-5555-4555-8555-555555555555",
+      ],
+      [
+        "MusicBrainz release group ID proposed value",
+        "66666666-6666-4666-8666-666666666666",
+      ],
+      [
+        "MusicBrainz work ID proposed value",
+        "77777777-7777-4777-8777-777777777777",
+      ],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value },
+      });
+    for (const [label, value] of [
+      ["Track total proposed value", "12"],
+      ["Disc total proposed value", "2"],
+    ] as const)
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value },
+      });
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
