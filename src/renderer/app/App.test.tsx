@@ -250,6 +250,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     applyAlbumArtworkEdit: vi.fn(),
     previewAlbumArtworkUndo: vi.fn(),
     applyAlbumArtworkUndo: vi.fn(),
+    previewAlbumArtworkExport: vi.fn(),
+    exportAlbumArtwork: vi.fn(),
     previewTrackTagEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -891,6 +893,82 @@ describe("tag edit UI safety states", () => {
     expect(
       await within(dialog).findByLabelText("Artwork edit result"),
     ).toBeVisible();
+  });
+
+  it("prepares artwork export before the native save step and preserves it after cancellation", async () => {
+    const mockApi = api(true);
+    const previewExport = vi
+      .spyOn(mockApi, "previewAlbumArtworkExport")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "1a5b2f3c-390a-4843-852a-0edeb4753171",
+          confirmationToken: "export-confirmation-token-long-enough",
+          artworkDataUrl: "data:image/jpeg;base64,cHJldmlldw==",
+          source: "embedded",
+          mimeType: "image/jpeg",
+          byteLength: 4096,
+          width: 1200,
+          height: 1200,
+          suggestedFileName: "cover.jpg",
+        },
+      });
+    const exportArtwork = vi
+      .spyOn(mockApi, "exportAlbumArtwork")
+      .mockResolvedValueOnce({ ok: true, value: null })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: {
+          destinationPath: "/fixture/exported-cover.jpg",
+          byteLength: 4096,
+          sha256:
+            "a29157d168e67be11f7c8e6a338fef458b72da9f8aecd8e0c7be78d4cf9702fe",
+        },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await chooseAlbumAction(user, "Change album artwork");
+
+    const dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
+    await user.click(within(dialog).getByText("Export current artwork"));
+    const prepare = within(dialog).getByRole("button", {
+      name: "Prepare artwork export",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(previewExport).toHaveBeenCalledWith({ albumId: album.id }),
+    );
+    expect(
+      await within(dialog).findByLabelText("Artwork export preview"),
+    ).toHaveTextContent("Embedded artwork");
+
+    const exportButton = within(dialog).getByRole("button", {
+      name: "Export this artwork…",
+    });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(exportArtwork).toHaveBeenCalledTimes(1));
+    expect(exportArtwork).toHaveBeenLastCalledWith({
+      operationId: "1a5b2f3c-390a-4843-852a-0edeb4753171",
+      confirmationToken: "export-confirmation-token-long-enough",
+    });
+    expect(
+      within(dialog).getByLabelText("Artwork export preview"),
+    ).toBeVisible();
+
+    await user.click(exportButton);
+    expect(
+      await within(dialog).findByLabelText("Artwork export result"),
+    ).toHaveTextContent("/fixture/exported-cover.jpg");
+    expect(
+      within(dialog).queryByLabelText("Artwork export preview"),
+    ).not.toBeInTheDocument();
   });
 
   it("previews shared album metadata contextually without applying it", async () => {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { validatedArtworkSize } from "./artwork-image-shape";
+import {
+  validatedArtworkInfo,
+  validatedArtworkSize,
+} from "./artwork-image-shape";
 
 function pngHeader(width: number, height: number): Uint8Array {
   const data = Buffer.alloc(24);
@@ -15,6 +18,11 @@ describe("artwork image bounds", () => {
     expect(validatedArtworkSize(pngHeader(1200, 1200))).toEqual({
       width: 1200,
       height: 1200,
+    });
+    expect(validatedArtworkInfo(pngHeader(1200, 1200))).toEqual({
+      width: 1200,
+      height: 1200,
+      mimeType: "image/png",
     });
   });
 

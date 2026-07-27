@@ -17,7 +17,11 @@ const FOLDER_ARTWORK_NAMES = [
 ] as const;
 
 export type LocalArtworkCandidate =
-  | { readonly status: "available"; readonly data: Uint8Array }
+  | {
+      readonly status: "available";
+      readonly data: Uint8Array;
+      readonly source: "embedded" | "folder";
+    }
   | { readonly status: "missing" | "unsupported" | "invalid" };
 
 function synchsafeInteger(bytes: Uint8Array): number {
@@ -120,7 +124,7 @@ async function embeddedMp3Artwork(
         const data = id3PictureData(frame);
         if (!data || data.byteLength > MAX_ARTWORK_BYTES)
           return { status: "invalid" };
-        return { status: "available", data };
+        return { status: "available", data, source: "embedded" };
       }
       offset += 10 + frameSize;
     }
@@ -171,7 +175,9 @@ async function embeddedFlacArtwork(
         const block = await readExactly(handle, length, offset + 4);
         if (!block) return { status: "invalid" };
         const data = flacPictureData(block);
-        return data ? { status: "available", data } : { status: "invalid" };
+        return data
+          ? { status: "available", data, source: "embedded" }
+          : { status: "invalid" };
       }
       offset += 4 + length;
       if (last) return { status: "missing" };
@@ -202,7 +208,9 @@ async function folderArtwork(path: string): Promise<LocalArtworkCandidate> {
         )
           return { status: "invalid" };
         const data = await readExactly(handle, candidateStat.size, 0);
-        return data ? { status: "available", data } : { status: "invalid" };
+        return data
+          ? { status: "available", data, source: "folder" }
+          : { status: "invalid" };
       } finally {
         await handle.close();
       }

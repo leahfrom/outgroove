@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
-  AlbumArtworkThumbnailDto,
   AlbumArtworkEditPreviewDto,
+  AlbumArtworkExportPreviewDto,
+  AlbumArtworkExportResultDto,
+  AlbumArtworkThumbnailDto,
   DatabaseRestorePreviewDto,
   LibraryArtistDto,
   LibraryFormatDto,
@@ -241,6 +243,11 @@ export function App(): React.JSX.Element {
   const [artworkEditResult, setArtworkEditResult] =
     useState<TagEditResultDto>();
   const [artworkEditError, setArtworkEditError] = useState<string>();
+  const [artworkExportPreview, setArtworkExportPreview] =
+    useState<AlbumArtworkExportPreviewDto>();
+  const [artworkExportResult, setArtworkExportResult] =
+    useState<AlbumArtworkExportResultDto>();
+  const [artworkExportError, setArtworkExportError] = useState<string>();
   const [artworkUndoPreview, setArtworkUndoPreview] =
     useState<AlbumArtworkEditPreviewDto>();
   const [artworkUndoResult, setArtworkUndoResult] =
@@ -764,6 +771,14 @@ export function App(): React.JSX.Element {
     setEditError(undefined);
     setUndoPreview(undefined);
     setUndoResult(undefined);
+    setArtworkEditPreview(undefined);
+    setArtworkEditResult(undefined);
+    setArtworkEditError(undefined);
+    setArtworkExportPreview(undefined);
+    setArtworkExportResult(undefined);
+    setArtworkExportError(undefined);
+    setArtworkUndoPreview(undefined);
+    setArtworkUndoResult(undefined);
     setHistoryError(undefined);
     setSelectedTrackId(undefined);
     setTrackEditPreview(undefined);
@@ -1108,6 +1123,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setArtworkEditResult(result.value);
         setArtworkEditPreview(undefined);
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
@@ -1120,6 +1137,50 @@ export function App(): React.JSX.Element {
       } else {
         setArtworkEditError(result.error.message);
         setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const prepareArtworkExport = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    setBusy(true);
+    setArtworkExportError(undefined);
+    setArtworkExportResult(undefined);
+    try {
+      const result = await window.outgroove.previewAlbumArtworkExport({
+        albumId: selectedAlbum.id,
+      });
+      if (result.ok) {
+        setArtworkExportPreview(result.value);
+      } else {
+        setArtworkExportError(result.error.message);
+        setNotice(result.error.message, "error");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportArtwork = async (): Promise<void> => {
+    if (!artworkExportPreview) return;
+    setBusy(true);
+    setArtworkExportError(undefined);
+    try {
+      const result = await window.outgroove.exportAlbumArtwork({
+        operationId: artworkExportPreview.operationId,
+        confirmationToken: artworkExportPreview.confirmationToken,
+      });
+      if (!result.ok) {
+        setArtworkExportError(result.error.message);
+        setNotice(result.error.message, "error");
+      } else if (result.value === null) {
+        setNotice("Artwork export cancelled.");
+      } else {
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(result.value);
+        setNotice("Artwork exported and verified.", "success");
       }
     } finally {
       setBusy(false);
@@ -1154,6 +1215,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setArtworkUndoResult(result.value);
         setArtworkUndoPreview(undefined);
+        setArtworkExportPreview(undefined);
+        setArtworkExportResult(undefined);
         const failures = result.value.results.filter((item) => !item.verified);
         setNotice(
           failures.length === 0
@@ -3405,6 +3468,9 @@ export function App(): React.JSX.Element {
               <AlbumArtworkEditor
                 busy={busy}
                 error={artworkEditError}
+                exportError={artworkExportError}
+                exportPreview={artworkExportPreview}
+                exportResult={artworkExportResult}
                 preview={artworkEditPreview}
                 result={artworkEditResult}
                 onCancelPreview={() => {
@@ -3413,6 +3479,8 @@ export function App(): React.JSX.Element {
                 }}
                 onChoose={() => void chooseArtwork()}
                 onConfirm={() => void applyArtwork()}
+                onExport={() => void exportArtwork()}
+                onPrepareExport={() => void prepareArtworkExport()}
               />
             )}
             {(libraryAlbumEditingTool === "title" ||

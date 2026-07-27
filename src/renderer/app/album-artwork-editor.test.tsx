@@ -3,7 +3,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AlbumArtworkEditPreviewDto } from "../../shared/contracts/api";
+import type {
+  AlbumArtworkEditPreviewDto,
+  AlbumArtworkExportPreviewDto,
+} from "../../shared/contracts/api";
 import { AlbumArtworkEditor } from "./album-artwork-editor";
 
 const preview: AlbumArtworkEditPreviewDto = {
@@ -35,6 +38,18 @@ const preview: AlbumArtworkEditPreviewDto = {
   ],
 };
 
+const exportPreview: AlbumArtworkExportPreviewDto = {
+  operationId: "9c92ba3d-d05a-47b5-914e-7886bb123712",
+  confirmationToken: "export-confirmation-token-long-enough",
+  artworkDataUrl: "data:image/png;base64,cHJldmlldw==",
+  source: "folder",
+  mimeType: "image/png",
+  byteLength: 1024,
+  width: 800,
+  height: 800,
+  suggestedFileName: "cover.png",
+};
+
 describe("AlbumArtworkEditor", () => {
   it("keeps choosing separate from the explicit keyboard confirmation", async () => {
     const user = userEvent.setup();
@@ -44,11 +59,16 @@ describe("AlbumArtworkEditor", () => {
       <AlbumArtworkEditor
         busy={false}
         error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
         preview={undefined}
         result={undefined}
         onCancelPreview={vi.fn()}
         onChoose={onChoose}
         onConfirm={onConfirm}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
       />,
     );
 
@@ -66,11 +86,16 @@ describe("AlbumArtworkEditor", () => {
       <AlbumArtworkEditor
         busy={false}
         error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
         preview={preview}
         result={undefined}
         onCancelPreview={vi.fn()}
         onChoose={vi.fn()}
         onConfirm={onConfirm}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
       />,
     );
 
@@ -90,5 +115,73 @@ describe("AlbumArtworkEditor", () => {
     confirm.focus();
     await user.keyboard("{Enter}");
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it("progressively discloses and keyboard-operates a read-only artwork export", async () => {
+    const user = userEvent.setup();
+    const onPrepareExport = vi.fn();
+    const onExport = vi.fn();
+    const { rerender } = render(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={undefined}
+        preview={undefined}
+        result={undefined}
+        onCancelPreview={vi.fn()}
+        onChoose={vi.fn()}
+        onConfirm={vi.fn()}
+        onExport={onExport}
+        onPrepareExport={onPrepareExport}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Prepare artwork export" }),
+    ).not.toBeVisible();
+    const disclosure = screen
+      .getByText("Export current artwork")
+      .closest("summary");
+    expect(disclosure).not.toBeNull();
+    if (!disclosure) return;
+    disclosure.focus();
+    await user.click(disclosure);
+    const prepare = screen.getByRole("button", {
+      name: "Prepare artwork export",
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    expect(onPrepareExport).toHaveBeenCalledOnce();
+    expect(onExport).not.toHaveBeenCalled();
+
+    rerender(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={exportPreview}
+        exportResult={undefined}
+        preview={undefined}
+        result={undefined}
+        onCancelPreview={vi.fn()}
+        onChoose={vi.fn()}
+        onConfirm={vi.fn()}
+        onExport={onExport}
+        onPrepareExport={onPrepareExport}
+      />,
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Artwork prepared for export" }),
+    ).toBeVisible();
+    expect(screen.getByText("Folder artwork")).toBeVisible();
+    const exportButton = screen.getByRole("button", {
+      name: "Export this artwork…",
+    });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    expect(onExport).toHaveBeenCalledOnce();
   });
 });
