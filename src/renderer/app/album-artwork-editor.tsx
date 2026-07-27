@@ -1,5 +1,7 @@
 import type {
   AlbumArtworkEditPreviewDto,
+  AlbumArtworkExportPreviewDto,
+  AlbumArtworkExportResultDto,
   TagEditResultDto,
 } from "../../shared/contracts/api";
 import {
@@ -17,19 +19,29 @@ function formatBytes(bytes: number): string {
 export function AlbumArtworkEditor({
   busy,
   error,
+  exportError,
+  exportPreview,
+  exportResult,
   preview,
   result,
   onCancelPreview,
   onChoose,
   onConfirm,
+  onExport,
+  onPrepareExport,
 }: {
   readonly busy: boolean;
   readonly error: string | undefined;
+  readonly exportError: string | undefined;
+  readonly exportPreview: AlbumArtworkExportPreviewDto | undefined;
+  readonly exportResult: AlbumArtworkExportResultDto | undefined;
   readonly preview: AlbumArtworkEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
   readonly onCancelPreview: () => void;
   readonly onChoose: () => void;
   readonly onConfirm: () => void;
+  readonly onExport: () => void;
+  readonly onPrepareExport: () => void;
 }): React.JSX.Element {
   const writableFiles = preview?.files.filter((file) => file.willWrite) ?? [];
   const blockedFiles =
@@ -146,6 +158,109 @@ export function AlbumArtworkEditor({
           subject="Artwork write"
         />
       )}
+
+      <details className="artwork-export-disclosure">
+        <summary>
+          <span>
+            <strong>Export current artwork</strong>
+            <small>
+              Save the cover Outgroove currently displays without changing
+              audio.
+            </small>
+          </span>
+        </summary>
+        <div className="artwork-export-content">
+          <p>
+            Preparing is read-only. Export uses a native save dialog, verifies
+            the new file byte-for-byte, and refuses to replace a file that
+            already exists.
+          </p>
+
+          {exportError && (
+            <div className="workflow-error" role="alert">
+              <strong>The artwork could not be exported.</strong>
+              <span>{exportError}</span>
+            </div>
+          )}
+
+          {exportPreview && (
+            <div
+              className="artwork-export-preview"
+              aria-label="Artwork export preview"
+            >
+              <div className="artwork-proposal">
+                <img
+                  alt="Artwork prepared for export"
+                  src={exportPreview.artworkDataUrl}
+                />
+                <dl>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>
+                      {exportPreview.source === "embedded"
+                        ? "Embedded artwork"
+                        : "Folder artwork"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Format</dt>
+                    <dd>
+                      {exportPreview.mimeType === "image/jpeg" ? "JPEG" : "PNG"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Dimensions</dt>
+                    <dd>
+                      {exportPreview.width} × {exportPreview.height}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>File size</dt>
+                    <dd>{formatBytes(exportPreview.byteLength)}</dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="workflow-actions">
+                <button
+                  className="primary"
+                  disabled={busy}
+                  onClick={onExport}
+                  type="button"
+                >
+                  Export this artwork…
+                </button>
+              </div>
+            </div>
+          )}
+
+          {exportResult && (
+            <div
+              className="workflow-result artwork-export-result"
+              aria-label="Artwork export result"
+              role="status"
+            >
+              <strong>Artwork exported and verified.</strong>
+              <span className="artwork-export-path">
+                {exportResult.destinationPath}
+              </span>
+              <span>
+                {formatBytes(exportResult.byteLength)} · SHA-256{" "}
+                {exportResult.sha256}
+              </span>
+            </div>
+          )}
+
+          {!exportPreview && (
+            <div className="workflow-actions">
+              <button disabled={busy} onClick={onPrepareExport} type="button">
+                {exportResult
+                  ? "Prepare another export"
+                  : "Prepare artwork export"}
+              </button>
+            </div>
+          )}
+        </div>
+      </details>
     </section>
   );
 }

@@ -152,6 +152,9 @@ export const albumEditUndoPreviewRequestSchema = z
 export const albumArtworkEditPreviewRequestSchema = z
   .object({ albumId: z.uuid() })
   .strict();
+export const albumArtworkExportPreviewRequestSchema = z
+  .object({ albumId: z.uuid() })
+  .strict();
 export const trackTagEditPreviewRequestSchema = z
   .object({
     fileId: z.uuid(),
@@ -430,6 +433,22 @@ export interface AlbumArtworkEditPreviewDto {
     readonly warnings: readonly string[];
   }[];
 }
+export interface AlbumArtworkExportPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly artworkDataUrl: string;
+  readonly source: "embedded" | "folder";
+  readonly mimeType: "image/jpeg" | "image/png";
+  readonly byteLength: number;
+  readonly width: number;
+  readonly height: number;
+  readonly suggestedFileName: string;
+}
+export interface AlbumArtworkExportResultDto {
+  readonly destinationPath: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
 export interface TrackTagEditPreviewDto {
   readonly operationId: string;
   readonly confirmationToken: string;
@@ -629,6 +648,12 @@ export interface OutgrooveApi {
   applyAlbumArtworkUndo(
     request: z.infer<typeof albumEditApplyRequestSchema>,
   ): Promise<Result<TagEditResultDto>>;
+  previewAlbumArtworkExport(
+    request: z.infer<typeof albumArtworkExportPreviewRequestSchema>,
+  ): Promise<Result<AlbumArtworkExportPreviewDto>>;
+  exportAlbumArtwork(
+    request: z.infer<typeof albumEditApplyRequestSchema>,
+  ): Promise<Result<AlbumArtworkExportResultDto | null>>;
   previewTrackTagEdit(
     request: z.infer<typeof trackTagEditPreviewRequestSchema>,
   ): Promise<Result<TrackTagEditPreviewDto>>;

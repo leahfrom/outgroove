@@ -2651,6 +2651,7 @@ pre {
 }
 .artwork-proposal dl {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 0.55rem;
   margin: 0;
 }
@@ -2661,6 +2662,49 @@ pre {
 }
 .artwork-proposal dt {
   font-weight: 750;
+}
+.artwork-export-disclosure {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #d4dcd6;
+}
+.artwork-export-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.artwork-export-disclosure summary:hover {
+  background: #f3f6f2;
+}
+.artwork-export-disclosure summary:focus-visible {
+  outline: 3px solid #e59b2d;
+  outline-offset: 2px;
+}
+.artwork-export-disclosure summary > span {
+  display: inline-grid;
+  gap: 0.15rem;
+  margin-left: 0.4rem;
+}
+.artwork-export-disclosure summary small,
+.artwork-export-content > p,
+.artwork-export-result span {
+  color: #526159;
+}
+.artwork-export-content {
+  padding: 0.5rem 0.8rem 0;
+}
+.artwork-export-result {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 1rem;
+}
+.artwork-export-path {
+  overflow-wrap: anywhere;
 }
 .confirmation-panel > .actions {
   justify-content: flex-end;

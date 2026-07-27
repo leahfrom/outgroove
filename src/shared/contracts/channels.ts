@@ -24,6 +24,8 @@ export const channels = {
   applyAlbumArtworkEdit: "tagging:apply-album-artwork",
   previewAlbumArtworkUndo: "tagging:preview-album-artwork-undo",
   applyAlbumArtworkUndo: "tagging:apply-album-artwork-undo",
+  previewAlbumArtworkExport: "artwork:preview-export",
+  exportAlbumArtwork: "artwork:export",
   previewTrackTagEdit: "tagging:preview-track-tags",
   applyTrackTagEdit: "tagging:apply-track-tags",
   previewTrackTagUndo: "tagging:preview-track-tags-undo",

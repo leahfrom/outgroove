@@ -52,7 +52,11 @@ describe("local artwork extraction", () => {
 
     const result = await readLocalArtwork(track);
 
-    expect(result).toEqual({ status: "available", data: embedded.data });
+    expect(result).toEqual({
+      status: "available",
+      data: embedded.data,
+      source: "folder",
+    });
     expect(result).not.toHaveProperty("path");
   });
 
