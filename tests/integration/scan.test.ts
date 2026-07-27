@@ -62,6 +62,12 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()[0]?.tracks[0]?.tags.lyricists).toEqual([]);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.isrcs).toEqual([]);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.copyright).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.comment).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.comments).toEqual([]);
+    expect(
+      database.listAlbums()[0]?.tracks[0]?.tags.originalReleaseDate,
+    ).toBeNull();
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.language).toBeNull();
     expect(database.listAlbums()[0]?.tracks[0]?.tags.trackTotal).toBe(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.discTotal).toBe(1);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
@@ -95,7 +101,8 @@ describe("incremental library scan", () => {
         `UPDATE audio_files
          SET normalized_tags_json=json_remove(
            normalized_tags_json, '$.trackTotal', '$.discTotal', '$.conductors',
-           '$.lyricists', '$.isrcs', '$.copyright'
+           '$.lyricists', '$.isrcs', '$.copyright', '$.comment', '$.comments',
+           '$.originalReleaseDate', '$.language'
          )
          WHERE scan_state='ok'`,
       )

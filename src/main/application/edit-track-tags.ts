@@ -66,6 +66,18 @@ function singleValueReplacementWarnings(
     warnings.push(
       "ISRC editing is unavailable for tracks with multiple ISRC values because this writer cannot restore them safely.",
     );
+  if (
+    "comment" in changes &&
+    !(
+      (tags.comments?.length ?? 0) === 0 ||
+      ((tags.comments?.length ?? 0) === 1 &&
+        (tags.comments?.[0]?.descriptor ?? "") === "" &&
+        ["", "eng"].includes(tags.comments?.[0]?.language ?? ""))
+    )
+  )
+    warnings.push(
+      "Comment editing is unavailable when the current file has multiple comments or comment language/descriptor data that this writer cannot restore exactly.",
+    );
   return warnings;
 }
 
@@ -81,9 +93,33 @@ function restorationValue(
     field === "isrcs"
   )
     return tags[field] ?? [];
-  if (field === "trackTotal" || field === "discTotal" || field === "copyright")
+  if (
+    field === "trackTotal" ||
+    field === "discTotal" ||
+    field === "copyright" ||
+    field === "comment" ||
+    field === "originalReleaseDate" ||
+    field === "language"
+  )
     return tags[field] ?? null;
   return tags[field];
+}
+
+function previewValue(
+  tags: NormalizedTags,
+  field: (typeof editableTrackTagFields)[number],
+): string | number | readonly string[] | null {
+  if (field !== "comment" || (tags.comments?.length ?? 0) === 0)
+    return tags[field] ?? null;
+  return (tags.comments ?? []).map((comment) => {
+    const context = [
+      comment.language ? `language ${comment.language}` : undefined,
+      comment.descriptor ? `descriptor ${comment.descriptor}` : undefined,
+    ].filter(Boolean);
+    return context.length > 0
+      ? `${comment.text} (${context.join(", ")})`
+      : comment.text;
+  });
 }
 
 type BatchTagChangeInput = Pick<
@@ -100,6 +136,8 @@ type BatchTagChangeInput = Pick<
   | "lyricists"
   | "isrcs"
   | "copyright"
+  | "originalReleaseDate"
+  | "language"
 >;
 
 function relationshipError(
@@ -160,7 +198,7 @@ export class EditTrackTags {
         .filter((field) => field in changes)
         .map((field) => ({
           field,
-          before: track.tags[field] ?? null,
+          before: previewValue(track.tags, field),
           after: changes[field] ?? null,
         })),
       warnings: [
@@ -320,7 +358,7 @@ export class EditTrackTags {
         .filter((field) => field in restoreChanges)
         .map((field) => ({
           field,
-          before: current[field] ?? null,
+          before: previewValue(current, field),
           after: restoreChanges[field] ?? null,
         })),
       warnings,
@@ -454,7 +492,7 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: track.tags[field] ?? null,
+            before: previewValue(track.tags, field),
             after: changes[field] ?? null,
           })),
         warnings: [
@@ -606,7 +644,7 @@ export class EditTrackTags {
           )
           .map((field) => ({
             field,
-            before: track.tags[field] ?? null,
+            before: previewValue(track.tags, field),
             after: changes[field] ?? null,
           })),
         warnings: this.writer.writableExtensions.has(extension)
@@ -819,7 +857,7 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: current[field] ?? null,
+            before: previewValue(current, field),
             after: changes[field] ?? null,
           })),
         warnings,

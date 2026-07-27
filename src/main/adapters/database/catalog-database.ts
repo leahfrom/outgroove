@@ -100,6 +100,10 @@ interface AudioFileRow {
   lyricists_type?: string | null;
   isrcs_type?: string | null;
   copyright_type?: string | null;
+  comments_type?: string | null;
+  comment_type?: string | null;
+  original_release_date_type?: string | null;
+  language_type?: string | null;
   track_total_type?: string | null;
   disc_total_type?: string | null;
 }
@@ -332,6 +336,10 @@ export class CatalogDatabase {
            json_type(normalized_tags_json, '$.lyricists') AS lyricists_type,
            json_type(normalized_tags_json, '$.isrcs') AS isrcs_type,
            json_type(normalized_tags_json, '$.copyright') AS copyright_type,
+           json_type(normalized_tags_json, '$.comments') AS comments_type,
+           json_type(normalized_tags_json, '$.comment') AS comment_type,
+           json_type(normalized_tags_json, '$.originalReleaseDate') AS original_release_date_type,
+           json_type(normalized_tags_json, '$.language') AS language_type,
            json_type(normalized_tags_json, '$.trackTotal') AS track_total_type,
            json_type(normalized_tags_json, '$.discTotal') AS disc_total_type
          FROM audio_files WHERE path_key = ?`,
@@ -1004,6 +1012,10 @@ export class CatalogDatabase {
         lyricists: file.tags.lyricists ?? [],
         isrcs: file.tags.isrcs ?? [],
         copyright: file.tags.copyright ?? null,
+        comment: file.tags.comment ?? null,
+        comments: file.tags.comments ?? [],
+        originalReleaseDate: file.tags.originalReleaseDate ?? null,
+        language: file.tags.language ?? null,
       }),
       JSON.stringify(file.nativeTags),
       now,
@@ -1130,6 +1142,13 @@ export class CatalogDatabase {
               existing.isrcs_type === "array" &&
               (existing.copyright_type === "text" ||
                 existing.copyright_type === "null") &&
+              existing.comments_type === "array" &&
+              (existing.comment_type === "text" ||
+                existing.comment_type === "null") &&
+              (existing.original_release_date_type === "text" ||
+                existing.original_release_date_type === "null") &&
+              (existing.language_type === "text" ||
+                existing.language_type === "null") &&
               (existing.track_total_type === "integer" ||
                 existing.track_total_type === "null") &&
               (existing.disc_total_type === "integer" ||

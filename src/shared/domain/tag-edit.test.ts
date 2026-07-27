@@ -34,6 +34,9 @@ describe("track metadata validation", () => {
         lyricists: ["  Fixture   Lyricist  "],
         isrcs: ["  DEABC2600001  "],
         copyright: "  Copyright   Fixture  ",
+        comment: "  First line\r\nSecond line  ",
+        originalReleaseDate: "  2020-03  ",
+        language: "  deu  ",
       }),
     ).toEqual({
       title: "Ä track",
@@ -47,6 +50,9 @@ describe("track metadata validation", () => {
       lyricists: ["Fixture Lyricist"],
       isrcs: ["DEABC2600001"],
       copyright: "Copyright Fixture",
+      comment: "First line\nSecond line",
+      originalReleaseDate: "2020-03",
+      language: "deu",
     });
     expect(() => normalizeTrackTagChanges({ title: "   " })).toThrow(
       "title cannot be empty",
@@ -96,6 +102,18 @@ describe("track metadata validation", () => {
     expect(() =>
       normalizeTrackTagChanges({ copyright: "C".repeat(1001) }),
     ).toThrow("copyright is too long");
+    expect(normalizeTrackTagChanges({ comment: "" })).toEqual({
+      comment: null,
+    });
+    expect(() =>
+      normalizeTrackTagChanges({ comment: "C".repeat(4001) }),
+    ).toThrow("comment is too long");
+    expect(() =>
+      normalizeTrackTagChanges({ originalReleaseDate: "2020-13" }),
+    ).toThrow("original release date must be YYYY");
+    expect(() =>
+      normalizeTrackTagChanges({ language: "L".repeat(101) }),
+    ).toThrow("language is too long");
   });
 
   it("validates explicit number and total relationships without correcting values", () => {

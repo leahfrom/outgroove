@@ -782,6 +782,15 @@ describe("validated IPC handlers", () => {
       handler({}, { fileId, changes: { discTotal: 0 } }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
+      handler({}, { fileId, changes: { originalReleaseDate: "2026-13" } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { comment: "C".repeat(4001) } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { language: "L".repeat(101) } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
       handler(
         {},
         {
@@ -835,6 +844,9 @@ describe("validated IPC handlers", () => {
             lyricists: ["  Fixture Lyricist  "],
             isrcs: ["  DEABC2600001  "],
             copyright: "  Copyright Fixture  ",
+            comment: "  Fixture comment  ",
+            originalReleaseDate: "  1998-04  ",
+            language: "  deu  ",
           },
         },
       ),
@@ -850,6 +862,9 @@ describe("validated IPC handlers", () => {
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: "Copyright Fixture",
+        comment: "Fixture comment",
+        originalReleaseDate: "1998-04",
+        language: "deu",
       },
     });
   });
@@ -877,6 +892,15 @@ describe("validated IPC handlers", () => {
         {
           fileIds: [first, second],
           changes: { lyricists: ["First Lyricist", "Second Lyricist"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { comment: "Comments stay single-track only" },
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
@@ -951,6 +975,8 @@ describe("validated IPC handlers", () => {
             lyricists: ["Fixture Lyricist"],
             isrcs: ["DEABC2600001"],
             copyright: null,
+            originalReleaseDate: "1998-04",
+            language: "deu",
           },
         },
       ),
@@ -966,6 +992,8 @@ describe("validated IPC handlers", () => {
         lyricists: ["Fixture Lyricist"],
         isrcs: ["DEABC2600001"],
         copyright: null,
+        originalReleaseDate: "1998-04",
+        language: "deu",
       },
     });
   });

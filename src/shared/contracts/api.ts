@@ -185,6 +185,14 @@ export const trackTagEditPreviewRequestSchema = z
         lyricists: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
         isrcs: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
         copyright: z.string().trim().max(1000).nullable().optional(),
+        comment: z.string().trim().max(4000).nullable().optional(),
+        originalReleaseDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        language: z.string().trim().max(100).nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -221,6 +229,13 @@ export const trackBatchEditPreviewRequestSchema = z
         lyricists: z.array(z.string().trim().min(1).max(400)).max(1).optional(),
         isrcs: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
         copyright: z.string().trim().max(1000).nullable().optional(),
+        originalReleaseDate: z
+          .string()
+          .trim()
+          .refine(isValidPartialDate)
+          .nullable()
+          .optional(),
+        language: z.string().trim().max(100).nullable().optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),

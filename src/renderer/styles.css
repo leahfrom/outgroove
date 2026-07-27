@@ -2537,10 +2537,16 @@ pre {
   overflow-wrap: anywhere;
   color: #425149;
 }
-.tag-comparison-proposed input {
+.tag-comparison-proposed input,
+.tag-comparison-proposed textarea {
   width: 100%;
   min-width: 0;
   margin: 0;
+}
+.tag-comparison-proposed textarea {
+  min-height: 6rem;
+  resize: vertical;
+  font: inherit;
 }
 .mixed-values summary {
   width: fit-content;

@@ -10,6 +10,7 @@ import type {
 } from "../../../shared/domain/catalog";
 import {
   normalizeGenres,
+  normalizeComments,
   normalizeNumber,
   normalizeTagText,
   normalizeTagTextList,
@@ -46,6 +47,7 @@ export class MusicMetadataReader implements MetadataReader {
       throw new Error("Unsupported or malformed audio file.");
     }
     const common = metadata.common;
+    const comments = normalizeComments(common.comment);
     const artist = normalizeTagText(common.artist, "Unknown artist");
     const codec = normalizeTagText(metadata.format.codec, "");
     const tags: NormalizedTags = {
@@ -68,6 +70,10 @@ export class MusicMetadataReader implements MetadataReader {
       lyricists: normalizeTagTextList(common.lyricist),
       isrcs: normalizeTagTextList(common.isrc),
       copyright: normalizeTagText(common.copyright, "") || null,
+      comment: comments.length === 1 ? (comments[0]?.text ?? null) : null,
+      comments,
+      originalReleaseDate: normalizeTagText(common.originaldate, "") || null,
+      language: normalizeTagText(common.language, "") || null,
     };
     const nativeTags: NativeTagValue[] = Object.entries(
       metadata.native,

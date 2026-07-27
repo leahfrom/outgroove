@@ -33,6 +33,8 @@ const firstTrack: CatalogAlbum["tracks"][number] = {
     lyricists: ["First Lyricist"],
     isrcs: ["DEABC2600001"],
     copyright: "First Copyright",
+    originalReleaseDate: "2020",
+    language: "eng",
   },
   nativeTags: [],
   scanError: null,
@@ -58,6 +60,8 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
     lyricists: ["Second Lyricist"],
     isrcs: ["DEABC2600002"],
     copyright: "Second Copyright",
+    originalReleaseDate: "2021-04",
+    language: "deu",
   },
 };
 
@@ -74,6 +78,8 @@ const disabledFields: SharedFieldEnabled = {
   lyricist: false,
   isrc: false,
   copyright: false,
+  originalReleaseDate: false,
+  language: false,
 };
 
 const emptyDraft: SharedFieldDraft = {
@@ -89,6 +95,8 @@ const emptyDraft: SharedFieldDraft = {
   lyricist: "",
   isrc: "",
   copyright: "",
+  originalReleaseDate: "",
+  language: "",
 };
 
 function editor({
@@ -207,6 +215,12 @@ describe("SharedFieldEditor", () => {
     );
     expect(screen.getByLabelText("Batch copyright value")).toHaveAccessibleName(
       "Batch copyright value",
+    );
+    expect(
+      screen.getByLabelText("Batch original release date value"),
+    ).toHaveAccessibleName("Batch original release date value");
+    expect(screen.getByLabelText("Batch language value")).toHaveAccessibleName(
+      "Batch language value",
     );
   });
 

@@ -31,6 +31,8 @@ export interface SharedFieldDraft {
   lyricist: string;
   isrc: string;
   copyright: string;
+  originalReleaseDate: string;
+  language: string;
 }
 
 export type SharedFieldEnabled = Record<keyof SharedFieldDraft, boolean>;
@@ -127,6 +129,18 @@ const moreComparisonFields: readonly SharedComparisonField[] = [
     inputLabel: "Batch copyright value",
     placeholder: "Empty clears",
   },
+  {
+    field: "originalReleaseDate",
+    label: "Original release date",
+    inputLabel: "Batch original release date value",
+    placeholder: "YYYY, YYYY-MM, YYYY-MM-DD; empty clears",
+  },
+  {
+    field: "language",
+    label: "Language",
+    inputLabel: "Batch language value",
+    placeholder: "Track language; empty clears",
+  },
 ];
 
 const previewFieldLabels: Record<string, string> = {
@@ -142,6 +156,8 @@ const previewFieldLabels: Record<string, string> = {
   lyricists: "Lyricist",
   isrcs: "ISRC",
   copyright: "Copyright",
+  originalReleaseDate: "Original release date",
+  language: "Language",
 };
 
 function currentValue(track: CatalogTrack, field: SharedField): string {
@@ -170,6 +186,10 @@ function currentValue(track: CatalogTrack, field: SharedField): string {
       return (track.tags.isrcs ?? []).join(" · ");
     case "copyright":
       return track.tags.copyright ?? "";
+    case "originalReleaseDate":
+      return track.tags.originalReleaseDate ?? "";
+    case "language":
+      return track.tags.language ?? "";
   }
 }
 
@@ -276,7 +296,8 @@ function SharedFieldEditorComponent(
             totals are explicit shared proposals and never renumber the selected
             tracks. Conductor and Lyricist follow the same one-value rule as
             Composer. ISRC also accepts one value. Secondary fields are grouped
-            under More fields.
+            under More fields. Original release date and track language are
+            opt-in shared proposals.
           </>
         }
       />
