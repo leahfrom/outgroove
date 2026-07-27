@@ -2189,6 +2189,9 @@ h1 {
 .candidate-artwork-preview figcaption span {
   overflow-wrap: anywhere;
 }
+.candidate-artwork-preview figcaption button {
+  justify-self: start;
+}
 .candidate-draft {
   display: grid;
   gap: 0.65rem;
@@ -2984,6 +2987,10 @@ pre {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.55rem;
+  margin: 0;
+}
+.artwork-proposal > .metadata-draft-source {
+  grid-column: 1 / -1;
   margin: 0;
 }
 .artwork-proposal dl div {

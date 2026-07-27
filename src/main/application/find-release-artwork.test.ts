@@ -33,6 +33,116 @@ const releaseId = "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef";
 const bytes = new Uint8Array([137, 80, 78, 71]);
 
 describe("find release artwork", () => {
+  it("re-resolves only the exact displayed artwork identity before creating the existing replacement preview", async () => {
+    const loadOriginalFrontArtwork = vi.fn(() =>
+      Promise.resolve({
+        id: "829521842",
+        types: ["Front"],
+        front: true,
+        back: false,
+        approved: true,
+        comment: "Exact edition",
+        originalExtension: "png" as const,
+        data: bytes,
+        width: 1200,
+        height: 1200,
+        mimeType: "image/png" as const,
+      }),
+    );
+    const preview = {
+      operationId: "36e97945-004e-4771-bf22-b3891bb811c4",
+      confirmationToken: "confirmation-token-long-enough",
+      action: "replace" as const,
+      files: [],
+    };
+    const previewData = vi.fn(() => Promise.resolve(preview));
+    const service = new FindReleaseArtwork(
+      { getAlbum: () => album },
+      { loadFrontArtwork: vi.fn(), loadOriginalFrontArtwork },
+      { encode: vi.fn() },
+      { previewData },
+    );
+
+    await expect(
+      service.previewReplacement(album.id, releaseId, "829521842"),
+    ).resolves.toBe(preview);
+    expect(loadOriginalFrontArtwork).toHaveBeenCalledWith(
+      releaseId,
+      "829521842",
+      expect.any(AbortSignal),
+    );
+    expect(previewData).toHaveBeenCalledWith(album.id, bytes, {
+      kind: "cover-art-archive",
+      releaseId,
+      artworkId: "829521842",
+    });
+    expect(JSON.stringify(loadOriginalFrontArtwork.mock.calls)).not.toContain(
+      "/private/not-sent.flac",
+    );
+  });
+
+  it("refuses a changed artwork identity and cancels original-image preparation", async () => {
+    const changedPreview = vi.fn();
+    const changed = new FindReleaseArtwork(
+      { getAlbum: () => album },
+      {
+        loadFrontArtwork: vi.fn(),
+        loadOriginalFrontArtwork: vi.fn(() =>
+          Promise.resolve({
+            id: "999999999",
+            types: ["Front"],
+            front: true,
+            back: false,
+            approved: true,
+            comment: null,
+            originalExtension: "png" as const,
+            data: bytes,
+            width: 1,
+            height: 1,
+            mimeType: "image/png" as const,
+          }),
+        ),
+      },
+      { encode: vi.fn() },
+      { previewData: changedPreview },
+    );
+    await expect(
+      changed.previewReplacement(album.id, releaseId, "829521842"),
+    ).rejects.toThrow("different artwork identity");
+    expect(changedPreview).not.toHaveBeenCalled();
+
+    let signal: AbortSignal | undefined;
+    const cancellable = new FindReleaseArtwork(
+      { getAlbum: () => album },
+      {
+        loadFrontArtwork: vi.fn(),
+        loadOriginalFrontArtwork: vi.fn(
+          (
+            _releaseId: string,
+            _artworkId: string,
+            requestSignal: AbortSignal,
+          ) =>
+            new Promise<never>((_resolve, reject) => {
+              signal = requestSignal;
+              requestSignal.addEventListener("abort", () =>
+                reject(new DOMException("cancelled", "AbortError")),
+              );
+            }),
+        ),
+      },
+      { encode: vi.fn() },
+      { previewData: vi.fn() },
+    );
+    const pending = cancellable.previewReplacement(
+      album.id,
+      releaseId,
+      "829521842",
+    );
+    expect(cancellable.cancel(album.id)).toEqual({ cancelled: true });
+    expect(signal?.aborted).toBe(true);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("sends only the selected release identity and returns an encoded read-only preview", async () => {
     const loadFrontArtwork = vi.fn(() =>
       Promise.resolve({
@@ -45,6 +155,7 @@ describe("find release artwork", () => {
           back: false,
           approved: true,
           comment: "Exact edition",
+          originalExtension: "png" as const,
           data: bytes,
           width: 500,
           height: 500,
@@ -55,8 +166,9 @@ describe("find release artwork", () => {
     const encode = vi.fn(() => "data:image/png;base64,fixture");
     const service = new FindReleaseArtwork(
       { getAlbum: () => album },
-      { loadFrontArtwork },
+      { loadFrontArtwork, loadOriginalFrontArtwork: vi.fn() },
       { encode },
+      { previewData: vi.fn() },
     );
 
     await expect(service.load(album.id, releaseId)).resolves.toEqual({
@@ -102,6 +214,7 @@ describe("find release artwork", () => {
             back: false,
             approved: false,
             comment: null,
+            originalExtension: "png" as const,
             data: bytes,
             width: 1,
             height: 1,
@@ -109,20 +222,27 @@ describe("find release artwork", () => {
           },
         }),
       ),
+      loadOriginalFrontArtwork: vi.fn(),
     };
     const missing = new FindReleaseArtwork(
       { getAlbum: () => undefined },
       provider,
       { encode: vi.fn() },
+      { previewData: vi.fn() },
     );
     await expect(missing.load(album.id, releaseId)).rejects.toThrow(
       "no longer in the Library",
     );
     expect(provider.loadFrontArtwork).not.toHaveBeenCalled();
 
-    const unsafe = new FindReleaseArtwork({ getAlbum: () => album }, provider, {
-      encode: () => undefined,
-    });
+    const unsafe = new FindReleaseArtwork(
+      { getAlbum: () => album },
+      provider,
+      {
+        encode: () => undefined,
+      },
+      { previewData: vi.fn() },
+    );
     await expect(unsafe.load(album.id, releaseId)).rejects.toThrow(
       "could not be decoded safely",
     );
@@ -142,8 +262,10 @@ describe("find release artwork", () => {
               );
             }),
         ),
+        loadOriginalFrontArtwork: vi.fn(),
       },
       { encode: vi.fn() },
+      { previewData: vi.fn() },
     );
     const pending = service.load(album.id, releaseId);
     expect(service.cancel(album.id)).toEqual({ cancelled: true });
@@ -161,8 +283,10 @@ describe("find release artwork", () => {
             artwork: null,
           }),
         ),
+        loadOriginalFrontArtwork: vi.fn(),
       },
       { encode: vi.fn() },
+      { previewData: vi.fn() },
     );
     await expect(missing.load(album.id, releaseId)).resolves.toMatchObject({
       artwork: null,

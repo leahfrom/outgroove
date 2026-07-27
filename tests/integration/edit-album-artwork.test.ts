@@ -77,6 +77,7 @@ async function createArtworkEditor() {
     database,
     files,
     selectedPath,
+    reader,
     writer,
     editor: new EditAlbumArtwork(database, writer, {
       encode: () => "data:image/png;base64,preview",
@@ -131,6 +132,95 @@ it("previews, confirms, verifies, deduplicates snapshots, and restores album art
 
   const undoPreview = await editor.previewUndo(preview.operationId);
   expect(undoPreview.action).toBe("restore");
+  const undo = await editor.apply(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+    "album-artwork-undo",
+  );
+  expect(undo.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries())
+    expect(picturesFingerprint((await loadTrack(file.path)).pictures)).toBe(
+      beforePictures[index],
+    );
+  database.close();
+});
+
+it("previews a provider image through the same verified MP3/FLAC write and undo path", async () => {
+  const { albumId, database, editor, files, reader } =
+    await createArtworkEditor();
+  const beforePictures = await Promise.all(
+    files.map(({ path }) =>
+      loadTrack(path).then((track) => picturesFingerprint(track.pictures)),
+    ),
+  );
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const privateTags = await Promise.all(
+    files.map(({ path }) =>
+      reader
+        .read(path)
+        .then((metadata) =>
+          metadata.nativeTags.filter((tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE"),
+          ),
+        ),
+    ),
+  );
+  expect(privateTags.every((tags) => tags.length > 0)).toBe(true);
+
+  const preview = await editor.previewData(albumId, selectedPng, {
+    kind: "cover-art-archive",
+    releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    artworkId: "829521842",
+  });
+  expect(preview).toMatchObject({
+    action: "replace",
+    proposedArtworkSource: {
+      kind: "cover-art-archive",
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      artworkId: "829521842",
+    },
+    mimeType: "image/png",
+    width: 1,
+    height: 1,
+  });
+  expect(preview.files.every((file) => file.willWrite)).toBe(true);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(result.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries()) {
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+    const after = await reader.read(file.path);
+    for (const privateTag of privateTags[index] ?? []) {
+      const nativeId = privateTag.id.replace(/^ID3v2\.\d:/u, "");
+      expect(
+        after.nativeTags.some(
+          (tag) => tag.id.endsWith(nativeId) && tag.value === privateTag.value,
+        ),
+      ).toBe(true);
+    }
+  }
+
+  const noOpPreview = await editor.previewData(albumId, selectedPng, {
+    kind: "cover-art-archive",
+    releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    artworkId: "829521842",
+  });
+  expect(noOpPreview.files.every((item) => !item.willWrite)).toBe(true);
+  const noOpResult = await editor.apply(
+    noOpPreview.operationId,
+    noOpPreview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(noOpResult.results.every((item) => item.verified)).toBe(true);
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+
+  const undoPreview = await editor.previewUndo(preview.operationId);
   const undo = await editor.apply(
     undoPreview.operationId,
     undoPreview.confirmationToken,

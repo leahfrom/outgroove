@@ -119,6 +119,35 @@ describe("Cover Art Archive adapter", () => {
       "not-sent",
     );
     expect(storage.records.size).toBe(1);
+
+    await expect(
+      client.loadOriginalFrontArtwork(
+        releaseId,
+        "829521842",
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      id: "829521842",
+      width: 1,
+      height: 1,
+      mimeType: "image/png",
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
+    expect(
+      fetchImplementation.mock.calls.map(([input]) =>
+        input instanceof Request ? input.url : input.toString(),
+      ),
+    ).toContain(
+      `https://coverartarchive.org/release/${releaseId}/829521842.jpg`,
+    );
+    await expect(
+      client.loadOriginalFrontArtwork(
+        releaseId,
+        "999999999",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("changed after it was displayed");
+    expect(fetchImplementation).toHaveBeenCalledTimes(5);
   });
 
   it("uses fresh metadata and bounded in-memory thumbnail caches without another request", async () => {
@@ -183,6 +212,30 @@ describe("Cover Art Archive adapter", () => {
       mismatchClient.loadFrontArtwork(releaseId, new AbortController().signal),
     ).rejects.toThrow("different release");
 
+    const unsafeOriginal = JSON.parse(fixture) as {
+      images: { image: string }[];
+    };
+    const firstImage = unsafeOriginal.images[0];
+    if (!firstImage) throw new Error("Cover fixture image missing");
+    firstImage.image = "https://example.com/private.png";
+    const unsafeOriginalClient = new CoverArtArchiveClient(
+      cache(),
+      "Outgroove/test",
+      {
+        fetch: vi.fn(() =>
+          Promise.resolve(
+            new Response(JSON.stringify(unsafeOriginal), { status: 200 }),
+          ),
+        ),
+      },
+    );
+    await expect(
+      unsafeOriginalClient.loadFrontArtwork(
+        releaseId,
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("unsafe original-image identity");
+
     const redirectClient = new CoverArtArchiveClient(
       cache(),
       "Outgroove/test",
@@ -235,6 +288,47 @@ describe("Cover Art Archive adapter", () => {
     await expect(
       oversizedClient.loadFrontArtwork(releaseId, new AbortController().signal),
     ).rejects.toThrow("unexpectedly large metadata");
+  });
+
+  it("bounds and validates the exact original image independently of its thumbnail", async () => {
+    const oversized = new CoverArtArchiveClient(cache(), "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(new Response(fixture, { status: 200 }))
+        .mockResolvedValueOnce(new Response(thumbnail, { status: 200 }))
+        .mockResolvedValueOnce(
+          new Response("", {
+            status: 200,
+            headers: { "content-length": String(8 * 1024 * 1024 + 1) },
+          }),
+        ),
+    });
+    await oversized.loadFrontArtwork(releaseId, new AbortController().signal);
+    await expect(
+      oversized.loadOriginalFrontArtwork(
+        releaseId,
+        "829521842",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("exceeds Outgroove's 8 MiB artwork limit");
+
+    const invalid = new CoverArtArchiveClient(cache(), "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(new Response(fixture, { status: 200 }))
+        .mockResolvedValueOnce(new Response(thumbnail, { status: 200 }))
+        .mockResolvedValueOnce(
+          new Response("not an original image", { status: 200 }),
+        ),
+    });
+    await invalid.loadFrontArtwork(releaseId, new AbortController().signal);
+    await expect(
+      invalid.loadOriginalFrontArtwork(
+        releaseId,
+        "829521842",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("invalid or unsafe original");
   });
 
   it("retries temporary refusal with bounded delay and preserves cancellation", async () => {

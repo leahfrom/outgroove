@@ -13,6 +13,7 @@ import {
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
   albumIdentificationRequestSchema,
+  coverArtArchiveArtworkEditPreviewRequestSchema,
   coverArtArchiveRequestSchema,
   databaseRestoreApplyRequestSchema,
   createSavedLibraryFilterRequestSchema,
@@ -267,6 +268,18 @@ export function registerIpc(
       coverArtArchiveRequestSchema,
       ({ albumId, releaseId }) =>
         dependencies.releaseArtwork.load(albumId, releaseId),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewCoverArtArchiveArtworkEdit,
+    createValidatedHandler(
+      coverArtArchiveArtworkEditPreviewRequestSchema,
+      ({ albumId, releaseId, artworkId }) =>
+        dependencies.releaseArtwork.previewReplacement(
+          albumId,
+          releaseId,
+          artworkId,
+        ),
     ),
   );
   ipcMain.handle(

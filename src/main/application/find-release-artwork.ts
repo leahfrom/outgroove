@@ -1,7 +1,13 @@
-import type { CoverArtArchiveResultDto } from "../../shared/contracts/api";
+import type {
+  AlbumArtworkEditPreviewDto,
+  CoverArtArchiveResultDto,
+} from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
 import type { ArtworkThumbnailEncoder } from "../adapters/artwork/artwork-thumbnail";
-import type { CoverArtArchiveResult } from "../adapters/providers/cover-art-archive-client";
+import type {
+  CoverArtArchiveArtwork,
+  CoverArtArchiveResult,
+} from "../adapters/providers/cover-art-archive-client";
 
 interface AlbumCatalog {
   getAlbum(id: string): CatalogAlbum | undefined;
@@ -12,6 +18,19 @@ interface ReleaseArtworkProvider {
     releaseId: string,
     signal: AbortSignal,
   ): Promise<CoverArtArchiveResult>;
+  loadOriginalFrontArtwork(
+    releaseId: string,
+    expectedArtworkId: string,
+    signal: AbortSignal,
+  ): Promise<CoverArtArchiveArtwork>;
+}
+
+interface ReleaseArtworkEditor {
+  previewData(
+    albumId: string,
+    data: Uint8Array,
+    source: NonNullable<AlbumArtworkEditPreviewDto["proposedArtworkSource"]>,
+  ): Promise<AlbumArtworkEditPreviewDto>;
 }
 
 export class FindReleaseArtwork {
@@ -21,6 +40,7 @@ export class FindReleaseArtwork {
     private readonly catalog: AlbumCatalog,
     private readonly provider: ReleaseArtworkProvider,
     private readonly encoder: ArtworkThumbnailEncoder,
+    private readonly editor: ReleaseArtworkEditor,
   ) {}
 
   async load(
@@ -67,6 +87,36 @@ export class FindReleaseArtwork {
         fetchedAt: result.fetchedAt,
         readOnly: true,
       };
+    } finally {
+      if (this.active.get(albumId) === controller) this.active.delete(albumId);
+    }
+  }
+
+  async previewReplacement(
+    albumId: string,
+    releaseId: string,
+    artworkId: string,
+  ): Promise<AlbumArtworkEditPreviewDto> {
+    if (!this.catalog.getAlbum(albumId))
+      throw new Error("The album is no longer in the Library.");
+    this.cancel(albumId);
+    const controller = new AbortController();
+    this.active.set(albumId, controller);
+    try {
+      const artwork = await this.provider.loadOriginalFrontArtwork(
+        releaseId,
+        artworkId,
+        controller.signal,
+      );
+      if (artwork.id !== artworkId)
+        throw new Error(
+          "The Cover Art Archive returned a different artwork identity.",
+        );
+      return await this.editor.previewData(albumId, artwork.data, {
+        kind: "cover-art-archive",
+        releaseId,
+        artworkId,
+      });
     } finally {
       if (this.active.get(albumId) === controller) this.active.delete(albumId);
     }

@@ -54,9 +54,12 @@ describe("CoverArtArchivePreview", () => {
         candidate={candidate}
         error={undefined}
         loading={false}
+        prepareError={undefined}
+        preparing={false}
         result={undefined}
         onCancel={vi.fn()}
         onLoad={onLoad}
+        onPrepare={vi.fn()}
       />,
     );
     const section = screen.getByRole("region", {
@@ -68,9 +71,7 @@ describe("CoverArtArchivePreview", () => {
     expect(section).toHaveTextContent(
       "never sends audio, current artwork, tags, or file paths",
     );
-    expect(section).toHaveTextContent(
-      "cannot preview or start an artwork write",
-    );
+    expect(section).toHaveTextContent("cannot start an artwork write");
     expect(onLoad).not.toHaveBeenCalled();
     const button = screen.getByRole("button", {
       name: `Load Cover Art Archive front cover for ${candidate.title}, ${candidate.date}`,
@@ -80,15 +81,20 @@ describe("CoverArtArchivePreview", () => {
     expect(onLoad).toHaveBeenCalledOnce();
   });
 
-  it("renders only a safe read-only preview with accessible artwork text", () => {
+  it("renders a safe thumbnail and requires a separate keyboard action to prepare the original", async () => {
+    const user = userEvent.setup();
+    const onPrepare = vi.fn();
     render(
       <CoverArtArchivePreview
         candidate={candidate}
         error={undefined}
         loading={false}
+        prepareError={undefined}
+        preparing={false}
         result={result}
         onCancel={vi.fn()}
         onLoad={vi.fn()}
+        onPrepare={onPrepare}
       />,
     );
     const image = screen.getByRole("img", {
@@ -99,8 +105,15 @@ describe("CoverArtArchivePreview", () => {
     expect(screen.getByText(/Approved in MusicBrainz/u)).toBeVisible();
     expect(screen.getByText(/500 × 500 · 1 KiB/u)).toBeVisible();
     expect(screen.getByText(/No Library artwork changed/u)).toBeVisible();
+    expect(onPrepare).not.toHaveBeenCalled();
+    const prepare = screen.getByRole("button", {
+      name: `Prepare Cover Art Archive artwork from ${candidate.title}, ${candidate.date}, for replacement review`,
+    });
+    prepare.focus();
+    await user.keyboard("{Enter}");
+    expect(onPrepare).toHaveBeenCalledWith(result.artwork?.id);
     expect(
-      screen.queryByRole("button", { name: /apply|write|replace|remove/u }),
+      screen.queryByRole("button", { name: /confirm|write now|apply/u }),
     ).not.toBeInTheDocument();
   });
 
@@ -112,9 +125,12 @@ describe("CoverArtArchivePreview", () => {
         candidate={candidate}
         error={undefined}
         loading
+        prepareError={undefined}
+        preparing={false}
         result={undefined}
         onCancel={onCancel}
         onLoad={vi.fn()}
+        onPrepare={vi.fn()}
       />,
     );
     const cancel = screen.getByRole("button", {
@@ -129,9 +145,12 @@ describe("CoverArtArchivePreview", () => {
         candidate={candidate}
         error="Cover Art Archive is unavailable."
         loading={false}
+        prepareError={undefined}
+        preparing={false}
         result={undefined}
         onCancel={onCancel}
         onLoad={vi.fn()}
+        onPrepare={vi.fn()}
       />,
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -143,9 +162,12 @@ describe("CoverArtArchivePreview", () => {
         candidate={candidate}
         error={undefined}
         loading={false}
+        prepareError={undefined}
+        preparing={false}
         result={{ ...result, artwork: null }}
         onCancel={onCancel}
         onLoad={vi.fn()}
+        onPrepare={vi.fn()}
       />,
     );
     expect(screen.getByText(/No front cover is indexed/u)).toHaveTextContent(
