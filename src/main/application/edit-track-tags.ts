@@ -11,6 +11,7 @@ import {
   changedTrackTags,
   editableTrackTagFields,
   normalizeTrackTagChanges,
+  trackTagValueEquals,
 } from "../../shared/domain/tag-edit";
 import type { TrackTagChanges } from "../../shared/domain/tag-edit";
 import type { TrackTagChangeInput } from "../../shared/domain/tag-edit";
@@ -34,13 +35,23 @@ function targetedFieldsChanged(
   changes: TrackTagChanges,
 ): boolean {
   return editableTrackTagFields.some(
-    (field) => field in changes && before[field] !== current[field],
+    (field) =>
+      field in changes && !trackTagValueEquals(before[field], current[field]),
   );
+}
+
+function genreReplacementWarning(
+  tags: NormalizedTags,
+  changes: TrackTagChanges,
+): string | undefined {
+  return "genres" in changes && (tags.genres?.length ?? 0) > 1
+    ? "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely."
+    : undefined;
 }
 
 type BatchTagChangeInput = Pick<
   TrackTagChangeInput,
-  "artist" | "albumArtist" | "discNumber" | "year"
+  "artist" | "albumArtist" | "discNumber" | "year" | "genres"
 >;
 
 interface StoredBatchPreview {
@@ -78,6 +89,7 @@ export class EditTrackTags {
       tokenHash(confirmationToken),
     );
     const extension = extname(track.path).toLocaleLowerCase("en-US");
+    const genreWarning = genreReplacementWarning(track.tags, changes);
     return {
       operationId,
       confirmationToken,
@@ -87,12 +99,15 @@ export class EditTrackTags {
         .filter((field) => field in changes)
         .map((field) => ({
           field,
-          before: track.tags[field],
+          before: track.tags[field] ?? null,
           after: changes[field] ?? null,
         })),
-      warnings: this.writer.writableExtensions.has(extension)
-        ? []
-        : [`${extension || "This format"} is read-only in this slice.`],
+      warnings: [
+        ...(this.writer.writableExtensions.has(extension)
+          ? []
+          : [`${extension || "This format"} is read-only in this slice.`]),
+        ...(genreWarning ? [genreWarning] : []),
+      ],
     };
   }
 
@@ -138,6 +153,8 @@ export class EditTrackTags {
     let error: string | null = null;
     if (target?.scanState !== "ok")
       error = "The file is not currently available for writing.";
+    else if (genreReplacementWarning(current, changes))
+      error = genreReplacementWarning(current, changes) ?? null;
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -237,7 +254,7 @@ export class EditTrackTags {
         .filter((field) => field in restoreChanges)
         .map((field) => ({
           field,
-          before: current[field],
+          before: current[field] ?? null,
           after: restoreChanges[field] ?? null,
         })),
       warnings,
@@ -360,6 +377,7 @@ export class EditTrackTags {
     const files = tracks.map(({ fileId, track }) => {
       const changes = changedTrackTags(track.tags, proposed);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
+      const genreWarning = genreReplacementWarning(track.tags, changes);
       return {
         fileId,
         path: track.path,
@@ -367,12 +385,15 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: track.tags[field],
+            before: track.tags[field] ?? null,
             after: changes[field] ?? null,
           })),
-        warnings: this.writer.writableExtensions.has(extension)
-          ? []
-          : [`${extension || "This format"} is read-only in this slice.`],
+        warnings: [
+          ...(this.writer.writableExtensions.has(extension)
+            ? []
+            : [`${extension || "This format"} is read-only in this slice.`]),
+          ...(genreWarning ? [genreWarning] : []),
+        ],
         willWrite: Object.keys(changes).length > 0,
         tags: track.tags,
       };
@@ -444,6 +465,8 @@ export class EditTrackTags {
       let error: string | null = null;
       if (target?.scanState !== "ok")
         error = "The file is not currently available for writing.";
+      else if (genreReplacementWarning(current, changes))
+        error = genreReplacementWarning(current, changes) ?? null;
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -508,7 +531,7 @@ export class EditTrackTags {
           )
           .map((field) => ({
             field,
-            before: track.tags[field],
+            before: track.tags[field] ?? null,
             after: changes[field] ?? null,
           })),
         warnings: this.writer.writableExtensions.has(extension)
@@ -713,7 +736,7 @@ export class EditTrackTags {
           .filter((field) => field in changes)
           .map((field) => ({
             field,
-            before: current[field],
+            before: current[field] ?? null,
             after: changes[field] ?? null,
           })),
         warnings,

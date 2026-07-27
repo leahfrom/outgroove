@@ -174,6 +174,7 @@ export const trackTagEditPreviewRequestSchema = z
           .refine(isValidPartialDate)
           .nullable()
           .optional(),
+        genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -199,6 +200,7 @@ export const trackBatchEditPreviewRequestSchema = z
           .refine(isValidPartialDate)
           .nullable()
           .optional(),
+        genres: z.array(z.string().trim().min(1).max(100)).max(1).optional(),
       })
       .strict()
       .refine((changes) => Object.keys(changes).length > 0),
@@ -475,8 +477,8 @@ export interface TrackTagEditPreviewDto {
   readonly path: string;
   readonly changes: readonly {
     field: EditableTrackTagField;
-    before: string | number | null;
-    after: string | number | null;
+    before: string | number | readonly string[] | null;
+    after: string | number | readonly string[] | null;
   }[];
   readonly warnings: readonly string[];
 }

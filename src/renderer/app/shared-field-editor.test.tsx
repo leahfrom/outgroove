@@ -25,6 +25,7 @@ const firstTrack: CatalogAlbum["tracks"][number] = {
     trackNumber: 1,
     discNumber: 1,
     year: null,
+    genres: ["Post Rock"],
   },
   nativeTags: [],
   scanError: null,
@@ -42,6 +43,7 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
     trackNumber: 2,
     discNumber: null,
     year: "2026-07",
+    genres: ["Metal"],
   },
 };
 
@@ -50,6 +52,7 @@ const disabledFields: SharedFieldEnabled = {
   albumArtist: false,
   discNumber: false,
   year: false,
+  genre: false,
 };
 
 const emptyDraft: SharedFieldDraft = {
@@ -57,6 +60,7 @@ const emptyDraft: SharedFieldDraft = {
   albumArtist: "",
   discNumber: "",
   year: "",
+  genre: "",
 };
 
 function editor({
@@ -96,7 +100,7 @@ describe("SharedFieldEditor", () => {
     render(editor());
 
     const comparison = screen.getByLabelText("Shared tag comparison");
-    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(3);
+    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(4);
     expect(within(comparison).getByText("Shared Album Artist")).toBeVisible();
     expect(screen.getByText("No shared fields selected.")).toBeVisible();
     expect(
@@ -122,6 +126,14 @@ describe("SharedFieldEditor", () => {
       throw new Error("Disc number comparison row missing");
     await user.click(within(discRow).getByText("Mixed values"));
     expect(within(discRow).getByText("Not set")).toBeVisible();
+
+    const genreInput = screen.getByLabelText("Batch genre value");
+    const genreRow = genreInput.closest(".tag-comparison-row");
+    if (!(genreRow instanceof HTMLElement))
+      throw new Error("Genre comparison row missing");
+    await user.click(within(genreRow).getByText("Mixed values"));
+    expect(within(genreRow).getByText("Post Rock")).toBeVisible();
+    expect(within(genreRow).getByText("Metal")).toBeVisible();
   });
 
   it("keeps proposals opt-in and exposes the comparison in keyboard order", async () => {

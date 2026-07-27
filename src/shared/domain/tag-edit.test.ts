@@ -25,8 +25,14 @@ describe("track metadata validation", () => {
         title: "  A\u0308   track  ",
         trackNumber: null,
         year: null,
+        genres: ["  Post   Rock  "],
       }),
-    ).toEqual({ title: "Ä track", trackNumber: null, year: null });
+    ).toEqual({
+      title: "Ä track",
+      trackNumber: null,
+      year: null,
+      genres: ["Post Rock"],
+    });
     expect(() => normalizeTrackTagChanges({ title: "   " })).toThrow(
       "title cannot be empty",
     );
@@ -34,9 +40,12 @@ describe("track metadata validation", () => {
       "discNumber must be between",
     );
     expect(() => normalizeTrackTagChanges({})).toThrow("Choose at least one");
+    expect(() =>
+      normalizeTrackTagChanges({ genres: ["Rock", "Metal"] }),
+    ).toThrow("one proposed genre value");
   });
 
-  it("removes unchanged values from a proposal", () => {
+  it("removes unchanged scalar and genre values from a proposal", () => {
     const before = {
       title: "Track",
       album: "Album",
@@ -45,13 +54,16 @@ describe("track metadata validation", () => {
       trackNumber: 1,
       discNumber: 1,
       year: "2026",
+      genres: ["Post Rock"],
     };
     expect(
       changedTrackTags(before, {
         title: "Track",
         artist: "New Artist",
         year: "2026",
+        genres: ["Post Rock"],
       }),
     ).toEqual({ artist: "New Artist" });
+    expect(changedTrackTags(before, { genres: [] })).toEqual({ genres: [] });
   });
 });

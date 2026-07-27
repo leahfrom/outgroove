@@ -772,7 +772,16 @@ describe("validated IPC handlers", () => {
     await expect(
       handler({}, { fileId, changes: {}, filePath: "/arbitrary/file.mp3" }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-    expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler({}, { fileId, changes: { genres: ["Rock", "Metal"] } }),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileId, changes: { genres: ["  Post Rock  "] } }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(useCase).toHaveBeenCalledWith({
+      fileId,
+      changes: { genres: ["Post Rock"] },
+    });
   });
 
   it("limits batch edits to unique track ids and shared safe fields", async () => {
@@ -802,7 +811,22 @@ describe("validated IPC handlers", () => {
         },
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
-    expect(useCase).not.toHaveBeenCalled();
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { genres: ["Rock", "Metal"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler({}, { fileIds: [first, second], changes: { genres: [] } }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(useCase).toHaveBeenCalledWith({
+      fileIds: [first, second],
+      changes: { genres: [] },
+    });
   });
 
   it("requires an explicit bounded order for track-number sequencing", async () => {

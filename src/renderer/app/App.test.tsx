@@ -1427,11 +1427,12 @@ describe("tag edit UI safety states", () => {
     await user.type(screen.getByLabelText("Track title"), "Renamed Track");
     await user.clear(screen.getByLabelText("Track artist"));
     await user.type(screen.getByLabelText("Track artist"), "Different Artist");
+    await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 2 changes",
+      name: "Review 3 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1460,6 +1461,7 @@ describe("tag edit UI safety states", () => {
       changes: {
         title: "Renamed Track",
         artist: "Different Artist",
+        genres: ["Post Rock"],
       },
     });
   });
@@ -1807,6 +1809,8 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Batch track artist value"),
       "Batch Artist",
     );
+    await user.click(screen.getByRole("checkbox", { name: "Change genre" }));
+    await user.type(screen.getByLabelText("Batch genre value"), "Post Rock");
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1826,7 +1830,7 @@ describe("tag edit UI safety states", () => {
     ).toBeInTheDocument();
     expect(preview).toHaveBeenCalledWith({
       fileIds: batchAlbum.tracks.map((track) => track.id),
-      changes: { artist: "Batch Artist" },
+      changes: { artist: "Batch Artist", genres: ["Post Rock"] },
     });
     await user.type(
       screen.getByLabelText("Batch track artist value"),
@@ -1838,7 +1842,10 @@ describe("tag edit UI safety states", () => {
     await user.click(previewButton);
     expect(preview).toHaveBeenLastCalledWith({
       fileIds: batchAlbum.tracks.map((track) => track.id),
-      changes: { artist: "Batch Artist revised" },
+      changes: {
+        artist: "Batch Artist revised",
+        genres: ["Post Rock"],
+      },
     });
     expect(
       screen.queryByLabelText("Track number sequencing"),
