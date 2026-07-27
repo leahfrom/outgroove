@@ -40,18 +40,33 @@ function targetedFieldsChanged(
   );
 }
 
-function genreReplacementWarning(
+function singleValueReplacementWarnings(
   tags: NormalizedTags,
   changes: TrackTagChanges,
-): string | undefined {
-  return "genres" in changes && (tags.genres?.length ?? 0) > 1
-    ? "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely."
-    : undefined;
+): readonly string[] {
+  const warnings: string[] = [];
+  if ("genres" in changes && (tags.genres?.length ?? 0) > 1)
+    warnings.push(
+      "Genre editing is unavailable for tracks with multiple genre values because this writer cannot restore them safely.",
+    );
+  if ("composers" in changes && (tags.composers?.length ?? 0) > 1)
+    warnings.push(
+      "Composer editing is unavailable for tracks with multiple composer values because this writer cannot restore them safely.",
+    );
+  return warnings;
+}
+
+function restorationValue(
+  tags: NormalizedTags,
+  field: (typeof editableTrackTagFields)[number],
+): NormalizedTags[typeof field] {
+  if (field === "genres" || field === "composers") return tags[field] ?? [];
+  return tags[field];
 }
 
 type BatchTagChangeInput = Pick<
   TrackTagChangeInput,
-  "artist" | "albumArtist" | "discNumber" | "year" | "genres"
+  "artist" | "albumArtist" | "discNumber" | "year" | "genres" | "composers"
 >;
 
 interface StoredBatchPreview {
@@ -89,7 +104,7 @@ export class EditTrackTags {
       tokenHash(confirmationToken),
     );
     const extension = extname(track.path).toLocaleLowerCase("en-US");
-    const genreWarning = genreReplacementWarning(track.tags, changes);
+    const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
     return {
       operationId,
       confirmationToken,
@@ -106,7 +121,7 @@ export class EditTrackTags {
         ...(this.writer.writableExtensions.has(extension)
           ? []
           : [`${extension || "This format"} is read-only in this slice.`]),
-        ...(genreWarning ? [genreWarning] : []),
+        ...valueWarnings,
       ],
     };
   }
@@ -149,12 +164,15 @@ export class EditTrackTags {
       current,
       after,
     );
+    const replacementError = singleValueReplacementWarnings(
+      current,
+      changes,
+    )[0];
     let verified = false;
     let error: string | null = null;
     if (target?.scanState !== "ok")
       error = "The file is not currently available for writing.";
-    else if (genreReplacementWarning(current, changes))
-      error = genreReplacementWarning(current, changes) ?? null;
+    else if (replacementError) error = replacementError;
     else if (targetedFieldsChanged(previewTags, current, changes))
       error =
         "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -217,7 +235,7 @@ export class EditTrackTags {
     for (const field of editableTrackTagFields)
       if (field in sourceChanges)
         Object.assign(restoreChanges, {
-          [field]: sourceSnapshot.before[field],
+          [field]: restorationValue(sourceSnapshot.before, field),
         });
 
     const target = this.database.getFileEditState(source.target_file_id);
@@ -377,7 +395,7 @@ export class EditTrackTags {
     const files = tracks.map(({ fileId, track }) => {
       const changes = changedTrackTags(track.tags, proposed);
       const extension = extname(track.path).toLocaleLowerCase("en-US");
-      const genreWarning = genreReplacementWarning(track.tags, changes);
+      const valueWarnings = singleValueReplacementWarnings(track.tags, changes);
       return {
         fileId,
         path: track.path,
@@ -392,7 +410,7 @@ export class EditTrackTags {
           ...(this.writer.writableExtensions.has(extension)
             ? []
             : [`${extension || "This format"} is read-only in this slice.`]),
-          ...(genreWarning ? [genreWarning] : []),
+          ...valueWarnings,
         ],
         willWrite: Object.keys(changes).length > 0,
         tags: track.tags,
@@ -461,12 +479,15 @@ export class EditTrackTags {
         current,
         after,
       );
+      const replacementError = singleValueReplacementWarnings(
+        current,
+        changes,
+      )[0];
       let verified = false;
       let error: string | null = null;
       if (target?.scanState !== "ok")
         error = "The file is not currently available for writing.";
-      else if (genreReplacementWarning(current, changes))
-        error = genreReplacementWarning(current, changes) ?? null;
+      else if (replacementError) error = replacementError;
       else if (targetedFieldsChanged(preview.tags, current, changes))
         error =
           "A field in this preview changed after it was created; the edit did not overwrite it.";
@@ -710,7 +731,9 @@ export class EditTrackTags {
       const restore: TrackTagChanges = {};
       for (const field of editableTrackTagFields)
         if (field in sourceChanges)
-          Object.assign(restore, { [field]: snapshot.before[field] });
+          Object.assign(restore, {
+            [field]: restorationValue(snapshot.before, field),
+          });
       const target = this.database.getFileEditState(snapshot.fileId);
       const current = target?.tags ?? snapshot.current;
       const changes = changedTrackTags(current, restore);

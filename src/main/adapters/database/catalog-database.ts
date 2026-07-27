@@ -95,6 +95,7 @@ interface AudioFileRow {
   scan_state: "ok" | "error" | "missing";
   scan_error: string | null;
   genres_type?: string | null;
+  composers_type?: string | null;
 }
 
 interface ScanJobRow {
@@ -310,7 +311,9 @@ export class CatalogDatabase {
     `);
     this.scanStatements = {
       getFileByPathKey: this.connection.prepare(
-        `SELECT *, json_type(normalized_tags_json, '$.genres') AS genres_type
+        `SELECT *,
+           json_type(normalized_tags_json, '$.genres') AS genres_type,
+           json_type(normalized_tags_json, '$.composers') AS composers_type
          FROM audio_files WHERE path_key = ?`,
       ),
       restoreUnchangedFile: this.connection.prepare(
@@ -971,7 +974,11 @@ export class CatalogDatabase {
       file.sampleRate ?? null,
       file.bitDepth ?? null,
       file.channels ?? null,
-      JSON.stringify({ ...file.tags, genres: file.tags.genres ?? [] }),
+      JSON.stringify({
+        ...file.tags,
+        genres: file.tags.genres ?? [],
+        composers: file.tags.composers ?? [],
+      }),
       JSON.stringify(file.nativeTags),
       now,
     );
@@ -1091,6 +1098,7 @@ export class CatalogDatabase {
           Math.trunc(existing.modified_ms) === Math.trunc(entry.modifiedMs) &&
           (existing.scan_state === "error" ||
             (existing.genres_type === "array" &&
+              existing.composers_type === "array" &&
               existing.technical_properties_version >= 1))
         ) {
           const restored = this.scanStatements.restoreUnchangedFile.run(

@@ -776,11 +776,32 @@ describe("validated IPC handlers", () => {
       handler({}, { fileId, changes: { genres: ["Rock", "Metal"] } }),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
-      handler({}, { fileId, changes: { genres: ["  Post Rock  "] } }),
+      handler(
+        {},
+        {
+          fileId,
+          changes: { composers: ["First Composer", "Second Composer"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileId,
+          changes: {
+            genres: ["  Post Rock  "],
+            composers: ["  Fixture Composer  "],
+          },
+        },
+      ),
     ).resolves.toMatchObject({ ok: true });
     expect(useCase).toHaveBeenCalledWith({
       fileId,
-      changes: { genres: ["Post Rock"] },
+      changes: {
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+      },
     });
   });
 
@@ -821,11 +842,26 @@ describe("validated IPC handlers", () => {
       ),
     ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
     await expect(
-      handler({}, { fileIds: [first, second], changes: { genres: [] } }),
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { composers: ["First Composer", "Second Composer"] },
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+    await expect(
+      handler(
+        {},
+        {
+          fileIds: [first, second],
+          changes: { genres: [], composers: ["Fixture Composer"] },
+        },
+      ),
     ).resolves.toMatchObject({ ok: true });
     expect(useCase).toHaveBeenCalledWith({
       fileIds: [first, second],
-      changes: { genres: [] },
+      changes: { genres: [], composers: ["Fixture Composer"] },
     });
   });
 

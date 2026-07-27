@@ -26,6 +26,7 @@ const firstTrack: CatalogAlbum["tracks"][number] = {
     discNumber: 1,
     year: null,
     genres: ["Post Rock"],
+    composers: ["First Composer"],
   },
   nativeTags: [],
   scanError: null,
@@ -44,6 +45,7 @@ const secondTrack: CatalogAlbum["tracks"][number] = {
     discNumber: null,
     year: "2026-07",
     genres: ["Metal"],
+    composers: ["Second Composer"],
   },
 };
 
@@ -53,6 +55,7 @@ const disabledFields: SharedFieldEnabled = {
   discNumber: false,
   year: false,
   genre: false,
+  composer: false,
 };
 
 const emptyDraft: SharedFieldDraft = {
@@ -61,6 +64,7 @@ const emptyDraft: SharedFieldDraft = {
   discNumber: "",
   year: "",
   genre: "",
+  composer: "",
 };
 
 function editor({
@@ -100,7 +104,7 @@ describe("SharedFieldEditor", () => {
     render(editor());
 
     const comparison = screen.getByLabelText("Shared tag comparison");
-    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(4);
+    expect(within(comparison).getAllByText("Mixed values")).toHaveLength(5);
     expect(within(comparison).getByText("Shared Album Artist")).toBeVisible();
     expect(screen.getByText("No shared fields selected.")).toBeVisible();
     expect(
@@ -134,6 +138,14 @@ describe("SharedFieldEditor", () => {
     await user.click(within(genreRow).getByText("Mixed values"));
     expect(within(genreRow).getByText("Post Rock")).toBeVisible();
     expect(within(genreRow).getByText("Metal")).toBeVisible();
+
+    const composerInput = screen.getByLabelText("Batch composer value");
+    const composerRow = composerInput.closest(".tag-comparison-row");
+    if (!(composerRow instanceof HTMLElement))
+      throw new Error("Composer comparison row missing");
+    await user.click(within(composerRow).getByText("Mixed values"));
+    expect(within(composerRow).getByText("First Composer")).toBeVisible();
+    expect(within(composerRow).getByText("Second Composer")).toBeVisible();
   });
 
   it("keeps proposals opt-in and exposes the comparison in keyboard order", async () => {

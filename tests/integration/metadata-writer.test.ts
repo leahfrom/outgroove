@@ -85,6 +85,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         discNumber: 2,
         year: "2031-04",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       });
       const after = await reader.read(path);
       expect(after.tags).toEqual({
@@ -96,6 +97,7 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         discNumber: 2,
         year: "2031-04",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       });
       expect(
         after.nativeTags.some(

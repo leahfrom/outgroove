@@ -1428,11 +1428,15 @@ describe("tag edit UI safety states", () => {
     await user.clear(screen.getByLabelText("Track artist"));
     await user.type(screen.getByLabelText("Track artist"), "Different Artist");
     await user.type(screen.getByLabelText("Genre proposed value"), "Post Rock");
+    await user.type(
+      screen.getByLabelText("Composer proposed value"),
+      "Fixture Composer",
+    );
     expect(
       screen.queryByRole("button", { name: "Confirm and write track" }),
     ).not.toBeInTheDocument();
     const reviewButton = screen.getByRole("button", {
-      name: "Review 3 changes",
+      name: "Review 4 changes",
     });
     reviewButton.focus();
     await user.keyboard("{Enter}");
@@ -1462,6 +1466,7 @@ describe("tag edit UI safety states", () => {
         title: "Renamed Track",
         artist: "Different Artist",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       },
     });
   });
@@ -1811,6 +1816,11 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(screen.getByRole("checkbox", { name: "Change genre" }));
     await user.type(screen.getByLabelText("Batch genre value"), "Post Rock");
+    await user.click(screen.getByRole("checkbox", { name: "Change composer" }));
+    await user.type(
+      screen.getByLabelText("Batch composer value"),
+      "Fixture Composer",
+    );
     expect(previewButton).toBeEnabled();
     await user.click(previewButton);
     const confirmation = await screen.findByLabelText("Batch confirmation");
@@ -1830,7 +1840,11 @@ describe("tag edit UI safety states", () => {
     ).toBeInTheDocument();
     expect(preview).toHaveBeenCalledWith({
       fileIds: batchAlbum.tracks.map((track) => track.id),
-      changes: { artist: "Batch Artist", genres: ["Post Rock"] },
+      changes: {
+        artist: "Batch Artist",
+        genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
+      },
     });
     await user.type(
       screen.getByLabelText("Batch track artist value"),
@@ -1845,6 +1859,7 @@ describe("tag edit UI safety states", () => {
       changes: {
         artist: "Batch Artist revised",
         genres: ["Post Rock"],
+        composers: ["Fixture Composer"],
       },
     });
     expect(

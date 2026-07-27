@@ -28,6 +28,7 @@ export interface MetadataTagChanges {
   readonly discNumber?: number | null;
   readonly year?: string | null;
   readonly genres?: readonly string[];
+  readonly composers?: readonly string[];
 }
 
 export interface MetadataWriter {
@@ -90,6 +91,12 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
       throw new Error("This writer supports one proposed genre value.");
     updated.genre = genres[0] ?? "";
   }
+  if (changes.composers !== undefined) {
+    const composers = changes.composers;
+    if (composers.length > 1)
+      throw new Error("This writer supports one proposed composer value.");
+    updated.composer = composers[0] ?? "";
+  }
   return updated;
 }
 
@@ -106,8 +113,22 @@ function changesMatch(
     )
       return false;
   }
+  if (changes.composers !== undefined) {
+    const proposedComposers = changes.composers;
+    const composers = file.tags.composers ?? [];
+    if (
+      composers.length !== proposedComposers.length ||
+      !composers.every(
+        (composer, index) => composer === proposedComposers[index],
+      )
+    )
+      return false;
+  }
   return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
-    (field) => field === "genres" || file.tags[field] === changes[field],
+    (field) =>
+      field === "genres" ||
+      field === "composers" ||
+      file.tags[field] === changes[field],
   );
 }
 

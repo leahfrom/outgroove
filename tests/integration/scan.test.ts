@@ -57,6 +57,7 @@ describe("incremental library scan", () => {
     expect(database.listAlbums()).toHaveLength(1);
     expect(database.listAlbums()[0]?.tracks).toHaveLength(2);
     expect(database.listAlbums()[0]?.tracks[0]?.tags.genres).toEqual([]);
+    expect(database.listAlbums()[0]?.tracks[0]?.tags.composers).toEqual([]);
     const scannedTracks = database.listAlbums()[0]?.tracks ?? [];
     expect(
       scannedTracks.find((track) => track.format === "MPEG"),
