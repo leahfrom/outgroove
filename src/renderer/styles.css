@@ -2062,7 +2062,12 @@ h1 {
   width: min(100%, 900px);
 }
 .identification-heading {
+  display: block;
   margin-bottom: 1rem;
+}
+.identification-heading p:last-child {
+  max-width: 66ch;
+  margin-bottom: 0;
 }
 .identification-heading h2,
 .identification-candidate h3 {
@@ -2143,6 +2148,29 @@ h1 {
 .candidate-evidence ul,
 .candidate-evidence p {
   margin: 0;
+}
+.candidate-draft {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d9e0da;
+  padding-top: 1rem;
+}
+.candidate-draft h4,
+.candidate-draft p,
+.candidate-draft ul {
+  margin: 0;
+}
+.candidate-draft button {
+  justify-self: start;
+}
+.metadata-draft-source {
+  margin: 0 0 1rem;
+  border-left: 4px solid #5f8d6c;
+  padding: 0.65rem 0.8rem;
+  background: #eef6ef;
+  color: #284d32;
+  overflow-wrap: anywhere;
 }
 .identifier {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

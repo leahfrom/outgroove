@@ -1,5 +1,10 @@
 import type { AlbumIdentificationResultDto } from "../../shared/contracts/api";
 import type { CatalogAlbum } from "../../shared/domain/catalog";
+import {
+  createAlbumCandidateTagDraft,
+  formatArtistCredits,
+  type ComparedAlbumCandidate,
+} from "../../shared/domain/album-identification";
 import { ModalSheet } from "./modal-sheet";
 
 export function AlbumIdentification({
@@ -9,6 +14,7 @@ export function AlbumIdentification({
   result,
   onCancel,
   onClose,
+  onCreateDraft,
   onSearch,
 }: {
   readonly album: CatalogAlbum;
@@ -17,6 +23,7 @@ export function AlbumIdentification({
   readonly result: AlbumIdentificationResultDto | undefined;
   readonly onCancel: () => void;
   readonly onClose: () => void;
+  readonly onCreateDraft: (candidate: ComparedAlbumCandidate) => void;
   readonly onSearch: () => void;
 }): React.JSX.Element {
   return (
@@ -27,11 +34,12 @@ export function AlbumIdentification({
       onClose={onClose}
     >
       <header className="identification-heading">
-        <p className="eyebrow">Read-only album identification</p>
+        <p className="eyebrow">Album identification</p>
         <h2>Find MusicBrainz matches</h2>
         <p>
-          Compare this Library album with release editions in MusicBrainz. This
-          step cannot propose, apply, or write metadata.
+          Compare this Library album with release editions in MusicBrainz, then
+          explicitly choose one to prepare a limited metadata draft. Searching
+          and choosing a candidate cannot preview, apply, or write metadata.
         </p>
       </header>
 
@@ -94,69 +102,109 @@ export function AlbumIdentification({
             </div>
           ) : (
             <ol className="identification-candidates">
-              {result.candidates.map((candidate) => (
-                <li key={candidate.releaseId}>
-                  <article className="card identification-candidate">
-                    <header>
-                      <div>
-                        <h3>{candidate.title}</h3>
-                        <p>{candidate.artistCredit || "Artist not provided"}</p>
+              {result.candidates.map((candidate) => {
+                const tagDraft = createAlbumCandidateTagDraft(album, candidate);
+                return (
+                  <li key={candidate.releaseId}>
+                    <article className="card identification-candidate">
+                      <header>
+                        <div>
+                          <h3>{candidate.title}</h3>
+                          <p>
+                            {formatArtistCredits(candidate.artistCredits) ||
+                              "Artist not provided"}
+                          </p>
+                        </div>
+                        <span
+                          className={`candidate-confidence ${candidate.confidence}`}
+                        >
+                          {candidate.confidence} · {candidate.score}/100
+                        </span>
+                      </header>
+                      <dl>
+                        <div>
+                          <dt>Release</dt>
+                          <dd>
+                            {candidate.date ?? "Date unknown"} ·{" "}
+                            {candidate.country ?? "Country unknown"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Edition</dt>
+                          <dd>
+                            {candidate.status ?? "Status unknown"} ·{" "}
+                            {candidate.trackCount ?? "Unknown"} tracks
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>MusicBrainz release ID</dt>
+                          <dd className="identifier">{candidate.releaseId}</dd>
+                        </div>
+                      </dl>
+                      <div className="candidate-evidence">
+                        <div>
+                          <h4>Matches</h4>
+                          {candidate.matches.length > 0 ? (
+                            <ul>
+                              {candidate.matches.map((match) => (
+                                <li key={match}>{match}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>None of the compared fields match.</p>
+                          )}
+                        </div>
+                        <div>
+                          <h4>Conflicts</h4>
+                          {candidate.conflicts.length > 0 ? (
+                            <ul>
+                              {candidate.conflicts.map((conflict) => (
+                                <li key={conflict}>{conflict}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>No compared-field conflicts.</p>
+                          )}
+                        </div>
                       </div>
-                      <span
-                        className={`candidate-confidence ${candidate.confidence}`}
-                      >
-                        {candidate.confidence} · {candidate.score}/100
-                      </span>
-                    </header>
-                    <dl>
-                      <div>
-                        <dt>Release</dt>
-                        <dd>
-                          {candidate.date ?? "Date unknown"} ·{" "}
-                          {candidate.country ?? "Country unknown"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Edition</dt>
-                        <dd>
-                          {candidate.status ?? "Status unknown"} ·{" "}
-                          {candidate.trackCount ?? "Unknown"} tracks
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>MusicBrainz release ID</dt>
-                        <dd className="identifier">{candidate.releaseId}</dd>
-                      </div>
-                    </dl>
-                    <div className="candidate-evidence">
-                      <div>
-                        <h4>Matches</h4>
-                        {candidate.matches.length > 0 ? (
+                      <div className="candidate-draft">
+                        <h4>Supported tag draft</h4>
+                        {tagDraft.fields.length > 0 ? (
+                          <p>
+                            {tagDraft.fields
+                              .map(({ label }) => label)
+                              .join(", ")}
+                            . You will review current and proposed values before
+                            previewing.
+                          </p>
+                        ) : (
+                          <p>
+                            All safely supported values are already current or
+                            unavailable.
+                          </p>
+                        )}
+                        <details>
+                          <summary>Values not included</summary>
                           <ul>
-                            {candidate.matches.map((match) => (
-                              <li key={match}>{match}</li>
+                            {tagDraft.omissions.map((omission) => (
+                              <li key={omission}>{omission}</li>
                             ))}
                           </ul>
-                        ) : (
-                          <p>None of the compared fields match.</p>
-                        )}
+                        </details>
+                        <button
+                          aria-label={`Draft supported tags from ${candidate.title}, ${candidate.date ?? "unknown date"}`}
+                          className="primary"
+                          disabled={tagDraft.fields.length === 0}
+                          onClick={() => onCreateDraft(candidate)}
+                          type="button"
+                        >
+                          Draft supported tags from this release
+                        </button>
                       </div>
-                      <div>
-                        <h4>Conflicts</h4>
-                        {candidate.conflicts.length > 0 ? (
-                          <ul>
-                            {candidate.conflicts.map((conflict) => (
-                              <li key={conflict}>{conflict}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p>No compared-field conflicts.</p>
-                        )}
-                      </div>
-                    </div>
-                  </article>
-                </li>
-              ))}
+                    </article>
+                  </li>
+                );
+              })}
             </ol>
           )}
         </section>

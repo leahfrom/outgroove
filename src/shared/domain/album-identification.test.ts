@@ -4,6 +4,8 @@ import type { CatalogAlbum } from "./catalog";
 import {
   compareAlbumCandidate,
   compareAlbumCandidates,
+  createAlbumCandidateTagDraft,
+  formatArtistCredits,
   type AlbumIdentificationCandidate,
 } from "./album-identification";
 
@@ -37,7 +39,13 @@ const candidate: AlbumIdentificationCandidate = {
   releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
   releaseGroupId: "13a6d13b-f42a-49ba-8d54-893791d9f752",
   title: "Cafe Album",
-  artistCredit: "Fixture Artist",
+  artistCredits: [
+    {
+      name: "Fixture Artist",
+      joinPhrase: "",
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+    },
+  ],
   date: "2026-04-02",
   country: "DE",
   status: "Official",
@@ -66,7 +74,7 @@ describe("album candidate comparison", () => {
     const compared = compareAlbumCandidate(album, {
       ...candidate,
       title: "Other",
-      artistCredit: "Other",
+      artistCredits: [{ name: "Other", joinPhrase: "", artistId: null }],
       date: "2025",
       trackCount: 12,
       catalogNumbers: [],
@@ -94,5 +102,75 @@ describe("album candidate comparison", () => {
       "b0000000-0000-4000-8000-000000000000",
       "a0000000-0000-4000-8000-000000000000",
     ]);
+  });
+
+  it("preserves ordered credits and drafts only safe, explicit release fields", () => {
+    const proposed = {
+      ...candidate,
+      artistCredits: [
+        {
+          name: "Fixture Artist",
+          joinPhrase: " feat. ",
+          artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        },
+        {
+          name: "Guest Artist",
+          joinPhrase: "",
+          artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+        },
+      ],
+      catalogNumbers: ["FIX-2026", "ALT-2026"],
+    };
+    expect(formatArtistCredits(proposed.artistCredits)).toBe(
+      "Fixture Artist feat. Guest Artist",
+    );
+    const draft = createAlbumCandidateTagDraft(album, proposed);
+    expect(draft.fields.map(({ field }) => field)).toEqual([
+      "albumArtist",
+      "year",
+      "musicBrainzReleaseId",
+      "musicBrainzReleaseGroupId",
+    ]);
+    expect(draft.fields).not.toContainEqual(
+      expect.objectContaining({ field: "trackTotal" }),
+    );
+    expect(draft.omissions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("title editing is a separate"),
+        expect.stringContaining("not inferred"),
+        expect.stringContaining("multiple values"),
+        expect.stringContaining("multiple credited artists"),
+      ]),
+    );
+  });
+
+  it("does not draft no-ops and blocks lossy replacement of current list fields", () => {
+    const alreadyTagged: CatalogAlbum = {
+      ...album,
+      tracks: album.tracks.map((track) => ({
+        ...track,
+        tags: {
+          ...track.tags,
+          year: candidate.date,
+          musicBrainzReleaseId: candidate.releaseId,
+          musicBrainzReleaseGroupId: candidate.releaseGroupId,
+          musicBrainzReleaseArtistIds: [
+            "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+            "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+          ],
+          catalogNumbers: ["FIX-2026", "ALT-2026"],
+        },
+      })),
+    };
+    const draft = createAlbumCandidateTagDraft(alreadyTagged, {
+      ...candidate,
+      catalogNumbers: ["FIX-2026"],
+    });
+    expect(draft.fields).toEqual([]);
+    expect(draft.omissions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("multiple current values"),
+      ]),
+    );
   });
 });

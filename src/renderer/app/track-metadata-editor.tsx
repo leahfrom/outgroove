@@ -367,6 +367,7 @@ interface TrackMetadataEditorProps {
   result: TagEditResultDto | undefined;
   error: string | undefined;
   busy: boolean;
+  draftSource?: string;
   onDraftChange: (field: keyof TrackMetadataDraft, value: string) => void;
   onPreview: () => void;
   onConfirm: () => void;
@@ -383,6 +384,7 @@ function TrackMetadataEditorComponent(
     result,
     error,
     busy,
+    draftSource,
     onDraftChange,
     onPreview,
     onConfirm,
@@ -440,6 +442,11 @@ function TrackMetadataEditorComponent(
           </>
         }
       />
+      {draftSource && (
+        <p className="metadata-draft-source" role="status">
+          {draftSource}
+        </p>
+      )}
 
       <dl className="track-editor-context">
         <div>
