@@ -6,6 +6,7 @@ import { dialog, type BrowserWindow, type IpcMain } from "electron";
 import {
   albumEditApplyRequestSchema,
   albumArtworkRequestSchema,
+  albumArtworkEditPreviewRequestSchema,
   albumEditHistoryRequestSchema,
   albumEditPreviewRequestSchema,
   albumEditUndoPreviewRequestSchema,
@@ -40,6 +41,7 @@ import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-libr
 import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
+import type { EditAlbumArtwork } from "../application/edit-album-artwork";
 import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
@@ -55,6 +57,7 @@ interface Dependencies {
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
   editor: EditAlbumTitle;
+  artworkEditor: EditAlbumArtwork;
   trackEditor: EditTrackTags;
   sync: DeviceSync;
   window: BrowserWindow;
@@ -299,6 +302,61 @@ export function registerIpc(
         dependencies.editor.applyUndo(
           operationId,
           confirmationToken,
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.chooseAlbumArtworkEdit,
+    createValidatedHandler(
+      albumArtworkEditPreviewRequestSchema,
+      async ({ albumId }) => {
+        const selected = await dialog.showOpenDialog(dependencies.window, {
+          title: "Choose album artwork",
+          properties: ["openFile"],
+          filters: [
+            { name: "JPEG or PNG artwork", extensions: ["jpg", "jpeg", "png"] },
+          ],
+        });
+        const path = selected.filePaths[0];
+        return selected.canceled || !path
+          ? null
+          : dependencies.artworkEditor.preview(
+              albumId,
+              normalize(resolve(path)),
+            );
+      },
+    ),
+  );
+  ipcMain.handle(
+    channels.applyAlbumArtworkEdit,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.artworkEditor.apply(
+          operationId,
+          confirmationToken,
+          "album-artwork-edit",
+          progress("tag-edit"),
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewAlbumArtworkUndo,
+    createValidatedHandler(
+      albumEditUndoPreviewRequestSchema,
+      ({ operationId }) => dependencies.artworkEditor.previewUndo(operationId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applyAlbumArtworkUndo,
+    createValidatedHandler(
+      albumEditApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.artworkEditor.apply(
+          operationId,
+          confirmationToken,
+          "album-artwork-undo",
           progress("tag-edit"),
         ),
     ),

@@ -8,6 +8,7 @@ export function AlbumActionsMenu({
   syncDisabled,
   onEditMetadata,
   onEditTrackOrder,
+  onEditArtwork,
   onOpenHistory,
   onAddToSync,
 }: {
@@ -16,6 +17,7 @@ export function AlbumActionsMenu({
   readonly syncDisabled: boolean;
   readonly onEditMetadata: () => void;
   readonly onEditTrackOrder: () => void;
+  readonly onEditArtwork: () => void;
   readonly onOpenHistory: () => void;
   readonly onAddToSync: () => void;
 }): React.JSX.Element {
@@ -56,6 +58,7 @@ export function AlbumActionsMenu({
           className="album-action-menu"
           items={[
             { label: "Edit album metadata", onSelect: onEditMetadata },
+            { label: "Change album artwork", onSelect: onEditArtwork },
             { label: "Edit track order", onSelect: onEditTrackOrder },
             { label: "History & undo", onSelect: onOpenHistory },
             {
