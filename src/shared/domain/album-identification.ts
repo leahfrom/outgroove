@@ -1,6 +1,7 @@
 import type { CatalogAlbum } from "./catalog";
 import { summarizeAlbumReleaseDate } from "./catalog";
 import { isValidPartialDate } from "./partial-date";
+import { changedTrackTags, type TrackTagChanges } from "./tag-edit";
 
 export interface MusicBrainzArtistCredit {
   readonly name: string;
@@ -45,6 +46,51 @@ export interface AlbumCandidateTagDraft {
   readonly omissions: readonly string[];
 }
 
+export interface MusicBrainzReleaseTrack {
+  readonly releaseTrackId: string;
+  readonly recordingId: string;
+  readonly discNumber: number;
+  readonly discTotal: number;
+  readonly trackNumber: number;
+  readonly trackTotal: number;
+  readonly title: string;
+  readonly artistCredits: readonly MusicBrainzArtistCredit[];
+  readonly isrcs: readonly string[];
+  readonly lengthMs: number | null;
+}
+
+export interface MusicBrainzReleaseTracklist {
+  readonly releaseId: string;
+  readonly title: string;
+  readonly tracks: readonly MusicBrainzReleaseTrack[];
+}
+
+export type MusicBrainzTrackDraftField =
+  "title" | "artist" | "numbering" | "isrc" | "musicBrainzIds";
+
+export type MusicBrainzTrackDraftFields = Record<
+  MusicBrainzTrackDraftField,
+  boolean
+>;
+
+export interface MusicBrainzMappedTrackChanges {
+  readonly title?: string;
+  readonly artist?: string;
+  readonly trackNumber?: number;
+  readonly trackTotal?: number;
+  readonly discNumber?: number;
+  readonly discTotal?: number;
+  readonly isrcs?: string[];
+  readonly musicBrainzRecordingId?: string;
+  readonly musicBrainzReleaseTrackId?: string;
+  readonly musicBrainzArtistIds?: string[];
+}
+
+export interface MusicBrainzMappedTrackDraft {
+  readonly changes: MusicBrainzMappedTrackChanges;
+  readonly omissions: readonly string[];
+}
+
 export function formatArtistCredits(
   credits: readonly MusicBrainzArtistCredit[],
 ): string {
@@ -53,6 +99,101 @@ export function formatArtistCredits(
     .join("")
     .normalize("NFC")
     .trim();
+}
+
+export function createMusicBrainzMappedTrackDraft(
+  localTrack: CatalogAlbum["tracks"][number],
+  remoteTrack: MusicBrainzReleaseTrack,
+  enabled: MusicBrainzTrackDraftFields,
+): MusicBrainzMappedTrackDraft {
+  const proposed: TrackTagChanges = {};
+  const omissions: string[] = [];
+
+  if (enabled.title) {
+    const title = remoteTrack.title
+      .normalize("NFC")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (title && title.length <= 400) Object.assign(proposed, { title });
+    else omissions.push("Track title is empty or longer than 400 characters.");
+  }
+
+  if (enabled.artist) {
+    const artist = formatArtistCredits(remoteTrack.artistCredits);
+    if (artist && artist.length <= 400) Object.assign(proposed, { artist });
+    else omissions.push("Track artist is empty or longer than 400 characters.");
+  }
+
+  if (enabled.numbering)
+    Object.assign(proposed, {
+      trackNumber: remoteTrack.trackNumber,
+      trackTotal: remoteTrack.trackTotal,
+      discNumber: remoteTrack.discNumber,
+      discTotal: remoteTrack.discTotal,
+    });
+
+  if (enabled.isrc) {
+    const isrcs = [
+      ...new Set(
+        remoteTrack.isrcs
+          .map((value) => value.normalize("NFC").trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (
+      isrcs.length === 1 &&
+      isrcs[0] !== undefined &&
+      isrcs[0].length <= 100 &&
+      (localTrack.tags.isrcs ?? []).length <= 1
+    )
+      Object.assign(proposed, { isrcs: [isrcs[0]] });
+    else if (isrcs.length > 1)
+      omissions.push(
+        "ISRC is omitted because the recording has multiple values.",
+      );
+    else if (isrcs.length === 1)
+      omissions.push(
+        "ISRC is omitted because its value is too long or the local track has multiple current values.",
+      );
+    else omissions.push("MusicBrainz did not provide an ISRC.");
+  }
+
+  if (enabled.musicBrainzIds) {
+    Object.assign(proposed, {
+      musicBrainzRecordingId: remoteTrack.recordingId,
+      musicBrainzReleaseTrackId: remoteTrack.releaseTrackId,
+    });
+    const artistIds = [
+      ...new Set(
+        remoteTrack.artistCredits.flatMap((credit) =>
+          credit.artistId ? [credit.artistId] : [],
+        ),
+      ),
+    ];
+    if (
+      artistIds.length === 1 &&
+      artistIds[0] !== undefined &&
+      (localTrack.tags.musicBrainzArtistIds ?? []).length <= 1
+    )
+      Object.assign(proposed, { musicBrainzArtistIds: [artistIds[0]] });
+    else if (artistIds.length > 1)
+      omissions.push(
+        "Track artist ID is omitted because this track has multiple credited artists.",
+      );
+    else if (artistIds.length === 1)
+      omissions.push(
+        "Track artist ID is omitted because the local track has multiple current values.",
+      );
+    else omissions.push("MusicBrainz did not provide a track artist ID.");
+  }
+
+  return {
+    changes: changedTrackTags(
+      localTrack.tags,
+      proposed,
+    ) as MusicBrainzMappedTrackChanges,
+    omissions,
+  };
 }
 
 function comparisonText(value: string): string {

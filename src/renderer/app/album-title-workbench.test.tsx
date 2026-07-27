@@ -10,6 +10,7 @@ import type {
 import {
   AlbumTitleWorkbench,
   type AlbumTitleSection,
+  type BatchUndoKind,
 } from "./album-title-workbench";
 
 const historyItem: TagEditHistoryItemDto = {
@@ -28,22 +29,25 @@ function renderWorkbench({
   section = "edit",
   editHistory = [historyItem],
   batchUndoPreview,
+  batchUndoKind = "shared-fields",
 }: {
   readonly section?: AlbumTitleSection;
   readonly editHistory?: readonly TagEditHistoryItemDto[];
   readonly batchUndoPreview?: TrackBatchEditPreviewDto;
+  readonly batchUndoKind?: BatchUndoKind;
 } = {}) {
   const onSectionChange = vi.fn();
   const onPreviewUndo = vi.fn();
   const onPreviewArtworkUndo = vi.fn();
   const onConfirmBatchUndo = vi.fn();
+  const onPreviewBatchUndo = vi.fn();
 
   render(
     <AlbumTitleWorkbench
       albumTitle="Fixture Album"
       artworkUndoPreview={undefined}
       artworkUndoResult={undefined}
-      batchUndoKind="shared-fields"
+      batchUndoKind={batchUndoKind}
       batchUndoPreview={batchUndoPreview}
       batchUndoResult={undefined}
       busy={false}
@@ -64,7 +68,7 @@ function renderWorkbench({
       onConfirmTrackUndo={vi.fn()}
       onConfirmUndo={vi.fn()}
       onDraftTitleChange={vi.fn()}
-      onPreviewBatchUndo={vi.fn()}
+      onPreviewBatchUndo={onPreviewBatchUndo}
       onPreviewArtworkUndo={onPreviewArtworkUndo}
       onPreviewEdit={vi.fn()}
       onPreviewTrackUndo={vi.fn()}
@@ -81,12 +85,36 @@ function renderWorkbench({
   return {
     onConfirmBatchUndo,
     onPreviewArtworkUndo,
+    onPreviewBatchUndo,
     onPreviewUndo,
     onSectionChange,
   };
 }
 
 describe("AlbumTitleWorkbench", () => {
+  it("labels MusicBrainz mapping history and routes its verified undo distinctly", async () => {
+    const user = userEvent.setup();
+    const mapping = {
+      ...historyItem,
+      kind: "track-tags-batch-edit" as const,
+      proposedTitle:
+        "MusicBrainz track mapping: 2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    };
+    const { onPreviewBatchUndo } = renderWorkbench({
+      section: "history",
+      editHistory: [mapping],
+    });
+    const button = screen.getByRole("button", {
+      name: "Preview mapping undo",
+    });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(onPreviewBatchUndo).toHaveBeenCalledWith(
+      mapping.operationId,
+      "musicbrainz-mapping",
+    );
+  });
+
   it("offers verified artwork edits through the same reviewed undo history", async () => {
     const user = userEvent.setup();
     const artworkHistory: TagEditHistoryItemDto = {

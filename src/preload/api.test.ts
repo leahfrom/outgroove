@@ -83,6 +83,30 @@ describe("preload saved-filter allowlist", () => {
       channels.cancelMusicBrainzAlbumCandidates,
       request,
     );
+    const release = {
+      albumId: request.albumId,
+      releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    };
+    await api.loadMusicBrainzReleaseTracks(release);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.loadMusicBrainzReleaseTracks,
+      release,
+    );
+    const mapping = {
+      ...release,
+      edits: [
+        {
+          fileId: "73b6d616-0f52-4ef3-b71a-ffb42844e306",
+          releaseTrackId: "11111111-1111-4111-8111-111111111111",
+          changes: { title: "Mapped title" },
+        },
+      ],
+    };
+    await api.previewMusicBrainzTrackMapping(mapping);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewMusicBrainzTrackMapping,
+      mapping,
+    );
     expect(api).not.toHaveProperty("fetch");
     expect(api).not.toHaveProperty("searchProvider");
   });

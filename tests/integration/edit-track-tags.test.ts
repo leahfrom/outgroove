@@ -1244,6 +1244,201 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
   database.close();
 });
 
+it("applies explicit per-track MusicBrainz mappings across MP3 and FLAC, preserves audio, and verifies undo", async () => {
+  const { database, reader, editor, files } = await createBatchTrackEditor();
+  const album = database.listAlbums()[0];
+  const first = files[0];
+  const second = files[1];
+  if (!album || !first || !second) throw new Error("Batch fixture missing.");
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+  const originalTags = await Promise.all(
+    files.map(({ path }) => reader.read(path).then((file) => file.tags)),
+  );
+  const preview = editor.previewMusicBrainzMapping(
+    album.id,
+    "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    [
+      {
+        fileId: first.fileId,
+        releaseTrackId: "11111111-1111-4111-8111-111111111111",
+        changes: {
+          title: "Mapped MP3",
+          artist: "Mapped Artist",
+          trackNumber: 1,
+          trackTotal: 1,
+          discNumber: 1,
+          discTotal: 2,
+          isrcs: ["DEABC2600001"],
+          musicBrainzRecordingId: "22222222-2222-4222-8222-222222222222",
+          musicBrainzReleaseTrackId: "11111111-1111-4111-8111-111111111111",
+          musicBrainzArtistIds: ["7c08e5aa-3d6a-480f-8763-156120bc9bd9"],
+        },
+      },
+      {
+        fileId: second.fileId,
+        releaseTrackId: "33333333-3333-4333-8333-333333333333",
+        changes: {
+          title: "Mapped FLAC",
+          trackNumber: 1,
+          trackTotal: 1,
+          discNumber: 2,
+          discTotal: 2,
+          musicBrainzRecordingId: "44444444-4444-4444-8444-444444444444",
+          musicBrainzReleaseTrackId: "33333333-3333-4333-8333-333333333333",
+        },
+      },
+    ],
+  );
+  expect(preview.files).toHaveLength(2);
+  expect(
+    preview.files.map((file) => file.changes.map((change) => change.field)),
+  ).toEqual([
+    [
+      "title",
+      "artist",
+      "trackTotal",
+      "discTotal",
+      "isrcs",
+      "musicBrainzRecordingId",
+      "musicBrainzReleaseTrackId",
+      "musicBrainzArtistIds",
+    ],
+    [
+      "title",
+      "trackNumber",
+      "trackTotal",
+      "discNumber",
+      "discTotal",
+      "musicBrainzRecordingId",
+      "musicBrainzReleaseTrackId",
+    ],
+  ]);
+
+  const applied = await editor.applyBatch(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([
+    { fileId: first.fileId, verified: true, error: null },
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect((await reader.read(first.path)).tags).toMatchObject({
+    title: "Mapped MP3",
+    artist: "Mapped Artist",
+    trackTotal: 1,
+    discTotal: 2,
+    isrcs: ["DEABC2600001"],
+    musicBrainzRecordingId: "22222222-2222-4222-8222-222222222222",
+    musicBrainzReleaseTrackId: "11111111-1111-4111-8111-111111111111",
+    musicBrainzArtistIds: ["7c08e5aa-3d6a-480f-8763-156120bc9bd9"],
+  });
+  expect((await reader.read(second.path)).tags).toMatchObject({
+    title: "Mapped FLAC",
+    trackNumber: 1,
+    trackTotal: 1,
+    discNumber: 2,
+    discTotal: 2,
+    musicBrainzRecordingId: "44444444-4444-4444-8444-444444444444",
+    musicBrainzReleaseTrackId: "33333333-3333-4333-8333-333333333333",
+  });
+  expect(database.listSnapshots(preview.operationId)).toHaveLength(2);
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+
+  const undoPreview = editor.previewBatchUndo(preview.operationId);
+  const undone = await editor.applyBatchUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results.every((result) => result.verified)).toBe(true);
+  expect((await reader.read(first.path)).tags).toEqual(originalTags[0]);
+  expect((await reader.read(second.path)).tags).toEqual(originalTags[1]);
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+  database.close();
+});
+
+it("rejects no-op and mismatched MusicBrainz track mapping proposals before confirmation", async () => {
+  const { database, editor, files } = await createBatchTrackEditor();
+  const album = database.listAlbums()[0];
+  const first = files[0];
+  if (!album || !first) throw new Error("Batch fixture missing.");
+  expect(() =>
+    editor.previewMusicBrainzMapping(
+      album.id,
+      "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      [
+        {
+          fileId: first.fileId,
+          releaseTrackId: "11111111-1111-4111-8111-111111111111",
+          changes: { title: "First Track" },
+        },
+      ],
+    ),
+  ).toThrow("already matches");
+  expect(() =>
+    editor.previewMusicBrainzMapping(
+      album.id,
+      "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      [
+        {
+          fileId: first.fileId,
+          releaseTrackId: "11111111-1111-4111-8111-111111111111",
+          changes: {
+            musicBrainzReleaseTrackId: "33333333-3333-4333-8333-333333333333",
+          },
+        },
+      ],
+    ),
+  ).toThrow("does not match its mapping");
+  database.close();
+});
+
+it("refuses one stale mapped field without aborting another mapped track", async () => {
+  const { database, writer, editor, files } = await createBatchTrackEditor();
+  const album = database.listAlbums()[0];
+  const first = files[0];
+  const second = files[1];
+  if (!album || !first || !second) throw new Error("Batch fixture missing.");
+  const preview = editor.previewMusicBrainzMapping(
+    album.id,
+    "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+    [
+      {
+        fileId: first.fileId,
+        releaseTrackId: "11111111-1111-4111-8111-111111111111",
+        changes: { title: "Mapped first" },
+      },
+      {
+        fileId: second.fileId,
+        releaseTrackId: "33333333-3333-4333-8333-333333333333",
+        changes: { title: "Mapped second" },
+      },
+    ],
+  );
+  const external = await writer.writeTags(first.path, {
+    title: "External title",
+  });
+  database.updateFileAfterEdit(first.fileId, external.file);
+  const result = await editor.applyBatch(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      fileId: first.fileId,
+      verified: false,
+      error:
+        "A field in this preview changed after it was created; the edit did not overwrite it.",
+    },
+    { fileId: second.fileId, verified: true, error: null },
+  ]);
+  expect(database.listSnapshots(preview.operationId)).toHaveLength(2);
+  database.close();
+});
+
 it("applies and verifies an explicit MusicBrainz release draft across MP3 and FLAC, then undoes it", async () => {
   const { database, reader, editor, files } = await createBatchTrackEditor();
   const album = database.listAlbums()[0];
