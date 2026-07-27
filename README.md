@@ -130,12 +130,16 @@ Metadata writing is deliberately narrower:
 
 The currently editable common fields are album title plus a selected track's
 title, track artist, album artist, track/disc number, track/disc total, partial
-release date, Genre, Composer, and Conductor. Batch editing is deliberately
-narrower: it supports only track artist, album artist, track total, disc number,
-disc total, partial release date, Genre, Composer, and Conductor, requires an
-explicit opt-in for each field, and does not mass-edit titles. Track numbers use
-a separate sequence preview whose order is explicitly controlled by the user;
-sequencing never infers or writes a total.
+release date, Genre, Composer, Conductor, Lyricist, ISRC, and Copyright. Batch
+editing is deliberately narrower: it supports only track artist, album artist,
+track total, disc number, disc total, partial release date, Genre, Composer,
+Conductor, Lyricist, ISRC, and Copyright, requires an explicit opt-in for each
+field, and does not mass-edit titles. The comparison editors show core tags
+first and keep totals, secondary credits, identifiers, and rights behind an
+accessible **More fields** disclosure. A changed or selected secondary field
+opens that disclosure and remains counted in its summary if the user collapses
+it again. Track numbers use a separate sequence preview whose order is
+explicitly controlled by the user; sequencing never infers or writes a total.
 
 Embedded front-cover replacement is available only for MP3 and FLAC. It accepts
 one explicitly selected JPEG or PNG up to 8 MiB and 25 megapixels, preserves
@@ -179,6 +183,7 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
 - Genre browsing preserves the scanner's multi-value common genre tags, groups values case-insensitively, and shows blank or absent values as `No genre tag`. It does not guess how to split a single delimiter-containing tag. Track and shared-field editors can explicitly propose one genre value or clear it through the normal preview, confirmation, snapshot, re-read, verification, and undo path. Tracks already containing multiple genre values remain readable and browsable, but their genre field is blocked from mutation because the current writer cannot restore that complete set safely; other fields remain editable. Catalog rows created before this feature are re-read once during their next explicit scan to hydrate this rebuildable field; no audio is changed.
 - Composer scanning preserves the ordered, deduplicated common composer values. Track and shared-field editors can explicitly propose one composer or clear it through the normal safe write and undo path. Tracks with multiple current composer values remain readable, but composer mutation is blocked because the current writer cannot restore that complete set safely; other fields remain editable. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate this rebuildable field.
 - Conductor scanning preserves the ordered, deduplicated common conductor values. Track and shared-field editors can explicitly propose one conductor or clear it through the normal preview, confirmation, snapshot, re-read, verification, and undo path. Tracks with multiple current conductor values remain readable, but conductor mutation is blocked because the current writer cannot restore that complete set safely; other fields remain editable. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate this rebuildable field.
+- Lyricist and ISRC scanning preserve their ordered, deduplicated common values, while Copyright preserves one optional text value. Track and opt-in shared-field editors can set or clear these fields through the same safe write and undo sequence. Multiple current Lyricist or ISRC values remain readable but block mutation of that specific field because the writer can restore only one value. Older unchanged catalog rows are re-read once to hydrate all three rebuildable fields. Publisher is not editable because the current reader does not normalize the writer's MP3/FLAC representation consistently, and BPM is not editable because the pinned writer cannot reliably clear it from FLAC; Outgroove does not advertise those unsafe partial behaviors.
 - Track and disc totals are preserved independently from their corresponding numbers. The single-track and opt-in shared-field editors can set a positive bounded total or clear it, but never infer, renumber, or automatically correct either value. A proposal that targets a number/total pair is rejected when it would leave a total without a number or a number greater than its total; unrelated field edits remain available. MP3 and FLAC writes re-read and verify both totals and the unchanged audio payload. Older unchanged catalog rows are re-read once during their next explicit scan to hydrate these rebuildable fields; no schema migration or audio write is involved.
 - Format browsing uses the scanner's local format label, groups labels case-insensitively, and displays blank labels honestly as `unknown`. Selecting a format applies an exact removable filter to the bounded track table.
 - Folder browsing derives parent folders with Node's native path adapter in the privileged process. The renderer receives a display path and an opaque exact-match token but never parses or constructs filesystem paths. Connection-local folder projections are rebuilt from catalog state, excluded from backups, and add no durable schema.

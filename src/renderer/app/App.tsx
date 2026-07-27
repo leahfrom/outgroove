@@ -112,6 +112,9 @@ function draftForTrack(track: CatalogAlbum["tracks"][number]) {
     genre: (track.tags.genres ?? []).join(" · "),
     composer: (track.tags.composers ?? []).join(" · "),
     conductor: (track.tags.conductors ?? []).join(" · "),
+    lyricist: (track.tags.lyricists ?? []).join(" · "),
+    isrc: (track.tags.isrcs ?? []).join(" · "),
+    copyright: track.tags.copyright ?? "",
   };
 }
 
@@ -283,6 +286,9 @@ export function App(): React.JSX.Element {
     genre: "",
     composer: "",
     conductor: "",
+    lyricist: "",
+    isrc: "",
+    copyright: "",
   });
   const [trackEditPreview, setTrackEditPreview] =
     useState<TrackTagEditPreviewDto>();
@@ -302,6 +308,9 @@ export function App(): React.JSX.Element {
     genre: false,
     composer: false,
     conductor: false,
+    lyricist: false,
+    isrc: false,
+    copyright: false,
   });
   const [batchDraft, setBatchDraft] = useState({
     artist: "",
@@ -313,6 +322,9 @@ export function App(): React.JSX.Element {
     genre: "",
     composer: "",
     conductor: "",
+    lyricist: "",
+    isrc: "",
+    copyright: "",
   });
   const [batchPreview, setBatchPreview] = useState<TrackBatchEditPreviewDto>();
   const [batchResult, setBatchResult] = useState<TagEditResultDto>();
@@ -1395,6 +1407,9 @@ export function App(): React.JSX.Element {
           genre: false,
           composer: false,
           conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
         });
         setBatchDraft((draft) => ({ ...draft, artist: "" }));
         target = "batch";
@@ -1411,6 +1426,9 @@ export function App(): React.JSX.Element {
           genre: false,
           composer: false,
           conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
         });
         setBatchDraft((draft) => ({ ...draft, albumArtist: "" }));
         target = "batch";
@@ -1427,6 +1445,9 @@ export function App(): React.JSX.Element {
           genre: false,
           composer: false,
           conductor: false,
+          lyricist: false,
+          isrc: false,
+          copyright: false,
         });
         setBatchDraft((draft) => ({ ...draft, year: "" }));
         target = "batch";
@@ -1481,6 +1502,16 @@ export function App(): React.JSX.Element {
           ? {
               conductors: trackDraft.conductor ? [trackDraft.conductor] : [],
             }
+          : {}),
+        ...(trackDraft.lyricist !==
+        (selectedTrack.tags.lyricists ?? []).join(" · ")
+          ? { lyricists: trackDraft.lyricist ? [trackDraft.lyricist] : [] }
+          : {}),
+        ...(trackDraft.isrc !== (selectedTrack.tags.isrcs ?? []).join(" · ")
+          ? { isrcs: trackDraft.isrc ? [trackDraft.isrc] : [] }
+          : {}),
+        ...(trackDraft.copyright !== (selectedTrack.tags.copyright ?? "")
+          ? { copyright: trackDraft.copyright || null }
           : {}),
       },
     });
@@ -1630,6 +1661,9 @@ export function App(): React.JSX.Element {
       genres?: string[];
       composers?: string[];
       conductors?: string[];
+      lyricists?: string[];
+      isrcs?: string[];
+      copyright?: string | null;
     } = {};
     if (batchEnabled.artist) changes.artist = batchDraft.artist;
     if (batchEnabled.albumArtist) changes.albumArtist = batchDraft.albumArtist;
@@ -1652,6 +1686,12 @@ export function App(): React.JSX.Element {
       changes.composers = batchDraft.composer ? [batchDraft.composer] : [];
     if (batchEnabled.conductor)
       changes.conductors = batchDraft.conductor ? [batchDraft.conductor] : [];
+    if (batchEnabled.lyricist)
+      changes.lyricists = batchDraft.lyricist ? [batchDraft.lyricist] : [];
+    if (batchEnabled.isrc)
+      changes.isrcs = batchDraft.isrc ? [batchDraft.isrc] : [];
+    if (batchEnabled.copyright)
+      changes.copyright = batchDraft.copyright || null;
     const result = await window.outgroove.previewTrackBatchEdit({
       fileIds: batchTrackIds,
       changes,

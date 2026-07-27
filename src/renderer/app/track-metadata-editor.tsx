@@ -1,4 +1,10 @@
-import { forwardRef, type ChangeEvent, type Ref } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type Ref,
+} from "react";
 
 import type {
   TagEditResultDto,
@@ -24,6 +30,9 @@ export interface TrackMetadataDraft {
   genre: string;
   composer: string;
   conductor: string;
+  lyricist: string;
+  isrc: string;
+  copyright: string;
 }
 
 type TrackMetadataField = keyof TrackMetadataDraft;
@@ -36,7 +45,7 @@ interface ComparisonField {
   readonly placeholder?: string;
 }
 
-const comparisonFields: readonly ComparisonField[] = [
+const basicComparisonFields: readonly ComparisonField[] = [
   { field: "title", label: "Track title" },
   { field: "artist", label: "Track artist" },
   { field: "albumArtist", label: "Album artist" },
@@ -46,21 +55,7 @@ const comparisonFields: readonly ComparisonField[] = [
     inputType: "number",
     max: 9999,
   },
-  {
-    field: "trackTotal",
-    label: "Track total",
-    inputType: "number",
-    max: 9999,
-    placeholder: "Empty clears the total",
-  },
   { field: "discNumber", label: "Disc number", inputType: "number", max: 999 },
-  {
-    field: "discTotal",
-    label: "Disc total",
-    inputType: "number",
-    max: 999,
-    placeholder: "Empty clears the total",
-  },
   {
     field: "year",
     label: "Release date",
@@ -70,6 +65,23 @@ const comparisonFields: readonly ComparisonField[] = [
     field: "genre",
     label: "Genre",
     placeholder: "One genre; empty clears",
+  },
+];
+
+const moreComparisonFields: readonly ComparisonField[] = [
+  {
+    field: "trackTotal",
+    label: "Track total",
+    inputType: "number",
+    max: 9999,
+    placeholder: "Empty clears the total",
+  },
+  {
+    field: "discTotal",
+    label: "Disc total",
+    inputType: "number",
+    max: 999,
+    placeholder: "Empty clears the total",
   },
   {
     field: "composer",
@@ -81,7 +93,24 @@ const comparisonFields: readonly ComparisonField[] = [
     label: "Conductor",
     placeholder: "One conductor; empty clears",
   },
+  {
+    field: "lyricist",
+    label: "Lyricist",
+    placeholder: "One lyricist; empty clears",
+  },
+  {
+    field: "isrc",
+    label: "ISRC",
+    placeholder: "One ISRC; empty clears",
+  },
+  {
+    field: "copyright",
+    label: "Copyright",
+    placeholder: "Empty clears",
+  },
 ];
+
+const comparisonFields = [...basicComparisonFields, ...moreComparisonFields];
 
 const previewFieldLabels: Record<string, string> = {
   title: "Track title",
@@ -95,6 +124,9 @@ const previewFieldLabels: Record<string, string> = {
   genres: "Genre",
   composers: "Composer",
   conductors: "Conductor",
+  lyricists: "Lyricist",
+  isrcs: "ISRC",
+  copyright: "Copyright",
 };
 
 function currentValue(
@@ -124,6 +156,12 @@ function currentValue(
       return (track.tags.composers ?? []).join(" · ");
     case "conductor":
       return (track.tags.conductors ?? []).join(" · ");
+    case "lyricist":
+      return (track.tags.lyricists ?? []).join(" · ");
+    case "isrc":
+      return (track.tags.isrcs ?? []).join(" · ");
+    case "copyright":
+      return track.tags.copyright ?? "";
   }
 }
 
@@ -167,9 +205,20 @@ function TrackMetadataEditorComponent(
   }: TrackMetadataEditorProps,
   ref: Ref<HTMLElement>,
 ): React.JSX.Element {
+  const [moreOpen, setMoreOpen] = useState(false);
   const changedFields = comparisonFields.filter(
     ({ field }) => draft[field] !== currentValue(track, field),
   );
+  const moreChanged = moreComparisonFields.some(
+    ({ field }) => draft[field] !== currentValue(track, field),
+  );
+  const moreChangedCount = moreComparisonFields.filter(
+    ({ field }) => draft[field] !== currentValue(track, field),
+  ).length;
+
+  useEffect(() => {
+    if (moreChanged) setMoreOpen(true);
+  }, [moreChanged]);
 
   const change =
     (field: keyof TrackMetadataDraft) =>
@@ -198,7 +247,9 @@ function TrackMetadataEditorComponent(
             Composer follows the same one-value rule; tracks with multiple
             current composer values cannot replace that field. Totals are
             explicit: changing or clearing one never changes its track or disc
-            number. Conductor follows the same one-value rule as Composer.
+            number. Conductor and Lyricist follow the same one-value rule as
+            Composer. ISRC also accepts one value. Secondary fields are grouped
+            under More fields.
           </>
         }
       />
@@ -214,14 +265,9 @@ function TrackMetadataEditorComponent(
         </div>
       </dl>
 
-      <div className="tag-comparison" aria-label="Track tag comparison">
-        <div className="tag-comparison-header" aria-hidden="true">
-          <span>Tag</span>
-          <span>Current value</span>
-          <span>Proposed value</span>
-          <span>State</span>
-        </div>
-        {comparisonFields.map((item) => {
+      <div className="tag-comparison" aria-label="Basic track tag comparison">
+        <ComparisonHeader currentLabel="Current value" />
+        {basicComparisonFields.map((item) => {
           const current = currentValue(track, item.field);
           const changed = draft[item.field] !== current;
           const currentId = `track-${item.field}-current`;
@@ -264,6 +310,70 @@ function TrackMetadataEditorComponent(
           );
         })}
       </div>
+      <details
+        className="metadata-more-fields"
+        open={moreOpen}
+        onToggle={(event) => setMoreOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span>More fields</span>
+          <small>
+            {moreChangedCount > 0
+              ? `${moreChangedCount} ${moreChangedCount === 1 ? "change" : "changes"} drafted`
+              : "Totals, credits, identifiers, and rights"}
+          </small>
+        </summary>
+        <div
+          className="tag-comparison"
+          aria-label="Additional track tag comparison"
+        >
+          <ComparisonHeader currentLabel="Current value" />
+          {moreComparisonFields.map((item) => {
+            const current = currentValue(track, item.field);
+            const changed = draft[item.field] !== current;
+            const currentId = `track-${item.field}-current`;
+            const statusId = `track-${item.field}-status`;
+            return (
+              <div
+                className="tag-comparison-row"
+                data-changed={changed ? "true" : "false"}
+                key={item.field}
+              >
+                <div className="tag-comparison-field">
+                  <span className="comparison-mobile-label">Tag</span>
+                  <label htmlFor={`track-${item.field}`}>{item.label}</label>
+                </div>
+                <div className="tag-comparison-current">
+                  <span className="comparison-mobile-label">Current value</span>
+                  <span id={currentId}>{displayValue(current)}</span>
+                </div>
+                <div className="tag-comparison-proposed">
+                  <span className="comparison-mobile-label">
+                    Proposed value
+                  </span>
+                  <input
+                    aria-describedby={`${currentId} ${statusId}`}
+                    aria-label={`${item.label} proposed value`}
+                    id={`track-${item.field}`}
+                    max={item.max}
+                    min={item.inputType ? 1 : undefined}
+                    placeholder={item.placeholder}
+                    type={item.inputType}
+                    value={draft[item.field]}
+                    onChange={change(item.field)}
+                  />
+                </div>
+                <span
+                  className={`comparison-status ${changed ? "changed" : "unchanged"}`}
+                  id={statusId}
+                >
+                  {changed ? "Changed" : "Unchanged"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </details>
 
       <div className="track-comparison-summary">
         <p aria-live="polite">
@@ -349,3 +459,18 @@ function TrackMetadataEditorComponent(
 }
 
 export const TrackMetadataEditor = forwardRef(TrackMetadataEditorComponent);
+
+function ComparisonHeader({
+  currentLabel,
+}: {
+  readonly currentLabel: string;
+}): React.JSX.Element {
+  return (
+    <div className="tag-comparison-header" aria-hidden="true">
+      <span>Tag</span>
+      <span>{currentLabel}</span>
+      <span>Proposed value</span>
+      <span>State</span>
+    </div>
+  );
+}

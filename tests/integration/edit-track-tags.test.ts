@@ -104,6 +104,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       });
       expect(preview.warnings).toEqual([]);
       expect(preview.changes.map((change) => change.field)).toEqual([
@@ -118,6 +121,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         "genres",
         "composers",
         "conductors",
+        "lyricists",
+        "isrcs",
+        "copyright",
       ]);
 
       const result = await editor.apply(
@@ -137,6 +143,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       });
       expect(await audioPayloadHash(path)).toBe(payloadBefore);
       expect(database.listSnapshots(preview.operationId)).toMatchObject([
@@ -402,6 +411,121 @@ it("rejects a no-op conductor proposal and refuses a stale targeted conductor", 
   database.close();
 });
 
+it("blocks replacing multiple lyricist and ISRC values when exact undo is unavailable", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("02-second.flac");
+  const scanned = await reader.read(path);
+  const payloadBefore = await audioPayloadHash(path);
+  database.updateFileAfterEdit(fileId, {
+    ...scanned,
+    tags: {
+      ...scanned.tags,
+      lyricists: ["First Lyricist", "Second Lyricist"],
+      isrcs: ["DEABC2600001", "DEABC2600002"],
+    },
+  });
+
+  const preview = editor.preview(fileId, {
+    lyricists: ["Replacement Lyricist"],
+    isrcs: ["DEABC2600003"],
+  });
+  expect(preview.warnings).toEqual([
+    "Lyricist editing is unavailable for tracks with multiple lyricist values because this writer cannot restore them safely.",
+    "ISRC editing is unavailable for tracks with multiple ISRC values because this writer cannot restore them safely.",
+  ]);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results[0]).toMatchObject({ verified: false });
+  expect(result.results[0]?.error).toContain("Lyricist editing is unavailable");
+  expect((await reader.read(path)).tags).toEqual(scanned.tags);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
+it("undoes advanced edits from a legacy catalog row with explicit empty values", async () => {
+  const { database, reader, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const scanned = await reader.read(path);
+  const legacyTags = { ...scanned.tags };
+  delete legacyTags.lyricists;
+  delete legacyTags.isrcs;
+  delete legacyTags.copyright;
+  database.updateFileAfterEdit(fileId, { ...scanned, tags: legacyTags });
+
+  const preview = editor.preview(fileId, {
+    lyricists: ["Fixture Lyricist"],
+    isrcs: ["DEABC2600001"],
+    copyright: "Copyright Fixture",
+  });
+  const applied = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(applied.results).toMatchObject([{ verified: true, error: null }]);
+
+  const undoPreview = editor.previewUndo(preview.operationId);
+  expect(undoPreview.changes).toEqual([
+    {
+      field: "lyricists",
+      before: ["Fixture Lyricist"],
+      after: [],
+    },
+    { field: "isrcs", before: ["DEABC2600001"], after: [] },
+    {
+      field: "copyright",
+      before: "Copyright Fixture",
+      after: null,
+    },
+  ]);
+  const undone = await editor.applyUndo(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+  );
+  expect(undone.results).toMatchObject([{ verified: true, error: null }]);
+  expect((await reader.read(path)).tags).toMatchObject({
+    lyricists: [],
+    isrcs: [],
+    copyright: null,
+  });
+  database.close();
+});
+
+it("rejects an advanced-field no-op and refuses a stale targeted ISRC", async () => {
+  const { database, reader, writer, editor, fileId, path } =
+    await createTrackEditor("01-first.mp3");
+  const payloadBefore = await audioPayloadHash(path);
+  expect(() =>
+    editor.preview(fileId, {
+      lyricists: [],
+      isrcs: [],
+      copyright: null,
+    }),
+  ).toThrow("already matches this track");
+
+  const preview = editor.preview(fileId, { isrcs: ["DEABC2600001"] });
+  const external = await writer.writeTags(path, {
+    isrcs: ["DEABC2600002"],
+  });
+  database.updateFileAfterEdit(fileId, external.file);
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+  );
+  expect(result.results).toMatchObject([
+    {
+      fileId,
+      verified: false,
+      error:
+        "A field in this preview changed after it was created; the edit did not overwrite it.",
+    },
+  ]);
+  expect((await reader.read(path)).tags.isrcs).toEqual(["DEABC2600002"]);
+  expect(await audioPayloadHash(path)).toBe(payloadBefore);
+  database.close();
+});
+
 it("rejects invalid totals and refuses a stale targeted total without changing audio", async () => {
   const { database, reader, writer, editor, fileId, path } =
     await createTrackEditor("01-first.mp3");
@@ -628,6 +752,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
       conductors: ["Fixture Conductor"],
+      lyricists: ["Fixture Lyricist"],
+      isrcs: ["DEABC2600001"],
+      copyright: "Copyright Fixture",
     },
   );
   expect(preview.files).toHaveLength(2);
@@ -644,6 +771,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "genres",
       "composers",
       "conductors",
+      "lyricists",
+      "isrcs",
+      "copyright",
     ],
     [
       "artist",
@@ -654,6 +784,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       "genres",
       "composers",
       "conductors",
+      "lyricists",
+      "isrcs",
+      "copyright",
     ],
   ]);
 
@@ -675,6 +808,9 @@ it("previews and independently verifies a persisted multi-track batch edit", asy
       genres: ["Post Rock"],
       composers: ["Fixture Composer"],
       conductors: ["Fixture Conductor"],
+      lyricists: ["Fixture Lyricist"],
+      isrcs: ["DEABC2600001"],
+      copyright: "Copyright Fixture",
     });
     expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
   }

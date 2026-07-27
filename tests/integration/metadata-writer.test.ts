@@ -89,6 +89,9 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
       });
       const after = await reader.read(path);
       expect(after.tags).toEqual({
@@ -104,6 +107,61 @@ describe.each(["01-first.mp3", "02-second.flac"])(
         genres: ["Post Rock"],
         composers: ["Fixture Composer"],
         conductors: ["Fixture Conductor"],
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+      });
+      expect(
+        after.nativeTags.some(
+          (tag) =>
+            tag.id.includes("OUTGROOVE_PRIVATE") &&
+            tag.value.includes("preserve-me"),
+        ),
+      ).toBe(true);
+      expect(result.payloadHashBefore).toBe(payloadBefore);
+      expect(result.payloadHashAfter).toBe(payloadBefore);
+    });
+  },
+);
+
+describe.each(["preservation.mp3", "preservation.flac"])(
+  "safe advanced-field clearing: %s",
+  (fixture) => {
+    it("sets and clears lyricist, ISRC, and copyright while preserving private tags and audio", async () => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "outgroove-advanced-fields-"),
+      );
+      temporary.push(directory);
+      const path = join(directory, fixture);
+      await copyFile(
+        join(process.cwd(), "fixtures", "audio", "preservation", fixture),
+        path,
+      );
+      const reader = new MusicMetadataReader();
+      const payloadBefore = await audioPayloadHash(path);
+      const writer = new SafeMetadataWriter(reader);
+
+      await writer.writeTags(path, {
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+      });
+      expect((await reader.read(path)).tags).toMatchObject({
+        lyricists: ["Fixture Lyricist"],
+        isrcs: ["DEABC2600001"],
+        copyright: "Copyright Fixture",
+      });
+
+      const result = await writer.writeTags(path, {
+        lyricists: [],
+        isrcs: [],
+        copyright: null,
+      });
+      const after = await reader.read(path);
+      expect(after.tags).toMatchObject({
+        lyricists: [],
+        isrcs: [],
+        copyright: null,
       });
       expect(
         after.nativeTags.some(

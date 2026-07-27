@@ -35,6 +35,9 @@ const track: CatalogAlbum["tracks"][number] = {
     genres: ["Post Rock"],
     composers: ["Fixture Composer"],
     conductors: ["Fixture Conductor"],
+    lyricists: ["Fixture Lyricist"],
+    isrcs: ["DEABC2600001"],
+    copyright: "Copyright Fixture",
   },
   nativeTags: [],
   scanError: null,
@@ -52,6 +55,9 @@ const unchangedDraft: TrackMetadataDraft = {
   genre: "Post Rock",
   composer: "Fixture Composer",
   conductor: "Fixture Conductor",
+  lyricist: "Fixture Lyricist",
+  isrc: "DEABC2600001",
+  copyright: "Copyright Fixture",
 };
 
 function editor(
@@ -81,8 +87,16 @@ describe("TrackMetadataEditor", () => {
     const user = userEvent.setup();
     const { rerender } = render(editor(unchangedDraft));
 
-    const comparison = screen.getByLabelText("Track tag comparison");
-    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(11);
+    const comparison = screen.getByLabelText("Basic track tag comparison");
+    expect(within(comparison).getAllByText("Unchanged")).toHaveLength(7);
+    const moreSummary = screen.getByText("More fields").closest("summary");
+    const moreFields = screen.getByText("More fields").closest("details");
+    if (!moreSummary || !moreFields)
+      throw new Error("More fields disclosure missing");
+    expect(moreFields).not.toHaveAttribute("open");
+    moreSummary.focus();
+    await user.click(moreSummary);
+    expect(moreFields).toHaveAttribute("open");
     expect(
       screen.getByRole("spinbutton", { name: "Track total proposed value" }),
     ).toHaveValue(12);
@@ -102,6 +116,15 @@ describe("TrackMetadataEditor", () => {
     expect(
       screen.getByRole("textbox", { name: "Conductor proposed value" }),
     ).toHaveValue("Fixture Conductor");
+    expect(
+      screen.getByRole("textbox", { name: "Lyricist proposed value" }),
+    ).toHaveValue("Fixture Lyricist");
+    expect(
+      screen.getByRole("textbox", { name: "ISRC proposed value" }),
+    ).toHaveValue("DEABC2600001");
+    expect(
+      screen.getByRole("textbox", { name: "Copyright proposed value" }),
+    ).toHaveValue("Copyright Fixture");
 
     const changedDraft = {
       ...unchangedDraft,
@@ -129,6 +152,32 @@ describe("TrackMetadataEditor", () => {
         name: "Track artist proposed value",
       }),
     ).toHaveFocus();
+  });
+
+  it("reveals and summarizes a changed secondary field", async () => {
+    const user = userEvent.setup();
+    render(
+      editor({
+        ...unchangedDraft,
+        lyricist: "Changed Lyricist",
+      }),
+    );
+
+    expect(screen.getByText("More fields").closest("details")).toHaveAttribute(
+      "open",
+    );
+    const lyricist = screen.getByRole("textbox", {
+      name: "Lyricist proposed value",
+    });
+    const row = lyricist.closest(".tag-comparison-row");
+    if (!(row instanceof HTMLElement))
+      throw new Error("Lyricist comparison row missing");
+    expect(within(row).getByText("Changed")).toBeVisible();
+    await user.click(screen.getByText("More fields"));
+    expect(
+      screen.getByText("More fields").closest("details"),
+    ).not.toHaveAttribute("open");
+    expect(screen.getByText("1 change drafted")).toBeVisible();
   });
 
   it("focuses a blocked preview and keeps confirmation unavailable", () => {

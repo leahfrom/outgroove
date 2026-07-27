@@ -32,6 +32,9 @@ export interface MetadataTagChanges {
   readonly genres?: readonly string[];
   readonly composers?: readonly string[];
   readonly conductors?: readonly string[];
+  readonly lyricists?: readonly string[];
+  readonly isrcs?: readonly string[];
+  readonly copyright?: string | null;
 }
 
 export interface MetadataWriter {
@@ -114,6 +117,19 @@ function applyChanges(tag: TagData, changes: MetadataTagChanges): TagData {
       throw new Error("This writer supports one proposed conductor value.");
     updated.conductor = conductors[0] ?? "";
   }
+  if (changes.lyricists !== undefined) {
+    const lyricists = changes.lyricists;
+    if (lyricists.length > 1)
+      throw new Error("This writer supports one proposed lyricist value.");
+    updated.lyricist = lyricists[0] ?? "";
+  }
+  if (changes.isrcs !== undefined) {
+    const isrcs = changes.isrcs;
+    if (isrcs.length > 1)
+      throw new Error("This writer supports one proposed ISRC.");
+    updated.isrc = isrcs[0] ?? "";
+  }
+  if ("copyright" in changes) updated.copyright = changes.copyright ?? "";
   return updated;
 }
 
@@ -152,11 +168,33 @@ function changesMatch(
     )
       return false;
   }
+  if (changes.lyricists !== undefined) {
+    const proposedLyricists = changes.lyricists;
+    const lyricists = file.tags.lyricists ?? [];
+    if (
+      lyricists.length !== proposedLyricists.length ||
+      !lyricists.every(
+        (lyricist, index) => lyricist === proposedLyricists[index],
+      )
+    )
+      return false;
+  }
+  if (changes.isrcs !== undefined) {
+    const proposedIsrcs = changes.isrcs;
+    const isrcs = file.tags.isrcs ?? [];
+    if (
+      isrcs.length !== proposedIsrcs.length ||
+      !isrcs.every((isrc, index) => isrc === proposedIsrcs[index])
+    )
+      return false;
+  }
   return (Object.keys(changes) as (keyof MetadataTagChanges)[]).every(
     (field) =>
       field === "genres" ||
       field === "composers" ||
       field === "conductors" ||
+      field === "lyricists" ||
+      field === "isrcs" ||
       file.tags[field] === changes[field],
   );
 }
