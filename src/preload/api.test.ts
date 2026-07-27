@@ -68,6 +68,25 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("readFile");
   });
 
+  it("maps MusicBrainz lookup and cancellation to fixed album-ID-only channels", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const request = {
+      albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+    };
+    await api.findMusicBrainzAlbumCandidates(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.findMusicBrainzAlbumCandidates,
+      request,
+    );
+    await api.cancelMusicBrainzAlbumCandidates(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelMusicBrainzAlbumCandidates,
+      request,
+    );
+    expect(api).not.toHaveProperty("fetch");
+    expect(api).not.toHaveProperty("searchProvider");
+  });
+
   it("maps optional folder artwork through fixed preview and apply channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const preview = {

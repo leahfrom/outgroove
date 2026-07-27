@@ -9,6 +9,7 @@ export function AlbumActionsMenu({
   onEditMetadata,
   onEditTrackOrder,
   onEditArtwork,
+  onFindMatches,
   onOpenHistory,
   onAddToSync,
 }: {
@@ -18,6 +19,7 @@ export function AlbumActionsMenu({
   readonly onEditMetadata: () => void;
   readonly onEditTrackOrder: () => void;
   readonly onEditArtwork: () => void;
+  readonly onFindMatches: () => void;
   readonly onOpenHistory: () => void;
   readonly onAddToSync: () => void;
 }): React.JSX.Element {
@@ -57,6 +59,10 @@ export function AlbumActionsMenu({
           ariaLabel={`Actions for ${albumTitle}`}
           className="album-action-menu"
           items={[
+            {
+              label: "Find MusicBrainz matches",
+              onSelect: onFindMatches,
+            },
             { label: "Edit album metadata", onSelect: onEditMetadata },
             { label: "Change album artwork", onSelect: onEditArtwork },
             { label: "Edit track order", onSelect: onEditTrackOrder },

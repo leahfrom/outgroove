@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { CatalogAlbum } from "../domain/catalog";
+import type { ComparedAlbumCandidate } from "../domain/album-identification";
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import { isValidPartialDate } from "../domain/tag-edit";
@@ -78,6 +79,9 @@ export const albumArtworkRequestSchema = z
         message: "Choose each album only once.",
       }),
   })
+  .strict();
+export const albumIdentificationRequestSchema = z
+  .object({ albumId: z.uuid() })
   .strict();
 export const savedLibraryFilterDefinitionSchema = z
   .object({
@@ -692,6 +696,18 @@ export interface SyncRecoveryResultDto {
   readonly complete: boolean;
 }
 
+export interface AlbumIdentificationResultDto {
+  readonly albumId: string;
+  readonly sent: {
+    readonly albumTitle: string;
+    readonly albumArtist: string;
+  };
+  readonly candidates: readonly ComparedAlbumCandidate[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
 export interface OutgrooveApi {
   chooseLibraryFolder(): Promise<Result<LibraryRootDto | null>>;
   listLibraryRoots(): Promise<Result<readonly LibraryRootDto[]>>;
@@ -719,6 +735,12 @@ export interface OutgrooveApi {
   loadAlbumArtwork(
     request: z.infer<typeof albumArtworkRequestSchema>,
   ): Promise<Result<readonly AlbumArtworkThumbnailDto[]>>;
+  findMusicBrainzAlbumCandidates(
+    request: z.infer<typeof albumIdentificationRequestSchema>,
+  ): Promise<Result<AlbumIdentificationResultDto>>;
+  cancelMusicBrainzAlbumCandidates(
+    request: z.infer<typeof albumIdentificationRequestSchema>,
+  ): Promise<Result<{ readonly cancelled: boolean }>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,

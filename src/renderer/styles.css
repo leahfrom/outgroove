@@ -2058,6 +2058,96 @@ h1 {
 .album-editing-sheet {
   width: min(100%, 1120px);
 }
+.album-identification-sheet {
+  width: min(100%, 900px);
+}
+.identification-heading {
+  margin-bottom: 1rem;
+}
+.identification-heading h2,
+.identification-candidate h3 {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+}
+.identification-heading p:last-child,
+.identification-privacy p,
+.identification-candidate header p {
+  color: #526159;
+}
+.identification-privacy {
+  margin-bottom: 1rem;
+}
+.identification-privacy .actions {
+  justify-content: flex-start;
+}
+.identification-status {
+  min-height: 1.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 650;
+}
+.identification-candidates {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.identification-candidate > header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.candidate-confidence {
+  flex: 0 0 auto;
+  border: 1px solid #aab9ad;
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  background: #f4f6f2;
+  text-transform: capitalize;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.candidate-confidence.strong {
+  border-color: #5f8d6c;
+  background: #e8f4eb;
+}
+.candidate-confidence.weak {
+  border-color: #c6aa76;
+  background: #fff6e4;
+}
+.identification-candidate dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.identification-candidate dl div:last-child {
+  grid-column: 1 / -1;
+}
+.identification-candidate dt,
+.candidate-evidence h4 {
+  font-weight: 750;
+}
+.identification-candidate dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+.candidate-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.candidate-evidence h4 {
+  margin-bottom: 0.35rem;
+}
+.candidate-evidence ul,
+.candidate-evidence p {
+  margin: 0;
+}
+.identifier {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88rem;
+}
 .album-editing-heading {
   display: block;
   margin-bottom: 1rem;
@@ -3201,6 +3291,20 @@ td {
   }
   .album-editing-tools {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .identification-candidate > header,
+  .candidate-evidence {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .candidate-confidence {
+    justify-self: start;
+  }
+  .identification-candidate dl {
+    grid-template-columns: 1fr;
+  }
+  .identification-candidate dl div:last-child {
+    grid-column: auto;
   }
 }
 @media (max-width: 600px) {

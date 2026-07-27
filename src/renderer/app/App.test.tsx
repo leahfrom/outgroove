@@ -51,6 +51,7 @@ async function openLibraryAlbum(
 async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
+    | "Find MusicBrainz matches"
     | "Edit album metadata"
     | "Change album artwork"
     | "Edit track order"
@@ -217,6 +218,10 @@ function api(applyVerified: boolean): OutgrooveApi {
           ok: true,
           value: albumIds.map((albumId) => ({ albumId, status: "missing" })),
         }),
+    ),
+    findMusicBrainzAlbumCandidates: vi.fn(),
+    cancelMusicBrainzAlbumCandidates: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
@@ -839,6 +844,76 @@ describe("tag edit UI safety states", () => {
       ).getByLabelText("Tag edit confirmation"),
     ).toBeVisible();
     expect(applyEdit).not.toHaveBeenCalled();
+  });
+
+  it("routes an explicit read-only album search through the narrow candidate API", async () => {
+    const mockApi = api(true);
+    const findCandidates = vi
+      .spyOn(mockApi, "findMusicBrainzAlbumCandidates")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          albumId: album.id,
+          sent: {
+            albumTitle: album.title,
+            albumArtist: album.albumArtist,
+          },
+          source: "network",
+          fetchedAt: "2026-07-27T12:00:00.000Z",
+          readOnly: true,
+          candidates: [
+            {
+              releaseId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+              releaseGroupId: null,
+              title: "Fixture Album",
+              artistCredit: "Fixture Artist",
+              date: "2026",
+              country: "DE",
+              status: "Official",
+              trackCount: 1,
+              catalogNumbers: [],
+              musicBrainzScore: 100,
+              score: 95,
+              confidence: "strong",
+              matches: [
+                "Album title matches",
+                "Album artist matches",
+                "Track count matches (1)",
+                "Release date agrees at known precision (2026)",
+              ],
+              conflicts: [],
+            },
+          ],
+        },
+      });
+    const applyTrack = vi.spyOn(mockApi, "applyTrackTagEdit");
+    const applyAlbum = vi.spyOn(mockApi, "applyAlbumTitleEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+
+    const trigger = await chooseAlbumAction(user, "Find MusicBrainz matches");
+    const dialog = screen.getByRole("dialog", {
+      name: "Find MusicBrainz matches for Fixture Album",
+    });
+    expect(dialog).toHaveFocus();
+    expect(findCandidates).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(findCandidates).toHaveBeenCalledWith({ albumId: album.id });
+    expect(await within(dialog).findByRole("article")).toHaveTextContent(
+      "strong · 95/100",
+    );
+    expect(applyTrack).not.toHaveBeenCalled();
+    expect(applyAlbum).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+    expect(dialog).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it("routes local artwork through a preserved preview and explicit keyboard confirmation", async () => {

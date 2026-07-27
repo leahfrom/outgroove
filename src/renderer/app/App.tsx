@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AlbumArtworkEditPreviewDto,
+  AlbumIdentificationResultDto,
   AlbumArtworkExportPreviewDto,
   AlbumArtworkExportResultDto,
   AlbumArtworkThumbnailDto,
@@ -53,6 +54,7 @@ import {
 } from "../../shared/domain/album-diagnostics";
 import { ActivityView, type ActivityProgress } from "./activity-view";
 import { AlbumActionsMenu } from "./album-actions-menu";
+import { AlbumIdentification } from "./album-identification";
 import { AlbumArtworkEditor } from "./album-artwork-editor";
 import {
   AlbumTitleWorkbench,
@@ -256,6 +258,13 @@ export function App(): React.JSX.Element {
   const [libraryAlbumDetailOpen, setLibraryAlbumDetailOpen] = useState(false);
   const [libraryAlbumEditingTool, setLibraryAlbumEditingTool] =
     useState<LibraryAlbumEditingTool>();
+  const [albumIdentificationOpen, setAlbumIdentificationOpen] = useState(false);
+  const [albumIdentificationLoading, setAlbumIdentificationLoading] =
+    useState(false);
+  const [albumIdentificationResult, setAlbumIdentificationResult] =
+    useState<AlbumIdentificationResultDto>();
+  const [albumIdentificationError, setAlbumIdentificationError] =
+    useState<string>();
   const [albumTitleSection, setAlbumTitleSection] =
     useState<AlbumTitleSection>("edit");
   const [editTitle, setEditTitle] = useState("");
@@ -462,6 +471,7 @@ export function App(): React.JSX.Element {
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
+  const albumIdentificationRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
@@ -2547,7 +2557,46 @@ export function App(): React.JSX.Element {
     setActiveView("sync");
   };
 
+  const openAlbumIdentification = (): void => {
+    setAlbumIdentificationResult(undefined);
+    setAlbumIdentificationError(undefined);
+    setAlbumIdentificationLoading(false);
+    setAlbumIdentificationOpen(true);
+  };
+
+  const searchAlbumIdentification = async (): Promise<void> => {
+    if (!selectedAlbum) return;
+    const requestId = ++albumIdentificationRequestId.current;
+    setAlbumIdentificationLoading(true);
+    setAlbumIdentificationError(undefined);
+    const result = await window.outgroove.findMusicBrainzAlbumCandidates({
+      albumId: selectedAlbum.id,
+    });
+    if (requestId !== albumIdentificationRequestId.current) return;
+    setAlbumIdentificationLoading(false);
+    if (result.ok) setAlbumIdentificationResult(result.value);
+    else setAlbumIdentificationError(result.error.message);
+  };
+
+  const cancelAlbumIdentification = (): void => {
+    if (!selectedAlbum) return;
+    albumIdentificationRequestId.current += 1;
+    setAlbumIdentificationLoading(false);
+    setAlbumIdentificationError(
+      "Search cancelled. No Library metadata changed.",
+    );
+    void window.outgroove.cancelMusicBrainzAlbumCandidates({
+      albumId: selectedAlbum.id,
+    });
+  };
+
+  const closeAlbumIdentification = (): void => {
+    if (albumIdentificationLoading) cancelAlbumIdentification();
+    setAlbumIdentificationOpen(false);
+  };
+
   const closeLibraryAlbum = (): void => {
+    if (albumIdentificationOpen) closeAlbumIdentification();
     if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
     setLibraryAlbumDetailOpen(false);
   };
@@ -3558,6 +3607,7 @@ export function App(): React.JSX.Element {
                         onEditArtwork={() =>
                           openLibraryAlbumEditingTool("artwork")
                         }
+                        onFindMatches={openAlbumIdentification}
                         onEditTrackOrder={() =>
                           openLibraryAlbumEditingTool("sequence")
                         }
@@ -3831,6 +3881,20 @@ export function App(): React.JSX.Element {
           onSelectSection={setSettingsSection}
         />
       )}
+      {activeView === "library" &&
+        libraryAlbumDetailOpen &&
+        albumIdentificationOpen &&
+        selectedAlbum && (
+          <AlbumIdentification
+            album={selectedAlbum}
+            error={albumIdentificationError}
+            loading={albumIdentificationLoading}
+            result={albumIdentificationResult}
+            onCancel={cancelAlbumIdentification}
+            onClose={closeAlbumIdentification}
+            onSearch={() => void searchAlbumIdentification()}
+          />
+        )}
       {activeView === "library" &&
         libraryAlbumDetailOpen &&
         libraryAlbumEditingTool &&
