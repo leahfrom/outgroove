@@ -62,6 +62,13 @@ published only after every platform build succeeds. Artifacts remain marked as
 prereleases until signing, notarization, and the full manual release matrix are
 implemented.
 
+Use the [release runbook](docs/release-runbook.md) for the complete release
+checklist and for the only authorized manual fallback when GitHub Actions jobs
+cannot start because of the known budget restriction. It includes the native
+Windows verification/manual-inspection handoff and direct upload, Linux x64
+container verification, checksum and remote-asset audit, honest CI reporting,
+and mandatory `main` → `develop` back-merge and branch cleanup.
+
 For an urgent production fix, replace the start command with:
 
 ```sh

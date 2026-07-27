@@ -3,7 +3,9 @@
 The v0.13.0 release candidate requires fresh verification on native macOS arm64
 and Windows x64, plus an x86-64 Debian Docker container on Apple Silicon.
 Results are recorded on the release pull request before the prerelease is
-published.
+published. The commands, evidence format, manual Windows handoff, Linux
+container fallback, asset audit, and Gitflow cleanup are defined in the
+[release runbook](release-runbook.md).
 
 Artifact checksums are recorded only after all release documentation is final
 and the macOS and Linux packages have been rebuilt from that exact source
