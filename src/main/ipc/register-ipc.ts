@@ -345,6 +345,13 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.previewAlbumArtworkRemoval,
+    createValidatedHandler(
+      albumArtworkEditPreviewRequestSchema,
+      ({ albumId }) => dependencies.artworkEditor.previewRemoval(albumId),
+    ),
+  );
+  ipcMain.handle(
     channels.previewAlbumArtworkUndo,
     createValidatedHandler(
       albumEditUndoPreviewRequestSchema,

@@ -32,6 +32,13 @@ interface PendingArtworkOperation {
   readonly files: readonly PendingArtworkFile[];
 }
 
+type ArtworkProposal =
+  | {
+      readonly action: "replace";
+      readonly selected: Awaited<ReturnType<typeof readSelectedArtwork>>;
+    }
+  | { readonly action: "remove" };
+
 function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -69,6 +76,12 @@ function replaceFrontCover(
   );
   preserved.splice(firstFront < 0 ? 0 : firstFront, 0, selected);
   return preserved;
+}
+
+function removeFrontCovers(
+  pictures: readonly PictureInfo[],
+): readonly PictureInfo[] {
+  return pictures.filter((picture) => picture.kind !== PictureKind.CoverFront);
 }
 
 function asPictures(
@@ -163,11 +176,25 @@ export class EditAlbumArtwork {
     albumId: string,
     selectedPath: string,
   ): Promise<AlbumArtworkEditPreviewDto> {
+    const selected = await readSelectedArtwork(selectedPath);
+    return this.previewChange(albumId, { action: "replace", selected });
+  }
+
+  async previewRemoval(albumId: string): Promise<AlbumArtworkEditPreviewDto> {
+    return this.previewChange(albumId, { action: "remove" });
+  }
+
+  private async previewChange(
+    albumId: string,
+    proposal: ArtworkProposal,
+  ): Promise<AlbumArtworkEditPreviewDto> {
     const album = this.database.getAlbum(albumId);
     if (!album) throw new Error("Album does not exist.");
-    const selected = await readSelectedArtwork(selectedPath);
-    const dataUrl = this.encoder.encode(selected.picture.data);
-    if (!dataUrl)
+    const dataUrl =
+      proposal.action === "replace"
+        ? this.encoder.encode(proposal.selected.picture.data)
+        : undefined;
+    if (proposal.action === "replace" && !dataUrl)
       throw new Error("The selected artwork could not be decoded safely.");
     const files: PendingArtworkFile[] = [];
     for (const track of album.tracks) {
@@ -183,7 +210,10 @@ export class EditAlbumArtwork {
       }
       try {
         const current = await this.writer.readPictures(track.path);
-        const proposed = replaceFrontCover(current, selected.picture);
+        const proposed =
+          proposal.action === "replace"
+            ? replaceFrontCover(current, proposal.selected.picture)
+            : removeFrontCovers(current);
         files.push({
           fileId: track.id,
           path: track.path,
@@ -205,17 +235,22 @@ export class EditAlbumArtwork {
     const operationId = this.database.createArtworkEditOperation(
       albumId,
       tokenHash(confirmationToken),
+      proposal.action,
     );
     this.remember(operationId, { files });
     return {
       operationId,
       confirmationToken,
-      action: "replace",
-      proposedArtworkDataUrl: dataUrl,
-      mimeType: selected.picture.mimeType,
-      byteLength: selected.picture.data.byteLength,
-      width: selected.width,
-      height: selected.height,
+      action: proposal.action,
+      ...(proposal.action === "replace" && dataUrl
+        ? {
+            proposedArtworkDataUrl: dataUrl,
+            mimeType: proposal.selected.picture.mimeType,
+            byteLength: proposal.selected.picture.data.byteLength,
+            width: proposal.selected.width,
+            height: proposal.selected.height,
+          }
+        : {}),
       files: files.map((file) => ({
         fileId: file.fileId,
         path: file.path,
