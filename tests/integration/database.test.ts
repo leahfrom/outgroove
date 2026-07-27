@@ -200,11 +200,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the favorite-artist migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "020_favorite_artists.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 20);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(19);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(20);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
@@ -239,7 +251,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(
       migrated.connection
@@ -258,6 +270,75 @@ describe("database migration and backup", () => {
         .get(),
     ).toBe("provider_cache");
     migrated.close();
+  });
+
+  it("migrates released schema v19 without losing provider cache and adds durable favorites", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v19-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 19))
+      legacy.exec(migration.sql);
+    legacy
+      .prepare(
+        `INSERT INTO provider_cache
+          (provider, request_key, response_schema_version, status, fetched_at,
+           expires_at, payload_json)
+         VALUES ('musicbrainz', 'artist-query', 1, 200, '2026-07-28',
+           '2026-07-29', '{"artists":[]}')`,
+      )
+      .run();
+    legacy.pragma("user_version = 19");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      20,
+    );
+    expect(
+      migrated.getProviderCache("musicbrainz", "artist-query")?.payloadJson,
+    ).toBe('{"artists":[]}');
+    const favorite = migrated.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Artist, Fixture",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    });
+    expect(migrated.listFavoriteArtists("fixture")).toEqual([favorite]);
+    migrated.close();
+  });
+
+  it("stores stable artist identities, rejects duplicates, searches literally, and removes only the favorite", () => {
+    const database = new CatalogDatabase(":memory:");
+    const candidate = {
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture % Artíst",
+      sortName: "Fixture % Artíst",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    };
+    const favorite = database.addFavoriteArtist(candidate);
+    expect(database.listFavoriteArtists("%")).toEqual([favorite]);
+    expect(database.listFavoriteArtists("ARTI\u0301ST")).toEqual([favorite]);
+    expect(database.listFavoriteArtists("_")).toEqual([]);
+    expect(() => database.addFavoriteArtist(candidate)).toThrow(
+      "already a favorite",
+    );
+    expect(database.removeFavoriteArtist(favorite.id)).toEqual({
+      id: favorite.id,
+    });
+    expect(database.listFavoriteArtists()).toEqual([]);
+    expect(() => database.removeFavoriteArtist(favorite.id)).toThrow(
+      "no longer exists",
+    );
+    database.close();
   });
 
   it("stores versioned provider responses without exposing them as catalog data", async () => {
@@ -353,7 +434,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.listEditHistory("album")).toMatchObject([
       {
@@ -390,7 +471,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.getSyncProfile("profile")).toMatchObject({
       id: "profile",
@@ -422,7 +503,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.getSyncProfile("profile")?.album_ids).toEqual(["album"]);
     const run = migrated.createSyncRun("plan", "profile", directory);
@@ -503,7 +584,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -585,7 +666,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -627,7 +708,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -658,7 +739,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -711,7 +792,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(
       migrated.queryLibrary({
@@ -787,7 +868,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -842,7 +923,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",
@@ -896,7 +977,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      20,
     );
     const albums = migrated.listAlbums();
     expect(albums).toHaveLength(2);

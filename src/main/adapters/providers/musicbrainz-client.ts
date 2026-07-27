@@ -5,6 +5,7 @@ import type {
   MusicBrainzArtistCredit,
   MusicBrainzReleaseTracklist,
 } from "../../../shared/domain/album-identification";
+import type { MusicBrainzArtistCandidate } from "../../../shared/domain/favorite-artist";
 
 const responseSchemaVersion = 1;
 const provider = "musicbrainz";
@@ -61,6 +62,34 @@ const musicBrainzSearchResponseSchema = z
                   .loose(),
               )
               .max(100)
+              .optional(),
+          })
+          .loose(),
+      )
+      .max(8)
+      .default([]),
+  })
+  .loose();
+
+const musicBrainzArtistSearchResponseSchema = z
+  .object({
+    artists: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            score: z.number().int().min(0).max(100).optional(),
+            name: z.string().min(1).max(1000),
+            "sort-name": z.string().min(1).max(1000),
+            disambiguation: z.string().max(1000).nullable().optional(),
+            type: z.string().max(100).nullable().optional(),
+            country: z.string().max(10).nullable().optional(),
+            area: z
+              .object({
+                name: z.string().min(1).max(1000),
+              })
+              .loose()
+              .nullable()
               .optional(),
           })
           .loose(),
@@ -170,6 +199,12 @@ export interface MusicBrainzReleaseResult {
   readonly fetchedAt: string;
 }
 
+export interface MusicBrainzArtistSearchResult {
+  readonly candidates: readonly MusicBrainzArtistCandidate[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+}
+
 interface Options {
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
@@ -207,6 +242,12 @@ function requestKey(title: string, artist: string): string {
   });
 }
 
+function artistRequestKey(query: string): string {
+  return JSON.stringify({
+    artistSearch: query.normalize("NFC").trim(),
+  });
+}
+
 function mapResponse(
   payload: z.infer<typeof musicBrainzSearchResponseSchema>,
 ): readonly AlbumIdentificationCandidate[] {
@@ -237,6 +278,21 @@ function mapResponse(
       ),
     ],
     musicBrainzScore: release.score ?? 0,
+  }));
+}
+
+function mapArtistResponse(
+  payload: z.infer<typeof musicBrainzArtistSearchResponseSchema>,
+): readonly MusicBrainzArtistCandidate[] {
+  return payload.artists.slice(0, 8).map((artist) => ({
+    artistId: artist.id.toLocaleLowerCase("en-US"),
+    name: artist.name,
+    sortName: artist["sort-name"],
+    disambiguation: artist.disambiguation ?? null,
+    type: artist.type ?? null,
+    country: artist.country ?? null,
+    area: artist.area?.name ?? null,
+    score: artist.score ?? 0,
   }));
 }
 
@@ -295,6 +351,10 @@ export class MusicBrainzClient {
     string,
     Promise<MusicBrainzReleaseResult>
   >();
+  private readonly artistInFlight = new Map<
+    string,
+    Promise<MusicBrainzArtistSearchResult>
+  >();
   private nextRequestAt = 0;
 
   constructor(
@@ -337,6 +397,20 @@ export class MusicBrainzClient {
       signal,
     ).finally(() => this.releaseInFlight.delete(key));
     this.releaseInFlight.set(key, pending);
+    return pending;
+  }
+
+  searchArtists(
+    query: string,
+    signal: AbortSignal,
+  ): Promise<MusicBrainzArtistSearchResult> {
+    const key = artistRequestKey(query);
+    const existing = this.artistInFlight.get(key);
+    if (existing) return existing;
+    const pending = this.executeArtistSearch(key, query, signal).finally(() =>
+      this.artistInFlight.delete(key),
+    );
+    this.artistInFlight.set(key, pending);
     return pending;
   }
 
@@ -389,6 +463,33 @@ export class MusicBrainzClient {
       return undefined;
     return {
       release: mapRelease(parsed.data),
+      source: "cache",
+      fetchedAt: cached.fetchedAt,
+      expired: Date.parse(cached.expiresAt) <= this.now(),
+    };
+  }
+
+  private readCachedArtistSearch(
+    key: string,
+  ):
+    | (MusicBrainzArtistSearchResult & { readonly expired: boolean })
+    | undefined {
+    const cached = this.cache.getProviderCache(provider, key);
+    if (
+      cached?.status !== 200 ||
+      cached.responseSchemaVersion !== responseSchemaVersion
+    )
+      return undefined;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(cached.payloadJson) as unknown;
+    } catch {
+      return undefined;
+    }
+    const parsed = musicBrainzArtistSearchResponseSchema.safeParse(payload);
+    if (!parsed.success) return undefined;
+    return {
+      candidates: mapArtistResponse(parsed.data),
       source: "cache",
       fetchedAt: cached.fetchedAt,
       expired: Date.parse(cached.expiresAt) <= this.now(),
@@ -449,6 +550,35 @@ export class MusicBrainzClient {
       this.cacheResponse(key, response.status, response.fetchedAt, payload);
       return {
         release: mapRelease(payload),
+        source: "network",
+        fetchedAt: response.fetchedAt,
+      };
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (cached) return { ...cached, source: "stale-cache" };
+      throw error;
+    }
+  }
+
+  private async executeArtistSearch(
+    key: string,
+    query: string,
+    signal: AbortSignal,
+  ): Promise<MusicBrainzArtistSearchResult> {
+    const cached = this.readCachedArtistSearch(key);
+    if (cached && !cached.expired) return cached;
+    const url = new URL("https://musicbrainz.org/ws/2/artist/");
+    url.searchParams.set("query", `artist:${lucenePhrase(query)}`);
+    url.searchParams.set("fmt", "json");
+    url.searchParams.set("limit", "8");
+    try {
+      const response = await this.performRequest(url, signal);
+      const payload = musicBrainzArtistSearchResponseSchema.parse(
+        JSON.parse(response.rawPayload) as unknown,
+      );
+      this.cacheResponse(key, response.status, response.fetchedAt, payload);
+      return {
+        candidates: mapArtistResponse(payload),
         source: "network",
         fetchedAt: response.fetchedAt,
       };

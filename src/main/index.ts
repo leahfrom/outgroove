@@ -22,6 +22,7 @@ import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
+import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -98,6 +99,7 @@ async function createWindow(): Promise<void> {
       artworkEncoder,
       artworkEditor,
     ),
+    favoriteArtists: new ManageFavoriteArtists(database, musicBrainz),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor,
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
@@ -167,6 +169,16 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged local artwork extraction and thumbnail encoding failed.",
       );
+    database.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Packaged Fixture Artist",
+      sortName: "Packaged Fixture Artist",
+      disambiguation: "isolated packaged smoke identity",
+      type: "Group",
+      country: "DE",
+      area: "Berlin",
+      score: 100,
+    });
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
     const verifiedBackup = new CatalogDatabase(backupPath);
@@ -175,6 +187,13 @@ async function createWindow(): Promise<void> {
       "ok"
     )
       throw new Error("Packaged database backup failed verification.");
+    if (
+      verifiedBackup.listFavoriteArtists()[0]?.musicBrainzArtistId !==
+      "7c08e5aa-3d6a-480f-8763-156120bc9bd9"
+    )
+      throw new Error(
+        "Packaged favorite-artist persistence was not retained in the verified backup.",
+      );
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
     await scanCatalog.close();

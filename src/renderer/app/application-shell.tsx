@@ -1,6 +1,12 @@
 import type { ReactNode } from "react";
 
-export const appViews = ["library", "sync", "activity", "settings"] as const;
+export const appViews = [
+  "library",
+  "radar",
+  "sync",
+  "activity",
+  "settings",
+] as const;
 
 export type AppView = (typeof appViews)[number];
 export type NoticeTone = "info" | "success" | "error";
@@ -17,6 +23,10 @@ const viewCopy: Record<
   library: {
     label: "Library",
     description: "Browse, search, and inspect your local collection.",
+  },
+  radar: {
+    label: "Radar",
+    description: "Save exact artist identities for release discovery.",
   },
   sync: {
     label: "Sync",

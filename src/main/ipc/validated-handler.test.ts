@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  addFavoriteArtistRequestSchema,
   albumArtworkRequestSchema,
   albumIdentificationRequestSchema,
   coverArtArchiveArtworkEditPreviewRequestSchema,
@@ -12,11 +13,14 @@ import {
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
   emptyRequestSchema,
+  favoriteArtistListRequestSchema,
+  favoriteArtistSearchRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
   renameSyncProfileRequestSchema,
+  removeFavoriteArtistRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
   syncProfileTargetApplyRequestSchema,
@@ -34,6 +38,84 @@ import {
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
+  it("accepts only a bounded artist query and stable reviewed identity for Favorites", async () => {
+    const search = vi.fn(() => ({ readOnly: true }));
+    const searchHandler = createValidatedHandler(
+      favoriteArtistSearchRequestSchema,
+      search,
+    );
+    await expect(
+      searchHandler({}, { query: "  Fixture Artist  " }),
+    ).resolves.toMatchObject({
+      ok: true,
+      value: { readOnly: true },
+    });
+    expect(search).toHaveBeenCalledWith({ query: "Fixture Artist" });
+    for (const request of [
+      { query: "" },
+      { query: "x".repeat(201) },
+      { query: "Artist", path: "/private/library" },
+      { query: "Artist", audio: "bytes" },
+      { query: "Artist", providerUrl: "https://example.com" },
+    ])
+      await expect(searchHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const add = vi.fn();
+    const addHandler = createValidatedHandler(
+      addFavoriteArtistRequestSchema,
+      add,
+    );
+    const artistId = "7c08e5aa-3d6a-480f-8763-156120bc9bd9";
+    await expect(addHandler({}, { artistId })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(add).toHaveBeenCalledWith({ artistId });
+    await expect(
+      addHandler({}, { artistId, name: "Renderer supplied" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
+  it("validates local favorite listing and removal without accepting provider or path fields", async () => {
+    const list = vi.fn(() => []);
+    const listHandler = createValidatedHandler(
+      favoriteArtistListRequestSchema,
+      list,
+    );
+    await expect(listHandler({}, { query: "" })).resolves.toEqual({
+      ok: true,
+      value: [],
+    });
+    expect(list).toHaveBeenCalledWith({ query: "" });
+    await expect(
+      listHandler({}, { query: "", provider: "musicbrainz" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+
+    const remove = vi.fn();
+    const removeHandler = createValidatedHandler(
+      removeFavoriteArtistRequestSchema,
+      remove,
+    );
+    const id = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    await expect(removeHandler({}, { id })).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(
+      removeHandler({}, { id, targetPath: "/Volumes/DAP" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
   it("accepts only an album and release identity for Cover Art Archive preview", async () => {
     const useCase = vi.fn(() => ({ readOnly: true }));
     const handler = createValidatedHandler(

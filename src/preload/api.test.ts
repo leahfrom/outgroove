@@ -127,6 +127,42 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("searchProvider");
   });
 
+  it("maps artist Favorites through fixed path-free Radar channels", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const search = { query: "Fixture Artist" };
+    await api.searchMusicBrainzArtists(search);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.searchMusicBrainzArtists,
+      search,
+    );
+    await api.cancelMusicBrainzArtistSearch();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelMusicBrainzArtistSearch,
+      {},
+    );
+    await api.listFavoriteArtists({ query: "" });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listFavoriteArtists,
+      { query: "" },
+    );
+    const artist = {
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+    };
+    await api.addFavoriteArtist(artist);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.addFavoriteArtist,
+      artist,
+    );
+    const favorite = { id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf" };
+    await api.removeFavoriteArtist(favorite);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.removeFavoriteArtist,
+      favorite,
+    );
+    expect(api).not.toHaveProperty("fetch");
+    expect(api).not.toHaveProperty("provider");
+  });
+
   it("maps optional folder artwork through fixed preview and apply channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const preview = {

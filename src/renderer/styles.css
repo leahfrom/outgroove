@@ -171,6 +171,7 @@ button:disabled {
   color: #526159;
 }
 .sync-view,
+.radar-view,
 .settings-view {
   display: grid;
   gap: 1rem;
@@ -3356,6 +3357,181 @@ td {
   display: block;
   color: #71352f;
 }
+.radar-introduction,
+.favorite-artists,
+.artist-search {
+  min-width: 0;
+  padding: 1.15rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 14px;
+  background: white;
+}
+.radar-introduction {
+  display: flex;
+  gap: 1.5rem;
+  align-items: end;
+  justify-content: space-between;
+}
+.radar-introduction h2,
+.radar-introduction p:last-child,
+.artist-search-heading h2,
+.artist-search-heading p,
+.favorite-artists .section-heading h2,
+.favorite-artists .section-heading p {
+  margin-bottom: 0;
+}
+.radar-introduction p:last-child,
+.artist-search-heading > p,
+.favorite-artists .section-heading p {
+  max-width: 52rem;
+  color: #526159;
+}
+.radar-introduction > strong {
+  flex: 0 0 auto;
+  color: #526159;
+}
+.favorite-artists {
+  display: grid;
+  gap: 1rem;
+}
+.favorite-artists .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.75fr);
+  gap: 1.25rem;
+  align-items: end;
+}
+.favorite-artists .inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+}
+.favorite-artists .inline label {
+  grid-column: 1 / -1;
+}
+.favorite-artists ul,
+.artist-search-results ol {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.favorite-artists li article {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.favorite-artists li article > div {
+  min-width: 0;
+}
+.favorite-artists h3,
+.favorite-artists li p {
+  margin: 0;
+}
+.favorite-artists li p {
+  margin-top: 0.25rem;
+  color: #526159;
+}
+.favorite-artists code {
+  display: block;
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+  color: #3f4e45;
+  font-size: 0.8rem;
+}
+.artist-search {
+  display: grid;
+  gap: 1rem;
+}
+.artist-search-heading {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.5fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: end;
+}
+.artist-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+.artist-search-form label {
+  grid-column: 1 / -1;
+}
+.artist-search-results {
+  display: grid;
+  gap: 0.8rem;
+}
+.artist-search-results > p {
+  margin: 0;
+}
+.artist-search-results li article {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.artist-search-results header {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.artist-search-results h3,
+.artist-search-results header p {
+  margin: 0;
+}
+.artist-search-results header p {
+  margin-top: 0.25rem;
+  color: #526159;
+}
+.artist-search-results header > span {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  background: #e7f3e9;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+.artist-search-results dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+.artist-search-results dl div {
+  min-width: 0;
+}
+.artist-search-results dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.artist-search-results dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+.artist-search-results button {
+  justify-self: start;
+}
+.favorite-removal-confirmation {
+  display: grid;
+  gap: 0.8rem;
+}
+.favorite-removal-confirmation h2,
+.favorite-removal-confirmation p {
+  margin: 0;
+}
+
 @media (max-width: 1200px) {
   .library-toolbar {
     grid-template-columns: auto minmax(0, 1fr);
@@ -3385,6 +3561,29 @@ td {
   .primary-navigation button small,
   .privacy-note {
     display: none;
+  }
+  .radar-introduction,
+  .favorite-artists li article,
+  .artist-search-results header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .favorite-artists .section-heading,
+  .artist-search-heading {
+    grid-template-columns: 1fr;
+  }
+  .favorite-artists .inline,
+  .artist-search-form,
+  .artist-search-results dl {
+    grid-template-columns: 1fr;
+  }
+  .favorite-artists .inline label,
+  .artist-search-form label {
+    grid-column: auto;
+  }
+  .artist-search-results header > span,
+  .artist-search-results button {
+    align-self: start;
   }
   .application-surface {
     padding: 1rem;

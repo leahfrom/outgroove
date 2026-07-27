@@ -10,6 +10,7 @@ import {
   updateSavedLibraryFilterRequestSchema,
   type SavedLibraryFilterDefinition,
   type SavedLibraryFilterDto,
+  type FavoriteArtistDto,
   type LibraryFormatDto,
   type LibraryFolderDto,
   type LibraryGenreDto,
@@ -32,6 +33,7 @@ import type {
   NormalizedTags,
   ScannedAudioFile,
 } from "../../../shared/domain/catalog";
+import type { MusicBrainzArtistCandidate } from "../../../shared/domain/favorite-artist";
 import {
   albumGroupingKey,
   compareAlbumsByArtistReleaseDateTitle,
@@ -709,6 +711,79 @@ export class CatalogDatabase {
         createdAt: row.created_at,
       };
     });
+  }
+
+  listFavoriteArtists(query = ""): readonly FavoriteArtistDto[] {
+    const favorites = this.connection
+      .prepare(
+        `SELECT id, musicbrainz_artist_id AS musicBrainzArtistId, name,
+          sort_name AS sortName, disambiguation, artist_type AS type, country,
+          created_at AS createdAt
+         FROM favorite_artists
+         ORDER BY sort_name COLLATE NOCASE, sort_name, name, id
+         LIMIT 500`,
+      )
+      .all() as FavoriteArtistDto[];
+    const normalizedQuery = query.normalize("NFC").toLocaleLowerCase();
+    if (!normalizedQuery) return favorites;
+    return favorites.filter((favorite) =>
+      [favorite.name, favorite.sortName, favorite.disambiguation ?? ""].some(
+        (value) =>
+          value.normalize("NFC").toLocaleLowerCase().includes(normalizedQuery),
+      ),
+    );
+  }
+
+  addFavoriteArtist(candidate: MusicBrainzArtistCandidate): FavoriteArtistDto {
+    if (
+      this.connection
+        .prepare("SELECT 1 FROM favorite_artists WHERE musicbrainz_artist_id=?")
+        .get(candidate.artistId)
+    )
+      throw new Error(`“${candidate.name}” is already a favorite artist.`);
+    const count = this.connection
+      .prepare("SELECT COUNT(*) FROM favorite_artists")
+      .pluck()
+      .get() as number;
+    if (count >= 500)
+      throw new Error("Outgroove supports up to 500 favorite artists.");
+    const favorite: FavoriteArtistDto = {
+      id: randomUUID(),
+      musicBrainzArtistId: candidate.artistId,
+      name: candidate.name,
+      sortName: candidate.sortName,
+      disambiguation: candidate.disambiguation,
+      type: candidate.type,
+      country: candidate.country,
+      createdAt: new Date().toISOString(),
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO favorite_artists
+          (id, musicbrainz_artist_id, name, sort_name, disambiguation,
+           artist_type, country, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        favorite.id,
+        favorite.musicBrainzArtistId,
+        favorite.name,
+        favorite.sortName,
+        favorite.disambiguation,
+        favorite.type,
+        favorite.country,
+        favorite.createdAt,
+      );
+    return favorite;
+  }
+
+  removeFavoriteArtist(id: string): { readonly id: string } {
+    const result = this.connection
+      .prepare("DELETE FROM favorite_artists WHERE id=?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error("The favorite artist no longer exists.");
+    return { id };
   }
 
   createSavedLibraryFilter(

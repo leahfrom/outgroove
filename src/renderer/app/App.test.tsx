@@ -20,7 +20,7 @@ import { App } from "./App";
 
 async function openPrimaryView(
   user: ReturnType<typeof userEvent.setup>,
-  name: "Library" | "Sync" | "Activity" | "Settings",
+  name: "Library" | "Radar" | "Sync" | "Activity" | "Settings",
 ): Promise<void> {
   const navigation = screen.getByRole("navigation", {
     name: "Primary navigation",
@@ -229,6 +229,13 @@ function api(applyVerified: boolean): OutgrooveApi {
     cancelCoverArtArchiveArtwork: vi.fn(() =>
       Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
+    searchMusicBrainzArtists: vi.fn(),
+    cancelMusicBrainzArtistSearch: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    listFavoriteArtists: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    addFavoriteArtist: vi.fn(),
+    removeFavoriteArtist: vi.fn(),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -385,7 +392,7 @@ describe("tag edit UI safety states", () => {
     expect(
       within(navigation).queryByRole("button", { name: /^Workbench/u }),
     ).not.toBeInTheDocument();
-    expect(within(navigation).getAllByRole("button")).toHaveLength(4);
+    expect(within(navigation).getAllByRole("button")).toHaveLength(5);
     expect(
       within(navigation).getByRole("button", { name: /^Library/u }),
     ).toHaveAttribute("aria-current", "page");
@@ -401,6 +408,107 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("heading", { level: 1, name: "Activity" }),
     ).toBeVisible();
     expect(screen.queryByRole("search")).not.toBeInTheDocument();
+  });
+
+  it("routes explicit MusicBrainz artist selection and confirmed local removal through Radar", async () => {
+    const mockApi = api(true);
+    const saved = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+    };
+    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
+      ok: true,
+      value: [saved],
+    });
+    const search = vi
+      .spyOn(mockApi, "searchMusicBrainzArtists")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          sent: { artistName: "Fixture Artist" },
+          candidates: [
+            {
+              artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+              name: "Fixture Artist",
+              sortName: "Fixture Artist",
+              disambiguation: "Canadian solo artist",
+              type: "Person",
+              country: "CA",
+              area: "Canada",
+              score: 78,
+            },
+          ],
+          source: "network",
+          fetchedAt: "2026-07-28T08:00:00.000Z",
+          readOnly: true,
+        },
+      });
+    const add = vi.spyOn(mockApi, "addFavoriteArtist").mockResolvedValue({
+      ok: true,
+      value: {
+        ...saved,
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        musicBrainzArtistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+        country: "CA",
+      },
+    });
+    const remove = vi.spyOn(mockApi, "removeFavoriteArtist").mockResolvedValue({
+      ok: true,
+      value: { id: saved.id },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Radar",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(saved.musicBrainzArtistId)).toBeVisible();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Artist name" }),
+      "Fixture Artist",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(search).toHaveBeenCalledWith({ query: "Fixture Artist" });
+    const addButton = await screen.findByRole("button", {
+      name: "Add Fixture Artist to favorites",
+    });
+    addButton.focus();
+    await user.keyboard("{Enter}");
+    expect(add).toHaveBeenCalledWith({
+      artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+    });
+
+    const removeButton = screen.getByRole("button", {
+      name: "Remove Fixture Artist from favorites",
+    });
+    removeButton.focus();
+    await user.keyboard("{Enter}");
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Fixture Artist from favorites",
+    });
+    expect(dialog).toHaveFocus();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Confirm remove favorite",
+      }),
+    );
+    expect(remove).toHaveBeenCalledWith({ id: saved.id });
   });
 
   it("preserves Library search and view state across navigation", async () => {
@@ -5888,6 +5996,7 @@ describe("tag edit UI safety states", () => {
             tracks: 300,
             syncProfiles: 1,
             savedLibraryFilters: 2,
+            favoriteArtists: 3,
           },
         },
       }),
