@@ -19,6 +19,7 @@ import { MusicBrainzClient } from "./adapters/providers/musicbrainz-client";
 import { CoverArtArchiveClient } from "./adapters/providers/cover-art-archive-client";
 import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
+import { createElectronRadarNotifier } from "./adapters/notifications/electron-radar-notifier";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
@@ -49,6 +50,8 @@ const smokeTest =
   process.env.OUTGROOVE_SMOKE_TEST === "1";
 if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
   app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
+if (process.platform === "win32")
+  app.setAppUserModelId("com.squirrel.Outgroove.Outgroove");
 
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
@@ -122,6 +125,7 @@ async function createWindow(): Promise<void> {
           settings,
         );
     },
+    createElectronRadarNotifier(window),
   );
   registerIpc(ipcMain, {
     database,

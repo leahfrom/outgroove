@@ -209,6 +209,8 @@ export class RefreshRadar {
       favoriteArtistId: favorite.id,
       favoriteArtistName: favorite.name,
       ...committed,
+      newlyDiscovered:
+        favorite.lastSuccessfulRefreshAt === null ? 0 : committed.added,
       total: result.observations.length,
       source: result.source,
       providerFetchedAt: result.fetchedAt,

@@ -170,17 +170,40 @@ describe("validated IPC handlers", () => {
       radarBackgroundRefreshUpdateRequestSchema,
       updateBackground,
     );
-    const preferences = { enabled: true, pauseOnBattery: true };
+    const preferences = {
+      enabled: true,
+      pauseOnBattery: true,
+      notificationsEnabled: false,
+    };
     await expect(backgroundHandler({}, preferences)).resolves.toMatchObject({
       ok: true,
     });
     expect(updateBackground).toHaveBeenCalledWith(preferences);
     for (const request of [
       { enabled: true },
-      { enabled: 1, pauseOnBattery: true },
-      { enabled: true, pauseOnBattery: true, intervalHours: 1 },
-      { enabled: true, pauseOnBattery: true, artistIds: [favoriteArtistId] },
-      { enabled: true, pauseOnBattery: true, path: "/private/library" },
+      {
+        enabled: 1,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+      },
+      {
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+        intervalHours: 1,
+      },
+      {
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+        artistIds: [favoriteArtistId],
+      },
+      {
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+        path: "/private/library",
+      },
     ])
       await expect(backgroundHandler({}, request)).resolves.toMatchObject({
         ok: false,

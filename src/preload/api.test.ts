@@ -183,7 +183,11 @@ describe("preload saved-filter allowlist", () => {
       channels.getRadarBackgroundRefreshSettings,
       {},
     );
-    const background = { enabled: true, pauseOnBattery: true };
+    const background = {
+      enabled: true,
+      pauseOnBattery: true,
+      notificationsEnabled: false,
+    };
     await api.updateRadarBackgroundRefreshSettings(background);
     expect(electron.invoke).toHaveBeenLastCalledWith(
       channels.updateRadarBackgroundRefreshSettings,
@@ -223,6 +227,25 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("fetch");
     expect(api).not.toHaveProperty("provider");
     expect(api).not.toHaveProperty("invoke");
+  });
+
+  it("subscribes notification clicks to one fixed payload-free Radar event", () => {
+    const listener = vi.fn();
+    const unsubscribe = api.onOpenRadarRequested(listener);
+    expect(electron.on).toHaveBeenCalledWith(
+      channels.openRadarRequested,
+      expect.any(Function),
+    );
+    const wrapped = electron.on.mock.calls.at(-1)?.[1] as
+      (() => void) | undefined;
+    wrapped?.();
+    expect(listener).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      channels.openRadarRequested,
+      wrapped,
+    );
   });
 
   it("maps optional folder artwork through fixed preview and apply channels", async () => {

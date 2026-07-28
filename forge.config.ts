@@ -1,7 +1,16 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { VitePlugin } from "@electron-forge/plugin-vite";
+
+const macSigningEnabled = process.env.OUTGROOVE_MAC_SIGNING === "1";
+const macNotaryKeychainProfile =
+  process.env.OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE;
+if (macNotaryKeychainProfile && !macSigningEnabled)
+  throw new Error(
+    "OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE requires OUTGROOVE_MAC_SIGNING=1.",
+  );
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -12,6 +21,12 @@ const config: ForgeConfig = {
       unpack: "**/node_modules/taglib-wasm/dist/*.wasm",
     },
     executableName: "Outgroove",
+    appBundleId: "de.leahfrom.outgroove",
+    appCategoryType: "public.app-category.music",
+    ...(macSigningEnabled ? { osxSign: {} } : {}),
+    ...(macNotaryKeychainProfile
+      ? { osxNotarize: { keychainProfile: macNotaryKeychainProfile } }
+      : {}),
     // Vite bundles every production dependency except this native adapter.
     // An explicit allowlist avoids shipping the complete development tree while
     // ensuring Forge can rebuild and unpack SQLite for Electron's ABI.
@@ -23,7 +38,17 @@ const config: ForgeConfig = {
       ),
   },
   rebuildConfig: {},
-  makers: [new MakerZIP({}, ["darwin", "win32", "linux"])],
+  makers: [
+    new MakerZIP({}, ["darwin", "win32", "linux"]),
+    new MakerSquirrel(
+      {
+        name: "Outgroove",
+        authors: "Outgroove contributors",
+        description: "Local-first music library and safe DAP sync",
+      },
+      ["win32"],
+    ),
+  ],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({

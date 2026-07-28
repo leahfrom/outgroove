@@ -1,9 +1,9 @@
 # Release runbook
 
 Use this checklist for every Outgroove release. The release is not complete
-until the tagged source, all three ZIPs, their smoke/manual evidence, the
-checksum manifest, release metadata, Gitflow back-merge, and branch cleanup
-have all been verified.
+until the tagged source, all three ZIPs, the Windows Setup application, their
+smoke/manual evidence, the checksum manifest, release metadata, Gitflow
+back-merge, and branch cleanup have all been verified.
 
 Automated GitHub Actions publication is the preferred path. The manual path
 below is a narrowly scoped fallback for the known Actions budget restriction;
@@ -78,6 +78,27 @@ out/make/zip/darwin/arm64/outgroove-darwin-arm64-<version>.zip
 
 Record `shasum -a 256 <zip>` and `stat -f '%z' <zip>`.
 
+Unsigned local/test packaging is the default and must remain buildable. It
+uses the stable bundle identifier `de.leahfrom.outgroove`, but Radar
+notifications stay visibly unavailable because reliable macOS notifications
+require signing. For a release-signing attempt, first import a valid Developer
+ID Application identity into the build keychain, store notarization credentials
+in a named `notarytool` keychain profile, and run:
+
+```sh
+OUTGROOVE_MAC_SIGNING=1 \
+OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE="<profile>" \
+npm run make
+```
+
+Never commit the certificate, password, Apple ID, app-specific password, API
+key, issuer, or keychain profile contents. The Forge configuration refuses a
+notarization profile unless signing is explicitly enabled. After a signed
+build, verify `codesign --verify --deep --strict <app>`, notarization/stapling,
+and a real native notification before describing macOS notifications as
+tested. The current automated release workflow does not import signing
+credentials and therefore produces an unsigned macOS ZIP.
+
 ### Windows x64 manual handoff
 
 Use native Windows x64, Node 24+, npm 11+, Git, and GitHub CLI. In PowerShell:
@@ -94,9 +115,11 @@ npm run verify
 npm run make
 npm run test:smoke
 
-$artifact = Resolve-Path "out\make\zip\win32\x64\outgroove-win32-x64-$version.zip"
-(Get-FileHash $artifact -Algorithm SHA256).Hash.ToLower()
-(Get-Item $artifact).Length
+$zip = Resolve-Path "out\make\zip\win32\x64\outgroove-win32-x64-$version.zip"
+$setup = Resolve-Path "out\make\squirrel.windows\x64\*Setup.exe"
+Get-FileHash $zip,$setup -Algorithm SHA256 |
+  Select-Object Path,@{Name="Sha256";Expression={$_.Hash.ToLower()}}
+Get-Item $zip,$setup | Select-Object FullName,Length
 ```
 
 `npm run verify` must pass as a whole. A timed-out UI test is not a pass. An
@@ -104,26 +127,33 @@ $artifact = Resolve-Path "out\make\zip\win32\x64\outgroove-win32-x64-$version.zi
 permission; enable Windows Developer Mode or use an appropriately privileged
 test shell, then rerun verification. Do not skip or weaken the safety test.
 
-Open the packaged executable discovered under `out\` and perform the release
-PR's manual acceptance checks. At minimum verify:
+Install the Setup application, then open the installed Outgroove application
+from the Start menu; the portable ZIP remains a separate fallback but cannot
+provide the stable Squirrel notification identity. Perform the release PR's
+manual acceptance checks. At minimum verify:
 
 - the sandboxed renderer loads and the isolated fixture scan/backup smoke
   already passed;
 - the changed workflow has correct changed/unchanged states, alignment,
   accessible names, and keyboard reachability;
 - a narrow window and long values remain usable where practical;
+- the installed build exposes the Radar notification preference, while the
+  portable ZIP explains that Setup is required;
+- an opted-in test notification focuses the installed app and opens unseen
+  Radar without exposing artist or release names in the notification;
 - no preview or write is started against the real catalog; and
 - the packaged application is closed after inspection.
 
-Report the exact Windows edition/architecture, command results, SHA-256, byte
-length, and an explicit manual result such as “everything looked good.” Do not
-reduce the handoff to only the checksum.
+Report the exact Windows edition/architecture, command results, both SHA-256
+digests, both byte lengths, installed/portable notification results, and an
+explicit manual result such as “everything looked good.” Do not reduce the
+handoff to only checksums.
 
 Once the coordinator has created the matching prerelease, the Windows operator
 may upload directly:
 
 ```powershell
-gh release upload $tag $artifact --clobber
+gh release upload $tag $zip $setup --clobber
 ```
 
 The coordinator must still audit the server-side asset name, byte length,
@@ -187,16 +217,17 @@ check and must not imply native Linux hardware or manual desktop validation.
 ## 4. Publish and audit every asset
 
 For the manual fallback, create or update the prerelease with `--target` set to
-the exact tagged `main` merge. Upload these four assets:
+the exact tagged `main` merge. Upload these five assets:
 
 - `outgroove-darwin-arm64-<version>.zip`
 - `outgroove-win32-x64-<version>.zip`
+- the generated Windows `*Setup.exe`
 - `outgroove-linux-x64-<version>.zip`
 - `SHA256SUMS.txt`
 
-`SHA256SUMS.txt` contains one lowercase SHA-256 line for each ZIP. Generate it
-only after all three final artifacts exist. Do not announce the prerelease
-while any platform or checksum is missing.
+`SHA256SUMS.txt` contains one lowercase SHA-256 line for each ZIP and the Setup
+application. Generate it only after all four final packages exist. Do not
+announce the prerelease while any platform package or checksum is missing.
 
 Audit the result with:
 
@@ -207,7 +238,8 @@ gh release view "v<version>" \
 
 Confirm:
 
-- exactly the expected three ZIPs and checksum file are present;
+- exactly the expected three ZIPs, Windows Setup application, and checksum file
+  are present;
 - every asset state is `uploaded`;
 - remote sizes and SHA-256 digests match the recorded local/Windows evidence;
 - `targetCommitish` is the tagged `main` merge, not `develop`;

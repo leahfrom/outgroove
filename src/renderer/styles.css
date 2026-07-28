@@ -3400,6 +3400,12 @@ td {
   min-width: 0;
   margin: 0;
 }
+.radar-background-settings .notification-capability-hint {
+  max-width: 46rem;
+  margin: -0.25rem 0 0 1.65rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
 .radar-background-settings dl {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3484,6 +3490,7 @@ td {
 }
 .radar-releases .section-heading {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.25rem;
   align-items: end;
   justify-content: space-between;
@@ -3507,19 +3514,23 @@ td {
 }
 .radar-filters {
   display: grid;
-  flex: 0 0 auto;
+  flex: 1 1 32rem;
   grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr);
   gap: 0.75rem;
   align-items: end;
   width: min(34rem, 100%);
   max-width: 34rem;
 }
+.radar-filters > label {
+  min-width: 0;
+}
 .radar-filters > label:first-child {
   margin: 0;
 }
 .radar-filters select {
   display: block;
-  min-width: 10rem;
+  width: 100%;
+  min-width: 0;
   margin-top: 0.35rem;
 }
 .radar-dismissed-toggle input {

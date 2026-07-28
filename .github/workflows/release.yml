@@ -23,7 +23,9 @@ jobs:
           - os: windows-2022
             platform: Windows
             artifact: windows-x64
-            package-path: out/make/zip/win32/x64/*.zip
+            package-path: |
+              out/make/zip/win32/x64/*.zip
+              out/make/squirrel.windows/x64/*Setup.exe
           - os: ubuntu-latest
             platform: Linux
             artifact: linux-x64
@@ -46,7 +48,7 @@ jobs:
         run: xvfb-run -a npm run test:smoke
       - if: runner.os != 'Linux'
         run: npm run test:smoke
-      - name: Upload packaged ZIP
+      - name: Upload release packages
         uses: actions/upload-artifact@v7
         with:
           name: outgroove-${{ github.ref_name }}-${{ matrix.artifact }}
@@ -63,21 +65,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download packaged ZIPs
+      - name: Download release packages
         uses: actions/download-artifact@v8
         with:
           pattern: outgroove-${{ github.ref_name }}-*
           path: release-assets
           merge-multiple: true
       - name: Create checksums
-        run: sha256sum release-assets/*.zip > release-assets/SHA256SUMS.txt
+        run: sha256sum release-assets/*.zip release-assets/*.exe > release-assets/SHA256SUMS.txt
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
-            Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64.
+            Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64. Windows includes both a portable ZIP and a Squirrel Setup application; native Radar notifications require the installed application.
 
-            These applications are unsigned and not notarized. macOS Gatekeeper and Windows SmartScreen may warn or block a first launch. This prerelease is intended for controlled fixture testing; back up real music before authorizing any metadata write.
+            These applications are unsigned and the macOS build is not notarized. macOS Radar notifications are therefore unavailable in this build. macOS Gatekeeper and Windows SmartScreen may warn or block a first launch. This prerelease is intended for controlled fixture testing; back up real music before authorizing any metadata write.
         run: >-
           gh release create "$GITHUB_REF_NAME" release-assets/*
           --repo "$GITHUB_REPOSITORY"

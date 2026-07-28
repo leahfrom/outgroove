@@ -3,6 +3,7 @@ import type {
   FavoriteArtistSearchResultDto,
   RadarBackgroundRefreshSettingsDto,
   RadarItemDto,
+  RadarNotificationUnavailableReason,
   RadarReviewSummaryDto,
   RadarRefreshAllResultDto,
   RadarRefreshResultDto,
@@ -125,6 +126,7 @@ export function RadarView({
   readonly onRadarBackgroundChange: (
     enabled: boolean,
     pauseOnBattery: boolean,
+    notificationsEnabled: boolean,
   ) => void;
   readonly onRefreshAll: () => void;
   readonly onRefreshFavorite: (favorite: FavoriteArtistDto) => void;
@@ -181,8 +183,8 @@ export function RadarView({
           <p>
             Optional checks run at a randomized daily interval while Outgroove
             is open. Each check sends only your saved MusicBrainz artist IDs; it
-            never reads or changes audio files. Notifications are not enabled in
-            this version.
+            never reads or changes audio files. Native notifications are
+            separately opt-in and report only counts.
           </p>
           {radarBackgroundSettings ? (
             <>
@@ -198,6 +200,7 @@ export function RadarView({
                       onRadarBackgroundChange(
                         event.target.checked,
                         radarBackgroundSettings.pauseOnBattery,
+                        radarBackgroundSettings.notificationsEnabled,
                       )
                     }
                   />
@@ -214,11 +217,39 @@ export function RadarView({
                       onRadarBackgroundChange(
                         radarBackgroundSettings.enabled,
                         event.target.checked,
+                        radarBackgroundSettings.notificationsEnabled,
                       )
                     }
                   />
                   Pause automatic checks on battery power
                 </label>
+                <label>
+                  <input
+                    checked={radarBackgroundSettings.notificationsEnabled}
+                    disabled={
+                      radarBackgroundBusy ||
+                      !radarBackgroundSettings.enabled ||
+                      !radarBackgroundSettings.notificationCapability.available
+                    }
+                    type="checkbox"
+                    onChange={(event) =>
+                      onRadarBackgroundChange(
+                        radarBackgroundSettings.enabled,
+                        radarBackgroundSettings.pauseOnBattery,
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  Notify me about newly found releases
+                </label>
+                {!radarBackgroundSettings.notificationCapability.available && (
+                  <p className="notification-capability-hint">
+                    {formatNotificationUnavailableReason(
+                      radarBackgroundSettings.notificationCapability
+                        .unavailableReason,
+                    )}
+                  </p>
+                )}
               </fieldset>
               <dl aria-label="Automatic Radar refresh status">
                 <div>
@@ -647,4 +678,20 @@ function formatBackgroundOutcome(
       ? ` — ${settings.lastSucceeded} successful, ${settings.lastFailed} failed`
       : "";
   return `${labels[settings.lastOutcome]}${counts}`;
+}
+
+function formatNotificationUnavailableReason(
+  reason: RadarNotificationUnavailableReason | null,
+): string {
+  switch (reason) {
+    case "development":
+      return "Notifications are available only in an installed release build.";
+    case "unsigned-macos-build":
+      return "This macOS build is unsigned, so reliable native notifications are unavailable.";
+    case "portable-windows-build":
+      return "Install Outgroove with the Windows Setup application to enable native notifications; the portable ZIP has no stable notification identity.";
+    case "unsupported":
+    case null:
+      return "Native notifications are unavailable on this system.";
+  }
 }

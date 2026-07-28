@@ -31,6 +31,7 @@ export const channels = {
   getRadarBackgroundRefreshSettings: "radar:get-background-settings",
   updateRadarBackgroundRefreshSettings: "radar:update-background-settings",
   radarBackgroundRefreshUpdated: "radar:background-settings-updated",
+  openRadarRequested: "radar:open-requested",
   listRadarItems: "radar:list-items",
   setRadarItemSeen: "radar:set-item-seen",
   setRadarItemDismissed: "radar:set-item-dismissed",

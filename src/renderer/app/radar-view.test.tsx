@@ -73,6 +73,11 @@ function renderView(
       radarBackgroundSettings={{
         enabled: false,
         pauseOnBattery: true,
+        notificationsEnabled: false,
+        notificationCapability: {
+          available: false,
+          unavailableReason: "development",
+        },
         nextRefreshAt: null,
         lastCheckedAt: null,
         lastSuccessfulRefreshAt: null,
@@ -143,6 +148,11 @@ describe("Radar favorite artists", () => {
       radarBackgroundSettings: {
         enabled: false,
         pauseOnBattery: true,
+        notificationsEnabled: false,
+        notificationCapability: {
+          available: false,
+          unavailableReason: "development",
+        },
         nextRefreshAt: null,
         lastCheckedAt: "2026-07-28T09:00:00.000Z",
         lastSuccessfulRefreshAt: null,
@@ -167,13 +177,52 @@ describe("Radar favorite artists", () => {
     expect(enabled).not.toBeChecked();
     enabled.focus();
     await userEvent.setup().keyboard(" ");
-    expect(onRadarBackgroundChange).toHaveBeenCalledWith(true, true);
+    expect(onRadarBackgroundChange).toHaveBeenCalledWith(true, true, false);
     expect(
       screen.getByRole("checkbox", {
         name: "Pause automatic checks on battery power",
       }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Notify me about newly found releases",
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/available only in an installed release build/iu),
+    ).toBeVisible();
     expect(screen.getByText("Paused while offline")).toBeVisible();
+  });
+
+  it("keeps notifications separately opt-in and keyboard operable when available", async () => {
+    const onRadarBackgroundChange = vi.fn();
+    renderView({
+      onRadarBackgroundChange,
+      radarBackgroundSettings: {
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+        notificationCapability: {
+          available: true,
+          unavailableReason: null,
+        },
+        nextRefreshAt: "2026-07-29T09:00:00.000Z",
+        lastCheckedAt: null,
+        lastSuccessfulRefreshAt: null,
+        lastOutcome: null,
+        lastCompleted: 0,
+        lastSucceeded: 0,
+        lastFailed: 0,
+      },
+    });
+    await userEvent.setup().click(screen.getByText("Automatic refresh"));
+    const notifications = screen.getByRole("checkbox", {
+      name: "Notify me about newly found releases",
+    });
+    expect(notifications).not.toBeChecked();
+    notifications.focus();
+    await userEvent.setup().keyboard(" ");
+    expect(onRadarBackgroundChange).toHaveBeenCalledWith(true, true, true);
   });
 
   it("discloses the exact network boundary and requires explicit candidate selection", async () => {
@@ -271,6 +320,7 @@ describe("Radar favorite artists", () => {
             favoriteArtistId: "1f5053fe-7aab-4ca8-861b-4ed97bc69f91",
             favoriteArtistName: "Second Artist",
             added: 1,
+            newlyDiscovered: 1,
             updated: 0,
             unchanged: 2,
             total: 3,

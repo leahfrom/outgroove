@@ -376,8 +376,12 @@ export function registerIpc(
     channels.updateRadarBackgroundRefreshSettings,
     createValidatedHandler(
       radarBackgroundRefreshUpdateRequestSchema,
-      ({ enabled, pauseOnBattery }) =>
-        dependencies.radarBackground.updatePreferences(enabled, pauseOnBattery),
+      ({ enabled, pauseOnBattery, notificationsEnabled }) =>
+        dependencies.radarBackground.updatePreferences(
+          enabled,
+          pauseOnBattery,
+          notificationsEnabled,
+        ),
     ),
   );
   ipcMain.handle(

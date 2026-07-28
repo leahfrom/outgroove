@@ -1,14 +1,16 @@
 import type {
   RadarBackgroundRefreshOutcome,
+  RadarBackgroundRefreshPreferencesDto,
   RadarBackgroundRefreshSettingsDto,
+  RadarNotificationCapabilityDto,
   RadarRefreshAllResultDto,
 } from "../../shared/contracts/api";
 
 interface RadarBackgroundSettingsStore {
-  getRadarBackgroundRefreshSettings(): RadarBackgroundRefreshSettingsDto;
+  getRadarBackgroundRefreshSettings(): RadarBackgroundRefreshPreferencesDto;
   saveRadarBackgroundRefreshSettings(
-    settings: RadarBackgroundRefreshSettingsDto,
-  ): RadarBackgroundRefreshSettingsDto;
+    settings: RadarBackgroundRefreshPreferencesDto,
+  ): RadarBackgroundRefreshPreferencesDto;
 }
 
 interface IdleRadarRefresher {
@@ -21,6 +23,11 @@ interface IdleRadarRefresher {
 interface RadarBackgroundEnvironment {
   isOnline(): boolean;
   isOnBatteryPower(): boolean;
+}
+
+export interface RadarNotifier {
+  capability(): RadarNotificationCapabilityDto;
+  notifyNewReleases(releases: number, artists: number): void;
 }
 
 interface RadarBackgroundClock {
@@ -60,14 +67,15 @@ export class RadarBackgroundRefresh {
     private readonly updated: (
       settings: RadarBackgroundRefreshSettingsDto,
     ) => void,
+    private readonly notifier: RadarNotifier,
     private readonly clock: RadarBackgroundClock = defaultClock,
   ) {}
 
   start(): RadarBackgroundRefreshSettingsDto {
     this.stopped = false;
     const current = this.store.getRadarBackgroundRefreshSettings();
-    if (!current.enabled) return current;
-    return this.scheduleExistingOrStartup(current);
+    if (!current.enabled) return this.withCapability(current);
+    return this.withCapability(this.scheduleExistingOrStartup(current));
   }
 
   stop(): void {
@@ -77,30 +85,44 @@ export class RadarBackgroundRefresh {
   }
 
   getSettings(): RadarBackgroundRefreshSettingsDto {
-    return this.store.getRadarBackgroundRefreshSettings();
+    return this.withCapability(this.store.getRadarBackgroundRefreshSettings());
   }
 
   updatePreferences(
     enabled: boolean,
     pauseOnBattery: boolean,
+    notificationsEnabled: boolean,
   ): RadarBackgroundRefreshSettingsDto {
-    this.clearTimer();
     const current = this.store.getRadarBackgroundRefreshSettings();
+    if (
+      notificationsEnabled &&
+      !current.notificationsEnabled &&
+      !this.notifier.capability().available
+    )
+      throw new Error(
+        "Radar notifications are unavailable in this Outgroove build.",
+      );
+    this.clearTimer();
     const next =
       enabled && current.enabled && current.nextRefreshAt
         ? current
         : enabled
           ? this.withNext(current, "startup")
           : { ...current, nextRefreshAt: null };
-    const saved = this.save({ ...next, enabled, pauseOnBattery });
+    const saved = this.save({
+      ...next,
+      enabled,
+      pauseOnBattery,
+      notificationsEnabled,
+    });
     if (!enabled) this.radar.cancelBackground();
     else if (!this.stopped) this.arm(saved);
-    return saved;
+    return this.withCapability(saved);
   }
 
   private scheduleExistingOrStartup(
-    current: RadarBackgroundRefreshSettingsDto,
-  ): RadarBackgroundRefreshSettingsDto {
+    current: RadarBackgroundRefreshPreferencesDto,
+  ): RadarBackgroundRefreshPreferencesDto {
     const nextTime = current.nextRefreshAt
       ? Date.parse(current.nextRefreshAt)
       : Number.NaN;
@@ -112,7 +134,7 @@ export class RadarBackgroundRefresh {
     return scheduled;
   }
 
-  private arm(settings: RadarBackgroundRefreshSettingsDto): void {
+  private arm(settings: RadarBackgroundRefreshPreferencesDto): void {
     if (this.stopped || !settings.enabled || !settings.nextRefreshAt) return;
     const delay = Math.max(
       0,
@@ -161,11 +183,13 @@ export class RadarBackgroundRefresh {
       lastSucceeded: result.successful,
       lastFailed: result.failed,
     });
+    if (outcome === "success" && saved.notificationsEnabled)
+      this.notifyNewReleases(result);
     this.arm(saved);
   }
 
   private recordCheck(
-    current: RadarBackgroundRefreshSettingsDto,
+    current: RadarBackgroundRefreshPreferencesDto,
     checkedAt: string,
     outcome: RadarBackgroundRefreshOutcome,
   ): void {
@@ -188,9 +212,9 @@ export class RadarBackgroundRefresh {
   }
 
   private withNext(
-    settings: RadarBackgroundRefreshSettingsDto,
+    settings: RadarBackgroundRefreshPreferencesDto,
     delay: keyof typeof radarBackgroundDelays,
-  ): RadarBackgroundRefreshSettingsDto {
+  ): RadarBackgroundRefreshPreferencesDto {
     const range = radarBackgroundDelays[delay];
     const duration =
       range.minimum +
@@ -204,11 +228,35 @@ export class RadarBackgroundRefresh {
   }
 
   private save(
-    settings: RadarBackgroundRefreshSettingsDto,
-  ): RadarBackgroundRefreshSettingsDto {
+    settings: RadarBackgroundRefreshPreferencesDto,
+  ): RadarBackgroundRefreshPreferencesDto {
     const saved = this.store.saveRadarBackgroundRefreshSettings(settings);
-    this.updated(saved);
+    this.updated(this.withCapability(saved));
     return saved;
+  }
+
+  private withCapability(
+    preferences: RadarBackgroundRefreshPreferencesDto,
+  ): RadarBackgroundRefreshSettingsDto {
+    return {
+      ...preferences,
+      notificationCapability: this.notifier.capability(),
+    };
+  }
+
+  private notifyNewReleases(result: RadarRefreshAllResultDto): void {
+    const relevant = result.results.filter((item) => item.newlyDiscovered > 0);
+    const releases = relevant.reduce(
+      (total, item) => total + item.newlyDiscovered,
+      0,
+    );
+    if (releases === 0) return;
+    try {
+      this.notifier.notifyNewReleases(releases, relevant.length);
+    } catch {
+      // A platform notification failure must not turn a completed Radar
+      // snapshot into a failed or retrying provider operation.
+    }
   }
 
   private clearTimer(): void {
