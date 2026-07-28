@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.16.0 — 2026-07-28
+
+- Add explicit single-track recording identification with locally generated
+  Chromaprint fingerprints. Fingerprinting starts only from the selected track
+  editor, reads the catalog-resolved file in main, never modifies audio, and
+  exposes no file path, audio bytes, or raw fingerprint to the sandboxed
+  renderer.
+- Require a separate outgoing-data review and confirmation before sending only
+  the Chromaprint value and whole-file duration to AcoustID. Candidate
+  recordings remain read-only, no match is selected automatically, and one
+  explicitly chosen MusicBrainz recording ID enters only the ordinary tag
+  draft with its existing preview, confirmation, verified write, and undo
+  sequence.
+- Add a fixed-endpoint AcoustID client with its own three-per-second limiter,
+  cancellation, bounded throttling retries, streaming response limits, runtime
+  validation, and a 24-hour digest-keyed cache. Raw fingerprints remain in
+  bounded main-process memory for at most ten minutes, are never persisted, and
+  are invalidated when the catalog or source-file signature changes.
+- Bundle the audited official Chromaprint 1.6.1 `fpcalc` executable for macOS
+  arm64, Windows x64, and Linux x64 as a replaceable resource outside
+  `app.asar`. Ship exact checksums and LGPL notices, use no system `PATH`
+  fallback, and keep unsupported architectures and builds without a registered
+  AcoustID application key fully usable for offline Library workflows.
+
 ## 0.15.0 — 2026-07-28
 
 - Add durable MusicBrainz artist favorites and complete manual Radar refresh.

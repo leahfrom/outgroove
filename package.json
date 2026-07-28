@@ -1,6 +1,6 @@
 {
   "name": "outgroove",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Local-first music library and safe DAP sync",
   "author": "Outgroove contributors",
   "main": ".vite/build/main.js",
