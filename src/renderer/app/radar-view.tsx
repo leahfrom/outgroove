@@ -28,6 +28,8 @@ export function RadarView({
   radarBackgroundError,
   radarBackgroundSettings,
   radarError,
+  radarFavoriteArtistId,
+  radarFilterFavorites,
   radarIncludeDismissed,
   radarItems,
   radarLimit,
@@ -39,6 +41,7 @@ export function RadarView({
   radarRefreshAllCancelling,
   radarRefreshAllResult,
   radarTotalItems,
+  radarUnseenOnly,
   radarView,
   refreshingFavoriteId,
   removal,
@@ -51,11 +54,13 @@ export function RadarView({
   onFavoriteFilterTextChange,
   onFilterFavorites,
   onRadarDismissed,
+  onRadarFavoriteArtistChange,
   onRadarIncludeDismissedChange,
   onRadarOpen,
   onRadarPage,
   onRadarPrimaryTypeChange,
   onRadarSeen,
+  onRadarUnseenOnlyChange,
   onRadarViewChange,
   onRadarBackgroundChange,
   onRefreshAll,
@@ -80,6 +85,8 @@ export function RadarView({
   readonly radarBackgroundSettings:
     RadarBackgroundRefreshSettingsDto | undefined;
   readonly radarError: string | undefined;
+  readonly radarFavoriteArtistId: string | null;
+  readonly radarFilterFavorites: readonly FavoriteArtistDto[];
   readonly radarIncludeDismissed: boolean;
   readonly radarItems: readonly RadarItemDto[];
   readonly radarLimit: number;
@@ -91,6 +98,7 @@ export function RadarView({
   readonly radarRefreshAllCancelling: boolean;
   readonly radarRefreshAllResult: RadarRefreshAllResultDto | undefined;
   readonly radarTotalItems: number;
+  readonly radarUnseenOnly: boolean;
   readonly radarView: RadarReleaseView;
   readonly refreshingFavoriteId: string | undefined;
   readonly removal: FavoriteArtistDto | undefined;
@@ -103,11 +111,13 @@ export function RadarView({
   readonly onFavoriteFilterTextChange: (value: string) => void;
   readonly onFilterFavorites: () => void;
   readonly onRadarDismissed: (item: RadarItemDto, dismissed: boolean) => void;
+  readonly onRadarFavoriteArtistChange: (id: string | null) => void;
   readonly onRadarIncludeDismissedChange: (include: boolean) => void;
   readonly onRadarOpen: (item: RadarItemDto) => void;
   readonly onRadarPage: (offset: number) => void;
   readonly onRadarPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onRadarSeen: (item: RadarItemDto, seen: boolean) => void;
+  readonly onRadarUnseenOnlyChange: (unseenOnly: boolean) => void;
   readonly onRadarViewChange: (view: RadarReleaseView) => void;
   readonly onRadarBackgroundChange: (
     enabled: boolean,
@@ -304,6 +314,8 @@ export function RadarView({
       <RadarReleases
         actionBusyId={radarActionBusyId}
         error={radarError}
+        favoriteArtistId={radarFavoriteArtistId}
+        favorites={radarFilterFavorites}
         includeDismissed={radarIncludeDismissed}
         items={radarItems}
         limit={radarLimit}
@@ -312,13 +324,16 @@ export function RadarView({
         primaryType={radarPrimaryType}
         refreshResult={radarRefreshResult}
         totalItems={radarTotalItems}
+        unseenOnly={radarUnseenOnly}
         view={radarView}
         onDismissed={onRadarDismissed}
+        onFavoriteArtistChange={onRadarFavoriteArtistChange}
         onIncludeDismissedChange={onRadarIncludeDismissedChange}
         onOpen={onRadarOpen}
         onPage={onRadarPage}
         onPrimaryTypeChange={onRadarPrimaryTypeChange}
         onSeen={onRadarSeen}
+        onUnseenOnlyChange={onRadarUnseenOnlyChange}
         onViewChange={onRadarViewChange}
       />
 

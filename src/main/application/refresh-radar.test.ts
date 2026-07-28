@@ -66,7 +66,7 @@ describe("manual Radar refresh", () => {
       { browseArtistReleases },
       () => new Date("2026-07-28T09:00:00.000Z"),
     );
-    service.list("recent", "single", true, 20, 10);
+    service.list("recent", "single", true, 20, 10, favorite.id, true);
     expect(repository.listRadarItems).toHaveBeenCalledWith(
       "recent",
       "single",
@@ -74,6 +74,8 @@ describe("manual Radar refresh", () => {
       "2026-07-28",
       20,
       10,
+      favorite.id,
+      true,
     );
     expect(browseArtistReleases).not.toHaveBeenCalled();
   });

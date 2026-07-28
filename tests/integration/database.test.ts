@@ -529,6 +529,40 @@ describe("database migration and backup", () => {
         .listRadarItems("all", "album", false, "2026-07-28")
         .items.map(({ title }) => title),
     ).toEqual(["Future Fixture"]);
+    const otherFavorite = database.addFavoriteArtist({
+      artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+      name: "Other Fixture Artist",
+      sortName: "Other Fixture Artist",
+      disambiguation: null,
+      type: "Person",
+      country: "CA",
+      area: "Canada",
+      score: 90,
+    });
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        false,
+        "2026-07-28",
+        0,
+        50,
+        favorite.id,
+        true,
+      ),
+    ).toMatchObject({ totalItems: 2 });
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        false,
+        "2026-07-28",
+        0,
+        50,
+        otherFavorite.id,
+        false,
+      ),
+    ).toMatchObject({ totalItems: 0, items: [] });
     expect(
       database
         .listRadarItems("all", "single", false, "2026-07-28")
@@ -565,6 +599,21 @@ describe("database migration and backup", () => {
       "2026-07-28T10:00:00.000Z",
       "2026-07-28",
     );
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        true,
+        "2026-07-28",
+        0,
+        50,
+        favorite.id,
+        true,
+      ),
+    ).toMatchObject({
+      totalItems: 1,
+      items: [{ title: "Future Fixture" }],
+    });
     database.setRadarItemDismissed(
       recentItem.id,
       true,

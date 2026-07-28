@@ -3,7 +3,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { RadarItemDto } from "../../shared/contracts/api";
+import type {
+  FavoriteArtistDto,
+  RadarItemDto,
+} from "../../shared/contracts/api";
 import { RadarReleases } from "./radar-releases";
 
 const item: RadarItemDto = {
@@ -24,6 +27,19 @@ const item: RadarItemDto = {
   dismissedAt: null,
   reasons: ["upcoming", "newly-found"],
 };
+const favorite: FavoriteArtistDto = {
+  id: item.favoriteArtistId,
+  musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+  name: item.favoriteArtistName,
+  sortName: item.favoriteArtistName,
+  disambiguation: null,
+  type: "Group",
+  country: "DE",
+  createdAt: "2026-07-28T08:00:00.000Z",
+  lastSuccessfulRefreshAt: null,
+  lastProviderFetchAt: null,
+  lastRefreshTruncated: false,
+};
 
 function renderReleases(
   overrides: Partial<React.ComponentProps<typeof RadarReleases>> = {},
@@ -32,6 +48,8 @@ function renderReleases(
     <RadarReleases
       actionBusyId={undefined}
       error={undefined}
+      favoriteArtistId={null}
+      favorites={[favorite]}
       includeDismissed={false}
       items={[item]}
       limit={20}
@@ -40,13 +58,16 @@ function renderReleases(
       primaryType="all"
       refreshResult={undefined}
       totalItems={21}
+      unseenOnly={false}
       view="all"
       onDismissed={vi.fn()}
+      onFavoriteArtistChange={vi.fn()}
       onIncludeDismissedChange={vi.fn()}
       onOpen={vi.fn()}
       onPage={vi.fn()}
       onPrimaryTypeChange={vi.fn()}
       onSeen={vi.fn()}
+      onUnseenOnlyChange={vi.fn()}
       onViewChange={vi.fn()}
       {...overrides}
     />,
@@ -54,6 +75,23 @@ function renderReleases(
 }
 
 describe("Radar releases", () => {
+  it("routes local artist and unseen filters from accessible controls", async () => {
+    const onFavoriteArtistChange = vi.fn();
+    const onUnseenOnlyChange = vi.fn();
+    renderReleases({ onFavoriteArtistChange, onUnseenOnlyChange });
+    const user = userEvent.setup();
+
+    const artist = screen.getByRole("combobox", { name: "Favorite artist" });
+    artist.focus();
+    await user.selectOptions(artist, favorite.id);
+    expect(onFavoriteArtistChange).toHaveBeenCalledWith(favorite.id);
+
+    const unseen = screen.getByRole("checkbox", { name: "Unseen only" });
+    unseen.focus();
+    await user.keyboard(" ");
+    expect(onUnseenOnlyChange).toHaveBeenCalledWith(true);
+  });
+
   it("labels provider facts and first-seen state separately and routes keyboard actions", async () => {
     const onSeen = vi.fn();
     const onDismissed = vi.fn();

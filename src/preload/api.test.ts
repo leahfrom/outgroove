@@ -192,6 +192,8 @@ describe("preload saved-filter allowlist", () => {
     const page = {
       view: "all" as const,
       primaryType: "all" as const,
+      favoriteArtistId: null,
+      unseenOnly: false,
       includeDismissed: false,
       offset: 0,
       limit: 20,

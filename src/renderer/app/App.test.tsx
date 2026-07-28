@@ -651,6 +651,37 @@ describe("tag edit UI safety states", () => {
       expect(list).toHaveBeenCalledWith({
         view: "all",
         primaryType: "single",
+        favoriteArtistId: null,
+        unseenOnly: false,
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Favorite artist" }),
+      favorite.id,
+    );
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        favoriteArtistId: favorite.id,
+        unseenOnly: false,
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    const unseenOnly = screen.getByRole("checkbox", { name: "Unseen only" });
+    unseenOnly.focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        favoriteArtistId: favorite.id,
+        unseenOnly: true,
         includeDismissed: false,
         offset: 0,
         limit: 20,
@@ -702,6 +733,8 @@ describe("tag edit UI safety states", () => {
     expect(list).toHaveBeenCalledWith({
       view: "all",
       primaryType: "all",
+      favoriteArtistId: null,
+      unseenOnly: false,
       includeDismissed: false,
       offset: 0,
       limit: 20,

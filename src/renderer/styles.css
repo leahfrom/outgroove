@@ -3508,8 +3508,11 @@ td {
 .radar-filters {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 0.75rem;
   align-items: end;
+  justify-content: end;
+  max-width: 34rem;
 }
 .radar-filters > label:first-child {
   margin: 0;
@@ -3810,6 +3813,7 @@ td {
   .radar-filters {
     align-items: start;
     flex-direction: column;
+    max-width: none;
   }
   .favorite-actions {
     justify-content: start;
