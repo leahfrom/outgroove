@@ -16,9 +16,10 @@ describe("packaged application identity", () => {
 
   it("keeps stable platform identifiers and both Windows distribution choices", () => {
     expect(forge).toContain('appBundleId: "de.leahfrom.outgroove"');
-    expect(forge).toContain("new MakerZIP");
+    expect(forge).toContain('new MakerZIP({}, ["win32", "linux"])');
     expect(forge).toContain("new MakerDMG");
     expect(forge).toContain("new MakerSquirrel");
+    expect(forge).not.toContain('"darwin", "win32", "linux"');
     expect(main).toContain(
       'app.setAppUserModelId("com.squirrel.Outgroove.Outgroove")',
     );

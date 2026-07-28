@@ -1,10 +1,10 @@
 # Release runbook
 
 Use this checklist for every Outgroove release. The release is not complete
-until the tagged source, signed/notarized macOS DMG, all three ZIPs, the
-Windows Setup application, their smoke/manual evidence, the checksum manifest,
-release metadata, Gitflow back-merge, and branch cleanup have all been
-verified.
+until the tagged source, signed/notarized macOS DMG, Windows and Linux ZIPs,
+the Windows Setup application, their smoke/manual evidence, the checksum
+manifest, release metadata, Gitflow back-merge, and branch cleanup have all
+been verified.
 
 Automated GitHub Actions publication is the preferred path. The manual path
 below is a narrowly scoped fallback for the known Actions budget restriction;
@@ -75,14 +75,13 @@ npm run make
 npm run test:smoke
 ```
 
-The primary DMG and secondary ZIP are:
+The macOS release artifact is:
 
 ```text
 out/make/outgroove-<version>-arm64.dmg
-out/make/zip/darwin/arm64/outgroove-darwin-arm64-<version>.zip
 ```
 
-Record `shasum -a 256 <dmg> <zip>` and `stat -f '%z' <dmg> <zip>`.
+Record `shasum -a 256 <dmg>` and `stat -f '%z' <dmg>`.
 
 Unsigned local/test packaging is the default and must remain buildable. It
 uses the stable bundle identifier `de.leahfrom.outgroove`, but Radar
@@ -102,9 +101,9 @@ application, staple, Gatekeeper assessments, and disk image.
 
 Mount the DMG, drag Outgroove to Applications, and test that installed copy.
 Verify a real opted-in Radar notification before describing macOS
-notifications as tested. The ZIP is retained for users who need an archive,
-but its container cannot itself be signed or stapled; its contained
-application is signed.
+notifications as tested. The DMG is the only supported macOS release download.
+Do not add a separate macOS ZIP unless it receives its own complete
+exact-artifact notarization and verification design.
 
 ### Windows x64 manual handoff
 
@@ -224,17 +223,17 @@ check and must not imply native Linux hardware or manual desktop validation.
 ## 4. Publish and audit every asset
 
 For the manual fallback, create or update the prerelease with `--target` set to
-the exact tagged `main` merge. Upload these six assets:
+the exact tagged `main` merge. Upload these five assets:
 
 - `outgroove-<version>-arm64.dmg`
-- `outgroove-darwin-arm64-<version>.zip`
 - `outgroove-win32-x64-<version>.zip`
 - the generated Windows `*Setup.exe`
 - `outgroove-linux-x64-<version>.zip`
 - `SHA256SUMS.txt`
 
-`SHA256SUMS.txt` contains one lowercase SHA-256 line for the DMG, each ZIP, and
-the Setup application. Generate it only after all five final packages exist.
+`SHA256SUMS.txt` contains one lowercase SHA-256 line for the DMG, both ZIPs,
+and the Setup application. Generate it only after all four final packages
+exist.
 Do not announce the prerelease while any platform package or checksum is
 missing.
 
@@ -247,7 +246,7 @@ gh release view "v<version>" \
 
 Confirm:
 
-- exactly the expected macOS DMG, three ZIPs, Windows Setup application, and
+- exactly the expected macOS DMG, two ZIPs, Windows Setup application, and
   checksum file are present;
 - every asset state is `uploaded`;
 - remote sizes and SHA-256 digests match the recorded local/Windows evidence;

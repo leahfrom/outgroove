@@ -18,9 +18,7 @@ jobs:
           - os: macos-latest
             platform: macOS
             artifact: macos-arm64
-            package-path: |
-              out/make/*.dmg
-              out/make/zip/darwin/arm64/*.zip
+            package-path: out/make/*.dmg
           # Current native SQLite tooling supports Visual Studio 2022, not 2026.
           - os: windows-2022
             platform: Windows
@@ -94,7 +92,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: |
-            Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64. macOS includes a signed, notarized drag-to-Applications DMG plus a ZIP. Windows includes both a portable ZIP and a Squirrel Setup application; native Radar notifications require the installed application.
+            Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64. macOS uses a signed, notarized drag-to-Applications DMG. Windows includes both a portable ZIP and a Squirrel Setup application; native Radar notifications require the installed application.
 
             The macOS application and DMG use Developer ID signing, and the final DMG has been notarized and stapled. Windows remains unsigned, so SmartScreen may warn or block a first launch. This prerelease is intended for controlled fixture testing; back up real music before authorizing any metadata write.
         run: >-
