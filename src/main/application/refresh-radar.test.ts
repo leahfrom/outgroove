@@ -49,6 +49,26 @@ function store() {
 }
 
 describe("manual Radar refresh", () => {
+  it("routes local type filters to the store without provider access", () => {
+    const repository = store();
+    const browseArtistReleases = vi.fn();
+    const service = new RefreshRadar(
+      repository,
+      { browseArtistReleases },
+      () => new Date("2026-07-28T09:00:00.000Z"),
+    );
+    service.list("recent", "single", true, 20, 10);
+    expect(repository.listRadarItems).toHaveBeenCalledWith(
+      "recent",
+      "single",
+      true,
+      "2026-07-28",
+      20,
+      10,
+    );
+    expect(browseArtistReleases).not.toHaveBeenCalled();
+  });
+
   it("sends only the saved artist identity and atomically commits a complete result", async () => {
     const repository = store();
     const browseArtistReleases = vi.fn(() =>

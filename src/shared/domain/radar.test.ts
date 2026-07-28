@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyRadarItem, partialDateBounds } from "./radar";
+import {
+  classifyRadarItem,
+  matchesRadarPrimaryType,
+  partialDateBounds,
+} from "./radar";
 
 describe("Radar release classification", () => {
   it("preserves exact and partial date bounds without inventing precision", () => {
@@ -34,5 +38,17 @@ describe("Radar release classification", () => {
       "upcoming",
       "newly-found",
     ]);
+  });
+
+  it("matches the bounded primary type vocabulary without hiding unknown provider values", () => {
+    expect(matchesRadarPrimaryType("Album", "album")).toBe(true);
+    expect(matchesRadarPrimaryType(" album ", "album")).toBe(true);
+    expect(matchesRadarPrimaryType("Single", "album")).toBe(false);
+    expect(matchesRadarPrimaryType("future-provider-type", "unknown")).toBe(
+      true,
+    );
+    expect(matchesRadarPrimaryType(null, "unknown")).toBe(true);
+    expect(matchesRadarPrimaryType("Other", "unknown")).toBe(false);
+    expect(matchesRadarPrimaryType(null, "all")).toBe(true);
   });
 });

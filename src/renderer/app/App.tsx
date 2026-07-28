@@ -39,6 +39,7 @@ import type {
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
 import { radarViews } from "../../shared/contracts/api";
+import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 import {
   summarizeAlbumReleaseDate,
   type CatalogAlbum,
@@ -264,6 +265,8 @@ export function App(): React.JSX.Element {
   const [radarTotalItems, setRadarTotalItems] = useState(0);
   const [radarOffset, setRadarOffset] = useState(0);
   const [radarView, setRadarView] = useState<RadarReleaseView>("all");
+  const [radarPrimaryType, setRadarPrimaryType] =
+    useState<RadarPrimaryTypeFilter>("all");
   const [radarIncludeDismissed, setRadarIncludeDismissed] = useState(false);
   const [radarLoading, setRadarLoading] = useState(false);
   const [radarError, setRadarError] = useState<string>();
@@ -851,12 +854,14 @@ export function App(): React.JSX.Element {
   const refreshRadarItems = useCallback(
     async (
       view: RadarReleaseView,
+      primaryType: RadarPrimaryTypeFilter,
       includeDismissed: boolean,
       offset: number,
     ): Promise<boolean> => {
       setRadarLoading(true);
       const result = await window.outgroove.listRadarItems({
         view,
+        primaryType,
         includeDismissed,
         offset,
         limit: radarPageLimit,
@@ -964,7 +969,7 @@ export function App(): React.JSX.Element {
     void refreshFavoriteArtists("");
   }, [refreshFavoriteArtists]);
   useEffect(() => {
-    void refreshRadarItems("all", false, 0);
+    void refreshRadarItems("all", "all", false, 0);
   }, [refreshRadarItems]);
   useEffect(() => {
     void refreshSyncProfiles();
@@ -1234,7 +1239,12 @@ export function App(): React.JSX.Element {
     }
     setRadarRefreshResult(result.value);
     await refreshFavoriteArtists(favoriteFilter);
-    await refreshRadarItems(radarView, radarIncludeDismissed, radarOffset);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      radarOffset,
+    );
     setNotice(
       `Refreshed Radar for ${result.value.favoriteArtistName}.`,
       "success",
@@ -1262,19 +1272,33 @@ export function App(): React.JSX.Element {
     setRadarView(view);
     setRadarOffset(0);
     setRadarError(undefined);
-    void refreshRadarItems(view, radarIncludeDismissed, 0);
+    void refreshRadarItems(view, radarPrimaryType, radarIncludeDismissed, 0);
+  };
+
+  const chooseRadarPrimaryType = (
+    primaryType: RadarPrimaryTypeFilter,
+  ): void => {
+    setRadarPrimaryType(primaryType);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(radarView, primaryType, radarIncludeDismissed, 0);
   };
 
   const chooseRadarDismissed = (includeDismissed: boolean): void => {
     setRadarIncludeDismissed(includeDismissed);
     setRadarOffset(0);
     setRadarError(undefined);
-    void refreshRadarItems(radarView, includeDismissed, 0);
+    void refreshRadarItems(radarView, radarPrimaryType, includeDismissed, 0);
   };
 
   const chooseRadarPage = (offset: number): void => {
     setRadarError(undefined);
-    void refreshRadarItems(radarView, radarIncludeDismissed, offset);
+    void refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      offset,
+    );
   };
 
   const setRadarSeen = async (
@@ -1291,7 +1315,12 @@ export function App(): React.JSX.Element {
       setRadarError(result.error.message);
       return;
     }
-    await refreshRadarItems(radarView, radarIncludeDismissed, radarOffset);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      radarOffset,
+    );
   };
 
   const setRadarDismissed = async (
@@ -1315,7 +1344,22 @@ export function App(): React.JSX.Element {
       radarOffset > 0
         ? Math.max(0, radarOffset - radarPageLimit)
         : radarOffset;
-    await refreshRadarItems(radarView, radarIncludeDismissed, nextOffset);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      nextOffset,
+    );
+  };
+
+  const openRadarItem = async (item: RadarItemDto): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    setRadarError(undefined);
+    const result = await window.outgroove.openRadarItemInMusicBrainz({
+      id: item.id,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) setRadarError(result.error.message);
   };
 
   const addFavoriteArtist = async (artistId: string): Promise<void> => {
@@ -1352,7 +1396,12 @@ export function App(): React.JSX.Element {
     );
     await refreshFavoriteArtists(favoriteFilter);
     setRadarOffset(0);
-    await refreshRadarItems(radarView, radarIncludeDismissed, 0);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      0,
+    );
     setNotice(`Removed ${removedName} from favorite artists.`, "success");
   };
 
@@ -3351,6 +3400,7 @@ export function App(): React.JSX.Element {
           radarLimit={radarPageLimit}
           radarLoading={radarLoading}
           radarOffset={radarOffset}
+          radarPrimaryType={radarPrimaryType}
           radarRefreshResult={radarRefreshResult}
           radarTotalItems={radarTotalItems}
           radarView={radarView}
@@ -3368,7 +3418,9 @@ export function App(): React.JSX.Element {
             void setRadarDismissed(item, dismissed)
           }
           onRadarIncludeDismissedChange={chooseRadarDismissed}
+          onRadarOpen={(item) => void openRadarItem(item)}
           onRadarPage={chooseRadarPage}
+          onRadarPrimaryTypeChange={chooseRadarPrimaryType}
           onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
           onRadarViewChange={chooseRadarView}
           onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}

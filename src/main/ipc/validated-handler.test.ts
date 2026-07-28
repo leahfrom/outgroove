@@ -16,6 +16,7 @@ import {
   favoriteArtistListRequestSchema,
   favoriteArtistSearchRequestSchema,
   radarItemDismissRequestSchema,
+  radarItemOpenRequestSchema,
   radarItemSeenRequestSchema,
   radarListRequestSchema,
   radarRefreshRequestSchema,
@@ -147,6 +148,7 @@ describe("validated IPC handlers", () => {
     const listHandler = createValidatedHandler(radarListRequestSchema, list);
     const page = {
       view: "newly-found",
+      primaryType: "album",
       includeDismissed: false,
       offset: 0,
       limit: 20,
@@ -155,6 +157,7 @@ describe("validated IPC handlers", () => {
     expect(list).toHaveBeenCalledWith(page);
     for (const request of [
       { ...page, view: "unknown" },
+      { ...page, primaryType: "soundtrack" },
       { ...page, limit: 51 },
       { ...page, offset: -1 },
       { ...page, provider: "musicbrainz" },
@@ -193,6 +196,26 @@ describe("validated IPC handlers", () => {
       ok: false,
       error: { code: "INVALID_REQUEST" },
     });
+
+    const open = vi.fn();
+    const openHandler = createValidatedHandler(
+      radarItemOpenRequestSchema,
+      open,
+    );
+    await expect(openHandler({}, { id: itemId })).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(open).toHaveBeenCalledWith({ id: itemId });
+    for (const request of [
+      { id: "not-an-id" },
+      { id: itemId, url: "https://attacker.invalid" },
+      { id: itemId, releaseGroupId: itemId },
+      { id: itemId, path: "/private/library" },
+    ])
+      await expect(openHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
   });
 
   it("accepts only an album and release identity for Cover Art Archive preview", async () => {

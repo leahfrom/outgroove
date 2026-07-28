@@ -8,7 +8,7 @@ import type {
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import type { MusicBrainzArtistCandidate } from "../domain/favorite-artist";
-import type { RadarReason } from "../domain/radar";
+import { radarPrimaryTypeFilters, type RadarReason } from "../domain/radar";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
 
@@ -107,6 +107,7 @@ export const radarRefreshRequestSchema = z
 export const radarListRequestSchema = z
   .object({
     view: z.enum(radarViews),
+    primaryType: z.enum(radarPrimaryTypeFilters),
     includeDismissed: z.boolean(),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),
@@ -118,6 +119,7 @@ export const radarItemSeenRequestSchema = z
 export const radarItemDismissRequestSchema = z
   .object({ id: z.uuid(), dismissed: z.boolean() })
   .strict();
+export const radarItemOpenRequestSchema = z.object({ id: z.uuid() }).strict();
 export const musicBrainzReleaseLookupRequestSchema = z
   .object({
     albumId: z.uuid(),
@@ -982,6 +984,9 @@ export interface OutgrooveApi {
   setRadarItemDismissed(
     request: z.infer<typeof radarItemDismissRequestSchema>,
   ): Promise<Result<RadarItemDto>>;
+  openRadarItemInMusicBrainz(
+    request: z.infer<typeof radarItemOpenRequestSchema>,
+  ): Promise<Result<{ readonly opened: true }>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,

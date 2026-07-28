@@ -170,6 +170,7 @@ describe("preload saved-filter allowlist", () => {
     );
     const page = {
       view: "all" as const,
+      primaryType: "all" as const,
       includeDismissed: false,
       offset: 0,
       limit: 20,
@@ -190,6 +191,11 @@ describe("preload saved-filter allowlist", () => {
     expect(electron.invoke).toHaveBeenLastCalledWith(
       channels.setRadarItemDismissed,
       dismissed,
+    );
+    await api.openRadarItemInMusicBrainz(favorite);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.openRadarItemInMusicBrainz,
+      favorite,
     );
     expect(api).not.toHaveProperty("fetch");
     expect(api).not.toHaveProperty("provider");

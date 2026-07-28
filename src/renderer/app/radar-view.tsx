@@ -5,6 +5,7 @@ import type {
   RadarRefreshResultDto,
   radarViews,
 } from "../../shared/contracts/api";
+import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 import { ModalSheet } from "./modal-sheet";
 import { RadarReleases } from "./radar-releases";
 
@@ -27,6 +28,7 @@ export function RadarView({
   radarLimit,
   radarLoading,
   radarOffset,
+  radarPrimaryType,
   radarRefreshResult,
   radarTotalItems,
   radarView,
@@ -42,7 +44,9 @@ export function RadarView({
   onFilterFavorites,
   onRadarDismissed,
   onRadarIncludeDismissedChange,
+  onRadarOpen,
   onRadarPage,
+  onRadarPrimaryTypeChange,
   onRadarSeen,
   onRadarViewChange,
   onRefreshFavorite,
@@ -66,6 +70,7 @@ export function RadarView({
   readonly radarLimit: number;
   readonly radarLoading: boolean;
   readonly radarOffset: number;
+  readonly radarPrimaryType: RadarPrimaryTypeFilter;
   readonly radarRefreshResult: RadarRefreshResultDto | undefined;
   readonly radarTotalItems: number;
   readonly radarView: RadarReleaseView;
@@ -81,7 +86,9 @@ export function RadarView({
   readonly onFilterFavorites: () => void;
   readonly onRadarDismissed: (item: RadarItemDto, dismissed: boolean) => void;
   readonly onRadarIncludeDismissedChange: (include: boolean) => void;
+  readonly onRadarOpen: (item: RadarItemDto) => void;
   readonly onRadarPage: (offset: number) => void;
+  readonly onRadarPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onRadarSeen: (item: RadarItemDto, seen: boolean) => void;
   readonly onRadarViewChange: (view: RadarReleaseView) => void;
   readonly onRefreshFavorite: (favorite: FavoriteArtistDto) => void;
@@ -115,12 +122,15 @@ export function RadarView({
         limit={radarLimit}
         loading={radarLoading}
         offset={radarOffset}
+        primaryType={radarPrimaryType}
         refreshResult={radarRefreshResult}
         totalItems={radarTotalItems}
         view={radarView}
         onDismissed={onRadarDismissed}
         onIncludeDismissedChange={onRadarIncludeDismissedChange}
+        onOpen={onRadarOpen}
         onPage={onRadarPage}
+        onPrimaryTypeChange={onRadarPrimaryTypeChange}
         onSeen={onRadarSeen}
         onViewChange={onRadarViewChange}
       />

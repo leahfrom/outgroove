@@ -54,6 +54,8 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.setRadarItemSeen, request),
   setRadarItemDismissed: (request) =>
     ipcRenderer.invoke(channels.setRadarItemDismissed, request),
+  openRadarItemInMusicBrainz: (request) =>
+    ipcRenderer.invoke(channels.openRadarItemInMusicBrainz, request),
   listSavedLibraryFilters: () =>
     ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
   createSavedLibraryFilter: (request) =>

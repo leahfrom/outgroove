@@ -3,6 +3,10 @@ import type {
   RadarRefreshResultDto,
   radarViews,
 } from "../../shared/contracts/api";
+import {
+  radarPrimaryTypeFilters,
+  type RadarPrimaryTypeFilter,
+} from "../../shared/domain/radar";
 
 type RadarViewName = (typeof radarViews)[number];
 
@@ -26,6 +30,16 @@ const reasonLabels = {
   "newly-found": "Newly found in MusicBrainz",
 } as const;
 
+const primaryTypeLabels: Record<RadarPrimaryTypeFilter, string> = {
+  all: "All types",
+  album: "Albums",
+  single: "Singles",
+  ep: "EPs",
+  broadcast: "Broadcasts",
+  other: "Other",
+  unknown: "Unknown or unsupported",
+};
+
 export function RadarReleases({
   actionBusyId,
   error,
@@ -34,12 +48,15 @@ export function RadarReleases({
   limit,
   loading,
   offset,
+  primaryType,
   refreshResult,
   totalItems,
   view,
   onDismissed,
   onIncludeDismissedChange,
+  onOpen,
   onPage,
+  onPrimaryTypeChange,
   onSeen,
   onViewChange,
 }: {
@@ -50,12 +67,15 @@ export function RadarReleases({
   readonly limit: number;
   readonly loading: boolean;
   readonly offset: number;
+  readonly primaryType: RadarPrimaryTypeFilter;
   readonly refreshResult: RadarRefreshResultDto | undefined;
   readonly totalItems: number;
   readonly view: RadarViewName;
   readonly onDismissed: (item: RadarItemDto, dismissed: boolean) => void;
   readonly onIncludeDismissedChange: (include: boolean) => void;
+  readonly onOpen: (item: RadarItemDto) => void;
   readonly onPage: (offset: number) => void;
+  readonly onPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onSeen: (item: RadarItemDto, seen: boolean) => void;
   readonly onViewChange: (view: RadarViewName) => void;
 }): React.JSX.Element {
@@ -72,14 +92,35 @@ export function RadarReleases({
             stay partial and are classified conservatively.
           </p>
         </div>
-        <label className="radar-dismissed-toggle">
-          <input
-            checked={includeDismissed}
-            type="checkbox"
-            onChange={(event) => onIncludeDismissedChange(event.target.checked)}
-          />
-          Show dismissed
-        </label>
+        <div className="radar-filters">
+          <label>
+            Release type
+            <select
+              value={primaryType}
+              onChange={(event) =>
+                onPrimaryTypeChange(
+                  event.target.value as RadarPrimaryTypeFilter,
+                )
+              }
+            >
+              {radarPrimaryTypeFilters.map((value) => (
+                <option key={value} value={value}>
+                  {primaryTypeLabels[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="radar-dismissed-toggle">
+            <input
+              checked={includeDismissed}
+              type="checkbox"
+              onChange={(event) =>
+                onIncludeDismissedChange(event.target.checked)
+              }
+            />
+            Show dismissed
+          </label>
+        </div>
       </div>
 
       <div aria-label="Radar release views" className="radar-view-tabs">
@@ -182,6 +223,15 @@ export function RadarReleases({
                     onClick={() => onDismissed(item, !item.dismissedAt)}
                   >
                     {item.dismissedAt ? "Restore item" : "Dismiss item"}
+                  </button>
+                  <button
+                    aria-label={`Open ${item.title} in MusicBrainz`}
+                    className="secondary"
+                    disabled={actionBusyId === item.id}
+                    type="button"
+                    onClick={() => onOpen(item)}
+                  >
+                    Open in MusicBrainz
                   </button>
                 </div>
               </article>
