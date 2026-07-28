@@ -231,6 +231,16 @@ the exact tagged `main` merge. Upload these five assets:
 - `outgroove-linux-x64-<version>.zip`
 - `SHA256SUMS.txt`
 
+Release metadata follows one fixed convention:
+
+- the Git tag is `v<version>`, for example `v0.16.0`;
+- the display title is `Outgroove <version>`, for example
+  `Outgroove 0.16.0`, because repeating the tag's `v` in the title is
+  unnecessary; and
+- releases remain marked as prereleases until a separate, explicit product
+  decision changes the project's release channel. Completing the verification
+  checklist does not by itself authorize removing the prerelease flag.
+
 `SHA256SUMS.txt` contains one lowercase SHA-256 line for the DMG, both ZIPs,
 and the Setup application. Generate it only after all four final packages
 exist.

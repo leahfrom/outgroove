@@ -29,6 +29,8 @@ describe("release workflow", () => {
       "sha256sum release-assets/*.dmg release-assets/*.zip release-assets/*.exe",
     );
     expect(workflow).toContain("path: ${{ matrix.package-path }}");
+    expect(workflow).toContain('release_version="${GITHUB_REF_NAME#v}"');
+    expect(workflow).toContain('--title "Outgroove $release_version"');
     expect(workflow).not.toContain("pull_request:");
   });
 
