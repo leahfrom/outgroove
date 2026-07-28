@@ -178,6 +178,17 @@ describe("preload saved-filter allowlist", () => {
       channels.cancelAllRadarRefresh,
       {},
     );
+    await api.getRadarBackgroundRefreshSettings();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.getRadarBackgroundRefreshSettings,
+      {},
+    );
+    const background = { enabled: true, pauseOnBattery: true };
+    await api.updateRadarBackgroundRefreshSettings(background);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.updateRadarBackgroundRefreshSettings,
+      background,
+    );
     const page = {
       view: "all" as const,
       primaryType: "all" as const,

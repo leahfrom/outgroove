@@ -66,7 +66,7 @@ export class RefreshRadar {
         readonly controller: AbortController;
       }
     | {
-        readonly kind: "all";
+        readonly kind: "all" | "background-all";
         readonly controller: AbortController;
       }
     | undefined;
@@ -94,9 +94,23 @@ export class RefreshRadar {
     progress: (completed: number, total: number, detail: string) => void,
   ): Promise<RadarRefreshAllResultDto> {
     this.cancelActive();
+    return this.runAll("all", progress);
+  }
+
+  async refreshAllIfIdle(
+    progress: (completed: number, total: number, detail: string) => void,
+  ): Promise<RadarRefreshAllResultDto | undefined> {
+    if (this.active) return undefined;
+    return this.runAll("background-all", progress);
+  }
+
+  private async runAll(
+    kind: "all" | "background-all",
+    progress: (completed: number, total: number, detail: string) => void,
+  ): Promise<RadarRefreshAllResultDto> {
     const favorites = this.store.listFavoriteArtists();
     const controller = new AbortController();
-    this.active = { kind: "all", controller };
+    this.active = { kind, controller };
     const results: RadarRefreshResultDto[] = [];
     const failures: RadarRefreshAllResultDto["failures"][number][] = [];
     let cancelled = false;
@@ -155,6 +169,12 @@ export class RefreshRadar {
 
   cancelAll(): { readonly cancelled: boolean } {
     if (this.active?.kind !== "all") return { cancelled: false };
+    this.cancelActive();
+    return { cancelled: true };
+  }
+
+  cancelBackground(): { readonly cancelled: boolean } {
+    if (this.active?.kind !== "background-all") return { cancelled: false };
     this.cancelActive();
     return { cancelled: true };
   }

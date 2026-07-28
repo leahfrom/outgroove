@@ -1,6 +1,7 @@
 import type {
   FavoriteArtistDto,
   FavoriteArtistSearchResultDto,
+  RadarBackgroundRefreshSettingsDto,
   RadarItemDto,
   RadarRefreshAllResultDto,
   RadarRefreshResultDto,
@@ -23,6 +24,9 @@ export function RadarView({
   favorites,
   mutationBusy,
   radarActionBusyId,
+  radarBackgroundBusy,
+  radarBackgroundError,
+  radarBackgroundSettings,
   radarError,
   radarIncludeDismissed,
   radarItems,
@@ -53,6 +57,7 @@ export function RadarView({
   onRadarPrimaryTypeChange,
   onRadarSeen,
   onRadarViewChange,
+  onRadarBackgroundChange,
   onRefreshAll,
   onRefreshFavorite,
   onCancelRefreshAll,
@@ -70,6 +75,10 @@ export function RadarView({
   readonly favorites: readonly FavoriteArtistDto[];
   readonly mutationBusy: boolean;
   readonly radarActionBusyId: string | undefined;
+  readonly radarBackgroundBusy: boolean;
+  readonly radarBackgroundError: string | undefined;
+  readonly radarBackgroundSettings:
+    RadarBackgroundRefreshSettingsDto | undefined;
   readonly radarError: string | undefined;
   readonly radarIncludeDismissed: boolean;
   readonly radarItems: readonly RadarItemDto[];
@@ -100,6 +109,10 @@ export function RadarView({
   readonly onRadarPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onRadarSeen: (item: RadarItemDto, seen: boolean) => void;
   readonly onRadarViewChange: (view: RadarReleaseView) => void;
+  readonly onRadarBackgroundChange: (
+    enabled: boolean,
+    pauseOnBattery: boolean,
+  ) => void;
   readonly onRefreshAll: () => void;
   readonly onRefreshFavorite: (favorite: FavoriteArtistDto) => void;
   readonly onCancelRefreshAll: () => void;
@@ -148,6 +161,98 @@ export function RadarView({
           )}
         </div>
       </section>
+
+      <details className="radar-background-settings">
+        <summary>Automatic refresh</summary>
+        <div>
+          <p>
+            Optional checks run at a randomized daily interval while Outgroove
+            is open. Each check sends only your saved MusicBrainz artist IDs; it
+            never reads or changes audio files. Notifications are not enabled in
+            this version.
+          </p>
+          {radarBackgroundSettings ? (
+            <>
+              <fieldset disabled={radarBackgroundBusy}>
+                <legend className="visually-hidden">
+                  Automatic Radar refresh settings
+                </legend>
+                <label>
+                  <input
+                    checked={radarBackgroundSettings.enabled}
+                    type="checkbox"
+                    onChange={(event) =>
+                      onRadarBackgroundChange(
+                        event.target.checked,
+                        radarBackgroundSettings.pauseOnBattery,
+                      )
+                    }
+                  />
+                  Check favorite artists automatically
+                </label>
+                <label>
+                  <input
+                    checked={radarBackgroundSettings.pauseOnBattery}
+                    disabled={
+                      radarBackgroundBusy || !radarBackgroundSettings.enabled
+                    }
+                    type="checkbox"
+                    onChange={(event) =>
+                      onRadarBackgroundChange(
+                        radarBackgroundSettings.enabled,
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  Pause automatic checks on battery power
+                </label>
+              </fieldset>
+              <dl aria-label="Automatic Radar refresh status">
+                <div>
+                  <dt>Next check</dt>
+                  <dd>
+                    {formatBackgroundTime(
+                      radarBackgroundSettings.nextRefreshAt,
+                      radarBackgroundSettings.enabled
+                        ? "Scheduling…"
+                        : "Not scheduled",
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last checked</dt>
+                  <dd>
+                    {formatBackgroundTime(
+                      radarBackgroundSettings.lastCheckedAt,
+                      "Never",
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last fully successful</dt>
+                  <dd>
+                    {formatBackgroundTime(
+                      radarBackgroundSettings.lastSuccessfulRefreshAt,
+                      "Never",
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Last result</dt>
+                  <dd>{formatBackgroundOutcome(radarBackgroundSettings)}</dd>
+                </div>
+              </dl>
+            </>
+          ) : (
+            <p role="status">Loading automatic refresh settings…</p>
+          )}
+          {radarBackgroundError && (
+            <p className="error" role="alert">
+              {radarBackgroundError}
+            </p>
+          )}
+        </div>
+      </details>
 
       {radarRefreshAllResult && (
         <section
@@ -227,7 +332,8 @@ export function RadarView({
               offline, through catalog rebuilds, and in verified backups.
               Refreshing one favorite sends only that saved MusicBrainz artist
               ID. Refresh all sends each saved ID sequentially through the same
-              bounded provider path and never runs automatically.
+              bounded provider path. Automatic checks run only when explicitly
+              enabled above.
             </p>
           </div>
           <form
@@ -491,4 +597,30 @@ export function RadarView({
       )}
     </main>
   );
+}
+
+function formatBackgroundTime(value: string | null, empty: string): string {
+  return value ? new Date(value).toLocaleString() : empty;
+}
+
+function formatBackgroundOutcome(
+  settings: RadarBackgroundRefreshSettingsDto,
+): string {
+  if (!settings.lastOutcome) return "No automatic check yet";
+  const labels = {
+    success: "Fully successful",
+    partial: "Partly successful",
+    failed: "Failed",
+    cancelled: "Stopped for a manual refresh",
+    offline: "Paused while offline",
+    battery: "Paused on battery power",
+    busy: "Deferred while Radar was busy",
+  } as const;
+  const counts =
+    settings.lastOutcome === "success" ||
+    settings.lastOutcome === "partial" ||
+    settings.lastOutcome === "failed"
+      ? ` — ${settings.lastSucceeded} successful, ${settings.lastFailed} failed`
+      : "";
+  return `${labels[settings.lastOutcome]}${counts}`;
 }

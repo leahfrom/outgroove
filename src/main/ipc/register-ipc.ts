@@ -31,6 +31,7 @@ import {
   radarItemOpenRequestSchema,
   radarItemSeenRequestSchema,
   radarListRequestSchema,
+  radarBackgroundRefreshUpdateRequestSchema,
   radarRefreshRequestSchema,
   renameSyncProfileRequestSchema,
   removeFavoriteArtistRequestSchema,
@@ -67,6 +68,7 @@ import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
 import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
 import type { RefreshRadar } from "../application/refresh-radar";
+import type { RadarBackgroundRefresh } from "../application/radar-background-refresh";
 import type { OpenRadarItem } from "../application/open-radar-item";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
@@ -83,6 +85,7 @@ interface Dependencies {
   releaseArtwork: FindReleaseArtwork;
   favoriteArtists: ManageFavoriteArtists;
   radar: RefreshRadar;
+  radarBackground: RadarBackgroundRefresh;
   radarItemOpener: OpenRadarItem;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
@@ -361,6 +364,20 @@ export function registerIpc(
     channels.cancelAllRadarRefresh,
     createValidatedHandler(emptyRequestSchema, () =>
       dependencies.radar.cancelAll(),
+    ),
+  );
+  ipcMain.handle(
+    channels.getRadarBackgroundRefreshSettings,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radarBackground.getSettings(),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateRadarBackgroundRefreshSettings,
+    createValidatedHandler(
+      radarBackgroundRefreshUpdateRequestSchema,
+      ({ enabled, pauseOnBattery }) =>
+        dependencies.radarBackground.updatePreferences(enabled, pauseOnBattery),
     ),
   );
   ipcMain.handle(

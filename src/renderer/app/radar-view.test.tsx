@@ -67,6 +67,19 @@ function renderView(
       favorites={[favorite]}
       mutationBusy={false}
       radarActionBusyId={undefined}
+      radarBackgroundBusy={false}
+      radarBackgroundError={undefined}
+      radarBackgroundSettings={{
+        enabled: false,
+        pauseOnBattery: true,
+        nextRefreshAt: null,
+        lastCheckedAt: null,
+        lastSuccessfulRefreshAt: null,
+        lastOutcome: null,
+        lastCompleted: 0,
+        lastSucceeded: 0,
+        lastFailed: 0,
+      }}
       radarError={undefined}
       radarIncludeDismissed={false}
       radarItems={[]}
@@ -97,6 +110,7 @@ function renderView(
       onRadarPrimaryTypeChange={vi.fn()}
       onRadarSeen={vi.fn()}
       onRadarViewChange={vi.fn()}
+      onRadarBackgroundChange={vi.fn()}
       onRefreshAll={vi.fn()}
       onRefreshFavorite={vi.fn()}
       onCancelRefreshAll={vi.fn()}
@@ -109,6 +123,46 @@ function renderView(
 }
 
 describe("Radar favorite artists", () => {
+  it("keeps automatic refresh opt-in, collapsed, and keyboard accessible", async () => {
+    const onRadarBackgroundChange = vi.fn();
+    renderView({
+      onRadarBackgroundChange,
+      radarBackgroundSettings: {
+        enabled: false,
+        pauseOnBattery: true,
+        nextRefreshAt: null,
+        lastCheckedAt: "2026-07-28T09:00:00.000Z",
+        lastSuccessfulRefreshAt: null,
+        lastOutcome: "offline",
+        lastCompleted: 0,
+        lastSucceeded: 0,
+        lastFailed: 0,
+      },
+    });
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Check favorite artists automatically",
+        hidden: true,
+      }),
+    ).not.toBeVisible();
+
+    const summary = screen.getByText("Automatic refresh");
+    await userEvent.setup().click(summary);
+    const enabled = screen.getByRole("checkbox", {
+      name: "Check favorite artists automatically",
+    });
+    expect(enabled).not.toBeChecked();
+    enabled.focus();
+    await userEvent.setup().keyboard(" ");
+    expect(onRadarBackgroundChange).toHaveBeenCalledWith(true, true);
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Pause automatic checks on battery power",
+      }),
+    ).toBeDisabled();
+    expect(screen.getByText("Paused while offline")).toBeVisible();
+  });
+
   it("discloses the exact network boundary and requires explicit candidate selection", async () => {
     const onAdd = vi.fn();
     renderView({ onAdd });
