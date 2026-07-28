@@ -23,6 +23,7 @@ import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
 import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
+import { RefreshRadar } from "./application/refresh-radar";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -100,6 +101,7 @@ async function createWindow(): Promise<void> {
       artworkEditor,
     ),
     favoriteArtists: new ManageFavoriteArtists(database, musicBrainz),
+    radar: new RefreshRadar(database, musicBrainz),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor,
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
@@ -169,7 +171,7 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged local artwork extraction and thumbnail encoding failed.",
       );
-    database.addFavoriteArtist({
+    const smokeFavorite = database.addFavoriteArtist({
       artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
       name: "Packaged Fixture Artist",
       sortName: "Packaged Fixture Artist",
@@ -179,6 +181,26 @@ async function createWindow(): Promise<void> {
       area: "Berlin",
       score: 100,
     });
+    database.commitRadarRefresh(
+      smokeFavorite.id,
+      [
+        {
+          releaseGroupId: "85f96c2e-3711-4e70-8bcc-1d37ca6d361d",
+          representativeReleaseId: "cdb15a6d-8271-4dce-8497-d572ea9e3b68",
+          title: "Packaged Radar Fixture",
+          primaryType: "Album",
+          secondaryTypes: [],
+          firstReleaseDate: "2026",
+          status: "Official",
+          country: "DE",
+        },
+      ],
+      {
+        refreshedAt: new Date().toISOString(),
+        providerFetchedAt: new Date().toISOString(),
+        truncated: false,
+      },
+    );
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
     const verifiedBackup = new CatalogDatabase(backupPath);
@@ -193,6 +215,13 @@ async function createWindow(): Promise<void> {
     )
       throw new Error(
         "Packaged favorite-artist persistence was not retained in the verified backup.",
+      );
+    if (
+      verifiedBackup.listRadarItems("all", false, "2026-07-28").items[0]
+        ?.title !== "Packaged Radar Fixture"
+    )
+      throw new Error(
+        "Packaged Radar snapshot persistence was not retained in the verified backup.",
       );
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");

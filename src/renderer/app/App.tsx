@@ -20,6 +20,8 @@ import type {
   LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
   MusicBrainzReleaseTracklistDto,
+  RadarItemDto,
+  RadarRefreshResultDto,
   SavedLibraryFilterDefinition,
   SavedLibraryFilterDto,
   ScanErrorDto,
@@ -36,6 +38,7 @@ import type {
   TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
+import { radarViews } from "../../shared/contracts/api";
 import {
   summarizeAlbumReleaseDate,
   type CatalogAlbum,
@@ -112,6 +115,9 @@ import {
 import type { SettingsSection } from "./settings-navigation";
 import { SettingsView } from "./settings-view";
 import { WorkbenchTrackContext } from "./workbench-track-context";
+
+type RadarReleaseView = (typeof radarViews)[number];
+const radarPageLimit = 20;
 
 const PAGE_SIZE = 20;
 
@@ -254,6 +260,17 @@ export function App(): React.JSX.Element {
   const [artistSearchError, setArtistSearchError] = useState<string>();
   const [favoriteMutationBusy, setFavoriteMutationBusy] = useState(false);
   const [favoriteRemoval, setFavoriteRemoval] = useState<FavoriteArtistDto>();
+  const [radarItems, setRadarItems] = useState<readonly RadarItemDto[]>([]);
+  const [radarTotalItems, setRadarTotalItems] = useState(0);
+  const [radarOffset, setRadarOffset] = useState(0);
+  const [radarView, setRadarView] = useState<RadarReleaseView>("all");
+  const [radarIncludeDismissed, setRadarIncludeDismissed] = useState(false);
+  const [radarLoading, setRadarLoading] = useState(false);
+  const [radarError, setRadarError] = useState<string>();
+  const [radarRefreshResult, setRadarRefreshResult] =
+    useState<RadarRefreshResultDto>();
+  const [refreshingFavoriteId, setRefreshingFavoriteId] = useState<string>();
+  const [radarActionBusyId, setRadarActionBusyId] = useState<string>();
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
@@ -831,6 +848,32 @@ export function App(): React.JSX.Element {
     [],
   );
 
+  const refreshRadarItems = useCallback(
+    async (
+      view: RadarReleaseView,
+      includeDismissed: boolean,
+      offset: number,
+    ): Promise<boolean> => {
+      setRadarLoading(true);
+      const result = await window.outgroove.listRadarItems({
+        view,
+        includeDismissed,
+        offset,
+        limit: radarPageLimit,
+      });
+      setRadarLoading(false);
+      if (result.ok) {
+        setRadarItems(result.value.items);
+        setRadarTotalItems(result.value.totalItems);
+        setRadarOffset(result.value.offset);
+        return true;
+      }
+      setRadarError(result.error.message);
+      return false;
+    },
+    [],
+  );
+
   const refreshSyncProfiles = useCallback(async (): Promise<
     readonly SyncProfileDto[] | undefined
   > => {
@@ -920,6 +963,9 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshFavoriteArtists("");
   }, [refreshFavoriteArtists]);
+  useEffect(() => {
+    void refreshRadarItems("all", false, 0);
+  }, [refreshRadarItems]);
   useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
@@ -1172,6 +1218,106 @@ export function App(): React.JSX.Element {
     });
   };
 
+  const refreshFavoriteRadar = async (
+    favorite: FavoriteArtistDto,
+  ): Promise<void> => {
+    setRefreshingFavoriteId(favorite.id);
+    setRadarError(undefined);
+    setRadarRefreshResult(undefined);
+    const result = await window.outgroove.refreshRadar({
+      favoriteArtistId: favorite.id,
+    });
+    setRefreshingFavoriteId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    setRadarRefreshResult(result.value);
+    await refreshFavoriteArtists(favoriteFilter);
+    await refreshRadarItems(radarView, radarIncludeDismissed, radarOffset);
+    setNotice(
+      `Refreshed Radar for ${result.value.favoriteArtistName}.`,
+      "success",
+    );
+  };
+
+  const cancelFavoriteRadarRefresh = (favorite: FavoriteArtistDto): void => {
+    void window.outgroove
+      .cancelRadarRefresh({ favoriteArtistId: favorite.id })
+      .then((result) => {
+        if (!result.ok) {
+          setRadarError(result.error.message);
+          return;
+        }
+        if (result.value.cancelled) {
+          setRefreshingFavoriteId(undefined);
+          setRadarError(
+            "Radar refresh cancelled. The last successful view is unchanged.",
+          );
+        }
+      });
+  };
+
+  const chooseRadarView = (view: RadarReleaseView): void => {
+    setRadarView(view);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(view, radarIncludeDismissed, 0);
+  };
+
+  const chooseRadarDismissed = (includeDismissed: boolean): void => {
+    setRadarIncludeDismissed(includeDismissed);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(radarView, includeDismissed, 0);
+  };
+
+  const chooseRadarPage = (offset: number): void => {
+    setRadarError(undefined);
+    void refreshRadarItems(radarView, radarIncludeDismissed, offset);
+  };
+
+  const setRadarSeen = async (
+    item: RadarItemDto,
+    seen: boolean,
+  ): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    const result = await window.outgroove.setRadarItemSeen({
+      id: item.id,
+      seen,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    await refreshRadarItems(radarView, radarIncludeDismissed, radarOffset);
+  };
+
+  const setRadarDismissed = async (
+    item: RadarItemDto,
+    dismissed: boolean,
+  ): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    const result = await window.outgroove.setRadarItemDismissed({
+      id: item.id,
+      dismissed,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    const nextOffset =
+      dismissed &&
+      !radarIncludeDismissed &&
+      radarItems.length === 1 &&
+      radarOffset > 0
+        ? Math.max(0, radarOffset - radarPageLimit)
+        : radarOffset;
+    await refreshRadarItems(radarView, radarIncludeDismissed, nextOffset);
+  };
+
   const addFavoriteArtist = async (artistId: string): Promise<void> => {
     setFavoriteMutationBusy(true);
     const result = await window.outgroove.addFavoriteArtist({ artistId });
@@ -1205,6 +1351,8 @@ export function App(): React.JSX.Element {
       artistIds.filter((artistId) => artistId !== removedArtistId),
     );
     await refreshFavoriteArtists(favoriteFilter);
+    setRadarOffset(0);
+    await refreshRadarItems(radarView, radarIncludeDismissed, 0);
     setNotice(`Removed ${removedName} from favorite artists.`, "success");
   };
 
@@ -3196,6 +3344,17 @@ export function App(): React.JSX.Element {
           favoriteFilterText={favoriteFilterText}
           favorites={favoriteArtists}
           mutationBusy={favoriteMutationBusy}
+          radarActionBusyId={radarActionBusyId}
+          radarError={radarError}
+          radarIncludeDismissed={radarIncludeDismissed}
+          radarItems={radarItems}
+          radarLimit={radarPageLimit}
+          radarLoading={radarLoading}
+          radarOffset={radarOffset}
+          radarRefreshResult={radarRefreshResult}
+          radarTotalItems={radarTotalItems}
+          radarView={radarView}
+          refreshingFavoriteId={refreshingFavoriteId}
           removal={favoriteRemoval}
           onAdd={(artistId) => void addFavoriteArtist(artistId)}
           onArtistSearchTextChange={setArtistSearchText}
@@ -3205,6 +3364,15 @@ export function App(): React.JSX.Element {
           onConfirmRemoval={() => void removeFavoriteArtist()}
           onFavoriteFilterTextChange={setFavoriteFilterText}
           onFilterFavorites={filterFavoriteArtists}
+          onRadarDismissed={(item, dismissed) =>
+            void setRadarDismissed(item, dismissed)
+          }
+          onRadarIncludeDismissedChange={chooseRadarDismissed}
+          onRadarPage={chooseRadarPage}
+          onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
+          onRadarViewChange={chooseRadarView}
+          onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}
+          onCancelRefresh={cancelFavoriteRadarRefresh}
           onRemove={setFavoriteRemoval}
           onSearchArtists={() => void searchMusicBrainzArtists()}
         />

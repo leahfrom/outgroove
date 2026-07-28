@@ -284,6 +284,10 @@ export function SettingsView({
                   <dd>{restorePreview.summary.favoriteArtists}</dd>
                 </div>
                 <div>
+                  <dt>Radar items</dt>
+                  <dd>{restorePreview.summary.radarItems}</dd>
+                </div>
+                <div>
                   <dt>Schema</dt>
                   <dd>v{restorePreview.schemaVersion}</dd>
                 </div>

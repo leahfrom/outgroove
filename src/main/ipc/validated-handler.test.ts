@@ -15,6 +15,10 @@ import {
   emptyRequestSchema,
   favoriteArtistListRequestSchema,
   favoriteArtistSearchRequestSchema,
+  radarItemDismissRequestSchema,
+  radarItemSeenRequestSchema,
+  radarListRequestSchema,
+  radarRefreshRequestSchema,
   scanCancelRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
@@ -110,6 +114,81 @@ describe("validated IPC handlers", () => {
     });
     await expect(
       removeHandler({}, { id, targetPath: "/Volumes/DAP" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
+  it("accepts only stable local identities and bounded paging for Radar", async () => {
+    const favoriteArtistId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const itemId = "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef";
+    const refresh = vi.fn();
+    const refreshHandler = createValidatedHandler(
+      radarRefreshRequestSchema,
+      refresh,
+    );
+    await expect(
+      refreshHandler({}, { favoriteArtistId }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(refresh).toHaveBeenCalledWith({ favoriteArtistId });
+    for (const request of [
+      { favoriteArtistId: "not-an-id" },
+      { favoriteArtistId, artistId: favoriteArtistId },
+      { favoriteArtistId, providerUrl: "https://example.com" },
+      { favoriteArtistId, path: "/private/library" },
+    ])
+      await expect(refreshHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const list = vi.fn(() => ({ items: [], totalItems: 0 }));
+    const listHandler = createValidatedHandler(radarListRequestSchema, list);
+    const page = {
+      view: "newly-found",
+      includeDismissed: false,
+      offset: 0,
+      limit: 20,
+    };
+    await expect(listHandler({}, page)).resolves.toMatchObject({ ok: true });
+    expect(list).toHaveBeenCalledWith(page);
+    for (const request of [
+      { ...page, view: "unknown" },
+      { ...page, limit: 51 },
+      { ...page, offset: -1 },
+      { ...page, provider: "musicbrainz" },
+    ])
+      await expect(listHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const seen = vi.fn();
+    const seenHandler = createValidatedHandler(
+      radarItemSeenRequestSchema,
+      seen,
+    );
+    await expect(
+      seenHandler({}, { id: itemId, seen: true }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      seenHandler({}, { id: itemId, seen: true, audio: "bytes" }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+
+    const dismiss = vi.fn();
+    const dismissHandler = createValidatedHandler(
+      radarItemDismissRequestSchema,
+      dismiss,
+    );
+    await expect(
+      dismissHandler({}, { id: itemId, dismissed: false }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      dismissHandler({}, { id: itemId, dismissed: false, targetPath: "/tmp" }),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: "INVALID_REQUEST" },

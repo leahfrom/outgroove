@@ -45,6 +45,15 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.addFavoriteArtist, request),
   removeFavoriteArtist: (request) =>
     ipcRenderer.invoke(channels.removeFavoriteArtist, request),
+  refreshRadar: (request) => ipcRenderer.invoke(channels.refreshRadar, request),
+  cancelRadarRefresh: (request) =>
+    ipcRenderer.invoke(channels.cancelRadarRefresh, request),
+  listRadarItems: (request) =>
+    ipcRenderer.invoke(channels.listRadarItems, request),
+  setRadarItemSeen: (request) =>
+    ipcRenderer.invoke(channels.setRadarItemSeen, request),
+  setRadarItemDismissed: (request) =>
+    ipcRenderer.invoke(channels.setRadarItemDismissed, request),
   listSavedLibraryFilters: () =>
     ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
   createSavedLibraryFilter: (request) =>

@@ -8,6 +8,7 @@ import type {
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import type { MusicBrainzArtistCandidate } from "../domain/favorite-artist";
+import type { RadarReason } from "../domain/radar";
 import { isValidPartialDate } from "../domain/tag-edit";
 import type { EditableTrackTagField } from "../domain/tag-edit";
 
@@ -98,6 +99,24 @@ export const addFavoriteArtistRequestSchema = z
   .strict();
 export const removeFavoriteArtistRequestSchema = z
   .object({ id: z.uuid() })
+  .strict();
+export const radarViews = ["all", "upcoming", "recent", "newly-found"] as const;
+export const radarRefreshRequestSchema = z
+  .object({ favoriteArtistId: z.uuid() })
+  .strict();
+export const radarListRequestSchema = z
+  .object({
+    view: z.enum(radarViews),
+    includeDismissed: z.boolean(),
+    offset: z.number().int().min(0),
+    limit: z.number().int().min(1).max(50),
+  })
+  .strict();
+export const radarItemSeenRequestSchema = z
+  .object({ id: z.uuid(), seen: z.boolean() })
+  .strict();
+export const radarItemDismissRequestSchema = z
+  .object({ id: z.uuid(), dismissed: z.boolean() })
   .strict();
 export const musicBrainzReleaseLookupRequestSchema = z
   .object({
@@ -566,6 +585,7 @@ export interface DatabaseRestorePreviewDto {
     readonly syncProfiles: number;
     readonly savedLibraryFilters: number;
     readonly favoriteArtists: number;
+    readonly radarItems: number;
   };
 }
 export interface TagEditFilePreviewDto {
@@ -810,6 +830,48 @@ export interface FavoriteArtistDto {
   readonly type: string | null;
   readonly country: string | null;
   readonly createdAt: string;
+  readonly lastSuccessfulRefreshAt: string | null;
+  readonly lastProviderFetchAt: string | null;
+  readonly lastRefreshTruncated: boolean;
+}
+
+export interface RadarItemDto {
+  readonly id: string;
+  readonly favoriteArtistId: string;
+  readonly favoriteArtistName: string;
+  readonly musicBrainzReleaseGroupId: string;
+  readonly representativeReleaseId: string;
+  readonly title: string;
+  readonly primaryType: string | null;
+  readonly secondaryTypes: readonly string[];
+  readonly firstReleaseDate: string | null;
+  readonly status: string | null;
+  readonly country: string | null;
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+  readonly seenAt: string | null;
+  readonly dismissedAt: string | null;
+  readonly reasons: readonly RadarReason[];
+}
+
+export interface RadarRefreshResultDto {
+  readonly favoriteArtistId: string;
+  readonly favoriteArtistName: string;
+  readonly added: number;
+  readonly updated: number;
+  readonly unchanged: number;
+  readonly total: number;
+  readonly source: "network" | "cache";
+  readonly providerFetchedAt: string;
+  readonly refreshedAt: string;
+  readonly truncated: boolean;
+}
+
+export interface RadarPageDto {
+  readonly items: readonly RadarItemDto[];
+  readonly totalItems: number;
+  readonly offset: number;
+  readonly limit: number;
 }
 
 export interface MusicBrainzReleaseTracklistDto {
@@ -905,6 +967,21 @@ export interface OutgrooveApi {
   removeFavoriteArtist(
     request: z.infer<typeof removeFavoriteArtistRequestSchema>,
   ): Promise<Result<{ readonly id: string }>>;
+  refreshRadar(
+    request: z.infer<typeof radarRefreshRequestSchema>,
+  ): Promise<Result<RadarRefreshResultDto>>;
+  cancelRadarRefresh(
+    request: z.infer<typeof radarRefreshRequestSchema>,
+  ): Promise<Result<{ readonly cancelled: boolean }>>;
+  listRadarItems(
+    request: z.infer<typeof radarListRequestSchema>,
+  ): Promise<Result<RadarPageDto>>;
+  setRadarItemSeen(
+    request: z.infer<typeof radarItemSeenRequestSchema>,
+  ): Promise<Result<RadarItemDto>>;
+  setRadarItemDismissed(
+    request: z.infer<typeof radarItemDismissRequestSchema>,
+  ): Promise<Result<RadarItemDto>>;
   listSavedLibraryFilters(): Promise<Result<readonly SavedLibraryFilterDto[]>>;
   createSavedLibraryFilter(
     request: z.infer<typeof createSavedLibraryFilterRequestSchema>,

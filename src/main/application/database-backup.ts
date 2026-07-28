@@ -148,6 +148,10 @@ export class DatabaseBackupService {
           .prepare("SELECT COUNT(*) FROM favorite_artists")
           .pluck()
           .get() as number,
+        radarItems: staged.connection
+          .prepare("SELECT COUNT(*) FROM radar_items")
+          .pluck()
+          .get() as number,
       };
       staged.close();
       staged = undefined;

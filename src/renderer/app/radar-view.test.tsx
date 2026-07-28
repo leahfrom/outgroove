@@ -18,6 +18,9 @@ const favorite: FavoriteArtistDto = {
   type: "Group",
   country: "DE",
   createdAt: "2026-07-28T08:00:00.000Z",
+  lastSuccessfulRefreshAt: null,
+  lastProviderFetchAt: null,
+  lastRefreshTruncated: false,
 };
 
 const result: FavoriteArtistSearchResultDto = {
@@ -63,6 +66,17 @@ function renderView(
       favoriteFilterText=""
       favorites={[favorite]}
       mutationBusy={false}
+      radarActionBusyId={undefined}
+      radarError={undefined}
+      radarIncludeDismissed={false}
+      radarItems={[]}
+      radarLimit={20}
+      radarLoading={false}
+      radarOffset={0}
+      radarRefreshResult={undefined}
+      radarTotalItems={0}
+      radarView="all"
+      refreshingFavoriteId={undefined}
       removal={undefined}
       onAdd={vi.fn()}
       onArtistSearchTextChange={vi.fn()}
@@ -72,6 +86,13 @@ function renderView(
       onConfirmRemoval={vi.fn()}
       onFavoriteFilterTextChange={vi.fn()}
       onFilterFavorites={vi.fn()}
+      onRadarDismissed={vi.fn()}
+      onRadarIncludeDismissedChange={vi.fn()}
+      onRadarPage={vi.fn()}
+      onRadarSeen={vi.fn()}
+      onRadarViewChange={vi.fn()}
+      onRefreshFavorite={vi.fn()}
+      onCancelRefresh={vi.fn()}
       onRemove={vi.fn()}
       onSearchArtists={vi.fn()}
       {...overrides}

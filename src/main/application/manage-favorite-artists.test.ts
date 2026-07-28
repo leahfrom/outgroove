@@ -25,6 +25,9 @@ function favorite(): FavoriteArtistDto {
     type: candidate.type,
     country: candidate.country,
     createdAt: "2026-07-28T08:00:00.000Z",
+    lastSuccessfulRefreshAt: null,
+    lastProviderFetchAt: null,
+    lastRefreshTruncated: false,
   };
 }
 

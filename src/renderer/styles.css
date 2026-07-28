@@ -3358,6 +3358,7 @@ td {
   color: #71352f;
 }
 .radar-introduction,
+.radar-releases,
 .favorite-artists,
 .artist-search {
   min-width: 0;
@@ -3390,13 +3391,131 @@ td {
   flex: 0 0 auto;
   color: #526159;
 }
+.radar-releases {
+  display: grid;
+  gap: 1rem;
+}
+.radar-releases .section-heading {
+  display: flex;
+  gap: 1.25rem;
+  align-items: end;
+  justify-content: space-between;
+}
+.radar-releases .section-heading > div {
+  min-width: 0;
+}
+.radar-releases .section-heading h2,
+.radar-releases .section-heading p {
+  margin-bottom: 0;
+}
+.radar-releases .section-heading p {
+  max-width: 56rem;
+  color: #526159;
+}
+.radar-dismissed-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.radar-dismissed-toggle input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+.radar-view-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.radar-view-tabs button[aria-pressed="true"] {
+  border-color: #275c3b;
+  background: #e7f3e9;
+  color: #173925;
+}
+.radar-releases ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.radar-releases li,
+.radar-releases article {
+  min-width: 0;
+}
+.radar-releases article {
+  display: grid;
+  gap: 0.8rem;
+  height: 100%;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.radar-releases article.is-dismissed {
+  border-style: dashed;
+  opacity: 0.8;
+}
+.radar-releases header {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.radar-releases h3,
+.radar-releases header p {
+  margin: 0;
+}
+.radar-releases header > span {
+  flex: 0 0 auto;
+  color: #526159;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.radar-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.radar-reason-list span {
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #e7f3e9;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.radar-releases dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+.radar-releases dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.radar-releases dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+.radar-releases code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.radar-releases .actions {
+  align-self: end;
+}
 .favorite-artists {
   display: grid;
   gap: 1rem;
 }
 .favorite-artists .section-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(24rem, 0.75fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(16rem, 0.75fr);
   gap: 1.25rem;
   align-items: end;
 }
@@ -3444,6 +3563,13 @@ td {
   overflow-wrap: anywhere;
   color: #3f4e45;
   font-size: 0.8rem;
+}
+.favorite-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: end;
 }
 .artist-search {
   display: grid;
@@ -3563,10 +3689,21 @@ td {
     display: none;
   }
   .radar-introduction,
+  .radar-releases .section-heading,
   .favorite-artists li article,
   .artist-search-results header {
     align-items: stretch;
     flex-direction: column;
+  }
+  .radar-releases ol,
+  .radar-releases dl {
+    grid-template-columns: 1fr;
+  }
+  .radar-dismissed-toggle {
+    align-self: start;
+  }
+  .favorite-actions {
+    justify-content: start;
   }
   .favorite-artists .section-heading,
   .artist-search-heading {
