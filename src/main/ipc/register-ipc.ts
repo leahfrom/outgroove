@@ -99,7 +99,7 @@ export function registerIpc(
   dependencies: Dependencies,
 ): void {
   const progress =
-    (job: "scan" | "tag-edit" | "sync" | "library-quality") =>
+    (job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar") =>
     (completed: number, total: number, detail: string): void => {
       if (!dependencies.window.isDestroyed())
         dependencies.window.webContents.send(channels.jobProgress, {
@@ -349,6 +349,18 @@ export function registerIpc(
     channels.cancelRadarRefresh,
     createValidatedHandler(radarRefreshRequestSchema, ({ favoriteArtistId }) =>
       dependencies.radar.cancel(favoriteArtistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.refreshAllRadar,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radar.refreshAll(progress("radar")),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelAllRadarRefresh,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radar.cancelAll(),
     ),
   );
   ipcMain.handle(

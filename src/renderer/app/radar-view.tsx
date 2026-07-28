@@ -2,6 +2,7 @@ import type {
   FavoriteArtistDto,
   FavoriteArtistSearchResultDto,
   RadarItemDto,
+  RadarRefreshAllResultDto,
   RadarRefreshResultDto,
   radarViews,
 } from "../../shared/contracts/api";
@@ -30,6 +31,9 @@ export function RadarView({
   radarOffset,
   radarPrimaryType,
   radarRefreshResult,
+  radarRefreshAllActive,
+  radarRefreshAllCancelling,
+  radarRefreshAllResult,
   radarTotalItems,
   radarView,
   refreshingFavoriteId,
@@ -49,7 +53,9 @@ export function RadarView({
   onRadarPrimaryTypeChange,
   onRadarSeen,
   onRadarViewChange,
+  onRefreshAll,
   onRefreshFavorite,
+  onCancelRefreshAll,
   onCancelRefresh,
   onRemove,
   onSearchArtists,
@@ -72,6 +78,9 @@ export function RadarView({
   readonly radarOffset: number;
   readonly radarPrimaryType: RadarPrimaryTypeFilter;
   readonly radarRefreshResult: RadarRefreshResultDto | undefined;
+  readonly radarRefreshAllActive: boolean;
+  readonly radarRefreshAllCancelling: boolean;
+  readonly radarRefreshAllResult: RadarRefreshAllResultDto | undefined;
   readonly radarTotalItems: number;
   readonly radarView: RadarReleaseView;
   readonly refreshingFavoriteId: string | undefined;
@@ -91,7 +100,9 @@ export function RadarView({
   readonly onRadarPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onRadarSeen: (item: RadarItemDto, seen: boolean) => void;
   readonly onRadarViewChange: (view: RadarReleaseView) => void;
+  readonly onRefreshAll: () => void;
   readonly onRefreshFavorite: (favorite: FavoriteArtistDto) => void;
+  readonly onCancelRefreshAll: () => void;
   readonly onCancelRefresh: (favorite: FavoriteArtistDto) => void;
   readonly onRemove: (favorite: FavoriteArtistDto) => void;
   readonly onSearchArtists: () => void;
@@ -104,15 +115,86 @@ export function RadarView({
           <p className="eyebrow">Radar foundation</p>
           <h2>Favorite artists</h2>
           <p>
-            Save exact MusicBrainz artist identities, then refresh one favorite
-            explicitly when you want to check its releases.
+            Save exact MusicBrainz artist identities, then explicitly refresh
+            one favorite or sweep all saved favorites when you want to check
+            their releases.
           </p>
         </div>
-        <strong>
-          {favorites.length} matching{" "}
-          {favorites.length === 1 ? "favorite" : "favorites"}
-        </strong>
+        <div className="radar-introduction-actions">
+          <strong>
+            {favorites.length} matching{" "}
+            {favorites.length === 1 ? "favorite" : "favorites"}
+          </strong>
+          {radarRefreshAllActive ? (
+            <button
+              disabled={radarRefreshAllCancelling}
+              type="button"
+              onClick={onCancelRefreshAll}
+            >
+              {radarRefreshAllCancelling
+                ? "Stopping refresh all…"
+                : "Cancel refresh all"}
+            </button>
+          ) : (
+            <button
+              disabled={
+                favoriteArtistIds.length === 0 || Boolean(refreshingFavoriteId)
+              }
+              type="button"
+              onClick={onRefreshAll}
+            >
+              Refresh all favorites
+            </button>
+          )}
+        </div>
       </section>
+
+      {radarRefreshAllResult && (
+        <section
+          aria-labelledby="radar-refresh-all-result"
+          className="radar-refresh-all-result"
+        >
+          <h2 id="radar-refresh-all-result">Refresh all result</h2>
+          <p role="status">
+            {radarRefreshAllResult.cancelled ? "Stopped after " : "Completed "}
+            {radarRefreshAllResult.completed} of{" "}
+            {radarRefreshAllResult.totalFavorites} favorites:{" "}
+            {radarRefreshAllResult.successful} successful and{" "}
+            {radarRefreshAllResult.failed} failed.
+          </p>
+          {radarRefreshAllResult.results.length > 0 && (
+            <details>
+              <summary>
+                Successful favorites ({radarRefreshAllResult.results.length})
+              </summary>
+              <ul aria-label="Favorites refreshed successfully">
+                {radarRefreshAllResult.results.map((result) => (
+                  <li key={result.favoriteArtistId}>
+                    <strong>{result.favoriteArtistName}</strong>
+                    <span>
+                      {result.added} new, {result.updated} changed,{" "}
+                      {result.unchanged} unchanged
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {radarRefreshAllResult.failures.length > 0 && (
+            <ul
+              aria-label="Favorites that failed to refresh"
+              className="radar-refresh-failures"
+            >
+              {radarRefreshAllResult.failures.map((failure) => (
+                <li key={failure.favoriteArtistId}>
+                  <strong>{failure.favoriteArtistName}</strong>
+                  <span>{failure.message}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <RadarReleases
         actionBusyId={radarActionBusyId}
@@ -144,7 +226,8 @@ export function RadarView({
               This list is stored in Outgroove’s database and stays available
               offline, through catalog rebuilds, and in verified backups.
               Refreshing one favorite sends only that saved MusicBrainz artist
-              ID and never runs automatically.
+              ID. Refresh all sends each saved ID sequentially through the same
+              bounded provider path and never runs automatically.
             </p>
           </div>
           <form
@@ -221,7 +304,9 @@ export function RadarView({
                       </button>
                     ) : (
                       <button
-                        disabled={Boolean(refreshingFavoriteId)}
+                        disabled={
+                          Boolean(refreshingFavoriteId) || radarRefreshAllActive
+                        }
                         type="button"
                         onClick={() => onRefreshFavorite(favorite)}
                       >
@@ -231,7 +316,11 @@ export function RadarView({
                     <button
                       aria-label={`Remove ${favorite.name} from favorites`}
                       className="secondary"
-                      disabled={mutationBusy || Boolean(refreshingFavoriteId)}
+                      disabled={
+                        mutationBusy ||
+                        Boolean(refreshingFavoriteId) ||
+                        radarRefreshAllActive
+                      }
                       onClick={() => onRemove(favorite)}
                       type="button"
                     >

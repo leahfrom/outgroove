@@ -54,8 +54,8 @@ const result: FavoriteArtistSearchResultDto = {
 
 function renderView(
   overrides: Partial<React.ComponentProps<typeof RadarView>> = {},
-): void {
-  render(
+): ReturnType<typeof render> {
+  return render(
     <RadarView
       artistSearchError={undefined}
       artistSearchLoading={false}
@@ -74,6 +74,9 @@ function renderView(
       radarLoading={false}
       radarOffset={0}
       radarPrimaryType="all"
+      radarRefreshAllActive={false}
+      radarRefreshAllCancelling={false}
+      radarRefreshAllResult={undefined}
       radarRefreshResult={undefined}
       radarTotalItems={0}
       radarView="all"
@@ -94,7 +97,9 @@ function renderView(
       onRadarPrimaryTypeChange={vi.fn()}
       onRadarSeen={vi.fn()}
       onRadarViewChange={vi.fn()}
+      onRefreshAll={vi.fn()}
       onRefreshFavorite={vi.fn()}
+      onCancelRefreshAll={vi.fn()}
       onCancelRefresh={vi.fn()}
       onRemove={vi.fn()}
       onSearchArtists={vi.fn()}
@@ -169,5 +174,78 @@ describe("Radar favorite artists", () => {
     dialog.focus();
     await user.keyboard("{Escape}");
     expect(onCancelRemoval).toHaveBeenCalledOnce();
+  });
+
+  it("starts and cancels the all-favorites sweep from the keyboard and reports partial failure", async () => {
+    const onRefreshAll = vi.fn();
+    const user = userEvent.setup();
+    const { unmount } = renderView({ onRefreshAll });
+    const refreshAll = screen.getByRole("button", {
+      name: "Refresh all favorites",
+    });
+    refreshAll.focus();
+    await user.keyboard("{Enter}");
+    expect(onRefreshAll).toHaveBeenCalledOnce();
+    unmount();
+
+    const onCancelRefreshAll = vi.fn();
+    renderView({
+      onCancelRefreshAll,
+      radarRefreshAllActive: true,
+      radarRefreshAllResult: {
+        totalFavorites: 2,
+        completed: 2,
+        successful: 1,
+        failed: 1,
+        cancelled: false,
+        results: [
+          {
+            favoriteArtistId: "1f5053fe-7aab-4ca8-861b-4ed97bc69f91",
+            favoriteArtistName: "Second Artist",
+            added: 1,
+            updated: 0,
+            unchanged: 2,
+            total: 3,
+            source: "cache",
+            providerFetchedAt: "2026-07-28T08:00:00.000Z",
+            refreshedAt: "2026-07-28T09:00:00.000Z",
+            truncated: false,
+          },
+        ],
+        failures: [
+          {
+            favoriteArtistId: favorite.id,
+            favoriteArtistName: favorite.name,
+            message: "MusicBrainz unavailable",
+          },
+        ],
+      },
+    });
+    const cancel = screen.getByRole("button", {
+      name: "Cancel refresh all",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    expect(onCancelRefreshAll).toHaveBeenCalledOnce();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Completed 2 of 2 favorites: 1 successful and 1 failed.",
+    );
+    const failures = screen.getByRole("list", {
+      name: "Favorites that failed to refresh",
+    });
+    expect(failures).toHaveTextContent("Fixture ArtistMusicBrainz unavailable");
+    expect(
+      screen.getByRole("button", {
+        name: `Refresh releases for ${favorite.name}`,
+      }),
+    ).toBeDisabled();
+    const successful = screen.getByText("Successful favorites (1)");
+    successful.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("list", {
+        name: "Favorites refreshed successfully",
+      }),
+    ).toHaveTextContent("Second Artist1 new, 0 changed, 2 unchanged");
   });
 });

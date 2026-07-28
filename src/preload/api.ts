@@ -48,6 +48,9 @@ export const api: OutgrooveApi = {
   refreshRadar: (request) => ipcRenderer.invoke(channels.refreshRadar, request),
   cancelRadarRefresh: (request) =>
     ipcRenderer.invoke(channels.cancelRadarRefresh, request),
+  refreshAllRadar: () => ipcRenderer.invoke(channels.refreshAllRadar, {}),
+  cancelAllRadarRefresh: () =>
+    ipcRenderer.invoke(channels.cancelAllRadarRefresh, {}),
   listRadarItems: (request) =>
     ipcRenderer.invoke(channels.listRadarItems, request),
   setRadarItemSeen: (request) =>
@@ -139,7 +142,7 @@ export const api: OutgrooveApi = {
     const wrapped = (
       _event: Electron.IpcRendererEvent,
       value: {
-        job: "scan" | "tag-edit" | "sync" | "library-quality";
+        job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar";
         completed: number;
         total: number;
         detail: string;

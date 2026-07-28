@@ -26,6 +26,8 @@ export const channels = {
   removeFavoriteArtist: "radar:remove-favorite-artist",
   refreshRadar: "radar:refresh",
   cancelRadarRefresh: "radar:cancel-refresh",
+  refreshAllRadar: "radar:refresh-all",
+  cancelAllRadarRefresh: "radar:cancel-refresh-all",
   listRadarItems: "radar:list-items",
   setRadarItemSeen: "radar:set-item-seen",
   setRadarItemDismissed: "radar:set-item-dismissed",
