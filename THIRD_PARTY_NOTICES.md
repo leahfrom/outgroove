@@ -36,3 +36,24 @@ Windows and Linux packages use the equivalent
 `resources/app.asar.unpacked/node_modules/taglib-wasm/dist/` directory.
 Outgroove loads these binaries as separate runtime files; rebuilding Outgroove
 is not required to substitute a compatible modified TagLib-Wasm build.
+
+## Chromaprint fpcalc 1.6.1
+
+Outgroove bundles the official `fpcalc` executable for macOS arm64, Windows
+x64, and Linux x64. Chromaprint's own code is MIT-licensed and includes FFmpeg
+code under LGPL-2.1; the upstream project describes the combined work as
+LGPL-2.1. The exact upstream notice is copied into packaged application
+resources as `LICENSE.md`.
+
+- Project and exact source release:
+  <https://github.com/acoustid/chromaprint/tree/v1.6.1>
+- Official binary release and checksums:
+  <https://github.com/acoustid/chromaprint/releases/tag/v1.6.1>
+- GNU LGPL 2.1 text:
+  <https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html>
+
+The helper remains a separate executable outside `app.asar`. A compatible
+modified build can replace `fpcalc` (`fpcalc.exe` on Windows) under the
+application's resources directory without rebuilding Outgroove. The checked-in
+[`resources/fpcalc/README.md`](resources/fpcalc/README.md) records exact archive
+and executable SHA-256 values.

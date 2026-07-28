@@ -220,6 +220,11 @@ function api(applyVerified: boolean): OutgrooveApi {
         }),
     ),
     findMusicBrainzAlbumCandidates: vi.fn(),
+    previewAcoustIdTrackLookup: vi.fn(),
+    confirmAcoustIdTrackLookup: vi.fn(),
+    cancelAcoustIdTrackLookup: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
     loadMusicBrainzReleaseTracks: vi.fn(),
     loadCoverArtArchiveArtwork: vi.fn(),
     previewCoverArtArchiveArtworkEdit: vi.fn(),
@@ -2603,6 +2608,117 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Confirm and write 1 file" }),
     ).toBeEnabled();
+  });
+
+  it("keeps AcoustID local preview, network confirmation, and tag drafting separate", async () => {
+    const mockApi = api(true);
+    const trackId = album.tracks[0]?.id ?? "";
+    const previewLookup = vi
+      .spyOn(mockApi, "previewAcoustIdTrackLookup")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "f8851b95-fba6-4c1c-95bc-c616ba78ca95",
+          confirmationToken: "acoustid-confirmation-token-long-enough",
+          fileId: trackId,
+          trackTitle: "Track",
+          sent: {
+            fingerprintAlgorithm: "Chromaprint",
+            fingerprintCharacters: 52,
+            fingerprintSha256: "a".repeat(64),
+            durationSeconds: 12,
+          },
+          expiresAt: "2026-07-28T13:00:00.000Z",
+          readOnly: true,
+        },
+      });
+    const confirmLookup = vi
+      .spyOn(mockApi, "confirmAcoustIdTrackLookup")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          fileId: trackId,
+          sent: {
+            fingerprintAlgorithm: "Chromaprint",
+            fingerprintCharacters: 52,
+            fingerprintSha256: "a".repeat(64),
+            durationSeconds: 12,
+          },
+          source: "network",
+          fetchedAt: "2026-07-28T12:00:00.000Z",
+          readOnly: true,
+          candidates: [
+            {
+              acoustId: "11111111-1111-4111-8111-111111111111",
+              recordingId: "22222222-2222-4222-8222-222222222222",
+              title: "Matched Track",
+              artists: [{ id: null, name: "Matched Artist" }],
+              durationSeconds: 12,
+              releaseGroups: [],
+              score: 0.99,
+            },
+          ],
+        },
+      });
+    const tagPreview = vi.spyOn(mockApi, "previewTrackTagEdit");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openLibraryAlbum(user);
+    await user.click(
+      screen.getByRole("button", { name: "Edit metadata for Track" }),
+    );
+    const identificationSummary = screen
+      .getByText("Identify recording with AcoustID")
+      .closest("summary");
+    if (!identificationSummary)
+      throw new Error("AcoustID identification summary missing");
+    await user.click(identificationSummary);
+    await user.click(
+      screen.getByRole("button", { name: "Create local fingerprint" }),
+    );
+    expect(previewLookup).toHaveBeenCalledWith({ fileId: trackId });
+    expect(confirmLookup).not.toHaveBeenCalled();
+    expect(tagPreview).not.toHaveBeenCalled();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Send fingerprint to AcoustID",
+      }),
+    );
+    expect(confirmLookup).toHaveBeenCalledWith({
+      operationId: "f8851b95-fba6-4c1c-95bc-c616ba78ca95",
+      confirmationToken: "acoustid-confirmation-token-long-enough",
+    });
+    expect(tagPreview).not.toHaveBeenCalled();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Use recording ID in tag draft",
+      }),
+    );
+    expect(
+      screen.getByLabelText("MusicBrainz recording ID proposed value"),
+    ).toHaveValue("22222222-2222-4222-8222-222222222222");
+    expect(tagPreview).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Review 1 change" }));
+    expect(tagPreview).toHaveBeenCalledWith({
+      fileId: trackId,
+      changes: {
+        title: "Track",
+        artist: "Fixture Artist",
+        albumArtist: "Fixture Artist",
+        trackNumber: 1,
+        trackTotal: 2,
+        discNumber: 1,
+        discTotal: 1,
+        year: "2026",
+        musicBrainzRecordingId: "22222222-2222-4222-8222-222222222222",
+      },
+    });
   });
 
   it("previews selected track fields before confirmation and reports verified apply", async () => {
