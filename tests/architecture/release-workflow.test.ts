@@ -21,8 +21,9 @@ describe("release workflow", () => {
     expect(workflow).toContain('"v[0-9]+.[0-9]+.[0-9]+"');
     expect(workflow).toContain("needs: build");
     expect(workflow).toContain("npm run flow:validate-release-tag");
-    expect(workflow.match(/out\/make\/zip\//gu)).toHaveLength(3);
+    expect(workflow.match(/out\/make\/zip\//gu)).toHaveLength(2);
     expect(workflow).toContain("out/make/*.dmg");
+    expect(workflow).not.toContain("out/make/zip/darwin/");
     expect(workflow).toContain("out/make/squirrel.windows/x64/*Setup.exe");
     expect(workflow).toContain(
       "sha256sum release-assets/*.dmg release-assets/*.zip release-assets/*.exe",

@@ -76,7 +76,7 @@ npm test               # unit, UI, and temporary-directory integration tests
 npm run verify         # all source checks above
 npm run package        # unpacked platform application
 npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
-npm run make           # platform artifacts; macOS creates a DMG and ZIP
+npm run make           # platform artifacts; macOS creates a DMG
 npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
 npm run benchmark:library # temporary 5,000-file synthetic catalog benchmark
 npm run benchmark:library:100k # opt-in 100,000-file synthetic benchmark
@@ -113,9 +113,8 @@ and hotfix branches with the guarded npm commands documented in
 ## Downloads
 
 Stable version tags produce a private GitHub prerelease with a signed,
-notarized drag-to-Applications DMG and signed-app ZIP for macOS arm64, ZIP
-downloads for Windows x64 and Linux x64, a Windows Setup application, and a
-`SHA256SUMS.txt` file. Release
+notarized drag-to-Applications DMG for macOS arm64, ZIP downloads for Windows
+x64 and Linux x64, a Windows Setup application, and a `SHA256SUMS.txt` file. Release
 publication happens only after verification, packaging, and packaged-app smoke
 tests pass on all three runners.
 
@@ -124,8 +123,8 @@ the complete [release runbook](docs/release-runbook.md). It documents the exact
 tag requirement, native Windows handoff and direct upload, Linux x64 container
 fallback, manual UI evidence, checksums and asset audit, honest CI reporting,
 and required Gitflow back-merge/cleanup. A release is not complete while the
-macOS DMG, any platform ZIP, Windows Setup application, or `SHA256SUMS.txt` is
-missing.
+macOS DMG, either platform ZIP, Windows Setup application, or
+`SHA256SUMS.txt` is missing.
 
 Tagged macOS releases require Developer ID signing and notarization; missing
 credentials fail packaging rather than publishing an unsigned substitute.

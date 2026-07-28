@@ -57,9 +57,9 @@ git push origin v0.2.0
 
 Pushing a stable `vX.Y.Z` tag starts the release workflow. It independently
 verifies and packages macOS arm64, Windows x64, and Linux x64, then publishes
-the signed/notarized macOS DMG, platform ZIPs, Windows Setup application, and
-SHA-256 checksums as a GitHub prerelease. The release is published only after
-every platform build succeeds.
+the signed/notarized macOS DMG, Windows and Linux ZIPs, Windows Setup
+application, and SHA-256 checksums as a GitHub prerelease. The release is
+published only after every platform build succeeds.
 
 Use the [release runbook](docs/release-runbook.md) for the complete release
 checklist and for the only authorized manual fallback when GitHub Actions jobs
