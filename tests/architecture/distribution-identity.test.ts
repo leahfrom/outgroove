@@ -5,6 +5,10 @@ import { describe, expect, it } from "vitest";
 
 describe("packaged application identity", () => {
   const forge = readFileSync(join(process.cwd(), "forge.config.ts"), "utf8");
+  const macRelease = readFileSync(
+    join(process.cwd(), "scripts", "macos-release.ts"),
+    "utf8",
+  );
   const main = readFileSync(
     join(process.cwd(), "src", "main", "index.ts"),
     "utf8",
@@ -13,6 +17,7 @@ describe("packaged application identity", () => {
   it("keeps stable platform identifiers and both Windows distribution choices", () => {
     expect(forge).toContain('appBundleId: "de.leahfrom.outgroove"');
     expect(forge).toContain("new MakerZIP");
+    expect(forge).toContain("new MakerDMG");
     expect(forge).toContain("new MakerSquirrel");
     expect(main).toContain(
       'app.setAppUserModelId("com.squirrel.Outgroove.Outgroove")',
@@ -20,12 +25,13 @@ describe("packaged application identity", () => {
   });
 
   it("keeps macOS signing explicit and credential-free", () => {
-    expect(forge).toContain('process.env.OUTGROOVE_MAC_SIGNING === "1"');
-    expect(forge).toContain(
-      "process.env.OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE",
+    expect(forge).toContain("resolveMacReleaseConfig(process.env)");
+    expect(macRelease).toContain('environment.OUTGROOVE_MAC_SIGNING === "1"');
+    expect(macRelease).toContain(
+      "environment.OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE",
     );
-    expect(forge).not.toMatch(
-      /APPLE_ID|APPLE_PASSWORD|certificatePassword|apiKeyId|apiIssuer/iu,
+    expect(`${forge}\n${macRelease}`).not.toMatch(
+      /APPLE_PASSWORD|certificatePassword|BEGIN PRIVATE KEY|@icloud\.com/iu,
     );
   });
 });

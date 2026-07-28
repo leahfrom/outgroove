@@ -1,16 +1,16 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 
-const macSigningEnabled = process.env.OUTGROOVE_MAC_SIGNING === "1";
-const macNotaryKeychainProfile =
-  process.env.OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE;
-if (macNotaryKeychainProfile && !macSigningEnabled)
-  throw new Error(
-    "OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE requires OUTGROOVE_MAC_SIGNING=1.",
-  );
+import {
+  finalizeMacDmgArtifacts,
+  resolveMacReleaseConfig,
+} from "./scripts/macos-release";
+
+const macRelease = resolveMacReleaseConfig(process.env);
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -23,9 +23,8 @@ const config: ForgeConfig = {
     executableName: "Outgroove",
     appBundleId: "de.leahfrom.outgroove",
     appCategoryType: "public.app-category.music",
-    ...(macSigningEnabled ? { osxSign: {} } : {}),
-    ...(macNotaryKeychainProfile
-      ? { osxNotarize: { keychainProfile: macNotaryKeychainProfile } }
+    ...(macRelease.signingEnabled
+      ? { osxSign: { identity: macRelease.signingIdentity } }
       : {}),
     // Vite bundles every production dependency except this native adapter.
     // An explicit allowlist avoids shipping the complete development tree while
@@ -40,6 +39,14 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   makers: [
     new MakerZIP({}, ["darwin", "win32", "linux"]),
+    new MakerDMG(
+      {
+        title: "Outgroove",
+        format: "UDZO",
+        iconSize: 96,
+      },
+      ["darwin"],
+    ),
     new MakerSquirrel(
       {
         name: "Outgroove",
@@ -49,6 +56,12 @@ const config: ForgeConfig = {
       ["win32"],
     ),
   ],
+  hooks: {
+    postMake: async (_forgeConfig, makeResults) => {
+      await finalizeMacDmgArtifacts(makeResults, macRelease);
+      return makeResults;
+    },
+  },
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({

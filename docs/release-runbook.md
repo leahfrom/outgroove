@@ -1,9 +1,10 @@
 # Release runbook
 
 Use this checklist for every Outgroove release. The release is not complete
-until the tagged source, all three ZIPs, the Windows Setup application, their
-smoke/manual evidence, the checksum manifest, release metadata, Gitflow
-back-merge, and branch cleanup have all been verified.
+until the tagged source, signed/notarized macOS DMG, all three ZIPs, the
+Windows Setup application, their smoke/manual evidence, the checksum manifest,
+release metadata, Gitflow back-merge, and branch cleanup have all been
+verified.
 
 Automated GitHub Actions publication is the preferred path. The manual path
 below is a narrowly scoped fallback for the known Actions budget restriction;
@@ -66,38 +67,44 @@ From a clean detached worktree at the exact tag:
 ```sh
 npm ci
 npm run verify
+OUTGROOVE_MAC_SIGNING=1 \
+OUTGROOVE_MAC_SIGNING_IDENTITY='Developer ID Application: Name (TEAMID)' \
+OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE='outgroove-notary' \
 npm run make
+./scripts/verify-macos-release.sh
 npm run test:smoke
 ```
 
-The ZIP is:
+The primary DMG and secondary ZIP are:
 
 ```text
+out/make/outgroove-<version>-arm64.dmg
 out/make/zip/darwin/arm64/outgroove-darwin-arm64-<version>.zip
 ```
 
-Record `shasum -a 256 <zip>` and `stat -f '%z' <zip>`.
+Record `shasum -a 256 <dmg> <zip>` and `stat -f '%z' <dmg> <zip>`.
 
 Unsigned local/test packaging is the default and must remain buildable. It
 uses the stable bundle identifier `de.leahfrom.outgroove`, but Radar
 notifications stay visibly unavailable because reliable macOS notifications
-require signing. For a release-signing attempt, first import a valid Developer
-ID Application identity into the build keychain, store notarization credentials
-in a named `notarytool` keychain profile, and run:
-
-```sh
-OUTGROOVE_MAC_SIGNING=1 \
-OUTGROOVE_MAC_NOTARY_KEYCHAIN_PROFILE="<profile>" \
-npm run make
-```
+require signing. A release artifact may not use that unsigned development
+path. Follow [the macOS signing guide](macos-signing.md) to create and import a
+valid Developer ID Application identity and store Team API-key credentials in
+the named `notarytool` keychain profile before running the command above.
 
 Never commit the certificate, password, Apple ID, app-specific password, API
 key, issuer, or keychain profile contents. The Forge configuration refuses a
-notarization profile unless signing is explicitly enabled. After a signed
-build, verify `codesign --verify --deep --strict <app>`, notarization/stapling,
-and a real native notification before describing macOS notifications as
-tested. The current automated release workflow does not import signing
-credentials and therefore produces an unsigned macOS ZIP.
+signing request without an explicit identity and refuses partial, conflicting,
+or unsigned notarization credentials. It signs the application and DMG,
+notarizes only the final DMG, and staples the successful ticket. The
+`verify-macos-release.sh` command independently checks the DMG, mounted
+application, staple, Gatekeeper assessments, and disk image.
+
+Mount the DMG, drag Outgroove to Applications, and test that installed copy.
+Verify a real opted-in Radar notification before describing macOS
+notifications as tested. The ZIP is retained for users who need an archive,
+but its container cannot itself be signed or stapled; its contained
+application is signed.
 
 ### Windows x64 manual handoff
 
@@ -217,17 +224,19 @@ check and must not imply native Linux hardware or manual desktop validation.
 ## 4. Publish and audit every asset
 
 For the manual fallback, create or update the prerelease with `--target` set to
-the exact tagged `main` merge. Upload these five assets:
+the exact tagged `main` merge. Upload these six assets:
 
+- `outgroove-<version>-arm64.dmg`
 - `outgroove-darwin-arm64-<version>.zip`
 - `outgroove-win32-x64-<version>.zip`
 - the generated Windows `*Setup.exe`
 - `outgroove-linux-x64-<version>.zip`
 - `SHA256SUMS.txt`
 
-`SHA256SUMS.txt` contains one lowercase SHA-256 line for each ZIP and the Setup
-application. Generate it only after all four final packages exist. Do not
-announce the prerelease while any platform package or checksum is missing.
+`SHA256SUMS.txt` contains one lowercase SHA-256 line for the DMG, each ZIP, and
+the Setup application. Generate it only after all five final packages exist.
+Do not announce the prerelease while any platform package or checksum is
+missing.
 
 Audit the result with:
 
@@ -238,13 +247,14 @@ gh release view "v<version>" \
 
 Confirm:
 
-- exactly the expected three ZIPs, Windows Setup application, and checksum file
-  are present;
+- exactly the expected macOS DMG, three ZIPs, Windows Setup application, and
+  checksum file are present;
 - every asset state is `uploaded`;
 - remote sizes and SHA-256 digests match the recorded local/Windows evidence;
 - `targetCommitish` is the tagged `main` merge, not `develop`;
 - notes name the platforms actually tested and their limitations;
-- unsigned/notarized warnings remain present; and
+- release notes accurately identify the signed/notarized macOS DMG and the
+  unsigned Windows artifacts; and
 - the tag dereferences to the expected merge commit.
 
 ## 5. Back-merge and clean up

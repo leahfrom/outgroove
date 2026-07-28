@@ -52,7 +52,18 @@ npm ci
 
 The reviewed install scripts are limited in `package.json` to `better-sqlite3`, `esbuild`, and `unrs-resolver`. `better-sqlite3` is a privileged native dependency and is rebuilt by Electron Forge for the packaged Electron ABI.
 
-Forge 7 currently resolves vulnerable older `tar`/`tmp` development transitive dependencies, so the lockfile applies narrow overrides to patched `tar` 7.5.20 and `tmp` 0.2.7. Packaging and smoke tests cover their exercised rebuild/archive path.
+Forge 7 currently resolves vulnerable older `tar`/`tmp` development transitive
+dependencies, so the lockfile applies narrow overrides to patched `tar` 7.5.22
+and `tmp` 0.2.7. Packaging and smoke tests cover their exercised
+rebuild/archive path.
+
+The npm advisory database currently also reports CVE-2026-14257 through
+transitive development-tool `brace-expansion` paths. Its only officially
+recognized fixed release changes the module API and breaks the minimatch
+versions used by the pinned Forge/ESLint stack, so a global override is not
+safe. These build globs receive repository-controlled patterns, not Library,
+provider, or user input. Revisit this when compatible upstream consumers are
+available; do not use `npm audit fix --force`.
 
 ## Commands
 
@@ -65,7 +76,7 @@ npm test               # unit, UI, and temporary-directory integration tests
 npm run verify         # all source checks above
 npm run package        # unpacked platform application
 npm run test:smoke     # isolated packaged launch; verify SQLite backup, renderer, and worker
-npm run make           # ZIP artifact for the current platform
+npm run make           # platform artifacts; macOS creates a DMG and ZIP
 npm run fixtures:generate # regenerate the CC0 audio corpus (requires FFmpeg)
 npm run benchmark:library # temporary 5,000-file synthetic catalog benchmark
 npm run benchmark:library:100k # opt-in 100,000-file synthetic benchmark
@@ -101,8 +112,9 @@ and hotfix branches with the guarded npm commands documented in
 
 ## Downloads
 
-Stable version tags produce a private GitHub prerelease with ZIP downloads for
-macOS arm64, Windows x64, and Linux x64, a Windows Setup application, and a
+Stable version tags produce a private GitHub prerelease with a signed,
+notarized drag-to-Applications DMG and signed-app ZIP for macOS arm64, ZIP
+downloads for Windows x64 and Linux x64, a Windows Setup application, and a
 `SHA256SUMS.txt` file. Release
 publication happens only after verification, packaging, and packaged-app smoke
 tests pass on all three runners.
@@ -111,13 +123,16 @@ If GitHub Actions cannot start because of the known budget restriction, follow
 the complete [release runbook](docs/release-runbook.md). It documents the exact
 tag requirement, native Windows handoff and direct upload, Linux x64 container
 fallback, manual UI evidence, checksums and asset audit, honest CI reporting,
-and required Gitflow back-merge/cleanup. A release is not complete while any
-platform ZIP, Windows Setup application, or `SHA256SUMS.txt` is missing.
+and required Gitflow back-merge/cleanup. A release is not complete while the
+macOS DMG, any platform ZIP, Windows Setup application, or `SHA256SUMS.txt` is
+missing.
 
-Current downloads are unsigned and not notarized. macOS Gatekeeper and Windows
-SmartScreen may warn or block first launch; these builds are for controlled
-testing, not a claim of production readiness. See the repository's **Releases**
-page while signed into the GitHub account that can access this private project.
+Tagged macOS releases require Developer ID signing and notarization; missing
+credentials fail packaging rather than publishing an unsigned substitute.
+Windows remains unsigned, so SmartScreen may warn or block first launch. See
+the [macOS signing guide](docs/macos-signing.md) for certificate/key setup and
+the repository's **Releases** page while signed into the GitHub account that
+can access this private project.
 
 Automated tests copy the CC0 generated fixtures under `fixtures/audio/` into OS temporary directories before any write. They never scan or modify a real music library or mounted device.
 
@@ -235,7 +250,9 @@ The production writer is `@akabeko/music-metadata-editor`, wrapped by Outgroove'
   UI behavior is checked for each release candidate, while Linux font, input,
   accessibility, and narrow-window behavior remain beta. Manual macOS Intel,
   Linux storage behavior, and real exFAT/DAP tests also remain unverified.
-- Packages are unsigned and not notarized.
+- Ordinary local packages are unsigned. Tagged macOS releases require a
+  signed, notarized DMG; the Windows Setup and portable Windows ZIP remain
+  unsigned.
 
 ## Repository boundaries
 
