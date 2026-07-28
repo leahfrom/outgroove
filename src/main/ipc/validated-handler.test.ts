@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  acoustIdTrackConfirmRequestSchema,
+  acoustIdTrackPreviewRequestSchema,
   addFavoriteArtistRequestSchema,
   albumArtworkRequestSchema,
   albumIdentificationRequestSchema,
@@ -44,6 +46,54 @@ import {
 import { createValidatedHandler } from "./validated-handler";
 
 describe("validated IPC handlers", () => {
+  it("accepts only catalog identity and pending confirmation for AcoustID", async () => {
+    const fileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const preview = vi.fn(() => ({ readOnly: true }));
+    const previewHandler = createValidatedHandler(
+      acoustIdTrackPreviewRequestSchema,
+      preview,
+    );
+    await expect(previewHandler({}, { fileId })).resolves.toMatchObject({
+      ok: true,
+      value: { readOnly: true },
+    });
+    expect(preview).toHaveBeenCalledWith({ fileId });
+    for (const request of [
+      { fileId: "not-an-id" },
+      { fileId, path: "/private/library/track.flac" },
+      { fileId, fingerprint: "audio-derived-data" },
+      { fileId, providerUrl: "https://attacker.invalid" },
+    ])
+      await expect(previewHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const confirm = vi.fn(() => ({ readOnly: true }));
+    const confirmHandler = createValidatedHandler(
+      acoustIdTrackConfirmRequestSchema,
+      confirm,
+    );
+    const confirmation = {
+      operationId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      confirmationToken: "confirmation-token-with-enough-entropy",
+    };
+    await expect(confirmHandler({}, confirmation)).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(confirm).toHaveBeenCalledWith(confirmation);
+    for (const request of [
+      { ...confirmation, operationId: "not-an-id" },
+      { ...confirmation, confirmationToken: "short" },
+      { ...confirmation, fingerprint: "renderer-controlled" },
+      { ...confirmation, duration: 123 },
+    ])
+      await expect(confirmHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
   it("accepts only a bounded artist query and stable reviewed identity for Favorites", async () => {
     const search = vi.fn(() => ({ readOnly: true }));
     const searchHandler = createValidatedHandler(

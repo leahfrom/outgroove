@@ -1,4 +1,5 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { join } from "node:path";
 import { MakerDMG } from "@electron-forge/maker-dmg";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
@@ -9,8 +10,10 @@ import {
   finalizeMacDmgArtifacts,
   resolveMacReleaseConfig,
 } from "./scripts/macos-release";
+import { bundledFpcalcTarget } from "./src/main/adapters/fingerprint/fpcalc-path";
 
 const macRelease = resolveMacReleaseConfig(process.env);
+const fpcalcTarget = bundledFpcalcTarget(process.platform, process.arch);
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -23,6 +26,20 @@ const config: ForgeConfig = {
     executableName: "Outgroove",
     appBundleId: "de.leahfrom.outgroove",
     appCategoryType: "public.app-category.music",
+    ...(fpcalcTarget
+      ? {
+          extraResource: [
+            join(
+              process.cwd(),
+              "resources",
+              "fpcalc",
+              fpcalcTarget.directory,
+              fpcalcTarget.executable,
+            ),
+            join(process.cwd(), "resources", "fpcalc", "LICENSE.md"),
+          ],
+        }
+      : {}),
     ...(macRelease.signingEnabled
       ? { osxSign: { identity: macRelease.signingIdentity } }
       : {}),

@@ -4,6 +4,8 @@ import { normalize, resolve } from "node:path";
 import { dialog, type BrowserWindow, type IpcMain } from "electron";
 
 import {
+  acoustIdTrackConfirmRequestSchema,
+  acoustIdTrackPreviewRequestSchema,
   addFavoriteArtistRequestSchema,
   albumEditApplyRequestSchema,
   albumArtworkRequestSchema,
@@ -65,6 +67,7 @@ import type { EditTrackTags } from "../application/edit-track-tags";
 import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import type { FindAlbumCandidates } from "../application/find-album-candidates";
+import type { IdentifyTrackByFingerprint } from "../application/identify-track-by-fingerprint";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
 import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
 import type { RefreshRadar } from "../application/refresh-radar";
@@ -82,6 +85,7 @@ interface Dependencies {
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
   albumCandidates: FindAlbumCandidates;
+  trackIdentification: IdentifyTrackByFingerprint;
   releaseArtwork: FindReleaseArtwork;
   favoriteArtists: ManageFavoriteArtists;
   radar: RefreshRadar;
@@ -270,6 +274,29 @@ export function registerIpc(
     channels.findMusicBrainzAlbumCandidates,
     createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
       dependencies.albumCandidates.search(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewAcoustIdTrackLookup,
+    createValidatedHandler(acoustIdTrackPreviewRequestSchema, ({ fileId }) =>
+      dependencies.trackIdentification.preview(fileId),
+    ),
+  );
+  ipcMain.handle(
+    channels.confirmAcoustIdTrackLookup,
+    createValidatedHandler(
+      acoustIdTrackConfirmRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.trackIdentification.confirm(
+          operationId,
+          confirmationToken,
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelAcoustIdTrackLookup,
+    createValidatedHandler(acoustIdTrackPreviewRequestSchema, ({ fileId }) =>
+      dependencies.trackIdentification.cancel(fileId),
     ),
   );
   ipcMain.handle(

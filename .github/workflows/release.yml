@@ -53,6 +53,8 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: ./scripts/prepare-macos-ci-signing.sh
       - run: npm run make
+        env:
+          OUTGROOVE_ACOUSTID_API_KEY: ${{ secrets.ACOUSTID_API_KEY }}
       - name: Verify signed and notarized macOS DMG
         if: runner.os == 'macOS'
         run: ./scripts/verify-macos-release.sh

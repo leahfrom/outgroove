@@ -5,8 +5,10 @@ import { join } from "node:path";
 
 const root = join(process.cwd(), "fixtures", "audio");
 const preservation = join(root, "preservation");
+const fingerprint = join(root, "fingerprint");
 const corrupt = join(root, "corrupt");
 mkdirSync(preservation, { recursive: true });
+mkdirSync(fingerprint, { recursive: true });
 mkdirSync(corrupt, { recursive: true });
 
 const temporary = mkdtempSync(join(tmpdir(), "outgroove-fixtures-"));
@@ -96,6 +98,30 @@ try {
     "attached_pic",
     ...commonMetadata,
     join(preservation, "preservation.flac"),
+  ]);
+  ffmpeg([
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=783.99:sample_rate=44100:duration=12",
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "64k",
+    "-metadata",
+    "title=Fingerprint Fixture",
+    join(fingerprint, "fingerprint.mp3"),
+  ]);
+  ffmpeg([
+    "-f",
+    "lavfi",
+    "-i",
+    "sine=frequency=783.99:sample_rate=44100:duration=12",
+    "-c:a",
+    "flac",
+    "-metadata",
+    "title=Fingerprint Fixture",
+    join(fingerprint, "fingerprint.flac"),
   ]);
 
   writeFileSync(

@@ -3,6 +3,7 @@ import {
   useEffect,
   useState,
   type ChangeEvent,
+  type ReactNode,
   type Ref,
 } from "react";
 
@@ -368,6 +369,7 @@ interface TrackMetadataEditorProps {
   error: string | undefined;
   busy: boolean;
   draftSource?: string;
+  identification?: ReactNode;
   onDraftChange: (field: keyof TrackMetadataDraft, value: string) => void;
   onPreview: () => void;
   onConfirm: () => void;
@@ -385,6 +387,7 @@ function TrackMetadataEditorComponent(
     error,
     busy,
     draftSource,
+    identification,
     onDraftChange,
     onPreview,
     onConfirm,
@@ -458,6 +461,8 @@ function TrackMetadataEditorComponent(
           <dd>{track.path}</dd>
         </div>
       </dl>
+
+      {identification}
 
       <div className="tag-comparison" aria-label="Basic track tag comparison">
         <ComparisonHeader currentLabel="Current value" />
