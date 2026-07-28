@@ -12,6 +12,7 @@ import type {
   DatabaseRestorePreviewDto,
   FavoriteArtistDto,
   FavoriteArtistSearchResultDto,
+  RadarBackgroundRefreshSettingsDto,
   LibraryArtistDto,
   LibraryFormatDto,
   LibraryFolderDto,
@@ -280,6 +281,10 @@ export function App(): React.JSX.Element {
     useState(false);
   const [refreshingFavoriteId, setRefreshingFavoriteId] = useState<string>();
   const [radarActionBusyId, setRadarActionBusyId] = useState<string>();
+  const [radarBackgroundSettings, setRadarBackgroundSettings] =
+    useState<RadarBackgroundRefreshSettingsDto>();
+  const [radarBackgroundBusy, setRadarBackgroundBusy] = useState(false);
+  const [radarBackgroundError, setRadarBackgroundError] = useState<string>();
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
@@ -978,6 +983,35 @@ export function App(): React.JSX.Element {
     void refreshRadarItems("all", "all", false, 0);
   }, [refreshRadarItems]);
   useEffect(() => {
+    const unsubscribe = window.outgroove.onRadarBackgroundRefreshUpdated(
+      (settings) => {
+        setRadarBackgroundSettings(settings);
+        if (settings.lastCheckedAt) {
+          void refreshFavoriteArtists(favoriteFilter);
+          void refreshRadarItems(
+            radarView,
+            radarPrimaryType,
+            radarIncludeDismissed,
+            radarOffset,
+          );
+        }
+      },
+    );
+    void window.outgroove.getRadarBackgroundRefreshSettings().then((result) => {
+      if (result.ok) setRadarBackgroundSettings(result.value);
+      else setRadarBackgroundError(result.error.message);
+    });
+    return unsubscribe;
+  }, [
+    favoriteFilter,
+    radarIncludeDismissed,
+    radarOffset,
+    radarPrimaryType,
+    radarView,
+    refreshFavoriteArtists,
+    refreshRadarItems,
+  ]);
+  useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
   useEffect(() => {
@@ -1308,6 +1342,21 @@ export function App(): React.JSX.Element {
         setRadarError("No Refresh all operation is currently running.");
       }
     });
+  };
+
+  const updateRadarBackgroundRefresh = async (
+    enabled: boolean,
+    pauseOnBattery: boolean,
+  ): Promise<void> => {
+    setRadarBackgroundBusy(true);
+    setRadarBackgroundError(undefined);
+    const result = await window.outgroove.updateRadarBackgroundRefreshSettings({
+      enabled,
+      pauseOnBattery,
+    });
+    setRadarBackgroundBusy(false);
+    if (result.ok) setRadarBackgroundSettings(result.value);
+    else setRadarBackgroundError(result.error.message);
   };
 
   const cancelFavoriteRadarRefresh = (favorite: FavoriteArtistDto): void => {
@@ -3453,6 +3502,9 @@ export function App(): React.JSX.Element {
           favorites={favoriteArtists}
           mutationBusy={favoriteMutationBusy}
           radarActionBusyId={radarActionBusyId}
+          radarBackgroundBusy={radarBackgroundBusy}
+          radarBackgroundError={radarBackgroundError}
+          radarBackgroundSettings={radarBackgroundSettings}
           radarError={radarError}
           radarIncludeDismissed={radarIncludeDismissed}
           radarItems={radarItems}
@@ -3485,6 +3537,9 @@ export function App(): React.JSX.Element {
           onRadarPrimaryTypeChange={chooseRadarPrimaryType}
           onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
           onRadarViewChange={chooseRadarView}
+          onRadarBackgroundChange={(enabled, pauseOnBattery) =>
+            void updateRadarBackgroundRefresh(enabled, pauseOnBattery)
+          }
           onRefreshAll={() => void refreshAllFavoriteRadar()}
           onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}
           onCancelRefreshAll={cancelAllFavoriteRadarRefresh}

@@ -1,6 +1,14 @@
 import { join } from "node:path";
 
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  powerMonitor,
+  session,
+  shell,
+} from "electron";
 
 import { CatalogDatabase } from "./adapters/database/catalog-database";
 import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
@@ -24,12 +32,14 @@ import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
 import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
 import { RefreshRadar } from "./application/refresh-radar";
+import { RadarBackgroundRefresh } from "./application/radar-background-refresh";
 import { OpenRadarItem } from "./application/open-radar-item";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
 import { ScanJobCoordinator } from "./jobs/scan-job-coordinator";
 import { contentSecurityPolicy } from "./windows/security-policy";
+import { channels } from "../shared/contracts/channels";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -43,6 +53,7 @@ if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
 let qualityQuery: WorkerLibraryQualityQuery | undefined;
+let radarBackground: RadarBackgroundRefresh | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -87,6 +98,31 @@ async function createWindow(): Promise<void> {
     scanCatalog,
   );
   const backup = new DatabaseBackupService(database, databasePath);
+  const radar = new RefreshRadar(database, musicBrainz);
+  radarBackground = new RadarBackgroundRefresh(
+    database,
+    radar,
+    {
+      isOnline: () => net.isOnline(),
+      isOnBatteryPower: () => powerMonitor.isOnBatteryPower(),
+    },
+    (completed, total, detail) => {
+      if (!window.isDestroyed())
+        window.webContents.send(channels.jobProgress, {
+          job: "radar",
+          completed,
+          total,
+          detail,
+        });
+    },
+    (settings) => {
+      if (!window.isDestroyed())
+        window.webContents.send(
+          channels.radarBackgroundRefreshUpdated,
+          settings,
+        );
+    },
+  );
   registerIpc(ipcMain, {
     database,
     qualityQuery,
@@ -102,7 +138,8 @@ async function createWindow(): Promise<void> {
       artworkEditor,
     ),
     favoriteArtists: new ManageFavoriteArtists(database, musicBrainz),
-    radar: new RefreshRadar(database, musicBrainz),
+    radar,
+    radarBackground,
     radarItemOpener: new OpenRadarItem(database, {
       open: (url) => shell.openExternal(url),
     }),
@@ -129,6 +166,10 @@ async function createWindow(): Promise<void> {
     await window.loadFile(
       join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
+  radarBackground.start();
+  window.once("closed", () => {
+    radarBackground?.stop();
+  });
   if (smokeTest) {
     const fixtureAlbum = join(app.getAppPath(), "fixtures", "audio", "album");
     const smokeRoot = database.addLibraryRoot(
@@ -227,6 +268,10 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged Radar snapshot persistence was not retained in the verified backup.",
       );
+    if (verifiedBackup.getRadarBackgroundRefreshSettings().enabled)
+      throw new Error(
+        "Packaged Radar background refresh was not safely disabled by default.",
+      );
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
     await scanCatalog.close();
@@ -262,6 +307,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  radarBackground?.stop();
   void scanCatalog?.close();
   void qualityQuery?.close();
   database?.close();

@@ -384,6 +384,40 @@ describe("Refresh all Radar favorites", () => {
     );
   });
 
+  it("starts a background sweep only while idle and yields to manual refresh", async () => {
+    const repository = store();
+    let backgroundSignal: AbortSignal | undefined;
+    const browseArtistReleases = vi
+      .fn()
+      .mockImplementationOnce(
+        (_artistId: string, signal: AbortSignal) =>
+          new Promise<never>((_resolve, reject) => {
+            backgroundSignal = signal;
+            signal.addEventListener("abort", () =>
+              reject(new DOMException("cancelled", "AbortError")),
+            );
+          }),
+      )
+      .mockResolvedValueOnce({
+        observations: [observation],
+        source: "network" as const,
+        fetchedAt: "2026-07-28T08:00:00.000Z",
+        truncated: false,
+      });
+    const service = new RefreshRadar(repository, { browseArtistReleases });
+
+    const background = service.refreshAllIfIdle(vi.fn());
+    await vi.waitFor(() => expect(backgroundSignal).toBeDefined());
+    await expect(service.refreshAllIfIdle(vi.fn())).resolves.toBeUndefined();
+    const manual = service.refresh(favorite.id);
+
+    await expect(background).resolves.toMatchObject({ cancelled: true });
+    await expect(manual).resolves.toMatchObject({
+      favoriteArtistId: favorite.id,
+    });
+    expect(backgroundSignal?.aborted).toBe(true);
+  });
+
   it("completes an empty sweep without provider access", async () => {
     const repository = store();
     repository.listFavoriteArtists.mockReturnValue([]);

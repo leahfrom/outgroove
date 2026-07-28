@@ -11,6 +11,7 @@ import {
   type SavedLibraryFilterDefinition,
   type SavedLibraryFilterDto,
   type FavoriteArtistDto,
+  type RadarBackgroundRefreshSettingsDto,
   type RadarItemDto,
   type RadarPageDto,
   type LibraryFormatDto,
@@ -843,6 +844,62 @@ export class CatalogDatabase {
           value.normalize("NFC").toLocaleLowerCase().includes(normalizedQuery),
       ),
     );
+  }
+
+  getRadarBackgroundRefreshSettings(): RadarBackgroundRefreshSettingsDto {
+    const row = this.connection
+      .prepare(
+        `SELECT enabled, pause_on_battery AS pauseOnBattery,
+          next_refresh_at AS nextRefreshAt, last_checked_at AS lastCheckedAt,
+          last_successful_refresh_at AS lastSuccessfulRefreshAt,
+          last_outcome AS lastOutcome,
+          last_completed_count AS lastCompleted,
+          last_succeeded_count AS lastSucceeded,
+          last_failed_count AS lastFailed
+         FROM radar_background_settings WHERE id=1`,
+      )
+      .get() as
+      | (Omit<
+          RadarBackgroundRefreshSettingsDto,
+          "enabled" | "pauseOnBattery"
+        > & {
+          enabled: number;
+          pauseOnBattery: number;
+        })
+      | undefined;
+    if (!row) throw new Error("Radar background settings are unavailable.");
+    return {
+      ...row,
+      enabled: row.enabled === 1,
+      pauseOnBattery: row.pauseOnBattery === 1,
+    };
+  }
+
+  saveRadarBackgroundRefreshSettings(
+    settings: RadarBackgroundRefreshSettingsDto,
+  ): RadarBackgroundRefreshSettingsDto {
+    const result = this.connection
+      .prepare(
+        `UPDATE radar_background_settings SET
+          enabled=?, pause_on_battery=?, next_refresh_at=?,
+          last_checked_at=?, last_successful_refresh_at=?, last_outcome=?,
+          last_completed_count=?, last_succeeded_count=?, last_failed_count=?
+         WHERE id=1`,
+      )
+      .run(
+        settings.enabled ? 1 : 0,
+        settings.pauseOnBattery ? 1 : 0,
+        settings.nextRefreshAt,
+        settings.lastCheckedAt,
+        settings.lastSuccessfulRefreshAt,
+        settings.lastOutcome,
+        settings.lastCompleted,
+        settings.lastSucceeded,
+        settings.lastFailed,
+      );
+    if (result.changes !== 1)
+      throw new Error("Radar background settings are unavailable.");
+    return this.getRadarBackgroundRefreshSettings();
   }
 
   addFavoriteArtist(candidate: MusicBrainzArtistCandidate): FavoriteArtistDto {

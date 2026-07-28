@@ -104,6 +104,12 @@ export const radarViews = ["all", "upcoming", "recent", "newly-found"] as const;
 export const radarRefreshRequestSchema = z
   .object({ favoriteArtistId: z.uuid() })
   .strict();
+export const radarBackgroundRefreshUpdateRequestSchema = z
+  .object({
+    enabled: z.boolean(),
+    pauseOnBattery: z.boolean(),
+  })
+  .strict();
 export const radarListRequestSchema = z
   .object({
     view: z.enum(radarViews),
@@ -885,6 +891,27 @@ export interface RadarRefreshAllResultDto {
   readonly failures: readonly RadarRefreshFailureDto[];
 }
 
+export type RadarBackgroundRefreshOutcome =
+  | "success"
+  | "partial"
+  | "failed"
+  | "cancelled"
+  | "offline"
+  | "battery"
+  | "busy";
+
+export interface RadarBackgroundRefreshSettingsDto {
+  readonly enabled: boolean;
+  readonly pauseOnBattery: boolean;
+  readonly nextRefreshAt: string | null;
+  readonly lastCheckedAt: string | null;
+  readonly lastSuccessfulRefreshAt: string | null;
+  readonly lastOutcome: RadarBackgroundRefreshOutcome | null;
+  readonly lastCompleted: number;
+  readonly lastSucceeded: number;
+  readonly lastFailed: number;
+}
+
 export interface RadarPageDto {
   readonly items: readonly RadarItemDto[];
   readonly totalItems: number;
@@ -993,6 +1020,12 @@ export interface OutgrooveApi {
   ): Promise<Result<{ readonly cancelled: boolean }>>;
   refreshAllRadar(): Promise<Result<RadarRefreshAllResultDto>>;
   cancelAllRadarRefresh(): Promise<Result<{ readonly cancelled: boolean }>>;
+  getRadarBackgroundRefreshSettings(): Promise<
+    Result<RadarBackgroundRefreshSettingsDto>
+  >;
+  updateRadarBackgroundRefreshSettings(
+    request: z.infer<typeof radarBackgroundRefreshUpdateRequestSchema>,
+  ): Promise<Result<RadarBackgroundRefreshSettingsDto>>;
   listRadarItems(
     request: z.infer<typeof radarListRequestSchema>,
   ): Promise<Result<RadarPageDto>>;
@@ -1141,6 +1174,9 @@ export interface OutgrooveApi {
     }) => void,
   ): () => void;
   onScanJobUpdated(listener: (job: ScanJobDto) => void): () => void;
+  onRadarBackgroundRefreshUpdated(
+    listener: (settings: RadarBackgroundRefreshSettingsDto) => void,
+  ): () => void;
 }
 
 export interface SerializableFailure extends AppError {

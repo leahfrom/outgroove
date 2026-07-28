@@ -51,6 +51,10 @@ export const api: OutgrooveApi = {
   refreshAllRadar: () => ipcRenderer.invoke(channels.refreshAllRadar, {}),
   cancelAllRadarRefresh: () =>
     ipcRenderer.invoke(channels.cancelAllRadarRefresh, {}),
+  getRadarBackgroundRefreshSettings: () =>
+    ipcRenderer.invoke(channels.getRadarBackgroundRefreshSettings, {}),
+  updateRadarBackgroundRefreshSettings: (request) =>
+    ipcRenderer.invoke(channels.updateRadarBackgroundRefreshSettings, request),
   listRadarItems: (request) =>
     ipcRenderer.invoke(channels.listRadarItems, request),
   setRadarItemSeen: (request) =>
@@ -158,5 +162,17 @@ export const api: OutgrooveApi = {
     ): void => listener(value);
     ipcRenderer.on(channels.scanJobUpdated, wrapped);
     return () => ipcRenderer.removeListener(channels.scanJobUpdated, wrapped);
+  },
+  onRadarBackgroundRefreshUpdated: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      value: Parameters<typeof listener>[0],
+    ): void => listener(value);
+    ipcRenderer.on(channels.radarBackgroundRefreshUpdated, wrapped);
+    return () =>
+      ipcRenderer.removeListener(
+        channels.radarBackgroundRefreshUpdated,
+        wrapped,
+      );
   },
 };

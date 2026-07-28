@@ -18,6 +18,7 @@ import {
   radarItemDismissRequestSchema,
   radarItemOpenRequestSchema,
   radarItemSeenRequestSchema,
+  radarBackgroundRefreshUpdateRequestSchema,
   radarListRequestSchema,
   radarRefreshRequestSchema,
   scanCancelRequestSchema,
@@ -160,6 +161,28 @@ describe("validated IPC handlers", () => {
       { path: "/private/library" },
     ])
       await expect(refreshAllHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const updateBackground = vi.fn();
+    const backgroundHandler = createValidatedHandler(
+      radarBackgroundRefreshUpdateRequestSchema,
+      updateBackground,
+    );
+    const preferences = { enabled: true, pauseOnBattery: true };
+    await expect(backgroundHandler({}, preferences)).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(updateBackground).toHaveBeenCalledWith(preferences);
+    for (const request of [
+      { enabled: true },
+      { enabled: 1, pauseOnBattery: true },
+      { enabled: true, pauseOnBattery: true, intervalHours: 1 },
+      { enabled: true, pauseOnBattery: true, artistIds: [favoriteArtistId] },
+      { enabled: true, pauseOnBattery: true, path: "/private/library" },
+    ])
+      await expect(backgroundHandler({}, request)).resolves.toMatchObject({
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });

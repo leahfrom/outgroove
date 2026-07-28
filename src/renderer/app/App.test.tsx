@@ -244,6 +244,23 @@ function api(applyVerified: boolean): OutgrooveApi {
     cancelAllRadarRefresh: vi.fn(() =>
       Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
+    getRadarBackgroundRefreshSettings: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          enabled: false,
+          pauseOnBattery: true,
+          nextRefreshAt: null,
+          lastCheckedAt: null,
+          lastSuccessfulRefreshAt: null,
+          lastOutcome: null,
+          lastCompleted: 0,
+          lastSucceeded: 0,
+          lastFailed: 0,
+        },
+      }),
+    ),
+    updateRadarBackgroundRefreshSettings: vi.fn(),
     listRadarItems: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -388,6 +405,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     applySyncRecovery: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
+    onRadarBackgroundRefreshUpdated: vi.fn(() => () => undefined),
   } as OutgrooveApi;
 }
 
@@ -765,6 +783,73 @@ describe("tag edit UI safety states", () => {
       await screen.findByText(
         "Stopped after 0 of 1 favorites: 0 successful and 0 failed.",
       ),
+    ).toBeVisible();
+  });
+
+  it("routes only bounded automatic Radar preferences and applies status events", async () => {
+    const mockApi = api(true);
+    const update = vi
+      .spyOn(mockApi, "updateRadarBackgroundRefreshSettings")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          enabled: true,
+          pauseOnBattery: true,
+          nextRefreshAt: "2026-07-29T09:00:00.000Z",
+          lastCheckedAt: null,
+          lastSuccessfulRefreshAt: null,
+          lastOutcome: null,
+          lastCompleted: 0,
+          lastSucceeded: 0,
+          lastFailed: 0,
+        },
+      });
+    let emit:
+      | Parameters<OutgrooveApi["onRadarBackgroundRefreshUpdated"]>[0]
+      | undefined;
+    vi.spyOn(mockApi, "onRadarBackgroundRefreshUpdated").mockImplementation(
+      (listener) => {
+        emit = listener;
+        return () => undefined;
+      },
+    );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    await user.click(screen.getByText("Automatic refresh"));
+    const enabled = await screen.findByRole("checkbox", {
+      name: "Check favorite artists automatically",
+    });
+    enabled.focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        enabled: true,
+        pauseOnBattery: true,
+      }),
+    );
+    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("artistIds");
+    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("interval");
+
+    act(() =>
+      emit?.({
+        enabled: true,
+        pauseOnBattery: true,
+        nextRefreshAt: "2026-07-29T09:30:00.000Z",
+        lastCheckedAt: "2026-07-28T09:30:00.000Z",
+        lastSuccessfulRefreshAt: null,
+        lastOutcome: "partial",
+        lastCompleted: 2,
+        lastSucceeded: 1,
+        lastFailed: 1,
+      }),
+    );
+    expect(
+      await screen.findByText("Partly successful — 1 successful, 1 failed"),
     ).toBeVisible();
   });
 
