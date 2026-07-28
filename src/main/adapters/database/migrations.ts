@@ -538,4 +538,90 @@ export const migrations: readonly { version: number; sql: string }[] = [
         ON provider_cache(provider, expires_at);
     `,
   },
+  {
+    version: 20,
+    sql: `
+      CREATE TABLE favorite_artists (
+        id TEXT PRIMARY KEY CHECK (length(id) = 36),
+        musicbrainz_artist_id TEXT NOT NULL UNIQUE CHECK (length(musicbrainz_artist_id) = 36),
+        name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 1000),
+        sort_name TEXT NOT NULL CHECK (length(sort_name) BETWEEN 1 AND 1000),
+        disambiguation TEXT,
+        artist_type TEXT,
+        country TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX favorite_artists_browse_order
+        ON favorite_artists(sort_name COLLATE NOCASE, sort_name, name, id);
+    `,
+  },
+  {
+    version: 21,
+    sql: `
+      ALTER TABLE favorite_artists
+        ADD COLUMN last_successful_refresh_at TEXT;
+      ALTER TABLE favorite_artists
+        ADD COLUMN last_provider_fetch_at TEXT;
+      ALTER TABLE favorite_artists
+        ADD COLUMN last_refresh_truncated INTEGER NOT NULL DEFAULT 0
+          CHECK (last_refresh_truncated IN (0, 1));
+
+      CREATE TABLE radar_items (
+        id TEXT PRIMARY KEY CHECK (length(id) = 36),
+        favorite_artist_id TEXT NOT NULL
+          REFERENCES favorite_artists(id) ON DELETE CASCADE,
+        musicbrainz_release_group_id TEXT NOT NULL CHECK (length(musicbrainz_release_group_id) = 36),
+        representative_release_id TEXT NOT NULL CHECK (length(representative_release_id) = 36),
+        title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 1000),
+        primary_type TEXT,
+        secondary_types_json TEXT NOT NULL,
+        first_release_date TEXT,
+        release_status TEXT,
+        country TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        discovered_after_baseline INTEGER NOT NULL
+          CHECK (discovered_after_baseline IN (0, 1)),
+        present INTEGER NOT NULL CHECK (present IN (0, 1)),
+        seen_at TEXT,
+        dismissed_at TEXT,
+        UNIQUE (favorite_artist_id, musicbrainz_release_group_id)
+      );
+      CREATE INDEX radar_items_current_browse
+        ON radar_items(present, dismissed_at, first_release_date, title, id);
+      CREATE INDEX radar_items_favorite
+        ON radar_items(favorite_artist_id, present, musicbrainz_release_group_id);
+    `,
+  },
+  {
+    version: 22,
+    sql: `
+      CREATE TABLE radar_background_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+        pause_on_battery INTEGER NOT NULL DEFAULT 1 CHECK (pause_on_battery IN (0, 1)),
+        next_refresh_at TEXT,
+        last_checked_at TEXT,
+        last_successful_refresh_at TEXT,
+        last_outcome TEXT CHECK (
+          last_outcome IS NULL OR last_outcome IN (
+            'success', 'partial', 'failed', 'cancelled', 'offline', 'battery', 'busy'
+          )
+        ),
+        last_completed_count INTEGER NOT NULL DEFAULT 0 CHECK (last_completed_count >= 0),
+        last_succeeded_count INTEGER NOT NULL DEFAULT 0 CHECK (last_succeeded_count >= 0),
+        last_failed_count INTEGER NOT NULL DEFAULT 0 CHECK (last_failed_count >= 0)
+      );
+
+      INSERT INTO radar_background_settings (id) VALUES (1);
+    `,
+  },
+  {
+    version: 23,
+    sql: `
+      ALTER TABLE radar_background_settings
+        ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 0
+          CHECK (notifications_enabled IN (0, 1));
+    `,
+  },
 ];

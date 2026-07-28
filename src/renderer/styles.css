@@ -171,6 +171,7 @@ button:disabled {
   color: #526159;
 }
 .sync-view,
+.radar-view,
 .settings-view {
   display: grid;
   gap: 1rem;
@@ -3356,6 +3357,449 @@ td {
   display: block;
   color: #71352f;
 }
+.radar-introduction,
+.radar-background-settings,
+.radar-refresh-all-result,
+.radar-releases,
+.favorite-artists,
+.artist-search {
+  min-width: 0;
+  padding: 1.15rem;
+  border: 1px solid #d8ddd8;
+  border-radius: 14px;
+  background: white;
+}
+.radar-background-settings > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.radar-background-settings > div {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.9rem;
+}
+.radar-background-settings p {
+  max-width: 52rem;
+  margin: 0;
+  color: #526159;
+}
+.radar-background-settings fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.radar-background-settings label {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.radar-background-settings input[type="checkbox"] {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0;
+}
+.radar-background-settings .notification-capability-hint {
+  max-width: 46rem;
+  margin: -0.25rem 0 0 1.65rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.radar-background-settings dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+.radar-background-settings dl div {
+  min-width: 0;
+  padding: 0.7rem;
+  border-radius: 9px;
+  background: #f4f6f4;
+}
+.radar-background-settings dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.radar-background-settings dd {
+  overflow-wrap: anywhere;
+  margin: 0.2rem 0 0;
+}
+.radar-introduction {
+  display: flex;
+  gap: 1.5rem;
+  align-items: end;
+  justify-content: space-between;
+}
+.radar-introduction h2,
+.radar-introduction p:last-child,
+.artist-search-heading h2,
+.artist-search-heading p,
+.favorite-artists .section-heading h2,
+.favorite-artists .section-heading p {
+  margin-bottom: 0;
+}
+.radar-introduction p:last-child,
+.artist-search-heading > p,
+.favorite-artists .section-heading p {
+  max-width: 52rem;
+  color: #526159;
+}
+.radar-introduction-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: end;
+}
+.radar-introduction-actions strong {
+  flex: 0 0 auto;
+  color: #526159;
+}
+.radar-refresh-all-result {
+  display: grid;
+  gap: 0.65rem;
+}
+.radar-refresh-all-result h2,
+.radar-refresh-all-result p {
+  margin: 0;
+}
+.radar-refresh-all-result details {
+  min-width: 0;
+}
+.radar-refresh-all-result ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.radar-refresh-all-result li span {
+  display: block;
+  color: #526159;
+}
+.radar-refresh-all-result .radar-refresh-failures li span {
+  color: #71352f;
+}
+.radar-releases {
+  display: grid;
+  gap: 1rem;
+}
+.radar-releases .section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: end;
+  justify-content: space-between;
+}
+.radar-releases .section-heading > div {
+  min-width: 0;
+}
+.radar-releases .section-heading h2,
+.radar-releases .section-heading p {
+  margin-bottom: 0;
+}
+.radar-releases .section-heading p {
+  max-width: 56rem;
+  color: #526159;
+}
+.radar-dismissed-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+.radar-filters {
+  display: grid;
+  flex: 1 1 32rem;
+  grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+  width: min(34rem, 100%);
+  max-width: 34rem;
+}
+.radar-filters > label {
+  min-width: 0;
+}
+.radar-filters > label:first-child {
+  margin: 0;
+}
+.radar-filters select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.35rem;
+}
+.radar-dismissed-toggle input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+.radar-releases .radar-review-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+}
+.radar-releases .radar-review-summary > div {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #dfe5df;
+  border-radius: 8px;
+  background: #f9fbf9;
+}
+.radar-releases .radar-review-summary dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.radar-releases .radar-review-summary dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.radar-view-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.radar-view-tabs button[aria-pressed="true"] {
+  border-color: #275c3b;
+  background: #e7f3e9;
+  color: #173925;
+}
+.radar-releases ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.radar-releases li,
+.radar-releases article {
+  min-width: 0;
+}
+.radar-releases article {
+  display: grid;
+  gap: 0.8rem;
+  height: 100%;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.radar-releases article.is-dismissed {
+  border-style: dashed;
+  opacity: 0.8;
+}
+.radar-releases header {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.radar-releases h3,
+.radar-releases header p {
+  margin: 0;
+}
+.radar-releases header > span {
+  flex: 0 0 auto;
+  color: #526159;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.radar-reason-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.radar-reason-list span {
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #e7f3e9;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.radar-releases dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+.radar-releases dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.radar-releases dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+.radar-releases code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.radar-releases .actions {
+  align-self: end;
+}
+.favorite-artists {
+  display: grid;
+  gap: 1rem;
+}
+.favorite-artists .section-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(16rem, 0.75fr);
+  gap: 1.25rem;
+  align-items: end;
+}
+.favorite-artists .inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+}
+.favorite-artists .inline label {
+  grid-column: 1 / -1;
+}
+.favorite-artists ul,
+.artist-search-results ol {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.favorite-artists li article {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.favorite-artists li article > div {
+  min-width: 0;
+}
+.favorite-artists h3,
+.favorite-artists li p {
+  margin: 0;
+}
+.favorite-artists li p {
+  margin-top: 0.25rem;
+  color: #526159;
+}
+.favorite-artists li .radar-unseen-count {
+  color: #275c3b;
+  font-weight: 750;
+}
+.favorite-artists code {
+  display: block;
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+  color: #3f4e45;
+  font-size: 0.8rem;
+}
+.favorite-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: end;
+}
+.artist-search {
+  display: grid;
+  gap: 1rem;
+}
+.artist-search-heading {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.5fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: end;
+}
+.artist-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: end;
+}
+.artist-search-form label {
+  grid-column: 1 / -1;
+}
+.artist-search-results {
+  display: grid;
+  gap: 0.8rem;
+}
+.artist-search-results > p {
+  margin: 0;
+}
+.artist-search-results li article {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f9fbf9;
+}
+.artist-search-results header {
+  display: flex;
+  gap: 1rem;
+  align-items: start;
+  justify-content: space-between;
+}
+.artist-search-results h3,
+.artist-search-results header p {
+  margin: 0;
+}
+.artist-search-results header p {
+  margin-top: 0.25rem;
+  color: #526159;
+}
+.artist-search-results header > span {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.45rem;
+  border-radius: 999px;
+  background: #e7f3e9;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+.artist-search-results dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+.artist-search-results dl div {
+  min-width: 0;
+}
+.artist-search-results dt {
+  color: #526159;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.artist-search-results dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+.artist-search-results button {
+  justify-self: start;
+}
+.favorite-removal-confirmation {
+  display: grid;
+  gap: 0.8rem;
+}
+.favorite-removal-confirmation h2,
+.favorite-removal-confirmation p {
+  margin: 0;
+}
+
 @media (max-width: 1200px) {
   .library-toolbar {
     grid-template-columns: auto minmax(0, 1fr);
@@ -3385,6 +3829,53 @@ td {
   .primary-navigation button small,
   .privacy-note {
     display: none;
+  }
+  .radar-introduction,
+  .radar-releases .section-heading,
+  .favorite-artists li article,
+  .artist-search-results header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .radar-introduction-actions {
+    align-items: start;
+  }
+  .radar-releases ol,
+  .radar-releases dl,
+  .radar-background-settings dl {
+    grid-template-columns: 1fr;
+  }
+  .radar-releases .radar-review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .radar-dismissed-toggle {
+    align-self: start;
+  }
+  .radar-filters {
+    align-items: start;
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: none;
+  }
+  .favorite-actions {
+    justify-content: start;
+  }
+  .favorite-artists .section-heading,
+  .artist-search-heading {
+    grid-template-columns: 1fr;
+  }
+  .favorite-artists .inline,
+  .artist-search-form,
+  .artist-search-results dl {
+    grid-template-columns: 1fr;
+  }
+  .favorite-artists .inline label,
+  .artist-search-form label {
+    grid-column: auto;
+  }
+  .artist-search-results header > span,
+  .artist-search-results button {
+    align-self: start;
   }
   .application-surface {
     padding: 1rem;

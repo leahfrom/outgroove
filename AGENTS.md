@@ -83,6 +83,7 @@ If a requested change conflicts with an invariant, stop and surface the conflict
 - Keep platform-specific code in adapters. Avoid target-condition checks scattered through domain or UI code.
 - Test packaged applications early; browser-only success is insufficient for file permissions, native dialogs, sidecars, updates, or removable storage.
 - UI behavior must tolerate Chromium upgrades and platform font/input/accessibility differences. Prefer standard, well-supported web APIs.
+- Follow `docs/release-runbook.md` for every release, including the exact-tag build, native Windows manual handoff, Linux artifact, checksum/remote-asset audit, honest CI-budget fallback reporting, and Gitflow back-merge/cleanup. A release is incomplete while any required platform artifact or evidence is missing.
 
 ## Implementation conventions
 

@@ -1,7 +1,16 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
+import { MakerDMG } from "@electron-forge/maker-dmg";
+import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
 import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { VitePlugin } from "@electron-forge/plugin-vite";
+
+import {
+  finalizeMacDmgArtifacts,
+  resolveMacReleaseConfig,
+} from "./scripts/macos-release";
+
+const macRelease = resolveMacReleaseConfig(process.env);
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -12,6 +21,11 @@ const config: ForgeConfig = {
       unpack: "**/node_modules/taglib-wasm/dist/*.wasm",
     },
     executableName: "Outgroove",
+    appBundleId: "de.leahfrom.outgroove",
+    appCategoryType: "public.app-category.music",
+    ...(macRelease.signingEnabled
+      ? { osxSign: { identity: macRelease.signingIdentity } }
+      : {}),
     // Vite bundles every production dependency except this native adapter.
     // An explicit allowlist avoids shipping the complete development tree while
     // ensuring Forge can rebuild and unpack SQLite for Electron's ABI.
@@ -23,7 +37,31 @@ const config: ForgeConfig = {
       ),
   },
   rebuildConfig: {},
-  makers: [new MakerZIP({}, ["darwin", "win32", "linux"])],
+  makers: [
+    new MakerZIP({}, ["win32", "linux"]),
+    new MakerDMG(
+      {
+        title: "Outgroove",
+        format: "UDZO",
+        iconSize: 96,
+      },
+      ["darwin"],
+    ),
+    new MakerSquirrel(
+      {
+        name: "Outgroove",
+        authors: "Outgroove contributors",
+        description: "Local-first music library and safe DAP sync",
+      },
+      ["win32"],
+    ),
+  ],
+  hooks: {
+    postMake: async (_forgeConfig, makeResults) => {
+      await finalizeMacDmgArtifacts(makeResults, macRelease);
+      return makeResults;
+    },
+  },
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new VitePlugin({

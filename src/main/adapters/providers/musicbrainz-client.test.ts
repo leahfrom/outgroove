@@ -25,6 +25,36 @@ const releaseFixture = readFileSync(
   ),
   "utf8",
 );
+const artistFixture = readFileSync(
+  join(
+    process.cwd(),
+    "fixtures",
+    "providers",
+    "musicbrainz",
+    "artist-search.json",
+  ),
+  "utf8",
+);
+const artistReleasesPage1 = readFileSync(
+  join(
+    process.cwd(),
+    "fixtures",
+    "providers",
+    "musicbrainz",
+    "artist-releases-page-1.json",
+  ),
+  "utf8",
+);
+const artistReleasesPage2 = readFileSync(
+  join(
+    process.cwd(),
+    "fixtures",
+    "providers",
+    "musicbrainz",
+    "artist-releases-page-2.json",
+  ),
+  "utf8",
+);
 
 function cache(): MusicBrainzCache & {
   readonly records: Map<
@@ -45,6 +75,248 @@ function cache(): MusicBrainzCache & {
 }
 
 describe("MusicBrainz release search adapter", () => {
+  it("browses bounded official releases by stable artist identity, pages by returned count, and groups editions", async () => {
+    let time = 0;
+    const sleep = vi.fn((milliseconds: number) => {
+      time += milliseconds;
+      return Promise.resolve();
+    });
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(artistReleasesPage1, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(artistReleasesPage2, { status: 200 }),
+      );
+    const storage = cache();
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: fetchImplementation,
+      now: () => time,
+      sleep,
+    });
+
+    const result = await client.browseArtistReleases(
+      "7C08E5AA-3D6A-480F-8763-156120BC9BD9",
+      new AbortController().signal,
+    );
+
+    expect(result).toMatchObject({
+      source: "network",
+      truncated: false,
+      observations: [
+        {
+          releaseGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          title: "Historical Fixture",
+          firstReleaseDate: "2001",
+          secondaryTypes: ["Compilation"],
+        },
+        {
+          releaseGroupId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          representativeReleaseId: "22222222-2222-4222-8222-222222222222",
+          firstReleaseDate: "2026-07-01",
+        },
+        {
+          releaseGroupId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          firstReleaseDate: "2027-03",
+        },
+      ],
+    });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    const urls = fetchImplementation.mock.calls.map(([url]) => String(url));
+    expect(urls[0]).toContain(
+      "https://musicbrainz.org/ws/2/release/?artist=7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+    );
+    expect(urls[0]).toContain("inc=release-groups");
+    expect(urls[0]).toContain("status=official");
+    expect(urls[0]).toContain("limit=100");
+    expect(urls[0]).toContain("offset=0");
+    expect(urls[1]).toContain("offset=3");
+    expect(urls.join(" ")).not.toMatch(/path|audio|tag|fingerprint/iu);
+    expect(sleep).toHaveBeenCalledWith(1000, expect.any(AbortSignal));
+    expect(storage.records.size).toBe(2);
+  });
+
+  it("rejects invalid partial release dates before caching them", async () => {
+    const storage = cache();
+    const malformed = JSON.parse(artistReleasesPage2) as {
+      releases: {
+        "release-group": { "first-release-date": string };
+      }[];
+    };
+    const first = malformed.releases[0];
+    if (!first) throw new Error("Fixture release missing.");
+    first["release-group"]["first-release-date"] = "2026-02-30";
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(malformed), { status: 200 }),
+        ),
+      ),
+    });
+    await expect(
+      client.browseArtistReleases(
+        "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("invalid partial release date");
+    expect(storage.records.size).toBe(0);
+  });
+
+  it("returns validated stale release pages without presenting them as a fresh snapshot", async () => {
+    const storage = cache();
+    const online = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(artistReleasesPage1, { status: 200 }),
+        )
+        .mockResolvedValueOnce(
+          new Response(artistReleasesPage2, { status: 200 }),
+        ),
+      now: () => Date.parse("2026-07-26T08:00:00.000Z"),
+      sleep: () => Promise.resolve(),
+    });
+    await online.browseArtistReleases(
+      "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      new AbortController().signal,
+    );
+
+    const offline = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi.fn(() => Promise.reject(new Error("offline"))),
+      now: () => Date.parse("2026-07-28T08:00:00.000Z"),
+      sleep: () => Promise.resolve(),
+    });
+    const stale = await offline.browseArtistReleases(
+      "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      new AbortController().signal,
+    );
+    expect(stale).toMatchObject({
+      source: "stale-cache",
+      truncated: false,
+    });
+    expect(stale.observations.map(({ title }) => title)).toContain(
+      "Historical Fixture",
+    );
+    expect(
+      stale.observations.map(({ firstReleaseDate }) => firstReleaseDate),
+    ).toContain("2027-03");
+  });
+
+  it("refuses a release count that changes between pages", async () => {
+    const changed = JSON.parse(artistReleasesPage2) as {
+      "release-count": number;
+    };
+    changed["release-count"] = 5;
+    const client = new MusicBrainzClient(cache(), "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(artistReleasesPage1, { status: 200 }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(changed), { status: 200 }),
+        ),
+      sleep: () => Promise.resolve(),
+    });
+    await expect(
+      client.browseArtistReleases(
+        "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("changed the release count");
+  });
+
+  it("searches the fixed artist endpoint, maps ambiguous stable identities, and caches the validated response", async () => {
+    const storage = cache();
+    const fetchImplementation = vi.fn(() =>
+      Promise.resolve(new Response(artistFixture, { status: 200 })),
+    );
+    const client = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: fetchImplementation,
+      now: () => Date.parse("2026-07-28T08:00:00Z"),
+    });
+
+    const result = await client.searchArtists(
+      "Fixture Artist",
+      new AbortController().signal,
+    );
+
+    expect(result).toMatchObject({
+      source: "network",
+      candidates: [
+        {
+          artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+          name: "Fixture Artist",
+          disambiguation: "German electronic duo",
+          type: "Group",
+          country: "DE",
+          area: "Germany",
+          score: 100,
+        },
+        {
+          artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+          disambiguation: "Canadian solo artist",
+        },
+      ],
+    });
+    const [url, options] = (fetchImplementation.mock.calls[0] ??
+      []) as unknown as [URL, RequestInit];
+    expect(String(url)).toContain(
+      "https://musicbrainz.org/ws/2/artist/?query=artist%3A%22Fixture+Artist%22",
+    );
+    expect(String(url)).toContain("limit=8");
+    expect(String(url)).not.toContain("private");
+    expect(options.headers).toMatchObject({
+      "User-Agent": "Outgroove/test",
+    });
+    expect(storage.records.size).toBe(1);
+  });
+
+  it("uses the shared limiter for artist and release requests and falls back to validated stale artist cache", async () => {
+    let time = 0;
+    const sleep = vi.fn((milliseconds: number) => {
+      time += milliseconds;
+      return Promise.resolve();
+    });
+    const client = new MusicBrainzClient(cache(), "Outgroove/test", {
+      fetch: vi
+        .fn()
+        .mockResolvedValueOnce(new Response(artistFixture, { status: 200 }))
+        .mockResolvedValueOnce(new Response(fixture, { status: 200 })),
+      now: () => time,
+      sleep,
+    });
+    await client.searchArtists("Artist", new AbortController().signal);
+    await client.searchReleases(
+      "Album",
+      "Artist",
+      new AbortController().signal,
+    );
+    expect(sleep).toHaveBeenCalledWith(1000, expect.any(AbortSignal));
+
+    const storage = cache();
+    storage.putProviderCache({
+      provider: "musicbrainz",
+      requestKey: JSON.stringify({ artistSearch: "Fixture Artist" }),
+      responseSchemaVersion: 1,
+      status: 200,
+      fetchedAt: "2026-01-01T00:00:00.000Z",
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      payloadJson: artistFixture,
+    });
+    const offline = new MusicBrainzClient(storage, "Outgroove/test", {
+      fetch: vi.fn(() => Promise.reject(new Error("offline"))),
+      now: () => Date.parse("2026-07-28T08:00:00Z"),
+    });
+    const stale = await offline.searchArtists(
+      "Fixture Artist",
+      new AbortController().signal,
+    );
+    expect(stale.source).toBe("stale-cache");
+    expect(stale.candidates.map((candidate) => candidate.name)).toContain(
+      "Fixture Artist",
+    );
+  });
+
   it("looks up a selected release through the fixed endpoint and preserves medium order and identities", async () => {
     const storage = cache();
     const fetchImplementation = vi.fn(() =>

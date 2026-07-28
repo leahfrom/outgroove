@@ -46,6 +46,8 @@ const restorePreview: DatabaseRestorePreviewDto = {
     tracks: 300,
     syncProfiles: 1,
     savedLibraryFilters: 2,
+    favoriteArtists: 3,
+    radarItems: 12,
   },
 };
 

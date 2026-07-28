@@ -10,6 +10,9 @@ import type {
   AlbumFolderArtworkResultDto,
   CoverArtArchiveResultDto,
   DatabaseRestorePreviewDto,
+  FavoriteArtistDto,
+  FavoriteArtistSearchResultDto,
+  RadarBackgroundRefreshSettingsDto,
   LibraryArtistDto,
   LibraryFormatDto,
   LibraryFolderDto,
@@ -18,6 +21,10 @@ import type {
   LibraryRootRemovalPreviewDto,
   LibraryTrackDto,
   MusicBrainzReleaseTracklistDto,
+  RadarItemDto,
+  RadarReviewSummaryDto,
+  RadarRefreshAllResultDto,
+  RadarRefreshResultDto,
   SavedLibraryFilterDefinition,
   SavedLibraryFilterDto,
   ScanErrorDto,
@@ -34,6 +41,8 @@ import type {
   TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
+import { radarViews } from "../../shared/contracts/api";
+import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 import {
   summarizeAlbumReleaseDate,
   type CatalogAlbum,
@@ -84,6 +93,7 @@ import {
 import { LibraryOnboarding } from "./library-onboarding";
 import { LibraryTrackDetail } from "./library-track-detail";
 import { ModalSheet } from "./modal-sheet";
+import { RadarView } from "./radar-view";
 import type { MusicBrainzTrackMappingEdit } from "./musicbrainz-track-mapper";
 import {
   SharedFieldEditor,
@@ -109,6 +119,9 @@ import {
 import type { SettingsSection } from "./settings-navigation";
 import { SettingsView } from "./settings-view";
 import { WorkbenchTrackContext } from "./workbench-track-context";
+
+type RadarReleaseView = (typeof radarViews)[number];
+const radarPageLimit = 20;
 
 const PAGE_SIZE = 20;
 
@@ -236,6 +249,57 @@ export function App(): React.JSX.Element {
     Record<string, string>
   >({});
   const [savedFilterBusy, setSavedFilterBusy] = useState(false);
+  const [favoriteArtists, setFavoriteArtists] = useState<
+    readonly FavoriteArtistDto[]
+  >([]);
+  const [allFavoriteArtists, setAllFavoriteArtists] = useState<
+    readonly FavoriteArtistDto[]
+  >([]);
+  const [favoriteArtistIds, setFavoriteArtistIds] = useState<readonly string[]>(
+    [],
+  );
+  const [favoriteFilterText, setFavoriteFilterText] = useState("");
+  const [favoriteFilter, setFavoriteFilter] = useState("");
+  const [artistSearchText, setArtistSearchText] = useState("");
+  const [artistSearchLoading, setArtistSearchLoading] = useState(false);
+  const [artistSearchResult, setArtistSearchResult] =
+    useState<FavoriteArtistSearchResultDto>();
+  const [artistSearchError, setArtistSearchError] = useState<string>();
+  const [favoriteMutationBusy, setFavoriteMutationBusy] = useState(false);
+  const [favoriteRemoval, setFavoriteRemoval] = useState<FavoriteArtistDto>();
+  const [radarItems, setRadarItems] = useState<readonly RadarItemDto[]>([]);
+  const [radarTotalItems, setRadarTotalItems] = useState(0);
+  const [radarSummary, setRadarSummary] = useState<RadarReviewSummaryDto>({
+    current: 0,
+    unseen: 0,
+    upcoming: 0,
+    recent: 0,
+    newlyFound: 0,
+  });
+  const [radarOffset, setRadarOffset] = useState(0);
+  const [radarView, setRadarView] = useState<RadarReleaseView>("all");
+  const [radarPrimaryType, setRadarPrimaryType] =
+    useState<RadarPrimaryTypeFilter>("all");
+  const [radarFavoriteArtistId, setRadarFavoriteArtistId] = useState<
+    string | null
+  >(null);
+  const [radarUnseenOnly, setRadarUnseenOnly] = useState(false);
+  const [radarIncludeDismissed, setRadarIncludeDismissed] = useState(false);
+  const [radarLoading, setRadarLoading] = useState(false);
+  const [radarError, setRadarError] = useState<string>();
+  const [radarRefreshResult, setRadarRefreshResult] =
+    useState<RadarRefreshResultDto>();
+  const [radarRefreshAllResult, setRadarRefreshAllResult] =
+    useState<RadarRefreshAllResultDto>();
+  const [radarRefreshAllActive, setRadarRefreshAllActive] = useState(false);
+  const [radarRefreshAllCancelling, setRadarRefreshAllCancelling] =
+    useState(false);
+  const [refreshingFavoriteId, setRefreshingFavoriteId] = useState<string>();
+  const [radarActionBusyId, setRadarActionBusyId] = useState<string>();
+  const [radarBackgroundSettings, setRadarBackgroundSettings] =
+    useState<RadarBackgroundRefreshSettingsDto>();
+  const [radarBackgroundBusy, setRadarBackgroundBusy] = useState(false);
+  const [radarBackgroundError, setRadarBackgroundError] = useState<string>();
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [libraryView, setLibraryView] = useState<
@@ -502,6 +566,7 @@ export function App(): React.JSX.Element {
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
+  const artistSearchRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
   const coverArtRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
@@ -795,6 +860,63 @@ export function App(): React.JSX.Element {
     return false;
   }, []);
 
+  const refreshFavoriteArtists = useCallback(
+    async (query: string): Promise<boolean> => {
+      const result = await window.outgroove.listFavoriteArtists({ query });
+      if (result.ok) {
+        setFavoriteArtists(result.value);
+        const allResult = query
+          ? await window.outgroove.listFavoriteArtists({ query: "" })
+          : result;
+        if (!allResult.ok) {
+          setNotice(allResult.error.message, "error");
+          return false;
+        }
+        setAllFavoriteArtists(allResult.value);
+        setFavoriteArtistIds(
+          allResult.value.map((favorite) => favorite.musicBrainzArtistId),
+        );
+        return true;
+      }
+      setNotice(result.error.message, "error");
+      return false;
+    },
+    [],
+  );
+
+  const refreshRadarItems = useCallback(
+    async (
+      view: RadarReleaseView,
+      primaryType: RadarPrimaryTypeFilter,
+      favoriteArtistId: string | null,
+      unseenOnly: boolean,
+      includeDismissed: boolean,
+      offset: number,
+    ): Promise<boolean> => {
+      setRadarLoading(true);
+      const result = await window.outgroove.listRadarItems({
+        view,
+        primaryType,
+        favoriteArtistId,
+        unseenOnly,
+        includeDismissed,
+        offset,
+        limit: radarPageLimit,
+      });
+      setRadarLoading(false);
+      if (result.ok) {
+        setRadarItems(result.value.items);
+        setRadarTotalItems(result.value.totalItems);
+        setRadarOffset(result.value.offset);
+        setRadarSummary(result.value.summary);
+        return true;
+      }
+      setRadarError(result.error.message);
+      return false;
+    },
+    [],
+  );
+
   const refreshSyncProfiles = useCallback(async (): Promise<
     readonly SyncProfileDto[] | undefined
   > => {
@@ -881,6 +1003,54 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void refreshSavedFilters();
   }, [refreshSavedFilters]);
+  useEffect(() => {
+    void refreshFavoriteArtists("");
+  }, [refreshFavoriteArtists]);
+  useEffect(() => {
+    void refreshRadarItems("all", "all", null, false, false, 0);
+  }, [refreshRadarItems]);
+  useEffect(() => {
+    const unsubscribe = window.outgroove.onRadarBackgroundRefreshUpdated(
+      (settings) => {
+        setRadarBackgroundSettings(settings);
+        if (settings.lastCheckedAt) {
+          void refreshFavoriteArtists(favoriteFilter);
+          void refreshRadarItems(
+            radarView,
+            radarPrimaryType,
+            radarFavoriteArtistId,
+            radarUnseenOnly,
+            radarIncludeDismissed,
+            radarOffset,
+          );
+        }
+      },
+    );
+    void window.outgroove.getRadarBackgroundRefreshSettings().then((result) => {
+      if (result.ok) setRadarBackgroundSettings(result.value);
+      else setRadarBackgroundError(result.error.message);
+    });
+    return unsubscribe;
+  }, [
+    favoriteFilter,
+    radarIncludeDismissed,
+    radarFavoriteArtistId,
+    radarOffset,
+    radarPrimaryType,
+    radarUnseenOnly,
+    radarView,
+    refreshFavoriteArtists,
+    refreshRadarItems,
+  ]);
+  useEffect(
+    () =>
+      window.outgroove.onOpenRadarRequested(() => {
+        setActiveView("radar");
+        setRadarUnseenOnly(true);
+        setRadarOffset(0);
+      }),
+    [],
+  );
   useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
@@ -1088,6 +1258,377 @@ export function App(): React.JSX.Element {
     const cancelled = await window.outgroove.cancelScan({ jobId: scanJob.id });
     if (cancelled.ok) setScanJob(cancelled.value);
     else setNotice(cancelled.error.message, "error");
+  };
+
+  const filterFavoriteArtists = (): void => {
+    const next = favoriteFilterText.trim();
+    setFavoriteFilter(next);
+    void refreshFavoriteArtists(next);
+  };
+
+  const clearFavoriteArtistFilter = (): void => {
+    setFavoriteFilterText("");
+    setFavoriteFilter("");
+    void refreshFavoriteArtists("");
+  };
+
+  const searchMusicBrainzArtists = async (): Promise<void> => {
+    const query = artistSearchText.trim();
+    if (!query) return;
+    const requestId = ++artistSearchRequestId.current;
+    setArtistSearchLoading(true);
+    setArtistSearchResult(undefined);
+    setArtistSearchError(undefined);
+    const result = await window.outgroove.searchMusicBrainzArtists({ query });
+    if (requestId !== artistSearchRequestId.current) return;
+    setArtistSearchLoading(false);
+    if (result.ok) {
+      setArtistSearchResult(result.value);
+      return;
+    }
+    setArtistSearchError(result.error.message);
+  };
+
+  const cancelMusicBrainzArtistSearch = (): void => {
+    artistSearchRequestId.current += 1;
+    setArtistSearchLoading(false);
+    setArtistSearchError(undefined);
+    void window.outgroove.cancelMusicBrainzArtistSearch().then((result) => {
+      if (!result.ok) {
+        setArtistSearchError(result.error.message);
+        return;
+      }
+      if (result.value.cancelled)
+        setNotice("Cancelled the MusicBrainz artist search.");
+    });
+  };
+
+  const refreshFavoriteRadar = async (
+    favorite: FavoriteArtistDto,
+  ): Promise<void> => {
+    setRefreshingFavoriteId(favorite.id);
+    setRadarError(undefined);
+    setRadarRefreshResult(undefined);
+    const result = await window.outgroove.refreshRadar({
+      favoriteArtistId: favorite.id,
+    });
+    setRefreshingFavoriteId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    setRadarRefreshResult(result.value);
+    await refreshFavoriteArtists(favoriteFilter);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      radarOffset,
+    );
+    setNotice(
+      `Refreshed Radar for ${result.value.favoriteArtistName}.`,
+      "success",
+    );
+  };
+
+  const refreshAllFavoriteRadar = async (): Promise<void> => {
+    setRadarRefreshAllActive(true);
+    setRadarRefreshAllCancelling(false);
+    setRadarRefreshAllResult(undefined);
+    setRadarRefreshResult(undefined);
+    setRadarError(undefined);
+    const result = await window.outgroove.refreshAllRadar();
+    setRadarRefreshAllActive(false);
+    setRadarRefreshAllCancelling(false);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    setRadarRefreshAllResult(result.value);
+    await refreshFavoriteArtists(favoriteFilter);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      radarOffset,
+    );
+    if (result.value.cancelled) {
+      setNotice(
+        `Stopped Radar after ${result.value.completed} of ${result.value.totalFavorites} favorites.`,
+      );
+    } else if (result.value.failed > 0) {
+      setNotice(
+        `Radar refreshed ${result.value.successful} favorites; ${result.value.failed} need attention.`,
+        "error",
+      );
+    } else {
+      setNotice(
+        `Refreshed Radar for ${result.value.successful} favorites.`,
+        "success",
+      );
+    }
+  };
+
+  const cancelAllFavoriteRadarRefresh = (): void => {
+    setRadarRefreshAllCancelling(true);
+    void window.outgroove.cancelAllRadarRefresh().then((result) => {
+      if (!result.ok) {
+        setRadarRefreshAllCancelling(false);
+        setRadarError(result.error.message);
+        return;
+      }
+      if (!result.value.cancelled) {
+        setRadarRefreshAllCancelling(false);
+        setRadarError("No Refresh all operation is currently running.");
+      }
+    });
+  };
+
+  const updateRadarBackgroundRefresh = async (
+    enabled: boolean,
+    pauseOnBattery: boolean,
+    notificationsEnabled: boolean,
+  ): Promise<void> => {
+    setRadarBackgroundBusy(true);
+    setRadarBackgroundError(undefined);
+    const result = await window.outgroove.updateRadarBackgroundRefreshSettings({
+      enabled,
+      pauseOnBattery,
+      notificationsEnabled,
+    });
+    setRadarBackgroundBusy(false);
+    if (result.ok) setRadarBackgroundSettings(result.value);
+    else setRadarBackgroundError(result.error.message);
+  };
+
+  const cancelFavoriteRadarRefresh = (favorite: FavoriteArtistDto): void => {
+    void window.outgroove
+      .cancelRadarRefresh({ favoriteArtistId: favorite.id })
+      .then((result) => {
+        if (!result.ok) {
+          setRadarError(result.error.message);
+          return;
+        }
+        if (result.value.cancelled) {
+          setRefreshingFavoriteId(undefined);
+          setRadarError(
+            "Radar refresh cancelled. The last successful view is unchanged.",
+          );
+        }
+      });
+  };
+
+  const chooseRadarView = (view: RadarReleaseView): void => {
+    setRadarView(view);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(
+      view,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      0,
+    );
+  };
+
+  const chooseRadarPrimaryType = (
+    primaryType: RadarPrimaryTypeFilter,
+  ): void => {
+    setRadarPrimaryType(primaryType);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(
+      radarView,
+      primaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      0,
+    );
+  };
+
+  const chooseRadarFavoriteArtist = (favoriteArtistId: string | null): void => {
+    setRadarFavoriteArtistId(favoriteArtistId);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      favoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      0,
+    );
+  };
+
+  const chooseRadarUnseenOnly = (unseenOnly: boolean): void => {
+    setRadarUnseenOnly(unseenOnly);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      unseenOnly,
+      radarIncludeDismissed,
+      0,
+    );
+  };
+
+  const chooseRadarDismissed = (includeDismissed: boolean): void => {
+    setRadarIncludeDismissed(includeDismissed);
+    setRadarOffset(0);
+    setRadarError(undefined);
+    void refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      includeDismissed,
+      0,
+    );
+  };
+
+  const chooseRadarPage = (offset: number): void => {
+    setRadarError(undefined);
+    void refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      offset,
+    );
+  };
+
+  const setRadarSeen = async (
+    item: RadarItemDto,
+    seen: boolean,
+  ): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    const result = await window.outgroove.setRadarItemSeen({
+      id: item.id,
+      seen,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    await refreshFavoriteArtists(favoriteFilter);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      seen && radarUnseenOnly && radarItems.length === 1 && radarOffset > 0
+        ? Math.max(0, radarOffset - radarPageLimit)
+        : radarOffset,
+    );
+  };
+
+  const setRadarDismissed = async (
+    item: RadarItemDto,
+    dismissed: boolean,
+  ): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    const result = await window.outgroove.setRadarItemDismissed({
+      id: item.id,
+      dismissed,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    await refreshFavoriteArtists(favoriteFilter);
+    const nextOffset =
+      dismissed &&
+      !radarIncludeDismissed &&
+      radarItems.length === 1 &&
+      radarOffset > 0
+        ? Math.max(0, radarOffset - radarPageLimit)
+        : radarOffset;
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      nextOffset,
+    );
+  };
+
+  const openRadarItem = async (item: RadarItemDto): Promise<void> => {
+    setRadarActionBusyId(item.id);
+    setRadarError(undefined);
+    const result = await window.outgroove.openRadarItemInMusicBrainz({
+      id: item.id,
+    });
+    setRadarActionBusyId(undefined);
+    if (!result.ok) setRadarError(result.error.message);
+  };
+
+  const addFavoriteArtist = async (artistId: string): Promise<void> => {
+    setFavoriteMutationBusy(true);
+    const result = await window.outgroove.addFavoriteArtist({ artistId });
+    setFavoriteMutationBusy(false);
+    if (!result.ok) {
+      setArtistSearchError(result.error.message);
+      return;
+    }
+    setFavoriteArtistIds((artistIds) => [
+      ...new Set([...artistIds, result.value.musicBrainzArtistId]),
+    ]);
+    setAllFavoriteArtists((favorites) =>
+      [...favorites, result.value].sort((left, right) =>
+        left.sortName.localeCompare(right.sortName),
+      ),
+    );
+    await refreshFavoriteArtists(favoriteFilter);
+    setNotice(`Added ${result.value.name} to favorite artists.`, "success");
+  };
+
+  const removeFavoriteArtist = async (): Promise<void> => {
+    if (!favoriteRemoval) return;
+    setFavoriteMutationBusy(true);
+    const result = await window.outgroove.removeFavoriteArtist({
+      id: favoriteRemoval.id,
+    });
+    setFavoriteMutationBusy(false);
+    if (!result.ok) {
+      setNotice(result.error.message, "error");
+      return;
+    }
+    const removedName = favoriteRemoval.name;
+    const removedArtistId = favoriteRemoval.musicBrainzArtistId;
+    setFavoriteRemoval(undefined);
+    setFavoriteArtistIds((artistIds) =>
+      artistIds.filter((artistId) => artistId !== removedArtistId),
+    );
+    setAllFavoriteArtists((favorites) =>
+      favorites.filter((favorite) => favorite.id !== result.value.id),
+    );
+    const nextFavoriteArtistId =
+      radarFavoriteArtistId === result.value.id ? null : radarFavoriteArtistId;
+    setRadarFavoriteArtistId(nextFavoriteArtistId);
+    await refreshFavoriteArtists(favoriteFilter);
+    setRadarOffset(0);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      nextFavoriteArtistId,
+      radarUnseenOnly,
+      radarIncludeDismissed,
+      0,
+    );
+    setNotice(`Removed ${removedName} from favorite artists.`, "success");
   };
 
   const createBackup = async (): Promise<void> => {
@@ -3065,6 +3606,78 @@ export function App(): React.JSX.Element {
             setActiveView("library");
           }}
           onRetry={(selectedRootId) => void startScan(selectedRootId)}
+        />
+      )}
+      {activeView === "radar" && (
+        <RadarView
+          artistSearchError={artistSearchError}
+          artistSearchLoading={artistSearchLoading}
+          artistSearchResult={artistSearchResult}
+          artistSearchText={artistSearchText}
+          favoriteArtistIds={favoriteArtistIds}
+          favoriteFilter={favoriteFilter}
+          favoriteFilterText={favoriteFilterText}
+          favorites={favoriteArtists}
+          mutationBusy={favoriteMutationBusy}
+          radarActionBusyId={radarActionBusyId}
+          radarBackgroundBusy={radarBackgroundBusy}
+          radarBackgroundError={radarBackgroundError}
+          radarBackgroundSettings={radarBackgroundSettings}
+          radarError={radarError}
+          radarFavoriteArtistId={radarFavoriteArtistId}
+          radarFilterFavorites={allFavoriteArtists}
+          radarIncludeDismissed={radarIncludeDismissed}
+          radarItems={radarItems}
+          radarLimit={radarPageLimit}
+          radarLoading={radarLoading}
+          radarOffset={radarOffset}
+          radarPrimaryType={radarPrimaryType}
+          radarRefreshAllActive={radarRefreshAllActive}
+          radarRefreshAllCancelling={radarRefreshAllCancelling}
+          radarRefreshAllResult={radarRefreshAllResult}
+          radarRefreshResult={radarRefreshResult}
+          radarSummary={radarSummary}
+          radarTotalItems={radarTotalItems}
+          radarUnseenOnly={radarUnseenOnly}
+          radarView={radarView}
+          refreshingFavoriteId={refreshingFavoriteId}
+          removal={favoriteRemoval}
+          onAdd={(artistId) => void addFavoriteArtist(artistId)}
+          onArtistSearchTextChange={setArtistSearchText}
+          onCancelArtistSearch={cancelMusicBrainzArtistSearch}
+          onCancelRemoval={() => setFavoriteRemoval(undefined)}
+          onClearFavoriteFilter={clearFavoriteArtistFilter}
+          onConfirmRemoval={() => void removeFavoriteArtist()}
+          onFavoriteFilterTextChange={setFavoriteFilterText}
+          onFilterFavorites={filterFavoriteArtists}
+          onRadarDismissed={(item, dismissed) =>
+            void setRadarDismissed(item, dismissed)
+          }
+          onRadarFavoriteArtistChange={chooseRadarFavoriteArtist}
+          onRadarIncludeDismissedChange={chooseRadarDismissed}
+          onRadarOpen={(item) => void openRadarItem(item)}
+          onRadarPage={chooseRadarPage}
+          onRadarPrimaryTypeChange={chooseRadarPrimaryType}
+          onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
+          onRadarUnseenOnlyChange={chooseRadarUnseenOnly}
+          onRadarViewChange={chooseRadarView}
+          onRadarBackgroundChange={(
+            enabled,
+            pauseOnBattery,
+            notificationsEnabled,
+          ) =>
+            void updateRadarBackgroundRefresh(
+              enabled,
+              pauseOnBattery,
+              notificationsEnabled,
+            )
+          }
+          onRefreshAll={() => void refreshAllFavoriteRadar()}
+          onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}
+          onCancelRefreshAll={cancelAllFavoriteRadarRefresh}
+          onCancelRefresh={cancelFavoriteRadarRefresh}
+          onRemove={setFavoriteRemoval}
+          onSearchArtists={() => void searchMusicBrainzArtists()}
         />
       )}
       {activeView === "library" && (

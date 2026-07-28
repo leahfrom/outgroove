@@ -1,7 +1,8 @@
 {
   "name": "outgroove",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Local-first music library and safe DAP sync",
+  "author": "Outgroove contributors",
   "main": ".vite/build/main.js",
   "private": true,
   "packageManager": "npm@11.18.0",
@@ -36,6 +37,7 @@
   "dependencies": {
     "@akabeko/music-metadata-editor": "^1.0.1",
     "better-sqlite3": "^13.0.0",
+    "electron-squirrel-startup": "^1.0.1",
     "music-metadata": "^11.14.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -44,14 +46,18 @@
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-dmg": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
     "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron/notarize": "^2.5.0",
     "@eslint/js": "^9.39.5",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/electron-squirrel-startup": "^1.0.2",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -72,11 +78,14 @@
   },
   "allowScripts": {
     "better-sqlite3@13.0.0": true,
+    "electron-winstaller@5.4.4": true,
     "esbuild@0.28.1": true,
+    "fs-xattr@0.3.1": true,
+    "macos-alias@0.2.12": true,
     "unrs-resolver@1.12.2": true
   },
   "overrides": {
-    "tar": "7.5.20",
+    "tar": "7.5.22",
     "tmp": "0.2.7"
   }
 }

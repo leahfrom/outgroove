@@ -1,7 +1,7 @@
 import type { ScanJobDto, ScanJobState } from "../../shared/contracts/api";
 
 export interface ActivityProgress {
-  readonly job: "scan" | "tag-edit" | "sync" | "library-quality";
+  readonly job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar";
   readonly completed: number;
   readonly total: number;
   readonly detail: string;
@@ -12,6 +12,7 @@ const progressLabels: Record<ActivityProgress["job"], string> = {
   "tag-edit": "Metadata write",
   sync: "DAP sync",
   "library-quality": "Library quality review",
+  radar: "Radar refresh",
 };
 
 const scanStateLabels: Record<ScanJobState, string> = {

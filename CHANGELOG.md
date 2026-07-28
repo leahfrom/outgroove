@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.15.0 — 2026-07-28
+
+- Add durable MusicBrainz artist favorites and complete manual Radar refresh.
+  Artist selection is explicit, stable UUIDs remain distinct from search
+  evidence, all provider traffic shares the global limiter and validated cache,
+  and failed or cancelled refreshes preserve the last successful local view.
+- Finish the Radar release-review workflow with upcoming, recent, and newly
+  found views; type and favorite filters; unseen counts; review summaries;
+  seen and dismissed state; conservative partial-date handling; bounded
+  pagination; and fixed MusicBrainz release-group navigation.
+- Add a cancellable **Refresh all** sweep that snapshots the selected favorites,
+  commits each complete artist response independently, continues through
+  ordinary per-artist failures, and reports complete, partial, cancelled, and
+  failed outcomes without rolling back earlier successes.
+- Add optional randomized automatic refresh while Outgroove is open. It is
+  disabled by default, persists its next due window, pauses on battery power by
+  default, defers while offline or busy, never interrupts a manual refresh, and
+  sends only the saved MusicBrainz artist UUIDs through the existing
+  cache-aware rate limiter.
+- Add separately opt-in native Radar notifications containing aggregate counts
+  only. Notifications require a fully successful automatic sweep with
+  post-baseline additions; manual, partial, cancelled, failed, zero-addition,
+  and initial-baseline checks never notify. Activation carries no provider or
+  catalog payload and opens the local unseen Radar view.
+- Give Outgroove the stable `de.leahfrom.outgroove` macOS identity and add a
+  fail-closed Developer ID release path. The application and final
+  drag-to-Applications DMG are signed, the outermost DMG is notarized and
+  stapled, and independent verification checks its mounted application,
+  Gatekeeper assessments, ticket, and disk-image integrity.
+- Publish the verified DMG as the only new macOS release download while
+  retaining Windows and Linux ZIPs and the Windows Setup application. Existing
+  release assets stay unchanged, and exact-tag local macOS, native Windows, and
+  Linux beta fallback procedures remain documented for the known Actions
+  budget restriction.
+
 ## 0.14.0 — 2026-07-27
 
 - Load the primary front-cover thumbnail for an explicitly selected

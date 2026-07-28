@@ -4,6 +4,7 @@ import { normalize, resolve } from "node:path";
 import { dialog, type BrowserWindow, type IpcMain } from "electron";
 
 import {
+  addFavoriteArtistRequestSchema,
   albumEditApplyRequestSchema,
   albumArtworkRequestSchema,
   albumArtworkEditPreviewRequestSchema,
@@ -19,12 +20,21 @@ import {
   createSavedLibraryFilterRequestSchema,
   deleteSavedLibraryFilterRequestSchema,
   emptyRequestSchema,
+  favoriteArtistListRequestSchema,
+  favoriteArtistSearchRequestSchema,
   libraryQueryRequestSchema,
   libraryRootRemovalApplyRequestSchema,
   libraryRootRemovalPreviewRequestSchema,
   musicBrainzReleaseLookupRequestSchema,
   musicBrainzTrackMappingPreviewRequestSchema,
+  radarItemDismissRequestSchema,
+  radarItemOpenRequestSchema,
+  radarItemSeenRequestSchema,
+  radarListRequestSchema,
+  radarBackgroundRefreshUpdateRequestSchema,
+  radarRefreshRequestSchema,
   renameSyncProfileRequestSchema,
+  removeFavoriteArtistRequestSchema,
   scanCancelRequestSchema,
   scanRequestSchema,
   syncApplyRequestSchema,
@@ -56,6 +66,10 @@ import type { ManageLibraryRoots } from "../application/manage-library-roots";
 import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
+import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
+import type { RefreshRadar } from "../application/refresh-radar";
+import type { RadarBackgroundRefresh } from "../application/radar-background-refresh";
+import type { OpenRadarItem } from "../application/open-radar-item";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -69,6 +83,10 @@ interface Dependencies {
   artwork: LoadAlbumArtwork;
   albumCandidates: FindAlbumCandidates;
   releaseArtwork: FindReleaseArtwork;
+  favoriteArtists: ManageFavoriteArtists;
+  radar: RefreshRadar;
+  radarBackground: RadarBackgroundRefresh;
+  radarItemOpener: OpenRadarItem;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -84,7 +102,7 @@ export function registerIpc(
   dependencies: Dependencies,
 ): void {
   const progress =
-    (job: "scan" | "tag-edit" | "sync" | "library-quality") =>
+    (job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar") =>
     (completed: number, total: number, detail: string): void => {
       if (!dependencies.window.isDestroyed())
         dependencies.window.webContents.send(channels.jobProgress, {
@@ -292,6 +310,120 @@ export function registerIpc(
     channels.cancelCoverArtArchiveArtwork,
     createValidatedHandler(albumIdentificationRequestSchema, ({ albumId }) =>
       dependencies.releaseArtwork.cancel(albumId),
+    ),
+  );
+  ipcMain.handle(
+    channels.searchMusicBrainzArtists,
+    createValidatedHandler(favoriteArtistSearchRequestSchema, ({ query }) =>
+      dependencies.favoriteArtists.search(query),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelMusicBrainzArtistSearch,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.favoriteArtists.cancel(),
+    ),
+  );
+  ipcMain.handle(
+    channels.listFavoriteArtists,
+    createValidatedHandler(favoriteArtistListRequestSchema, ({ query }) =>
+      dependencies.favoriteArtists.list(query),
+    ),
+  );
+  ipcMain.handle(
+    channels.addFavoriteArtist,
+    createValidatedHandler(addFavoriteArtistRequestSchema, ({ artistId }) =>
+      dependencies.favoriteArtists.add(artistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.removeFavoriteArtist,
+    createValidatedHandler(removeFavoriteArtistRequestSchema, ({ id }) =>
+      dependencies.favoriteArtists.remove(id),
+    ),
+  );
+  ipcMain.handle(
+    channels.refreshRadar,
+    createValidatedHandler(radarRefreshRequestSchema, ({ favoriteArtistId }) =>
+      dependencies.radar.refresh(favoriteArtistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelRadarRefresh,
+    createValidatedHandler(radarRefreshRequestSchema, ({ favoriteArtistId }) =>
+      dependencies.radar.cancel(favoriteArtistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.refreshAllRadar,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radar.refreshAll(progress("radar")),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelAllRadarRefresh,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radar.cancelAll(),
+    ),
+  );
+  ipcMain.handle(
+    channels.getRadarBackgroundRefreshSettings,
+    createValidatedHandler(emptyRequestSchema, () =>
+      dependencies.radarBackground.getSettings(),
+    ),
+  );
+  ipcMain.handle(
+    channels.updateRadarBackgroundRefreshSettings,
+    createValidatedHandler(
+      radarBackgroundRefreshUpdateRequestSchema,
+      ({ enabled, pauseOnBattery, notificationsEnabled }) =>
+        dependencies.radarBackground.updatePreferences(
+          enabled,
+          pauseOnBattery,
+          notificationsEnabled,
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.listRadarItems,
+    createValidatedHandler(
+      radarListRequestSchema,
+      ({
+        view,
+        primaryType,
+        favoriteArtistId,
+        unseenOnly,
+        includeDismissed,
+        offset,
+        limit,
+      }) =>
+        dependencies.radar.list(
+          view,
+          primaryType,
+          includeDismissed,
+          offset,
+          limit,
+          favoriteArtistId,
+          unseenOnly,
+        ),
+    ),
+  );
+  ipcMain.handle(
+    channels.setRadarItemSeen,
+    createValidatedHandler(radarItemSeenRequestSchema, ({ id, seen }) =>
+      dependencies.radar.setSeen(id, seen),
+    ),
+  );
+  ipcMain.handle(
+    channels.setRadarItemDismissed,
+    createValidatedHandler(radarItemDismissRequestSchema, ({ id, dismissed }) =>
+      dependencies.radar.setDismissed(id, dismissed),
+    ),
+  );
+  ipcMain.handle(
+    channels.openRadarItemInMusicBrainz,
+    createValidatedHandler(radarItemOpenRequestSchema, ({ id }) =>
+      dependencies.radarItemOpener.inMusicBrainz(id),
     ),
   );
   ipcMain.handle(

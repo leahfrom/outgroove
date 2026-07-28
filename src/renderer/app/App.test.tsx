@@ -20,7 +20,7 @@ import { App } from "./App";
 
 async function openPrimaryView(
   user: ReturnType<typeof userEvent.setup>,
-  name: "Library" | "Sync" | "Activity" | "Settings",
+  name: "Library" | "Radar" | "Sync" | "Activity" | "Settings",
 ): Promise<void> {
   const navigation = screen.getByRole("navigation", {
     name: "Primary navigation",
@@ -229,6 +229,64 @@ function api(applyVerified: boolean): OutgrooveApi {
     cancelCoverArtArchiveArtwork: vi.fn(() =>
       Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
+    searchMusicBrainzArtists: vi.fn(),
+    cancelMusicBrainzArtistSearch: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    listFavoriteArtists: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
+    addFavoriteArtist: vi.fn(),
+    removeFavoriteArtist: vi.fn(),
+    refreshRadar: vi.fn(),
+    cancelRadarRefresh: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    refreshAllRadar: vi.fn(),
+    cancelAllRadarRefresh: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    getRadarBackgroundRefreshSettings: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          enabled: false,
+          pauseOnBattery: true,
+          notificationsEnabled: false,
+          notificationCapability: {
+            available: false,
+            unavailableReason: "development",
+          },
+          nextRefreshAt: null,
+          lastCheckedAt: null,
+          lastSuccessfulRefreshAt: null,
+          lastOutcome: null,
+          lastCompleted: 0,
+          lastSucceeded: 0,
+          lastFailed: 0,
+        },
+      }),
+    ),
+    updateRadarBackgroundRefreshSettings: vi.fn(),
+    listRadarItems: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: {
+          items: [],
+          totalItems: 0,
+          offset: 0,
+          limit: 20,
+          summary: {
+            current: 0,
+            unseen: 0,
+            upcoming: 0,
+            recent: 0,
+            newlyFound: 0,
+          },
+        },
+      }),
+    ),
+    setRadarItemSeen: vi.fn(),
+    setRadarItemDismissed: vi.fn(),
+    openRadarItemInMusicBrainz: vi.fn(),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -364,6 +422,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     applySyncRecovery: vi.fn(),
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
+    onRadarBackgroundRefreshUpdated: vi.fn(() => () => undefined),
+    onOpenRadarRequested: vi.fn(() => () => undefined),
   } as OutgrooveApi;
 }
 
@@ -385,7 +445,7 @@ describe("tag edit UI safety states", () => {
     expect(
       within(navigation).queryByRole("button", { name: /^Workbench/u }),
     ).not.toBeInTheDocument();
-    expect(within(navigation).getAllByRole("button")).toHaveLength(4);
+    expect(within(navigation).getAllByRole("button")).toHaveLength(5);
     expect(
       within(navigation).getByRole("button", { name: /^Library/u }),
     ).toHaveAttribute("aria-current", "page");
@@ -401,6 +461,511 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("heading", { level: 1, name: "Activity" }),
     ).toBeVisible();
     expect(screen.queryByRole("search")).not.toBeInTheDocument();
+  });
+
+  it("routes a fixed native-notification click to unseen Radar items", async () => {
+    const mockApi = api(true);
+    let openRadar: (() => void) | undefined;
+    vi.spyOn(mockApi, "onOpenRadarRequested").mockImplementation((listener) => {
+      openRadar = listener;
+      return () => undefined;
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+
+    act(() => openRadar?.());
+
+    await waitFor(() =>
+      expect(
+        within(navigation).getByRole("button", { name: /^Radar/u }),
+      ).toHaveAttribute("aria-current", "page"),
+    );
+    expect(screen.getByRole("checkbox", { name: "Unseen only" })).toBeChecked();
+  });
+
+  it("routes explicit MusicBrainz artist selection and confirmed local removal through Radar", async () => {
+    const mockApi = api(true);
+    const saved = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+      unseenRadarCount: 0,
+    };
+    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
+      ok: true,
+      value: [saved],
+    });
+    const search = vi
+      .spyOn(mockApi, "searchMusicBrainzArtists")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          sent: { artistName: "Fixture Artist" },
+          candidates: [
+            {
+              artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+              name: "Fixture Artist",
+              sortName: "Fixture Artist",
+              disambiguation: "Canadian solo artist",
+              type: "Person",
+              country: "CA",
+              area: "Canada",
+              score: 78,
+            },
+          ],
+          source: "network",
+          fetchedAt: "2026-07-28T08:00:00.000Z",
+          readOnly: true,
+        },
+      });
+    const add = vi.spyOn(mockApi, "addFavoriteArtist").mockResolvedValue({
+      ok: true,
+      value: {
+        ...saved,
+        id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
+        musicBrainzArtistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+        country: "CA",
+      },
+    });
+    const remove = vi.spyOn(mockApi, "removeFavoriteArtist").mockResolvedValue({
+      ok: true,
+      value: { id: saved.id },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Radar",
+      }),
+    ).toBeVisible();
+    expect(screen.getByText(saved.musicBrainzArtistId)).toBeVisible();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Artist name" }),
+      "Fixture Artist",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(search).toHaveBeenCalledWith({ query: "Fixture Artist" });
+    const addButton = await screen.findByRole("button", {
+      name: "Add Fixture Artist to favorites",
+    });
+    addButton.focus();
+    await user.keyboard("{Enter}");
+    expect(add).toHaveBeenCalledWith({
+      artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+    });
+
+    const removeButton = screen.getByRole("button", {
+      name: "Remove Fixture Artist from favorites",
+    });
+    removeButton.focus();
+    await user.keyboard("{Enter}");
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Fixture Artist from favorites",
+    });
+    expect(dialog).toHaveFocus();
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "Confirm remove favorite",
+      }),
+    );
+    expect(remove).toHaveBeenCalledWith({ id: saved.id });
+  });
+
+  it("routes explicit Radar refresh and item state through opaque local identities", async () => {
+    const mockApi = api(true);
+    const favorite = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+      unseenRadarCount: 1,
+    };
+    const radarItem = {
+      id: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+      favoriteArtistId: favorite.id,
+      favoriteArtistName: favorite.name,
+      musicBrainzReleaseGroupId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      representativeReleaseId: "11111111-1111-4111-8111-111111111111",
+      title: "Future Fixture",
+      primaryType: "Album",
+      secondaryTypes: [],
+      firstReleaseDate: "2027-03",
+      status: "Official",
+      country: "DE",
+      firstSeenAt: "2026-07-28T08:00:00.000Z",
+      lastSeenAt: "2026-07-28T08:00:00.000Z",
+      seenAt: null,
+      dismissedAt: null,
+      reasons: ["upcoming"] as const,
+    };
+    const favoriteLists = vi
+      .spyOn(mockApi, "listFavoriteArtists")
+      .mockResolvedValue({
+        ok: true,
+        value: [favorite],
+      });
+    const list = vi.spyOn(mockApi, "listRadarItems").mockResolvedValue({
+      ok: true,
+      value: {
+        items: [radarItem],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+        summary: {
+          current: 1,
+          unseen: 1,
+          upcoming: 1,
+          recent: 0,
+          newlyFound: 0,
+        },
+      },
+    });
+    const refresh = vi.spyOn(mockApi, "refreshRadar").mockResolvedValue({
+      ok: true,
+      value: {
+        favoriteArtistId: favorite.id,
+        favoriteArtistName: favorite.name,
+        added: 0,
+        newlyDiscovered: 0,
+        updated: 0,
+        unchanged: 1,
+        total: 1,
+        source: "network",
+        providerFetchedAt: "2026-07-28T08:00:00.000Z",
+        refreshedAt: "2026-07-28T08:01:00.000Z",
+        truncated: false,
+      },
+    });
+    const refreshAll = vi.spyOn(mockApi, "refreshAllRadar").mockResolvedValue({
+      ok: true,
+      value: {
+        totalFavorites: 1,
+        completed: 1,
+        successful: 1,
+        failed: 0,
+        cancelled: false,
+        results: [],
+        failures: [],
+      },
+    });
+    const seen = vi.spyOn(mockApi, "setRadarItemSeen").mockResolvedValue({
+      ok: true,
+      value: {
+        ...radarItem,
+        seenAt: "2026-07-28T08:02:00.000Z",
+      },
+    });
+    const open = vi
+      .spyOn(mockApi, "openRadarItemInMusicBrainz")
+      .mockResolvedValue({
+        ok: true,
+        value: { opened: true },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    expect(await screen.findByText(radarItem.title)).toBeVisible();
+    expect(
+      screen.getByRole("option", {
+        name: "Fixture Artist — 1 unseen",
+      }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Radar review summary")).toHaveTextContent(
+      "Current1Unseen1Upcoming1Recent0Newly found0",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Release type" }),
+      "single",
+    );
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        favoriteArtistId: null,
+        unseenOnly: false,
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Favorite artist" }),
+      favorite.id,
+    );
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        favoriteArtistId: favorite.id,
+        unseenOnly: false,
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    const unseenOnly = screen.getByRole("checkbox", { name: "Unseen only" });
+    unseenOnly.focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        favoriteArtistId: favorite.id,
+        unseenOnly: true,
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
+
+    const refreshAllButton = screen.getByRole("button", {
+      name: "Refresh all favorites",
+    });
+    refreshAllButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(refreshAll).toHaveBeenCalledWith());
+    expect(
+      await screen.findByText(
+        "Completed 1 of 1 favorites: 1 successful and 0 failed.",
+      ),
+    ).toBeVisible();
+
+    const refreshButton = screen.getByRole("button", {
+      name: `Refresh releases for ${favorite.name}`,
+    });
+    refreshButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(refresh).toHaveBeenCalledWith({
+        favoriteArtistId: favorite.id,
+      }),
+    );
+    expect(refresh.mock.calls[0]?.[0]).not.toHaveProperty(
+      "musicBrainzArtistId",
+    );
+    expect(await screen.findByText(/Refreshed Fixture Artist:/u)).toBeVisible();
+
+    const markSeen = screen.getByRole("button", { name: "Mark seen" });
+    const favoriteListCallsBeforeSeen = favoriteLists.mock.calls.length;
+    markSeen.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(seen).toHaveBeenCalledWith({ id: radarItem.id, seen: true }),
+    );
+    await waitFor(() =>
+      expect(favoriteLists.mock.calls.length).toBeGreaterThan(
+        favoriteListCallsBeforeSeen,
+      ),
+    );
+    const openButton = screen.getByRole("button", {
+      name: `Open ${radarItem.title} in MusicBrainz`,
+    });
+    openButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith({ id: radarItem.id }),
+    );
+    expect(open.mock.calls[0]?.[0]).not.toHaveProperty("url");
+    expect(list).toHaveBeenCalledWith({
+      view: "all",
+      primaryType: "all",
+      favoriteArtistId: null,
+      unseenOnly: false,
+      includeDismissed: false,
+      offset: 0,
+      limit: 20,
+    });
+  });
+
+  it("routes Refresh all and cancellation without renderer-supplied artist identities", async () => {
+    const mockApi = api(true);
+    const favorite = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+      unseenRadarCount: 0,
+    };
+    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
+      ok: true,
+      value: [favorite],
+    });
+    let finishSweep:
+      | ((result: Awaited<ReturnType<OutgrooveApi["refreshAllRadar"]>>) => void)
+      | undefined;
+    const refreshAll = vi.spyOn(mockApi, "refreshAllRadar").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSweep = resolve;
+        }),
+    );
+    const cancelAll = vi
+      .spyOn(mockApi, "cancelAllRadarRefresh")
+      .mockResolvedValue({
+        ok: true,
+        value: { cancelled: true },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    const start = await screen.findByRole("button", {
+      name: "Refresh all favorites",
+    });
+    start.focus();
+    await user.keyboard("{Enter}");
+    expect(refreshAll).toHaveBeenCalledWith();
+
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel refresh all",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(cancelAll).toHaveBeenCalledWith());
+    expect(refreshAll.mock.calls[0]).toEqual([]);
+    expect(cancelAll.mock.calls[0]).toEqual([]);
+
+    act(() => {
+      finishSweep?.({
+        ok: true,
+        value: {
+          totalFavorites: 1,
+          completed: 0,
+          successful: 0,
+          failed: 0,
+          cancelled: true,
+          results: [],
+          failures: [],
+        },
+      });
+    });
+    expect(
+      await screen.findByText(
+        "Stopped after 0 of 1 favorites: 0 successful and 0 failed.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("routes only bounded automatic Radar preferences and applies status events", async () => {
+    const mockApi = api(true);
+    const update = vi
+      .spyOn(mockApi, "updateRadarBackgroundRefreshSettings")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          enabled: true,
+          pauseOnBattery: true,
+          notificationsEnabled: false,
+          notificationCapability: {
+            available: true,
+            unavailableReason: null,
+          },
+          nextRefreshAt: "2026-07-29T09:00:00.000Z",
+          lastCheckedAt: null,
+          lastSuccessfulRefreshAt: null,
+          lastOutcome: null,
+          lastCompleted: 0,
+          lastSucceeded: 0,
+          lastFailed: 0,
+        },
+      });
+    let emit:
+      | Parameters<OutgrooveApi["onRadarBackgroundRefreshUpdated"]>[0]
+      | undefined;
+    vi.spyOn(mockApi, "onRadarBackgroundRefreshUpdated").mockImplementation(
+      (listener) => {
+        emit = listener;
+        return () => undefined;
+      },
+    );
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    await user.click(screen.getByText("Automatic refresh"));
+    const enabled = await screen.findByRole("checkbox", {
+      name: "Check favorite artists automatically",
+    });
+    enabled.focus();
+    await user.keyboard(" ");
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: false,
+      }),
+    );
+    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("artistIds");
+    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("interval");
+
+    act(() =>
+      emit?.({
+        enabled: true,
+        pauseOnBattery: true,
+        notificationsEnabled: true,
+        notificationCapability: {
+          available: true,
+          unavailableReason: null,
+        },
+        nextRefreshAt: "2026-07-29T09:30:00.000Z",
+        lastCheckedAt: "2026-07-28T09:30:00.000Z",
+        lastSuccessfulRefreshAt: null,
+        lastOutcome: "partial",
+        lastCompleted: 2,
+        lastSucceeded: 1,
+        lastFailed: 1,
+      }),
+    );
+    expect(
+      await screen.findByText("Partly successful — 1 successful, 1 failed"),
+    ).toBeVisible();
   });
 
   it("preserves Library search and view state across navigation", async () => {
@@ -5888,6 +6453,8 @@ describe("tag edit UI safety states", () => {
             tracks: 300,
             syncProfiles: 1,
             savedLibraryFilters: 2,
+            favoriteArtists: 3,
+            radarItems: 12,
           },
         },
       }),

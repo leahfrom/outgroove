@@ -48,6 +48,51 @@ describe("database backup and restore", () => {
       query: "restored",
       view: "albums",
     });
+    const favorite = donor.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Restored Artist",
+      sortName: "Restored Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    });
+    donor.commitRadarRefresh(
+      favorite.id,
+      [
+        {
+          releaseGroupId: "85f96c2e-3711-4e70-8bcc-1d37ca6d361d",
+          representativeReleaseId: "cdb15a6d-8271-4dce-8497-d572ea9e3b68",
+          title: "Restored Radar Release",
+          primaryType: "Album",
+          secondaryTypes: ["Live"],
+          firstReleaseDate: "2026-08",
+          status: "Official",
+          country: "DE",
+        },
+      ],
+      {
+        refreshedAt: "2026-07-28T08:00:00.000Z",
+        providerFetchedAt: "2026-07-28T07:59:00.000Z",
+        truncated: false,
+      },
+    );
+    const radarItem = donor.listRadarItems("all", "all", false, "2026-07-28")
+      .items[0];
+    if (!radarItem) throw new Error("Radar fixture was not persisted.");
+    donor.setRadarItemSeen(
+      radarItem.id,
+      true,
+      "2026-07-28T08:01:00.000Z",
+      "2026-07-28",
+    );
+    donor.setRadarItemDismissed(
+      radarItem.id,
+      true,
+      "2026-07-28T08:02:00.000Z",
+      "2026-07-28",
+    );
     const restoredAlbumIds = [
       createAlbum(donor, "restored-album"),
       createAlbum(donor, "second-album"),
@@ -64,13 +109,15 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 19,
+      schemaVersion: 23,
       summary: {
         libraryRoots: 1,
         albums: 2,
         tracks: 2,
         syncProfiles: 1,
         savedLibraryFilters: 1,
+        favoriteArtists: 1,
+        radarItems: 1,
       },
     });
     const result = await service.applyRestore(
@@ -81,6 +128,18 @@ describe("database backup and restore", () => {
     const restored = new CatalogDatabase(livePath);
     expect(restored.listLibraryRoots()[0]?.path).toBe("/restored/library");
     expect(restored.listSavedLibraryFilters()[0]?.name).toBe("Restored albums");
+    expect(restored.listFavoriteArtists()[0]?.name).toBe("Restored Artist");
+    const restoredRadar = restored.listRadarItems(
+      "all",
+      "all",
+      true,
+      "2026-07-28",
+    ).items[0];
+    expect(restoredRadar).toMatchObject({
+      title: "Restored Radar Release",
+      seenAt: "2026-07-28T08:01:00.000Z",
+      dismissedAt: "2026-07-28T08:02:00.000Z",
+    });
     expect(restored.getSyncProfile(profile.id)?.album_ids).toEqual(
       [...restoredAlbumIds].sort(),
     );

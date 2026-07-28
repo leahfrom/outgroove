@@ -127,6 +127,127 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("searchProvider");
   });
 
+  it("maps artist Favorites through fixed path-free Radar channels", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const search = { query: "Fixture Artist" };
+    await api.searchMusicBrainzArtists(search);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.searchMusicBrainzArtists,
+      search,
+    );
+    await api.cancelMusicBrainzArtistSearch();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelMusicBrainzArtistSearch,
+      {},
+    );
+    await api.listFavoriteArtists({ query: "" });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listFavoriteArtists,
+      { query: "" },
+    );
+    const artist = {
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+    };
+    await api.addFavoriteArtist(artist);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.addFavoriteArtist,
+      artist,
+    );
+    const favorite = { id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf" };
+    await api.removeFavoriteArtist(favorite);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.removeFavoriteArtist,
+      favorite,
+    );
+    await api.refreshRadar({ favoriteArtistId: favorite.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.refreshRadar, {
+      favoriteArtistId: favorite.id,
+    });
+    await api.cancelRadarRefresh({ favoriteArtistId: favorite.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelRadarRefresh,
+      { favoriteArtistId: favorite.id },
+    );
+    await api.refreshAllRadar();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.refreshAllRadar,
+      {},
+    );
+    await api.cancelAllRadarRefresh();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelAllRadarRefresh,
+      {},
+    );
+    await api.getRadarBackgroundRefreshSettings();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.getRadarBackgroundRefreshSettings,
+      {},
+    );
+    const background = {
+      enabled: true,
+      pauseOnBattery: true,
+      notificationsEnabled: false,
+    };
+    await api.updateRadarBackgroundRefreshSettings(background);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.updateRadarBackgroundRefreshSettings,
+      background,
+    );
+    const page = {
+      view: "all" as const,
+      primaryType: "all" as const,
+      favoriteArtistId: null,
+      unseenOnly: false,
+      includeDismissed: false,
+      offset: 0,
+      limit: 20,
+    };
+    await api.listRadarItems(page);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listRadarItems,
+      page,
+    );
+    const seen = { id: favorite.id, seen: true };
+    await api.setRadarItemSeen(seen);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.setRadarItemSeen,
+      seen,
+    );
+    const dismissed = { id: favorite.id, dismissed: true };
+    await api.setRadarItemDismissed(dismissed);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.setRadarItemDismissed,
+      dismissed,
+    );
+    await api.openRadarItemInMusicBrainz(favorite);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.openRadarItemInMusicBrainz,
+      favorite,
+    );
+    expect(api).not.toHaveProperty("fetch");
+    expect(api).not.toHaveProperty("provider");
+    expect(api).not.toHaveProperty("invoke");
+  });
+
+  it("subscribes notification clicks to one fixed payload-free Radar event", () => {
+    const listener = vi.fn();
+    const unsubscribe = api.onOpenRadarRequested(listener);
+    expect(electron.on).toHaveBeenCalledWith(
+      channels.openRadarRequested,
+      expect.any(Function),
+    );
+    const wrapped = electron.on.mock.calls.at(-1)?.[1] as
+      (() => void) | undefined;
+    wrapped?.();
+    expect(listener).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    expect(electron.removeListener).toHaveBeenCalledWith(
+      channels.openRadarRequested,
+      wrapped,
+    );
+  });
+
   it("maps optional folder artwork through fixed preview and apply channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: null });
     const preview = {

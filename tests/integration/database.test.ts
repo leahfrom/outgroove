@@ -200,12 +200,72 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the favorite-artist migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "020_favorite_artists.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 20);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
+  it("keeps the Radar migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "021_radar_items.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 21);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
+  it("keeps the Radar background-refresh migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "022_radar_background_refresh.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 22);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
+  it("keeps the Radar notification migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "023_radar_notifications.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 23);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(19);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(23);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
+    source.saveRadarBackgroundRefreshSettings({
+      enabled: true,
+      pauseOnBattery: false,
+      notificationsEnabled: true,
+      nextRefreshAt: "2026-07-29T09:00:00.000Z",
+      lastCheckedAt: "2026-07-28T09:00:00.000Z",
+      lastSuccessfulRefreshAt: "2026-07-28T09:00:00.000Z",
+      lastOutcome: "success",
+      lastCompleted: 2,
+      lastSucceeded: 2,
+      lastFailed: 0,
+    });
     await source.backup(join(directory, "backup.sqlite3"));
     source.close();
     const backup = new CatalogDatabase(join(directory, "backup.sqlite3"));
@@ -218,6 +278,12 @@ describe("database migration and backup", () => {
         .pluck()
         .get(),
     ).toBe(1);
+    expect(backup.getRadarBackgroundRefreshSettings()).toMatchObject({
+      enabled: true,
+      pauseOnBattery: false,
+      lastOutcome: "success",
+      lastSucceeded: 2,
+    });
     backup.close();
   });
 
@@ -239,7 +305,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(
       migrated.connection
@@ -258,6 +324,476 @@ describe("database migration and backup", () => {
         .get(),
     ).toBe("provider_cache");
     migrated.close();
+  });
+
+  it("migrates released schema v19 without losing provider cache and adds durable favorites", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v19-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 19))
+      legacy.exec(migration.sql);
+    legacy
+      .prepare(
+        `INSERT INTO provider_cache
+          (provider, request_key, response_schema_version, status, fetched_at,
+           expires_at, payload_json)
+         VALUES ('musicbrainz', 'artist-query', 1, 200, '2026-07-28',
+           '2026-07-29', '{"artists":[]}')`,
+      )
+      .run();
+    legacy.pragma("user_version = 19");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      23,
+    );
+    expect(
+      migrated.getProviderCache("musicbrainz", "artist-query")?.payloadJson,
+    ).toBe('{"artists":[]}');
+    const favorite = migrated.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Artist, Fixture",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    });
+    expect(migrated.listFavoriteArtists("fixture")).toEqual([favorite]);
+    migrated.close();
+  });
+
+  it("stores stable artist identities, rejects duplicates, searches literally, and removes only the favorite", () => {
+    const database = new CatalogDatabase(":memory:");
+    const candidate = {
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture % Artíst",
+      sortName: "Fixture % Artíst",
+      disambiguation: "German electronic duo",
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    };
+    const favorite = database.addFavoriteArtist(candidate);
+    expect(database.listFavoriteArtists("%")).toEqual([favorite]);
+    expect(database.listFavoriteArtists("ARTI\u0301ST")).toEqual([favorite]);
+    expect(database.listFavoriteArtists("_")).toEqual([]);
+    expect(() => database.addFavoriteArtist(candidate)).toThrow(
+      "already a favorite",
+    );
+    expect(database.removeFavoriteArtist(favorite.id)).toEqual({
+      id: favorite.id,
+    });
+    expect(database.listFavoriteArtists()).toEqual([]);
+    expect(() => database.removeFavoriteArtist(favorite.id)).toThrow(
+      "no longer exists",
+    );
+    database.close();
+  });
+
+  it("migrates released schema v20 without losing favorite identities", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v20-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 20))
+      legacy.exec(migration.sql);
+    legacy
+      .prepare(
+        `INSERT INTO favorite_artists
+          (id, musicbrainz_artist_id, name, sort_name, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        "Migrated Favorite",
+        "Migrated Favorite",
+        "2026-07-28T00:00:00.000Z",
+      );
+    legacy.pragma("user_version = 20");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      23,
+    );
+    expect(migrated.listFavoriteArtists()[0]).toMatchObject({
+      name: "Migrated Favorite",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+    });
+    expect(
+      migrated.connection
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name='radar_items'",
+        )
+        .pluck()
+        .get(),
+    ).toBe("radar_items");
+    migrated.close();
+  });
+
+  it("migrates schema v21 with Radar state intact and background checks disabled", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v21-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 21))
+      legacy.exec(migration.sql);
+    legacy
+      .prepare(
+        `INSERT INTO favorite_artists
+          (id, musicbrainz_artist_id, name, sort_name, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+        "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+        "Migrated Radar Favorite",
+        "Migrated Radar Favorite",
+        "2026-07-28T00:00:00.000Z",
+      );
+    legacy.pragma("user_version = 21");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      23,
+    );
+    expect(migrated.listFavoriteArtists()[0]?.name).toBe(
+      "Migrated Radar Favorite",
+    );
+    expect(migrated.getRadarBackgroundRefreshSettings()).toEqual({
+      enabled: false,
+      pauseOnBattery: true,
+      notificationsEnabled: false,
+      nextRefreshAt: null,
+      lastCheckedAt: null,
+      lastSuccessfulRefreshAt: null,
+      lastOutcome: null,
+      lastCompleted: 0,
+      lastSucceeded: 0,
+      lastFailed: 0,
+    });
+    migrated.close();
+  });
+
+  it("migrates schema v22 without enabling notifications or losing the saved schedule", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-v22-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 22))
+      legacy.exec(migration.sql);
+    legacy
+      .prepare(
+        `UPDATE radar_background_settings SET enabled=1,
+          pause_on_battery=0, next_refresh_at=? WHERE id=1`,
+      )
+      .run("2026-07-29T09:00:00.000Z");
+    legacy.pragma("user_version = 22");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      23,
+    );
+    expect(migrated.getRadarBackgroundRefreshSettings()).toMatchObject({
+      enabled: true,
+      pauseOnBattery: false,
+      notificationsEnabled: false,
+      nextRefreshAt: "2026-07-29T09:00:00.000Z",
+    });
+    migrated.close();
+  });
+
+  it("commits complete Radar snapshots, preserves state across changed dates, and never duplicates first-seen items", () => {
+    const database = new CatalogDatabase(":memory:");
+    const favorite = database.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      area: "Germany",
+      score: 100,
+    });
+    const future = {
+      releaseGroupId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      representativeReleaseId: "11111111-1111-4111-8111-111111111111",
+      title: "Future Fixture",
+      primaryType: "Album",
+      secondaryTypes: [] as readonly string[],
+      firstReleaseDate: "2027-03",
+      status: "Official",
+      country: "DE",
+    };
+    const recent = {
+      ...future,
+      releaseGroupId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      representativeReleaseId: "22222222-2222-4222-8222-222222222222",
+      title: "Recent Fixture",
+      primaryType: "Single",
+      firstReleaseDate: "2026-07-01",
+      country: "XW",
+    };
+    expect(
+      database.commitRadarRefresh(favorite.id, [future, recent], {
+        refreshedAt: "2026-07-28T09:00:00.000Z",
+        providerFetchedAt: "2026-07-28T08:00:00.000Z",
+        truncated: false,
+      }),
+    ).toEqual({ added: 2, updated: 0, unchanged: 0 });
+    expect(
+      database
+        .listRadarItems("all", "all", false, "2026-07-28")
+        .items.map((item) => [item.title, item.reasons]),
+    ).toEqual([
+      ["Future Fixture", ["upcoming"]],
+      ["Recent Fixture", ["recent"]],
+    ]);
+    expect(database.listFavoriteArtists()).toMatchObject([
+      { id: favorite.id, unseenRadarCount: 2 },
+    ]);
+    expect(
+      database.listRadarItems("recent", "all", false, "2026-07-28").summary,
+    ).toEqual({
+      current: 2,
+      unseen: 2,
+      upcoming: 1,
+      recent: 1,
+      newlyFound: 0,
+    });
+    expect(
+      database.listRadarItems("all", "all", false, "2026-07-28", 1, 1),
+    ).toMatchObject({
+      totalItems: 2,
+      offset: 1,
+      limit: 1,
+      items: [{ title: "Recent Fixture" }],
+    });
+    expect(
+      database
+        .listRadarItems("all", "album", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Future Fixture"]);
+    const otherFavorite = database.addFavoriteArtist({
+      artistId: "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+      name: "Other Fixture Artist",
+      sortName: "Other Fixture Artist",
+      disambiguation: null,
+      type: "Person",
+      country: "CA",
+      area: "Canada",
+      score: 90,
+    });
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        false,
+        "2026-07-28",
+        0,
+        50,
+        favorite.id,
+        true,
+      ),
+    ).toMatchObject({ totalItems: 2 });
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        false,
+        "2026-07-28",
+        0,
+        50,
+        otherFavorite.id,
+        false,
+      ),
+    ).toMatchObject({ totalItems: 0, items: [] });
+    expect(
+      database
+        .listRadarItems("all", "single", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Recent Fixture"]);
+    expect(
+      database.listRadarItems("all", "unknown", false, "2026-07-28"),
+    ).toMatchObject({ totalItems: 0, items: [] });
+    const futureItem = database
+      .listRadarItems("all", "album", false, "2026-07-28")
+      .items.at(0);
+    if (!futureItem) throw new Error("Album Radar fixture missing.");
+    expect(database.getCurrentRadarReleaseGroupId(futureItem.id)).toBe(
+      future.releaseGroupId,
+    );
+    database.connection
+      .prepare("UPDATE radar_items SET primary_type=? WHERE id=?")
+      .run("Future Provider Type", futureItem.id);
+    expect(
+      database
+        .listRadarItems("all", "unknown", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Future Fixture"]);
+    expect(
+      database.listRadarItems("all", "other", false, "2026-07-28"),
+    ).toMatchObject({ totalItems: 0, items: [] });
+    const recentItem = database
+      .listRadarItems("recent", "all", false, "2026-07-28")
+      .items.at(0);
+    if (!recentItem) throw new Error("Recent Radar fixture missing.");
+    database.setRadarItemSeen(
+      recentItem.id,
+      true,
+      "2026-07-28T10:00:00.000Z",
+      "2026-07-28",
+    );
+    expect(database.getFavoriteArtist(favorite.id)?.unseenRadarCount).toBe(1);
+    expect(
+      database.listRadarItems(
+        "all",
+        "all",
+        true,
+        "2026-07-28",
+        0,
+        50,
+        favorite.id,
+        true,
+      ),
+    ).toMatchObject({
+      totalItems: 1,
+      items: [{ title: "Future Fixture" }],
+    });
+    database.setRadarItemDismissed(
+      recentItem.id,
+      true,
+      "2026-07-28T10:01:00.000Z",
+      "2026-07-28",
+    );
+    expect(database.getFavoriteArtist(favorite.id)?.unseenRadarCount).toBe(1);
+    const discovered = {
+      ...future,
+      releaseGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      representativeReleaseId: "33333333-3333-4333-8333-333333333333",
+      title: "Historical Fixture",
+      firstReleaseDate: "2001",
+      country: "GB",
+    };
+    expect(
+      database.commitRadarRefresh(
+        favorite.id,
+        [{ ...recent, firstReleaseDate: "2026-07-02" }, discovered],
+        {
+          refreshedAt: "2026-07-29T09:00:00.000Z",
+          providerFetchedAt: "2026-07-29T08:00:00.000Z",
+          truncated: true,
+        },
+      ),
+    ).toEqual({ added: 1, updated: 1, unchanged: 0 });
+    expect(
+      database.listRadarItems("upcoming", "all", true, "2026-07-29").items,
+    ).toEqual([]);
+    expect(
+      database.listRadarItems("newly-found", "all", false, "2026-07-29").items,
+    ).toMatchObject([
+      {
+        title: "Historical Fixture",
+        reasons: ["newly-found"],
+      },
+    ]);
+    expect(
+      database.listRadarItems("all", "all", false, "2026-07-29"),
+    ).toMatchObject({
+      totalItems: 1,
+      summary: {
+        current: 1,
+        unseen: 1,
+        upcoming: 0,
+        recent: 0,
+        newlyFound: 1,
+      },
+    });
+    expect(
+      database.listRadarItems("all", "all", true, "2026-07-29").summary,
+    ).toEqual({
+      current: 2,
+      unseen: 1,
+      upcoming: 0,
+      recent: 1,
+      newlyFound: 1,
+    });
+    expect(
+      database
+        .listRadarItems("all", "all", true, "2026-07-29")
+        .items.find((item) => item.title === "Recent Fixture"),
+    ).toMatchObject({
+      firstReleaseDate: "2026-07-02",
+      seenAt: "2026-07-28T10:00:00.000Z",
+      dismissedAt: "2026-07-28T10:01:00.000Z",
+    });
+    expect(database.getFavoriteArtist(favorite.id)).toMatchObject({
+      lastSuccessfulRefreshAt: "2026-07-29T09:00:00.000Z",
+      lastProviderFetchAt: "2026-07-29T08:00:00.000Z",
+      lastRefreshTruncated: true,
+      unseenRadarCount: 1,
+    });
+    database.close();
+  });
+
+  it("rolls back an invalid partial Radar snapshot without hiding the last successful view", () => {
+    const database = new CatalogDatabase(":memory:");
+    const favorite = database.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      area: null,
+      score: 100,
+    });
+    const observation = {
+      releaseGroupId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      representativeReleaseId: "11111111-1111-4111-8111-111111111111",
+      title: "Fixture",
+      primaryType: "Album",
+      secondaryTypes: [] as readonly string[],
+      firstReleaseDate: "2027",
+      status: "Official",
+      country: "DE",
+    };
+    database.commitRadarRefresh(favorite.id, [observation], {
+      refreshedAt: "2026-07-28T09:00:00.000Z",
+      providerFetchedAt: "2026-07-28T08:00:00.000Z",
+      truncated: false,
+    });
+    expect(() =>
+      database.commitRadarRefresh(
+        favorite.id,
+        [
+          { ...observation, title: "Changed" },
+          { ...observation, title: "Duplicate" },
+        ],
+        {
+          refreshedAt: "2026-07-29T09:00:00.000Z",
+          providerFetchedAt: "2026-07-29T08:00:00.000Z",
+          truncated: false,
+        },
+      ),
+    ).toThrow();
+    expect(
+      database.listRadarItems("all", "all", false, "2026-07-29").items,
+    ).toMatchObject([{ title: "Fixture" }]);
+    expect(database.getFavoriteArtist(favorite.id)).toMatchObject({
+      lastSuccessfulRefreshAt: "2026-07-28T09:00:00.000Z",
+    });
+    database.close();
   });
 
   it("stores versioned provider responses without exposing them as catalog data", async () => {
@@ -353,7 +889,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.listEditHistory("album")).toMatchObject([
       {
@@ -390,7 +926,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.getSyncProfile("profile")).toMatchObject({
       id: "profile",
@@ -422,7 +958,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.getSyncProfile("profile")?.album_ids).toEqual(["album"]);
     const run = migrated.createSyncRun("plan", "profile", directory);
@@ -503,7 +1039,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -585,7 +1121,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -627,7 +1163,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -658,7 +1194,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -711,7 +1247,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(
       migrated.queryLibrary({
@@ -787,7 +1323,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -842,7 +1378,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",
@@ -896,7 +1432,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      19,
+      23,
     );
     const albums = migrated.listAlbums();
     expect(albums).toHaveLength(2);

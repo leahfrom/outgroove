@@ -1,0 +1,33 @@
+{
+  "created": "2026-07-28T08:00:00.000Z",
+  "count": 2,
+  "offset": 0,
+  "artists": [
+    {
+      "id": "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      "score": 100,
+      "name": "Fixture Artist",
+      "sort-name": "Fixture Artist",
+      "disambiguation": "German electronic duo",
+      "type": "Group",
+      "country": "DE",
+      "area": {
+        "id": "85752fda-13c4-31a3-bee5-0e5cb1f51dad",
+        "name": "Germany"
+      }
+    },
+    {
+      "id": "16ffe2a4-14e9-4d25-a4db-c3a6370afacc",
+      "score": 78,
+      "name": "Fixture Artist",
+      "sort-name": "Fixture Artist",
+      "disambiguation": "Canadian solo artist",
+      "type": "Person",
+      "country": "CA",
+      "area": {
+        "id": "71bbafaa-e825-3e15-8ca9-017dcad1748b",
+        "name": "Canada"
+      }
+    }
+  ]
+}

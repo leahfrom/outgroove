@@ -10,6 +10,10 @@ import {
   updateSavedLibraryFilterRequestSchema,
   type SavedLibraryFilterDefinition,
   type SavedLibraryFilterDto,
+  type FavoriteArtistDto,
+  type RadarBackgroundRefreshPreferencesDto,
+  type RadarItemDto,
+  type RadarPageDto,
   type LibraryFormatDto,
   type LibraryFolderDto,
   type LibraryGenreDto,
@@ -32,6 +36,13 @@ import type {
   NormalizedTags,
   ScannedAudioFile,
 } from "../../../shared/domain/catalog";
+import type { MusicBrainzArtistCandidate } from "../../../shared/domain/favorite-artist";
+import {
+  classifyRadarItem,
+  matchesRadarPrimaryType,
+  type RadarPrimaryTypeFilter,
+  type RadarReleaseGroupObservation,
+} from "../../../shared/domain/radar";
 import {
   albumGroupingKey,
   compareAlbumsByArtistReleaseDateTitle,
@@ -120,6 +131,83 @@ interface AudioFileRow {
   musicbrainz_release_artist_ids_type?: string | null;
   musicbrainz_release_group_id_type?: string | null;
   musicbrainz_work_id_type?: string | null;
+}
+
+interface FavoriteArtistRow {
+  id: string;
+  musicBrainzArtistId: string;
+  name: string;
+  sortName: string;
+  disambiguation: string | null;
+  type: string | null;
+  country: string | null;
+  createdAt: string;
+  lastSuccessfulRefreshAt: string | null;
+  lastProviderFetchAt: string | null;
+  lastRefreshTruncated: number;
+  unseenRadarCount: number;
+}
+
+interface RadarItemRow {
+  id: string;
+  favoriteArtistId: string;
+  favoriteArtistName: string;
+  musicBrainzReleaseGroupId: string;
+  representativeReleaseId: string;
+  title: string;
+  primaryType: string | null;
+  secondaryTypesJson: string;
+  firstReleaseDate: string | null;
+  status: string | null;
+  country: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  discoveredAfterBaseline: number;
+  seenAt: string | null;
+  dismissedAt: string | null;
+}
+
+function mapFavoriteArtist(row: FavoriteArtistRow): FavoriteArtistDto {
+  return {
+    ...row,
+    lastRefreshTruncated: row.lastRefreshTruncated === 1,
+  };
+}
+
+function parseSecondaryTypes(value: string): readonly string[] {
+  const parsed: unknown = JSON.parse(value);
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length > 100 ||
+    parsed.some((item) => typeof item !== "string" || item.length > 100)
+  )
+    throw new Error("Stored Radar release types are invalid.");
+  return parsed as string[];
+}
+
+function mapRadarItem(row: RadarItemRow, today: string): RadarItemDto {
+  return {
+    id: row.id,
+    favoriteArtistId: row.favoriteArtistId,
+    favoriteArtistName: row.favoriteArtistName,
+    musicBrainzReleaseGroupId: row.musicBrainzReleaseGroupId,
+    representativeReleaseId: row.representativeReleaseId,
+    title: row.title,
+    primaryType: row.primaryType,
+    secondaryTypes: parseSecondaryTypes(row.secondaryTypesJson),
+    firstReleaseDate: row.firstReleaseDate,
+    status: row.status,
+    country: row.country,
+    firstSeenAt: row.firstSeenAt,
+    lastSeenAt: row.lastSeenAt,
+    seenAt: row.seenAt,
+    dismissedAt: row.dismissedAt,
+    reasons: classifyRadarItem(
+      row.firstReleaseDate,
+      row.discoveredAfterBaseline === 1,
+      today,
+    ),
+  };
 }
 
 interface ScanJobRow {
@@ -312,6 +400,29 @@ export class CatalogDatabase {
       { deterministic: true },
       (value) =>
         typeof value === "string" && isValidPartialDate(value) ? 1 : 0,
+    );
+    this.connection.function(
+      "outgroove_radar_has_reason",
+      { deterministic: true },
+      (date, discovered, today, reason) =>
+        classifyRadarItem(
+          typeof date === "string" ? date : null,
+          Number(discovered) === 1,
+          String(today),
+        ).includes(String(reason) as "upcoming" | "recent" | "newly-found")
+          ? 1
+          : 0,
+    );
+    this.connection.function(
+      "outgroove_radar_has_primary_type",
+      { deterministic: true },
+      (primaryType, filter) =>
+        matchesRadarPrimaryType(
+          typeof primaryType === "string" ? primaryType : null,
+          String(filter) as RadarPrimaryTypeFilter,
+        )
+          ? 1
+          : 0,
     );
     this.connection.pragma("foreign_keys = ON");
     this.connection.pragma("journal_mode = WAL");
@@ -709,6 +820,486 @@ export class CatalogDatabase {
         createdAt: row.created_at,
       };
     });
+  }
+
+  listFavoriteArtists(query = ""): readonly FavoriteArtistDto[] {
+    const rows = this.connection
+      .prepare(
+        `SELECT id, musicbrainz_artist_id AS musicBrainzArtistId, name,
+          sort_name AS sortName, disambiguation, artist_type AS type, country,
+          created_at AS createdAt,
+          last_successful_refresh_at AS lastSuccessfulRefreshAt,
+          last_provider_fetch_at AS lastProviderFetchAt,
+          last_refresh_truncated AS lastRefreshTruncated,
+          (SELECT COUNT(*) FROM radar_items r
+           WHERE r.favorite_artist_id=favorite_artists.id
+             AND r.present=1 AND r.seen_at IS NULL
+             AND r.dismissed_at IS NULL) AS unseenRadarCount
+         FROM favorite_artists
+         ORDER BY sort_name COLLATE NOCASE, sort_name, name, id
+         LIMIT 500`,
+      )
+      .all() as FavoriteArtistRow[];
+    const favorites = rows.map(mapFavoriteArtist);
+    const normalizedQuery = query.normalize("NFC").toLocaleLowerCase();
+    if (!normalizedQuery) return favorites;
+    return favorites.filter((favorite) =>
+      [favorite.name, favorite.sortName, favorite.disambiguation ?? ""].some(
+        (value) =>
+          value.normalize("NFC").toLocaleLowerCase().includes(normalizedQuery),
+      ),
+    );
+  }
+
+  getRadarBackgroundRefreshSettings(): RadarBackgroundRefreshPreferencesDto {
+    const row = this.connection
+      .prepare(
+        `SELECT enabled, pause_on_battery AS pauseOnBattery,
+          notifications_enabled AS notificationsEnabled,
+          next_refresh_at AS nextRefreshAt, last_checked_at AS lastCheckedAt,
+          last_successful_refresh_at AS lastSuccessfulRefreshAt,
+          last_outcome AS lastOutcome,
+          last_completed_count AS lastCompleted,
+          last_succeeded_count AS lastSucceeded,
+          last_failed_count AS lastFailed
+         FROM radar_background_settings WHERE id=1`,
+      )
+      .get() as
+      | (Omit<
+          RadarBackgroundRefreshPreferencesDto,
+          "enabled" | "pauseOnBattery" | "notificationsEnabled"
+        > & {
+          enabled: number;
+          pauseOnBattery: number;
+          notificationsEnabled: number;
+        })
+      | undefined;
+    if (!row) throw new Error("Radar background settings are unavailable.");
+    return {
+      ...row,
+      enabled: row.enabled === 1,
+      pauseOnBattery: row.pauseOnBattery === 1,
+      notificationsEnabled: row.notificationsEnabled === 1,
+    };
+  }
+
+  saveRadarBackgroundRefreshSettings(
+    settings: RadarBackgroundRefreshPreferencesDto,
+  ): RadarBackgroundRefreshPreferencesDto {
+    const result = this.connection
+      .prepare(
+        `UPDATE radar_background_settings SET
+          enabled=?, pause_on_battery=?, notifications_enabled=?, next_refresh_at=?,
+          last_checked_at=?, last_successful_refresh_at=?, last_outcome=?,
+          last_completed_count=?, last_succeeded_count=?, last_failed_count=?
+         WHERE id=1`,
+      )
+      .run(
+        settings.enabled ? 1 : 0,
+        settings.pauseOnBattery ? 1 : 0,
+        settings.notificationsEnabled ? 1 : 0,
+        settings.nextRefreshAt,
+        settings.lastCheckedAt,
+        settings.lastSuccessfulRefreshAt,
+        settings.lastOutcome,
+        settings.lastCompleted,
+        settings.lastSucceeded,
+        settings.lastFailed,
+      );
+    if (result.changes !== 1)
+      throw new Error("Radar background settings are unavailable.");
+    return this.getRadarBackgroundRefreshSettings();
+  }
+
+  addFavoriteArtist(candidate: MusicBrainzArtistCandidate): FavoriteArtistDto {
+    if (
+      this.connection
+        .prepare("SELECT 1 FROM favorite_artists WHERE musicbrainz_artist_id=?")
+        .get(candidate.artistId)
+    )
+      throw new Error(`“${candidate.name}” is already a favorite artist.`);
+    const count = this.connection
+      .prepare("SELECT COUNT(*) FROM favorite_artists")
+      .pluck()
+      .get() as number;
+    if (count >= 500)
+      throw new Error("Outgroove supports up to 500 favorite artists.");
+    const favorite: FavoriteArtistDto = {
+      id: randomUUID(),
+      musicBrainzArtistId: candidate.artistId,
+      name: candidate.name,
+      sortName: candidate.sortName,
+      disambiguation: candidate.disambiguation,
+      type: candidate.type,
+      country: candidate.country,
+      createdAt: new Date().toISOString(),
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+      unseenRadarCount: 0,
+    };
+    this.connection
+      .prepare(
+        `INSERT INTO favorite_artists
+          (id, musicbrainz_artist_id, name, sort_name, disambiguation,
+           artist_type, country, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        favorite.id,
+        favorite.musicBrainzArtistId,
+        favorite.name,
+        favorite.sortName,
+        favorite.disambiguation,
+        favorite.type,
+        favorite.country,
+        favorite.createdAt,
+      );
+    return favorite;
+  }
+
+  getFavoriteArtist(id: string): FavoriteArtistDto | undefined {
+    const row = this.connection
+      .prepare(
+        `SELECT id, musicbrainz_artist_id AS musicBrainzArtistId, name,
+          sort_name AS sortName, disambiguation, artist_type AS type, country,
+          created_at AS createdAt,
+          last_successful_refresh_at AS lastSuccessfulRefreshAt,
+          last_provider_fetch_at AS lastProviderFetchAt,
+          last_refresh_truncated AS lastRefreshTruncated,
+          (SELECT COUNT(*) FROM radar_items r
+           WHERE r.favorite_artist_id=favorite_artists.id
+             AND r.present=1 AND r.seen_at IS NULL
+             AND r.dismissed_at IS NULL) AS unseenRadarCount
+         FROM favorite_artists WHERE id=?`,
+      )
+      .get(id) as FavoriteArtistRow | undefined;
+    return row ? mapFavoriteArtist(row) : undefined;
+  }
+
+  commitRadarRefresh(
+    favoriteArtistId: string,
+    observations: readonly RadarReleaseGroupObservation[],
+    refresh: {
+      readonly refreshedAt: string;
+      readonly providerFetchedAt: string;
+      readonly truncated: boolean;
+    },
+  ): {
+    readonly added: number;
+    readonly updated: number;
+    readonly unchanged: number;
+  } {
+    if (observations.length > 500)
+      throw new Error("Radar refreshes are limited to 500 releases.");
+    if (
+      new Set(observations.map((observation) => observation.releaseGroupId))
+        .size !== observations.length
+    )
+      throw new Error("A Radar snapshot contains duplicate release groups.");
+    if (
+      observations.some(
+        (observation) =>
+          observation.firstReleaseDate !== null &&
+          !isValidPartialDate(observation.firstReleaseDate),
+      )
+    )
+      throw new Error("A Radar snapshot contains an invalid partial date.");
+    const commit = this.connection.transaction(() => {
+      const favorite = this.getFavoriteArtist(favoriteArtistId);
+      if (!favorite) throw new Error("The favorite artist no longer exists.");
+      const baselineExists = favorite.lastSuccessfulRefreshAt !== null;
+      const existing = this.connection
+        .prepare(
+          `SELECT id,
+            musicbrainz_release_group_id AS releaseGroupId,
+            representative_release_id AS representativeReleaseId,
+            title, primary_type AS primaryType,
+            secondary_types_json AS secondaryTypesJson,
+            first_release_date AS firstReleaseDate,
+            release_status AS status, country, present
+           FROM radar_items WHERE favorite_artist_id=?`,
+        )
+        .all(favoriteArtistId) as {
+        id: string;
+        releaseGroupId: string;
+        representativeReleaseId: string;
+        title: string;
+        primaryType: string | null;
+        secondaryTypesJson: string;
+        firstReleaseDate: string | null;
+        status: string | null;
+        country: string | null;
+        present: number;
+      }[];
+      const byReleaseGroup = new Map(
+        existing.map((item) => [item.releaseGroupId, item]),
+      );
+      this.connection
+        .prepare("UPDATE radar_items SET present=0 WHERE favorite_artist_id=?")
+        .run(favoriteArtistId);
+      let added = 0;
+      let updated = 0;
+      let unchanged = 0;
+      const insert = this.connection.prepare(
+        `INSERT INTO radar_items
+          (id, favorite_artist_id, musicbrainz_release_group_id,
+           representative_release_id, title, primary_type,
+           secondary_types_json, first_release_date, release_status, country,
+           first_seen_at, last_seen_at, discovered_after_baseline, present)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      );
+      const update = this.connection.prepare(
+        `UPDATE radar_items SET representative_release_id=?, title=?,
+          primary_type=?, secondary_types_json=?, first_release_date=?,
+          release_status=?, country=?, last_seen_at=?, present=1
+         WHERE id=?`,
+      );
+      for (const observation of observations) {
+        const secondaryTypesJson = JSON.stringify(
+          [...new Set(observation.secondaryTypes)].sort(),
+        );
+        const previous = byReleaseGroup.get(observation.releaseGroupId);
+        if (!previous) {
+          insert.run(
+            randomUUID(),
+            favoriteArtistId,
+            observation.releaseGroupId,
+            observation.representativeReleaseId,
+            observation.title,
+            observation.primaryType,
+            secondaryTypesJson,
+            observation.firstReleaseDate,
+            observation.status,
+            observation.country,
+            refresh.refreshedAt,
+            refresh.refreshedAt,
+            baselineExists ? 1 : 0,
+          );
+          added += 1;
+          continue;
+        }
+        const changed =
+          previous.present !== 1 ||
+          previous.representativeReleaseId !==
+            observation.representativeReleaseId ||
+          previous.title !== observation.title ||
+          previous.primaryType !== observation.primaryType ||
+          previous.secondaryTypesJson !== secondaryTypesJson ||
+          previous.firstReleaseDate !== observation.firstReleaseDate ||
+          previous.status !== observation.status ||
+          previous.country !== observation.country;
+        update.run(
+          observation.representativeReleaseId,
+          observation.title,
+          observation.primaryType,
+          secondaryTypesJson,
+          observation.firstReleaseDate,
+          observation.status,
+          observation.country,
+          refresh.refreshedAt,
+          previous.id,
+        );
+        if (changed) updated += 1;
+        else unchanged += 1;
+      }
+      this.connection
+        .prepare(
+          `UPDATE favorite_artists SET last_successful_refresh_at=?,
+            last_provider_fetch_at=?, last_refresh_truncated=?
+           WHERE id=?`,
+        )
+        .run(
+          refresh.refreshedAt,
+          refresh.providerFetchedAt,
+          refresh.truncated ? 1 : 0,
+          favoriteArtistId,
+        );
+      return { added, updated, unchanged };
+    });
+    return commit();
+  }
+
+  listRadarItems(
+    view: "all" | "upcoming" | "recent" | "newly-found",
+    primaryType: RadarPrimaryTypeFilter,
+    includeDismissed: boolean,
+    today: string,
+    offset = 0,
+    limit = 50,
+    favoriteArtistId: string | null = null,
+    unseenOnly = false,
+  ): RadarPageDto {
+    const where = `r.present=1
+      AND outgroove_radar_has_primary_type(r.primary_type, ?)=1
+      AND (? IS NULL OR r.favorite_artist_id=?)
+      AND (?=0 OR r.seen_at IS NULL)
+      AND (?=1 OR r.dismissed_at IS NULL)
+      AND (?='all' OR outgroove_radar_has_reason(
+        r.first_release_date, r.discovered_after_baseline, ?, ?
+      )=1)`;
+    const totalItems = this.connection
+      .prepare(
+        `SELECT COUNT(*) FROM radar_items r
+         WHERE ${where}`,
+      )
+      .pluck()
+      .get(
+        primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        unseenOnly ? 1 : 0,
+        includeDismissed ? 1 : 0,
+        view,
+        today,
+        view,
+      ) as number;
+    const summary = this.connection
+      .prepare(
+        `SELECT COUNT(*) AS current,
+          COALESCE(SUM(CASE WHEN r.seen_at IS NULL THEN 1 ELSE 0 END), 0)
+            AS unseen,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'upcoming'
+          )), 0) AS upcoming,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'recent'
+          )), 0) AS recent,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'newly-found'
+          )), 0) AS newlyFound
+         FROM radar_items r
+         WHERE r.present=1
+           AND outgroove_radar_has_primary_type(r.primary_type, ?)=1
+           AND (? IS NULL OR r.favorite_artist_id=?)
+           AND (?=1 OR r.dismissed_at IS NULL)`,
+      )
+      .get(
+        today,
+        today,
+        today,
+        primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        includeDismissed ? 1 : 0,
+      ) as RadarPageDto["summary"];
+    const rows = this.connection
+      .prepare(
+        `SELECT r.id, r.favorite_artist_id AS favoriteArtistId,
+          f.name AS favoriteArtistName,
+          r.musicbrainz_release_group_id AS musicBrainzReleaseGroupId,
+          r.representative_release_id AS representativeReleaseId,
+          r.title, r.primary_type AS primaryType,
+          r.secondary_types_json AS secondaryTypesJson,
+          r.first_release_date AS firstReleaseDate,
+          r.release_status AS status, r.country,
+          r.first_seen_at AS firstSeenAt, r.last_seen_at AS lastSeenAt,
+          r.discovered_after_baseline AS discoveredAfterBaseline,
+          r.seen_at AS seenAt, r.dismissed_at AS dismissedAt
+         FROM radar_items r
+         JOIN favorite_artists f ON f.id=r.favorite_artist_id
+         WHERE ${where}
+         ORDER BY
+           r.first_release_date IS NULL,
+           CASE WHEN ?='upcoming' THEN r.first_release_date END ASC,
+           CASE WHEN ?<>'upcoming' THEN r.first_release_date END DESC,
+           r.title COLLATE NOCASE, r.title, r.id
+         LIMIT ? OFFSET ?`,
+      )
+      .all(
+        primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        unseenOnly ? 1 : 0,
+        includeDismissed ? 1 : 0,
+        view,
+        today,
+        view,
+        view,
+        view,
+        limit,
+        offset,
+      ) as RadarItemRow[];
+    return {
+      items: rows.map((row) => mapRadarItem(row, today)),
+      totalItems,
+      offset,
+      limit,
+      summary,
+    };
+  }
+
+  getCurrentRadarReleaseGroupId(id: string): string | undefined {
+    return this.connection
+      .prepare(
+        `SELECT musicbrainz_release_group_id
+         FROM radar_items WHERE id=? AND present=1`,
+      )
+      .pluck()
+      .get(id) as string | undefined;
+  }
+
+  setRadarItemSeen(
+    id: string,
+    seen: boolean,
+    changedAt: string,
+    today: string,
+  ): RadarItemDto {
+    const result = this.connection
+      .prepare("UPDATE radar_items SET seen_at=? WHERE id=? AND present=1")
+      .run(seen ? changedAt : null, id);
+    if (result.changes !== 1)
+      throw new Error("The Radar item no longer exists.");
+    const item = this.getRadarItem(id, today);
+    if (!item) throw new Error("The Radar item no longer exists.");
+    return item;
+  }
+
+  setRadarItemDismissed(
+    id: string,
+    dismissed: boolean,
+    changedAt: string,
+    today: string,
+  ): RadarItemDto {
+    const result = this.connection
+      .prepare("UPDATE radar_items SET dismissed_at=? WHERE id=? AND present=1")
+      .run(dismissed ? changedAt : null, id);
+    if (result.changes !== 1)
+      throw new Error("The Radar item no longer exists.");
+    const item = this.getRadarItem(id, today);
+    if (!item) throw new Error("The Radar item no longer exists.");
+    return item;
+  }
+
+  private getRadarItem(id: string, today: string): RadarItemDto | undefined {
+    const row = this.connection
+      .prepare(
+        `SELECT r.id, r.favorite_artist_id AS favoriteArtistId,
+          f.name AS favoriteArtistName,
+          r.musicbrainz_release_group_id AS musicBrainzReleaseGroupId,
+          r.representative_release_id AS representativeReleaseId,
+          r.title, r.primary_type AS primaryType,
+          r.secondary_types_json AS secondaryTypesJson,
+          r.first_release_date AS firstReleaseDate,
+          r.release_status AS status, r.country,
+          r.first_seen_at AS firstSeenAt, r.last_seen_at AS lastSeenAt,
+          r.discovered_after_baseline AS discoveredAfterBaseline,
+          r.seen_at AS seenAt, r.dismissed_at AS dismissedAt
+         FROM radar_items r
+         JOIN favorite_artists f ON f.id=r.favorite_artist_id
+         WHERE r.id=? AND r.present=1`,
+      )
+      .get(id) as RadarItemRow | undefined;
+    return row ? mapRadarItem(row, today) : undefined;
+  }
+
+  removeFavoriteArtist(id: string): { readonly id: string } {
+    const result = this.connection
+      .prepare("DELETE FROM favorite_artists WHERE id=?")
+      .run(id);
+    if (result.changes !== 1)
+      throw new Error("The favorite artist no longer exists.");
+    return { id };
   }
 
   createSavedLibraryFilter(

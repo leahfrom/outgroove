@@ -238,7 +238,7 @@ export function SettingsView({
               <h2 id="database-safety">Database safety</h2>
               <p>
                 Backups contain the local catalog, edit history, saved filters,
-                and DAP profiles—never audio or DAP files.
+                favorite artists, and DAP profiles—never audio or DAP files.
               </p>
             </div>
           </div>
@@ -278,6 +278,14 @@ export function SettingsView({
                 <div>
                   <dt>Saved Library filters</dt>
                   <dd>{restorePreview.summary.savedLibraryFilters}</dd>
+                </div>
+                <div>
+                  <dt>Favorite artists</dt>
+                  <dd>{restorePreview.summary.favoriteArtists}</dd>
+                </div>
+                <div>
+                  <dt>Radar items</dt>
+                  <dd>{restorePreview.summary.radarItems}</dd>
                 </div>
                 <div>
                   <dt>Schema</dt>

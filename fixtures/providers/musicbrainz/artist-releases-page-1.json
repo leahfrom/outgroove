@@ -1,0 +1,48 @@
+{
+  "release-count": 4,
+  "release-offset": 0,
+  "releases": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "title": "Future Fixture",
+      "status": "Official",
+      "date": "2027-03",
+      "country": "DE",
+      "release-group": {
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "title": "Future Fixture",
+        "primary-type": "Album",
+        "secondary-types": [],
+        "first-release-date": "2027-03"
+      }
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "title": "Recent Fixture",
+      "status": "Official",
+      "date": "2026-07-01",
+      "country": "XW",
+      "release-group": {
+        "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "title": "Recent Fixture",
+        "primary-type": "Single",
+        "secondary-types": [],
+        "first-release-date": "2026-07-01"
+      }
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "title": "Recent Fixture",
+      "status": "Official",
+      "date": "2026-07-02",
+      "country": "CA",
+      "release-group": {
+        "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "title": "Recent Fixture",
+        "primary-type": "Single",
+        "secondary-types": [],
+        "first-release-date": "2026-07-01"
+      }
+    }
+  ]
+}

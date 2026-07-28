@@ -1,6 +1,14 @@
 import { join } from "node:path";
 
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  net,
+  powerMonitor,
+  session,
+  shell,
+} from "electron";
 
 import { CatalogDatabase } from "./adapters/database/catalog-database";
 import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
@@ -11,6 +19,7 @@ import { MusicBrainzClient } from "./adapters/providers/musicbrainz-client";
 import { CoverArtArchiveClient } from "./adapters/providers/cover-art-archive-client";
 import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
+import { createElectronRadarNotifier } from "./adapters/notifications/electron-radar-notifier";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
 import { EditAlbumTitle } from "./application/edit-album-title";
@@ -22,11 +31,16 @@ import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
+import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
+import { RefreshRadar } from "./application/refresh-radar";
+import { RadarBackgroundRefresh } from "./application/radar-background-refresh";
+import { OpenRadarItem } from "./application/open-radar-item";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
 import { ScanJobCoordinator } from "./jobs/scan-job-coordinator";
 import { contentSecurityPolicy } from "./windows/security-policy";
+import { channels } from "../shared/contracts/channels";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -36,10 +50,13 @@ const smokeTest =
   process.env.OUTGROOVE_SMOKE_TEST === "1";
 if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
   app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
+if (process.platform === "win32")
+  app.setAppUserModelId("com.squirrel.Outgroove.Outgroove");
 
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
 let qualityQuery: WorkerLibraryQualityQuery | undefined;
+let radarBackground: RadarBackgroundRefresh | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
@@ -84,6 +101,32 @@ async function createWindow(): Promise<void> {
     scanCatalog,
   );
   const backup = new DatabaseBackupService(database, databasePath);
+  const radar = new RefreshRadar(database, musicBrainz);
+  radarBackground = new RadarBackgroundRefresh(
+    database,
+    radar,
+    {
+      isOnline: () => net.isOnline(),
+      isOnBatteryPower: () => powerMonitor.isOnBatteryPower(),
+    },
+    (completed, total, detail) => {
+      if (!window.isDestroyed())
+        window.webContents.send(channels.jobProgress, {
+          job: "radar",
+          completed,
+          total,
+          detail,
+        });
+    },
+    (settings) => {
+      if (!window.isDestroyed())
+        window.webContents.send(
+          channels.radarBackgroundRefreshUpdated,
+          settings,
+        );
+    },
+    createElectronRadarNotifier(window),
+  );
   registerIpc(ipcMain, {
     database,
     qualityQuery,
@@ -98,6 +141,12 @@ async function createWindow(): Promise<void> {
       artworkEncoder,
       artworkEditor,
     ),
+    favoriteArtists: new ManageFavoriteArtists(database, musicBrainz),
+    radar,
+    radarBackground,
+    radarItemOpener: new OpenRadarItem(database, {
+      open: (url) => shell.openExternal(url),
+    }),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor,
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
@@ -121,6 +170,10 @@ async function createWindow(): Promise<void> {
     await window.loadFile(
       join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
+  radarBackground.start();
+  window.once("closed", () => {
+    radarBackground?.stop();
+  });
   if (smokeTest) {
     const fixtureAlbum = join(app.getAppPath(), "fixtures", "audio", "album");
     const smokeRoot = database.addLibraryRoot(
@@ -167,6 +220,36 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged local artwork extraction and thumbnail encoding failed.",
       );
+    const smokeFavorite = database.addFavoriteArtist({
+      artistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Packaged Fixture Artist",
+      sortName: "Packaged Fixture Artist",
+      disambiguation: "isolated packaged smoke identity",
+      type: "Group",
+      country: "DE",
+      area: "Berlin",
+      score: 100,
+    });
+    database.commitRadarRefresh(
+      smokeFavorite.id,
+      [
+        {
+          releaseGroupId: "85f96c2e-3711-4e70-8bcc-1d37ca6d361d",
+          representativeReleaseId: "cdb15a6d-8271-4dce-8497-d572ea9e3b68",
+          title: "Packaged Radar Fixture",
+          primaryType: "Album",
+          secondaryTypes: [],
+          firstReleaseDate: "2026",
+          status: "Official",
+          country: "DE",
+        },
+      ],
+      {
+        refreshedAt: new Date().toISOString(),
+        providerFetchedAt: new Date().toISOString(),
+        truncated: false,
+      },
+    );
     const backupPath = join(app.getPath("userData"), "smoke-backup.sqlite3");
     await backup.exportTo(backupPath);
     const verifiedBackup = new CatalogDatabase(backupPath);
@@ -175,6 +258,24 @@ async function createWindow(): Promise<void> {
       "ok"
     )
       throw new Error("Packaged database backup failed verification.");
+    if (
+      verifiedBackup.listFavoriteArtists()[0]?.musicBrainzArtistId !==
+      "7c08e5aa-3d6a-480f-8763-156120bc9bd9"
+    )
+      throw new Error(
+        "Packaged favorite-artist persistence was not retained in the verified backup.",
+      );
+    if (
+      verifiedBackup.listRadarItems("all", "all", false, "2026-07-28").items[0]
+        ?.title !== "Packaged Radar Fixture"
+    )
+      throw new Error(
+        "Packaged Radar snapshot persistence was not retained in the verified backup.",
+      );
+    if (verifiedBackup.getRadarBackgroundRefreshSettings().enabled)
+      throw new Error(
+        "Packaged Radar background refresh was not safely disabled by default.",
+      );
     verifiedBackup.close();
     console.log("OUTGROOVE_SMOKE_OK");
     await scanCatalog.close();
@@ -210,6 +311,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  radarBackground?.stop();
   void scanCatalog?.close();
   void qualityQuery?.close();
   database?.close();

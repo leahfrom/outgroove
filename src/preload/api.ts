@@ -35,6 +35,34 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.cancelMusicBrainzAlbumCandidates, request),
   cancelCoverArtArchiveArtwork: (request) =>
     ipcRenderer.invoke(channels.cancelCoverArtArchiveArtwork, request),
+  searchMusicBrainzArtists: (request) =>
+    ipcRenderer.invoke(channels.searchMusicBrainzArtists, request),
+  cancelMusicBrainzArtistSearch: () =>
+    ipcRenderer.invoke(channels.cancelMusicBrainzArtistSearch, {}),
+  listFavoriteArtists: (request) =>
+    ipcRenderer.invoke(channels.listFavoriteArtists, request),
+  addFavoriteArtist: (request) =>
+    ipcRenderer.invoke(channels.addFavoriteArtist, request),
+  removeFavoriteArtist: (request) =>
+    ipcRenderer.invoke(channels.removeFavoriteArtist, request),
+  refreshRadar: (request) => ipcRenderer.invoke(channels.refreshRadar, request),
+  cancelRadarRefresh: (request) =>
+    ipcRenderer.invoke(channels.cancelRadarRefresh, request),
+  refreshAllRadar: () => ipcRenderer.invoke(channels.refreshAllRadar, {}),
+  cancelAllRadarRefresh: () =>
+    ipcRenderer.invoke(channels.cancelAllRadarRefresh, {}),
+  getRadarBackgroundRefreshSettings: () =>
+    ipcRenderer.invoke(channels.getRadarBackgroundRefreshSettings, {}),
+  updateRadarBackgroundRefreshSettings: (request) =>
+    ipcRenderer.invoke(channels.updateRadarBackgroundRefreshSettings, request),
+  listRadarItems: (request) =>
+    ipcRenderer.invoke(channels.listRadarItems, request),
+  setRadarItemSeen: (request) =>
+    ipcRenderer.invoke(channels.setRadarItemSeen, request),
+  setRadarItemDismissed: (request) =>
+    ipcRenderer.invoke(channels.setRadarItemDismissed, request),
+  openRadarItemInMusicBrainz: (request) =>
+    ipcRenderer.invoke(channels.openRadarItemInMusicBrainz, request),
   listSavedLibraryFilters: () =>
     ipcRenderer.invoke(channels.listSavedLibraryFilters, {}),
   createSavedLibraryFilter: (request) =>
@@ -118,7 +146,7 @@ export const api: OutgrooveApi = {
     const wrapped = (
       _event: Electron.IpcRendererEvent,
       value: {
-        job: "scan" | "tag-edit" | "sync" | "library-quality";
+        job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar";
         completed: number;
         total: number;
         detail: string;
@@ -134,5 +162,23 @@ export const api: OutgrooveApi = {
     ): void => listener(value);
     ipcRenderer.on(channels.scanJobUpdated, wrapped);
     return () => ipcRenderer.removeListener(channels.scanJobUpdated, wrapped);
+  },
+  onRadarBackgroundRefreshUpdated: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      value: Parameters<typeof listener>[0],
+    ): void => listener(value);
+    ipcRenderer.on(channels.radarBackgroundRefreshUpdated, wrapped);
+    return () =>
+      ipcRenderer.removeListener(
+        channels.radarBackgroundRefreshUpdated,
+        wrapped,
+      );
+  },
+  onOpenRadarRequested: (listener) => {
+    const wrapped = (): void => listener();
+    ipcRenderer.on(channels.openRadarRequested, wrapped);
+    return () =>
+      ipcRenderer.removeListener(channels.openRadarRequested, wrapped);
   },
 };
