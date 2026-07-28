@@ -39,6 +39,7 @@ const favorite: FavoriteArtistDto = {
   lastSuccessfulRefreshAt: null,
   lastProviderFetchAt: null,
   lastRefreshTruncated: false,
+  unseenRadarCount: 7,
 };
 
 function renderReleases(
@@ -57,6 +58,13 @@ function renderReleases(
       offset={0}
       primaryType="all"
       refreshResult={undefined}
+      summary={{
+        current: 21,
+        unseen: 7,
+        upcoming: 3,
+        recent: 4,
+        newlyFound: 2,
+      }}
       totalItems={21}
       unseenOnly={false}
       view="all"
@@ -82,6 +90,11 @@ describe("Radar releases", () => {
     const user = userEvent.setup();
 
     const artist = screen.getByRole("combobox", { name: "Favorite artist" });
+    expect(
+      within(artist).getByRole("option", {
+        name: "Fixture Artist — 7 unseen",
+      }),
+    ).toBeVisible();
     artist.focus();
     await user.selectOptions(artist, favorite.id);
     expect(onFavoriteArtistChange).toHaveBeenCalledWith(favorite.id);
@@ -90,6 +103,10 @@ describe("Radar releases", () => {
     unseen.focus();
     await user.keyboard(" ");
     expect(onUnseenOnlyChange).toHaveBeenCalledWith(true);
+    const summary = screen.getByLabelText("Radar review summary");
+    expect(summary).toHaveTextContent(
+      "Current21Unseen7Upcoming3Recent4Newly found2",
+    );
   });
 
   it("labels provider facts and first-seen state separately and routes keyboard actions", async () => {

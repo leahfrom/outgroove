@@ -1,6 +1,7 @@
 import type {
   FavoriteArtistDto,
   RadarItemDto,
+  RadarReviewSummaryDto,
   RadarRefreshResultDto,
   radarViews,
 } from "../../shared/contracts/api";
@@ -53,6 +54,7 @@ export function RadarReleases({
   offset,
   primaryType,
   refreshResult,
+  summary,
   totalItems,
   unseenOnly,
   view,
@@ -77,6 +79,7 @@ export function RadarReleases({
   readonly offset: number;
   readonly primaryType: RadarPrimaryTypeFilter;
   readonly refreshResult: RadarRefreshResultDto | undefined;
+  readonly summary: RadarReviewSummaryDto;
   readonly totalItems: number;
   readonly unseenOnly: boolean;
   readonly view: RadarViewName;
@@ -115,7 +118,7 @@ export function RadarReleases({
               <option value="">All favorite artists</option>
               {favorites.map((favorite) => (
                 <option key={favorite.id} value={favorite.id}>
-                  {favorite.name}
+                  {favorite.name} — {favorite.unseenRadarCount} unseen
                 </option>
               ))}
             </select>
@@ -157,6 +160,29 @@ export function RadarReleases({
           </label>
         </div>
       </div>
+
+      <dl aria-label="Radar review summary" className="radar-review-summary">
+        <div>
+          <dt>Current</dt>
+          <dd>{summary.current}</dd>
+        </div>
+        <div>
+          <dt>Unseen</dt>
+          <dd>{summary.unseen}</dd>
+        </div>
+        <div>
+          <dt>Upcoming</dt>
+          <dd>{summary.upcoming}</dd>
+        </div>
+        <div>
+          <dt>Recent</dt>
+          <dd>{summary.recent}</dd>
+        </div>
+        <div>
+          <dt>Newly found</dt>
+          <dd>{summary.newlyFound}</dd>
+        </div>
+      </dl>
 
       <div aria-label="Radar release views" className="radar-view-tabs">
         {Object.entries(viewLabels).map(([value, label]) => (

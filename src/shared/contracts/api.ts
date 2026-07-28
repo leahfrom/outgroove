@@ -843,6 +843,7 @@ export interface FavoriteArtistDto {
   readonly lastSuccessfulRefreshAt: string | null;
   readonly lastProviderFetchAt: string | null;
   readonly lastRefreshTruncated: boolean;
+  readonly unseenRadarCount: number;
 }
 
 export interface RadarItemDto {
@@ -919,6 +920,15 @@ export interface RadarPageDto {
   readonly totalItems: number;
   readonly offset: number;
   readonly limit: number;
+  readonly summary: RadarReviewSummaryDto;
+}
+
+export interface RadarReviewSummaryDto {
+  readonly current: number;
+  readonly unseen: number;
+  readonly upcoming: number;
+  readonly recent: number;
+  readonly newlyFound: number;
 }
 
 export interface MusicBrainzReleaseTracklistDto {

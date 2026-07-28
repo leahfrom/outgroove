@@ -28,6 +28,7 @@ function favorite(): FavoriteArtistDto {
     lastSuccessfulRefreshAt: null,
     lastProviderFetchAt: null,
     lastRefreshTruncated: false,
+    unseenRadarCount: 0,
   };
 }
 

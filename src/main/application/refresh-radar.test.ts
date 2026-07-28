@@ -16,6 +16,7 @@ const favorite: FavoriteArtistDto = {
   lastSuccessfulRefreshAt: null,
   lastProviderFetchAt: null,
   lastRefreshTruncated: false,
+  unseenRadarCount: 0,
 };
 
 const observation: RadarReleaseGroupObservation = {
@@ -51,6 +52,13 @@ function store() {
       totalItems: 0,
       offset: 0,
       limit: 50,
+      summary: {
+        current: 0,
+        unseen: 0,
+        upcoming: 0,
+        recent: 0,
+        newlyFound: 0,
+      },
     })),
     setRadarItemSeen: vi.fn(),
     setRadarItemDismissed: vi.fn(),
@@ -66,7 +74,17 @@ describe("manual Radar refresh", () => {
       { browseArtistReleases },
       () => new Date("2026-07-28T09:00:00.000Z"),
     );
-    service.list("recent", "single", true, 20, 10, favorite.id, true);
+    expect(
+      service.list("recent", "single", true, 20, 10, favorite.id, true),
+    ).toMatchObject({
+      summary: {
+        current: 0,
+        unseen: 0,
+        upcoming: 0,
+        recent: 0,
+        newlyFound: 0,
+      },
+    });
     expect(repository.listRadarItems).toHaveBeenCalledWith(
       "recent",
       "single",

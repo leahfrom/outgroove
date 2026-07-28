@@ -3,6 +3,7 @@ import type {
   FavoriteArtistSearchResultDto,
   RadarBackgroundRefreshSettingsDto,
   RadarItemDto,
+  RadarReviewSummaryDto,
   RadarRefreshAllResultDto,
   RadarRefreshResultDto,
   radarViews,
@@ -40,6 +41,7 @@ export function RadarView({
   radarRefreshAllActive,
   radarRefreshAllCancelling,
   radarRefreshAllResult,
+  radarSummary,
   radarTotalItems,
   radarUnseenOnly,
   radarView,
@@ -97,6 +99,7 @@ export function RadarView({
   readonly radarRefreshAllActive: boolean;
   readonly radarRefreshAllCancelling: boolean;
   readonly radarRefreshAllResult: RadarRefreshAllResultDto | undefined;
+  readonly radarSummary: RadarReviewSummaryDto;
   readonly radarTotalItems: number;
   readonly radarUnseenOnly: boolean;
   readonly radarView: RadarReleaseView;
@@ -323,6 +326,7 @@ export function RadarView({
         offset={radarOffset}
         primaryType={radarPrimaryType}
         refreshResult={radarRefreshResult}
+        summary={radarSummary}
         totalItems={radarTotalItems}
         unseenOnly={radarUnseenOnly}
         view={radarView}
@@ -413,6 +417,11 @@ export function RadarView({
                         : "Not refreshed yet"}
                       {favorite.lastRefreshTruncated &&
                         " · bounded at 500 releases"}
+                    </p>
+                    <p className="radar-unseen-count">
+                      {favorite.unseenRadarCount === 1
+                        ? "1 unseen release"
+                        : `${favorite.unseenRadarCount} unseen releases`}
                     </p>
                   </div>
                   <div className="favorite-actions">

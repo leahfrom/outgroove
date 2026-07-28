@@ -264,7 +264,19 @@ function api(applyVerified: boolean): OutgrooveApi {
     listRadarItems: vi.fn(() =>
       Promise.resolve({
         ok: true,
-        value: { items: [], totalItems: 0, offset: 0, limit: 20 },
+        value: {
+          items: [],
+          totalItems: 0,
+          offset: 0,
+          limit: 20,
+          summary: {
+            current: 0,
+            unseen: 0,
+            upcoming: 0,
+            recent: 0,
+            newlyFound: 0,
+          },
+        },
       }),
     ),
     setRadarItemSeen: vi.fn(),
@@ -459,6 +471,7 @@ describe("tag edit UI safety states", () => {
       lastSuccessfulRefreshAt: null,
       lastProviderFetchAt: null,
       lastRefreshTruncated: false,
+      unseenRadarCount: 0,
     };
     vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
       ok: true,
@@ -563,6 +576,7 @@ describe("tag edit UI safety states", () => {
       lastSuccessfulRefreshAt: null,
       lastProviderFetchAt: null,
       lastRefreshTruncated: false,
+      unseenRadarCount: 1,
     };
     const radarItem = {
       id: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
@@ -582,10 +596,12 @@ describe("tag edit UI safety states", () => {
       dismissedAt: null,
       reasons: ["upcoming"] as const,
     };
-    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
-      ok: true,
-      value: [favorite],
-    });
+    const favoriteLists = vi
+      .spyOn(mockApi, "listFavoriteArtists")
+      .mockResolvedValue({
+        ok: true,
+        value: [favorite],
+      });
     const list = vi.spyOn(mockApi, "listRadarItems").mockResolvedValue({
       ok: true,
       value: {
@@ -593,6 +609,13 @@ describe("tag edit UI safety states", () => {
         totalItems: 1,
         offset: 0,
         limit: 20,
+        summary: {
+          current: 1,
+          unseen: 1,
+          upcoming: 1,
+          recent: 0,
+          newlyFound: 0,
+        },
       },
     });
     const refresh = vi.spyOn(mockApi, "refreshRadar").mockResolvedValue({
@@ -643,6 +666,14 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Radar");
     expect(await screen.findByText(radarItem.title)).toBeVisible();
+    expect(
+      screen.getByRole("option", {
+        name: "Fixture Artist — 1 unseen",
+      }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Radar review summary")).toHaveTextContent(
+      "Current1Unseen1Upcoming1Recent0Newly found0",
+    );
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Release type" }),
       "single",
@@ -716,10 +747,16 @@ describe("tag edit UI safety states", () => {
     expect(await screen.findByText(/Refreshed Fixture Artist:/u)).toBeVisible();
 
     const markSeen = screen.getByRole("button", { name: "Mark seen" });
+    const favoriteListCallsBeforeSeen = favoriteLists.mock.calls.length;
     markSeen.focus();
     await user.keyboard("{Enter}");
     await waitFor(() =>
       expect(seen).toHaveBeenCalledWith({ id: radarItem.id, seen: true }),
+    );
+    await waitFor(() =>
+      expect(favoriteLists.mock.calls.length).toBeGreaterThan(
+        favoriteListCallsBeforeSeen,
+      ),
     );
     const openButton = screen.getByRole("button", {
       name: `Open ${radarItem.title} in MusicBrainz`,
@@ -755,6 +792,7 @@ describe("tag edit UI safety states", () => {
       lastSuccessfulRefreshAt: null,
       lastProviderFetchAt: null,
       lastRefreshTruncated: false,
+      unseenRadarCount: 0,
     };
     vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
       ok: true,
