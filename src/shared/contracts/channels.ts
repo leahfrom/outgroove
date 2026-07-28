@@ -29,6 +29,7 @@ export const channels = {
   listRadarItems: "radar:list-items",
   setRadarItemSeen: "radar:set-item-seen",
   setRadarItemDismissed: "radar:set-item-dismissed",
+  openRadarItemInMusicBrainz: "radar:open-item-in-musicbrainz",
   listSavedLibraryFilters: "library:list-saved-filters",
   createSavedLibraryFilter: "library:create-saved-filter",
   updateSavedLibraryFilter: "library:update-saved-filter",

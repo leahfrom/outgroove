@@ -38,6 +38,8 @@ import type {
 import type { MusicBrainzArtistCandidate } from "../../../shared/domain/favorite-artist";
 import {
   classifyRadarItem,
+  matchesRadarPrimaryType,
+  type RadarPrimaryTypeFilter,
   type RadarReleaseGroupObservation,
 } from "../../../shared/domain/radar";
 import {
@@ -406,6 +408,17 @@ export class CatalogDatabase {
           Number(discovered) === 1,
           String(today),
         ).includes(String(reason) as "upcoming" | "recent" | "newly-found")
+          ? 1
+          : 0,
+    );
+    this.connection.function(
+      "outgroove_radar_has_primary_type",
+      { deterministic: true },
+      (primaryType, filter) =>
+        matchesRadarPrimaryType(
+          typeof primaryType === "string" ? primaryType : null,
+          String(filter) as RadarPrimaryTypeFilter,
+        )
           ? 1
           : 0,
     );
@@ -1038,12 +1051,15 @@ export class CatalogDatabase {
 
   listRadarItems(
     view: "all" | "upcoming" | "recent" | "newly-found",
+    primaryType: RadarPrimaryTypeFilter,
     includeDismissed: boolean,
     today: string,
     offset = 0,
     limit = 50,
   ): RadarPageDto {
-    const where = `r.present=1 AND (?=1 OR r.dismissed_at IS NULL)
+    const where = `r.present=1
+      AND outgroove_radar_has_primary_type(r.primary_type, ?)=1
+      AND (?=1 OR r.dismissed_at IS NULL)
       AND (?='all' OR outgroove_radar_has_reason(
         r.first_release_date, r.discovered_after_baseline, ?, ?
       )=1)`;
@@ -1053,7 +1069,7 @@ export class CatalogDatabase {
          WHERE ${where}`,
       )
       .pluck()
-      .get(includeDismissed ? 1 : 0, view, today, view) as number;
+      .get(primaryType, includeDismissed ? 1 : 0, view, today, view) as number;
     const rows = this.connection
       .prepare(
         `SELECT r.id, r.favorite_artist_id AS favoriteArtistId,
@@ -1078,6 +1094,7 @@ export class CatalogDatabase {
          LIMIT ? OFFSET ?`,
       )
       .all(
+        primaryType,
         includeDismissed ? 1 : 0,
         view,
         today,
@@ -1093,6 +1110,16 @@ export class CatalogDatabase {
       offset,
       limit,
     };
+  }
+
+  getCurrentRadarReleaseGroupId(id: string): string | undefined {
+    return this.connection
+      .prepare(
+        `SELECT musicbrainz_release_group_id
+         FROM radar_items WHERE id=? AND present=1`,
+      )
+      .pluck()
+      .get(id) as string | undefined;
   }
 
   setRadarItemSeen(

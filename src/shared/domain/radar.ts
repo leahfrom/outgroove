@@ -2,6 +2,23 @@ import { isValidPartialDate } from "./partial-date";
 
 export const radarReasons = ["upcoming", "recent", "newly-found"] as const;
 export type RadarReason = (typeof radarReasons)[number];
+export const radarPrimaryTypeFilters = [
+  "all",
+  "album",
+  "single",
+  "ep",
+  "broadcast",
+  "other",
+  "unknown",
+] as const;
+export type RadarPrimaryTypeFilter = (typeof radarPrimaryTypeFilters)[number];
+
+const knownPrimaryTypes: ReadonlySet<string> = new Set(
+  radarPrimaryTypeFilters.filter(
+    (value): value is Exclude<RadarPrimaryTypeFilter, "all" | "unknown"> =>
+      value !== "all" && value !== "unknown",
+  ),
+);
 
 export interface RadarReleaseGroupObservation {
   readonly releaseGroupId: string;
@@ -55,4 +72,14 @@ export function classifyRadarItem(
     reasons.push("recent");
   if (discoveredAfterBaseline) reasons.push("newly-found");
   return reasons;
+}
+
+export function matchesRadarPrimaryType(
+  primaryType: string | null,
+  filter: RadarPrimaryTypeFilter,
+): boolean {
+  if (filter === "all") return true;
+  const normalized = primaryType?.trim().toLocaleLowerCase("en-US") ?? "";
+  if (filter === "unknown") return !knownPrimaryTypes.has(normalized);
+  return normalized === filter;
 }

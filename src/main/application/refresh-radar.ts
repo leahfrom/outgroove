@@ -5,6 +5,7 @@ import type {
   RadarRefreshResultDto,
 } from "../../shared/contracts/api";
 import type { RadarReleaseGroupObservation } from "../../shared/domain/radar";
+import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 
 interface RadarStore {
   getFavoriteArtist(id: string): FavoriteArtistDto | undefined;
@@ -23,6 +24,7 @@ interface RadarStore {
   };
   listRadarItems(
     view: "all" | "upcoming" | "recent" | "newly-found",
+    primaryType: RadarPrimaryTypeFilter,
     includeDismissed: boolean,
     today: string,
     offset: number,
@@ -122,12 +124,14 @@ export class RefreshRadar {
 
   list(
     view: "all" | "upcoming" | "recent" | "newly-found",
+    primaryType: RadarPrimaryTypeFilter,
     includeDismissed: boolean,
     offset: number,
     limit: number,
   ): RadarPageDto {
     return this.store.listRadarItems(
       view,
+      primaryType,
       includeDismissed,
       this.today(),
       offset,

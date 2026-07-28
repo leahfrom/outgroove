@@ -248,6 +248,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     ),
     setRadarItemSeen: vi.fn(),
     setRadarItemDismissed: vi.fn(),
+    openRadarItemInMusicBrainz: vi.fn(),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -594,6 +595,12 @@ describe("tag edit UI safety states", () => {
         seenAt: "2026-07-28T08:02:00.000Z",
       },
     });
+    const open = vi
+      .spyOn(mockApi, "openRadarItemInMusicBrainz")
+      .mockResolvedValue({
+        ok: true,
+        value: { opened: true },
+      });
     Object.defineProperty(window, "outgroove", {
       configurable: true,
       value: mockApi,
@@ -602,6 +609,19 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Radar");
     expect(await screen.findByText(radarItem.title)).toBeVisible();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Release type" }),
+      "single",
+    );
+    await waitFor(() =>
+      expect(list).toHaveBeenCalledWith({
+        view: "all",
+        primaryType: "single",
+        includeDismissed: false,
+        offset: 0,
+        limit: 20,
+      }),
+    );
 
     const refreshButton = screen.getByRole("button", {
       name: `Refresh releases for ${favorite.name}`,
@@ -624,8 +644,18 @@ describe("tag edit UI safety states", () => {
     await waitFor(() =>
       expect(seen).toHaveBeenCalledWith({ id: radarItem.id, seen: true }),
     );
+    const openButton = screen.getByRole("button", {
+      name: `Open ${radarItem.title} in MusicBrainz`,
+    });
+    openButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(open).toHaveBeenCalledWith({ id: radarItem.id }),
+    );
+    expect(open.mock.calls[0]?.[0]).not.toHaveProperty("url");
     expect(list).toHaveBeenCalledWith({
       view: "all",
+      primaryType: "all",
       includeDismissed: false,
       offset: 0,
       limit: 20,

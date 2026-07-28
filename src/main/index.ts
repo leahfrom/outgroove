@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 
 import { CatalogDatabase } from "./adapters/database/catalog-database";
 import { WorkerScanCatalog } from "./adapters/database/worker-scan-catalog";
@@ -24,6 +24,7 @@ import { FindAlbumCandidates } from "./application/find-album-candidates";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
 import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
 import { RefreshRadar } from "./application/refresh-radar";
+import { OpenRadarItem } from "./application/open-radar-item";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
@@ -102,6 +103,9 @@ async function createWindow(): Promise<void> {
     ),
     favoriteArtists: new ManageFavoriteArtists(database, musicBrainz),
     radar: new RefreshRadar(database, musicBrainz),
+    radarItemOpener: new OpenRadarItem(database, {
+      open: (url) => shell.openExternal(url),
+    }),
     editor: new EditAlbumTitle(database, writer),
     artworkEditor,
     artworkExporter: new ExportAlbumArtwork(database, artworkEncoder),
@@ -217,7 +221,7 @@ async function createWindow(): Promise<void> {
         "Packaged favorite-artist persistence was not retained in the verified backup.",
       );
     if (
-      verifiedBackup.listRadarItems("all", false, "2026-07-28").items[0]
+      verifiedBackup.listRadarItems("all", "all", false, "2026-07-28").items[0]
         ?.title !== "Packaged Radar Fixture"
     )
       throw new Error(

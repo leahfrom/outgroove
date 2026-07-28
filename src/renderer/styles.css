@@ -3418,6 +3418,20 @@ td {
   gap: 0.5rem;
   align-items: center;
 }
+.radar-filters {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+.radar-filters > label:first-child {
+  margin: 0;
+}
+.radar-filters select {
+  display: block;
+  min-width: 10rem;
+  margin-top: 0.35rem;
+}
 .radar-dismissed-toggle input {
   flex: 0 0 auto;
   width: auto;
@@ -3701,6 +3715,10 @@ td {
   }
   .radar-dismissed-toggle {
     align-self: start;
+  }
+  .radar-filters {
+    align-items: start;
+    flex-direction: column;
   }
   .favorite-actions {
     justify-content: start;

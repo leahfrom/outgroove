@@ -28,6 +28,7 @@ import {
   musicBrainzReleaseLookupRequestSchema,
   musicBrainzTrackMappingPreviewRequestSchema,
   radarItemDismissRequestSchema,
+  radarItemOpenRequestSchema,
   radarItemSeenRequestSchema,
   radarListRequestSchema,
   radarRefreshRequestSchema,
@@ -66,6 +67,7 @@ import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
 import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
 import type { RefreshRadar } from "../application/refresh-radar";
+import type { OpenRadarItem } from "../application/open-radar-item";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -81,6 +83,7 @@ interface Dependencies {
   releaseArtwork: FindReleaseArtwork;
   favoriteArtists: ManageFavoriteArtists;
   radar: RefreshRadar;
+  radarItemOpener: OpenRadarItem;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -352,8 +355,14 @@ export function registerIpc(
     channels.listRadarItems,
     createValidatedHandler(
       radarListRequestSchema,
-      ({ view, includeDismissed, offset, limit }) =>
-        dependencies.radar.list(view, includeDismissed, offset, limit),
+      ({ view, primaryType, includeDismissed, offset, limit }) =>
+        dependencies.radar.list(
+          view,
+          primaryType,
+          includeDismissed,
+          offset,
+          limit,
+        ),
     ),
   );
   ipcMain.handle(
@@ -366,6 +375,12 @@ export function registerIpc(
     channels.setRadarItemDismissed,
     createValidatedHandler(radarItemDismissRequestSchema, ({ id, dismissed }) =>
       dependencies.radar.setDismissed(id, dismissed),
+    ),
+  );
+  ipcMain.handle(
+    channels.openRadarItemInMusicBrainz,
+    createValidatedHandler(radarItemOpenRequestSchema, ({ id }) =>
+      dependencies.radarItemOpener.inMusicBrainz(id),
     ),
   );
   ipcMain.handle(

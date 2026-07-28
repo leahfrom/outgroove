@@ -73,6 +73,7 @@ function renderView(
       radarLimit={20}
       radarLoading={false}
       radarOffset={0}
+      radarPrimaryType="all"
       radarRefreshResult={undefined}
       radarTotalItems={0}
       radarView="all"
@@ -88,7 +89,9 @@ function renderView(
       onFilterFavorites={vi.fn()}
       onRadarDismissed={vi.fn()}
       onRadarIncludeDismissedChange={vi.fn()}
+      onRadarOpen={vi.fn()}
       onRadarPage={vi.fn()}
+      onRadarPrimaryTypeChange={vi.fn()}
       onRadarSeen={vi.fn()}
       onRadarViewChange={vi.fn()}
       onRefreshFavorite={vi.fn()}

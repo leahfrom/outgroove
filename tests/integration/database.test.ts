@@ -437,22 +437,53 @@ describe("database migration and backup", () => {
     ).toEqual({ added: 2, updated: 0, unchanged: 0 });
     expect(
       database
-        .listRadarItems("all", false, "2026-07-28")
+        .listRadarItems("all", "all", false, "2026-07-28")
         .items.map((item) => [item.title, item.reasons]),
     ).toEqual([
       ["Future Fixture", ["upcoming"]],
       ["Recent Fixture", ["recent"]],
     ]);
     expect(
-      database.listRadarItems("all", false, "2026-07-28", 1, 1),
+      database.listRadarItems("all", "all", false, "2026-07-28", 1, 1),
     ).toMatchObject({
       totalItems: 2,
       offset: 1,
       limit: 1,
       items: [{ title: "Recent Fixture" }],
     });
+    expect(
+      database
+        .listRadarItems("all", "album", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Future Fixture"]);
+    expect(
+      database
+        .listRadarItems("all", "single", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Recent Fixture"]);
+    expect(
+      database.listRadarItems("all", "unknown", false, "2026-07-28"),
+    ).toMatchObject({ totalItems: 0, items: [] });
+    const futureItem = database
+      .listRadarItems("all", "album", false, "2026-07-28")
+      .items.at(0);
+    if (!futureItem) throw new Error("Album Radar fixture missing.");
+    expect(database.getCurrentRadarReleaseGroupId(futureItem.id)).toBe(
+      future.releaseGroupId,
+    );
+    database.connection
+      .prepare("UPDATE radar_items SET primary_type=? WHERE id=?")
+      .run("Future Provider Type", futureItem.id);
+    expect(
+      database
+        .listRadarItems("all", "unknown", false, "2026-07-28")
+        .items.map(({ title }) => title),
+    ).toEqual(["Future Fixture"]);
+    expect(
+      database.listRadarItems("all", "other", false, "2026-07-28"),
+    ).toMatchObject({ totalItems: 0, items: [] });
     const recentItem = database
-      .listRadarItems("recent", false, "2026-07-28")
+      .listRadarItems("recent", "all", false, "2026-07-28")
       .items.at(0);
     if (!recentItem) throw new Error("Recent Radar fixture missing.");
     database.setRadarItemSeen(
@@ -487,22 +518,24 @@ describe("database migration and backup", () => {
       ),
     ).toEqual({ added: 1, updated: 1, unchanged: 0 });
     expect(
-      database.listRadarItems("upcoming", true, "2026-07-29").items,
+      database.listRadarItems("upcoming", "all", true, "2026-07-29").items,
     ).toEqual([]);
     expect(
-      database.listRadarItems("newly-found", false, "2026-07-29").items,
+      database.listRadarItems("newly-found", "all", false, "2026-07-29").items,
     ).toMatchObject([
       {
         title: "Historical Fixture",
         reasons: ["newly-found"],
       },
     ]);
-    expect(database.listRadarItems("all", false, "2026-07-29")).toMatchObject({
+    expect(
+      database.listRadarItems("all", "all", false, "2026-07-29"),
+    ).toMatchObject({
       totalItems: 1,
     });
     expect(
       database
-        .listRadarItems("all", true, "2026-07-29")
+        .listRadarItems("all", "all", true, "2026-07-29")
         .items.find((item) => item.title === "Recent Fixture"),
     ).toMatchObject({
       firstReleaseDate: "2026-07-02",
@@ -559,7 +592,7 @@ describe("database migration and backup", () => {
       ),
     ).toThrow();
     expect(
-      database.listRadarItems("all", false, "2026-07-29").items,
+      database.listRadarItems("all", "all", false, "2026-07-29").items,
     ).toMatchObject([{ title: "Fixture" }]);
     expect(database.getFavoriteArtist(favorite.id)).toMatchObject({
       lastSuccessfulRefreshAt: "2026-07-28T09:00:00.000Z",

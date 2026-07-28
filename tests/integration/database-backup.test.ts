@@ -78,7 +78,8 @@ describe("database backup and restore", () => {
         truncated: false,
       },
     );
-    const radarItem = donor.listRadarItems("all", false, "2026-07-28").items[0];
+    const radarItem = donor.listRadarItems("all", "all", false, "2026-07-28")
+      .items[0];
     if (!radarItem) throw new Error("Radar fixture was not persisted.");
     donor.setRadarItemSeen(
       radarItem.id,
@@ -128,8 +129,12 @@ describe("database backup and restore", () => {
     expect(restored.listLibraryRoots()[0]?.path).toBe("/restored/library");
     expect(restored.listSavedLibraryFilters()[0]?.name).toBe("Restored albums");
     expect(restored.listFavoriteArtists()[0]?.name).toBe("Restored Artist");
-    const restoredRadar = restored.listRadarItems("all", true, "2026-07-28")
-      .items[0];
+    const restoredRadar = restored.listRadarItems(
+      "all",
+      "all",
+      true,
+      "2026-07-28",
+    ).items[0];
     expect(restoredRadar).toMatchObject({
       title: "Restored Radar Release",
       seenAt: "2026-07-28T08:01:00.000Z",

@@ -37,12 +37,15 @@ function renderReleases(
       limit={20}
       loading={false}
       offset={0}
+      primaryType="all"
       refreshResult={undefined}
       totalItems={21}
       view="all"
       onDismissed={vi.fn()}
       onIncludeDismissedChange={vi.fn()}
+      onOpen={vi.fn()}
       onPage={vi.fn()}
+      onPrimaryTypeChange={vi.fn()}
       onSeen={vi.fn()}
       onViewChange={vi.fn()}
       {...overrides}
@@ -54,7 +57,8 @@ describe("Radar releases", () => {
   it("labels provider facts and first-seen state separately and routes keyboard actions", async () => {
     const onSeen = vi.fn();
     const onDismissed = vi.fn();
-    renderReleases({ onSeen, onDismissed });
+    const onOpen = vi.fn();
+    renderReleases({ onSeen, onDismissed, onOpen });
     const list = screen.getByRole("list", {
       name: "All current Radar releases",
     });
@@ -74,17 +78,25 @@ describe("Radar releases", () => {
     dismiss.focus();
     await user.keyboard("{Enter}");
     expect(onDismissed).toHaveBeenCalledWith(item, true);
+    const open = within(list).getByRole("button", {
+      name: `Open ${item.title} in MusicBrainz`,
+    });
+    open.focus();
+    await user.keyboard("{Enter}");
+    expect(onOpen).toHaveBeenCalledWith(item);
   });
 
   it("changes views, restores dismissed items, and pages without inferring releases", async () => {
     const onViewChange = vi.fn();
     const onIncludeDismissedChange = vi.fn();
+    const onPrimaryTypeChange = vi.fn();
     const onPage = vi.fn();
     renderReleases({
       items: [{ ...item, dismissedAt: "2026-07-29T00:00:00.000Z" }],
       includeDismissed: true,
       onViewChange,
       onIncludeDismissedChange,
+      onPrimaryTypeChange,
       onPage,
     });
     const user = userEvent.setup();
@@ -92,6 +104,11 @@ describe("Radar releases", () => {
     expect(onViewChange).toHaveBeenCalledWith("newly-found");
     await user.click(screen.getByRole("checkbox", { name: "Show dismissed" }));
     expect(onIncludeDismissedChange).toHaveBeenCalledWith(false);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Release type" }),
+      "single",
+    );
+    expect(onPrimaryTypeChange).toHaveBeenCalledWith("single");
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(onPage).toHaveBeenCalledWith(20);
     expect(screen.getByRole("button", { name: "Restore item" })).toBeVisible();
