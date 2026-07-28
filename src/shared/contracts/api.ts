@@ -5,6 +5,7 @@ import type {
   ComparedAlbumCandidate,
   MusicBrainzReleaseTracklist,
 } from "../domain/album-identification";
+import type { AcoustIdRecordingCandidate } from "../domain/acoustid-identification";
 import { albumDiagnosticFilters } from "../domain/album-diagnostics";
 import type { AppError, Result } from "../domain/errors";
 import type { MusicBrainzArtistCandidate } from "../domain/favorite-artist";
@@ -87,6 +88,15 @@ export const albumArtworkRequestSchema = z
   .strict();
 export const albumIdentificationRequestSchema = z
   .object({ albumId: z.uuid() })
+  .strict();
+export const acoustIdTrackPreviewRequestSchema = z
+  .object({ fileId: z.uuid() })
+  .strict();
+export const acoustIdTrackConfirmRequestSchema = z
+  .object({
+    operationId: z.uuid(),
+    confirmationToken: z.string().min(20).max(200),
+  })
   .strict();
 export const favoriteArtistSearchRequestSchema = z
   .object({ query: z.string().trim().min(1).max(200) })
@@ -822,6 +832,30 @@ export interface AlbumIdentificationResultDto {
   readonly readOnly: true;
 }
 
+export interface AcoustIdTrackPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly fileId: string;
+  readonly trackTitle: string;
+  readonly sent: {
+    readonly fingerprintAlgorithm: "Chromaprint";
+    readonly fingerprintCharacters: number;
+    readonly fingerprintSha256: string;
+    readonly durationSeconds: number;
+  };
+  readonly expiresAt: string;
+  readonly readOnly: true;
+}
+
+export interface AcoustIdTrackLookupResultDto {
+  readonly fileId: string;
+  readonly sent: AcoustIdTrackPreviewDto["sent"];
+  readonly candidates: readonly AcoustIdRecordingCandidate[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly readOnly: true;
+}
+
 export interface FavoriteArtistSearchResultDto {
   readonly sent: {
     readonly artistName: string;
@@ -1012,6 +1046,15 @@ export interface OutgrooveApi {
   findMusicBrainzAlbumCandidates(
     request: z.infer<typeof albumIdentificationRequestSchema>,
   ): Promise<Result<AlbumIdentificationResultDto>>;
+  previewAcoustIdTrackLookup(
+    request: z.infer<typeof acoustIdTrackPreviewRequestSchema>,
+  ): Promise<Result<AcoustIdTrackPreviewDto>>;
+  confirmAcoustIdTrackLookup(
+    request: z.infer<typeof acoustIdTrackConfirmRequestSchema>,
+  ): Promise<Result<AcoustIdTrackLookupResultDto>>;
+  cancelAcoustIdTrackLookup(
+    request: z.infer<typeof acoustIdTrackPreviewRequestSchema>,
+  ): Promise<Result<{ readonly cancelled: boolean }>>;
   loadMusicBrainzReleaseTracks(
     request: z.infer<typeof musicBrainzReleaseLookupRequestSchema>,
   ): Promise<Result<MusicBrainzReleaseTracklistDto>>;

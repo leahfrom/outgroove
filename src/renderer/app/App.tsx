@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AlbumArtworkEditPreviewDto,
   AlbumIdentificationResultDto,
+  AcoustIdTrackLookupResultDto,
+  AcoustIdTrackPreviewDto,
   AlbumArtworkExportPreviewDto,
   AlbumArtworkExportResultDto,
   AlbumArtworkThumbnailDto,
@@ -104,6 +106,7 @@ import {
   TrackMetadataEditor,
   type TrackMetadataDraft,
 } from "./track-metadata-editor";
+import { TrackAcoustIdIdentification } from "./track-acoustid-identification";
 import { TrackTechnicalInfo } from "./track-technical-info";
 import { TrackOrderEditor } from "./track-order-editor";
 import { SyncNavigation, type SyncStage } from "./sync-navigation";
@@ -396,6 +399,12 @@ export function App(): React.JSX.Element {
   const [selectedTrackId, setSelectedTrackId] = useState<string>();
   const [libraryTrackEditorOpen, setLibraryTrackEditorOpen] = useState(false);
   const [technicalTrackId, setTechnicalTrackId] = useState<string>();
+  const [acoustIdPreview, setAcoustIdPreview] =
+    useState<AcoustIdTrackPreviewDto>();
+  const [acoustIdResult, setAcoustIdResult] =
+    useState<AcoustIdTrackLookupResultDto>();
+  const [acoustIdError, setAcoustIdError] = useState<string>();
+  const [acoustIdBusy, setAcoustIdBusy] = useState(false);
   const [trackDraft, setTrackDraft] = useState<TrackMetadataDraft>({
     title: "",
     artist: "",
@@ -569,6 +578,7 @@ export function App(): React.JSX.Element {
   const artistSearchRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
   const coverArtRequestId = useRef(0);
+  const acoustIdRequestId = useRef(0);
   const syncHistoryRequestId = useRef(0);
   const scanActive =
     scanJob?.state === "queued" ||
@@ -581,6 +591,16 @@ export function App(): React.JSX.Element {
   const selectedTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === selectedTrackId),
     [selectedAlbum, selectedTrackId],
+  );
+  useEffect(
+    () => () => {
+      if (!selectedTrackId) return;
+      acoustIdRequestId.current += 1;
+      void window.outgroove.cancelAcoustIdTrackLookup({
+        fileId: selectedTrackId,
+      });
+    },
+    [selectedTrackId],
   );
   const technicalTrack = useMemo(
     () => selectedAlbum?.tracks.find((track) => track.id === technicalTrackId),
@@ -1100,6 +1120,10 @@ export function App(): React.JSX.Element {
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
     setTrackUndoResult(undefined);
+    setAcoustIdPreview(undefined);
+    setAcoustIdResult(undefined);
+    setAcoustIdError(undefined);
+    setAcoustIdBusy(false);
     setBatchUndoPreview(undefined);
     setBatchUndoResult(undefined);
     setBatchError(undefined);
@@ -1131,6 +1155,10 @@ export function App(): React.JSX.Element {
     setTrackEditResult(undefined);
     setTrackEditError(undefined);
     setTrackUndoPreview(undefined);
+    setAcoustIdPreview(undefined);
+    setAcoustIdResult(undefined);
+    setAcoustIdError(undefined);
+    setAcoustIdBusy(false);
     setTrackDraft(draftForTrack(track));
     setPendingTrackId(undefined);
   }, [pendingTrackId, selectedAlbum]);
@@ -2000,6 +2028,15 @@ export function App(): React.JSX.Element {
         ? document.activeElement
         : undefined;
     if (selectedTrackId !== track.id) {
+      if (selectedTrackId)
+        void window.outgroove.cancelAcoustIdTrackLookup({
+          fileId: selectedTrackId,
+        });
+      acoustIdRequestId.current += 1;
+      setAcoustIdPreview(undefined);
+      setAcoustIdResult(undefined);
+      setAcoustIdError(undefined);
+      setAcoustIdBusy(false);
       setSelectedTrackId(track.id);
       setTrackEditPreview(undefined);
       setTrackEditResult(undefined);
@@ -2008,6 +2045,72 @@ export function App(): React.JSX.Element {
       setTrackDraft(draftForTrack(track));
     }
     setLibraryTrackEditorOpen(true);
+  };
+
+  const clearAcoustIdIdentification = (): void => {
+    const fileId = selectedTrackId;
+    acoustIdRequestId.current += 1;
+    setAcoustIdPreview(undefined);
+    setAcoustIdResult(undefined);
+    setAcoustIdError(undefined);
+    setAcoustIdBusy(false);
+    if (fileId) void window.outgroove.cancelAcoustIdTrackLookup({ fileId });
+  };
+
+  const closeTrackEditor = (): void => {
+    clearAcoustIdIdentification();
+    setLibraryTrackEditorOpen(false);
+  };
+
+  const previewAcoustIdIdentification = async (): Promise<void> => {
+    if (!selectedTrack) return;
+    const requestId = ++acoustIdRequestId.current;
+    setAcoustIdPreview(undefined);
+    setAcoustIdResult(undefined);
+    setAcoustIdError(undefined);
+    setAcoustIdBusy(true);
+    const result = await window.outgroove.previewAcoustIdTrackLookup({
+      fileId: selectedTrack.id,
+    });
+    if (requestId !== acoustIdRequestId.current) return;
+    setAcoustIdBusy(false);
+    if (result.ok) setAcoustIdPreview(result.value);
+    else setAcoustIdError(result.error.message);
+  };
+
+  const confirmAcoustIdIdentification = async (): Promise<void> => {
+    if (!acoustIdPreview) return;
+    const requestId = ++acoustIdRequestId.current;
+    setAcoustIdError(undefined);
+    setAcoustIdBusy(true);
+    const result = await window.outgroove.confirmAcoustIdTrackLookup({
+      operationId: acoustIdPreview.operationId,
+      confirmationToken: acoustIdPreview.confirmationToken,
+    });
+    if (requestId !== acoustIdRequestId.current) return;
+    setAcoustIdBusy(false);
+    if (result.ok) {
+      setAcoustIdPreview(undefined);
+      setAcoustIdResult(result.value);
+    } else setAcoustIdError(result.error.message);
+  };
+
+  const useAcoustIdRecordingId = (recordingId: string): void => {
+    if (
+      !selectedTrack ||
+      selectedTrack.tags.musicBrainzRecordingId === recordingId
+    )
+      return;
+    setTrackDraft((draft) => ({
+      ...draft,
+      musicBrainzRecordingId: recordingId,
+    }));
+    setMetadataDraftSource(
+      "MusicBrainz recording ID drafted from an explicitly selected AcoustID candidate. Review the ordinary tag preview before writing.",
+    );
+    setTrackEditPreview(undefined);
+    setTrackEditResult(undefined);
+    setTrackEditError(undefined);
   };
 
   const routeDiagnostic = (finding: AlbumDiagnostic): void => {
@@ -4884,10 +4987,10 @@ export function App(): React.JSX.Element {
             ariaLabel={`Edit metadata for ${selectedTrack.tags.title}`}
             className="track-editor-sheet"
             closeLabel="Close editor"
-            onClose={() => setLibraryTrackEditorOpen(false)}
+            onClose={closeTrackEditor}
           >
             <TrackMetadataEditor
-              busy={busy}
+              busy={busy || acoustIdBusy}
               draft={trackDraft}
               {...(metadataDraftSource
                 ? { draftSource: metadataDraftSource }
@@ -4898,7 +5001,20 @@ export function App(): React.JSX.Element {
                 setTrackEditResult(undefined);
                 setTrackEditError(undefined);
               }}
-              onClose={() => setLibraryTrackEditorOpen(false)}
+              identification={
+                <TrackAcoustIdIdentification
+                  busy={acoustIdBusy}
+                  error={acoustIdError}
+                  preview={acoustIdPreview}
+                  result={acoustIdResult}
+                  track={selectedTrack}
+                  onCancel={clearAcoustIdIdentification}
+                  onConfirm={() => void confirmAcoustIdIdentification()}
+                  onPreview={() => void previewAcoustIdIdentification()}
+                  onUseRecordingId={useAcoustIdRecordingId}
+                />
+              }
+              onClose={closeTrackEditor}
               onConfirm={() => void applyTrackEdit()}
               onDraftChange={(field, value) => {
                 setTrackDraft((draft) => ({

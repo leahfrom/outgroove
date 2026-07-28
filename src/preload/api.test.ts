@@ -127,6 +127,31 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("searchProvider");
   });
 
+  it("maps AcoustID preview, confirmation, and cancellation without paths or fingerprints", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: [] });
+    const file = { fileId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf" };
+    await api.previewAcoustIdTrackLookup(file);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewAcoustIdTrackLookup,
+      file,
+    );
+    const confirmation = {
+      operationId: "2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef",
+      confirmationToken: "confirmation-token-with-enough-entropy",
+    };
+    await api.confirmAcoustIdTrackLookup(confirmation);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.confirmAcoustIdTrackLookup,
+      confirmation,
+    );
+    await api.cancelAcoustIdTrackLookup(file);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelAcoustIdTrackLookup,
+      file,
+    );
+    expect(api).not.toHaveProperty("fingerprintFile");
+  });
+
   it("maps artist Favorites through fixed path-free Radar channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: [] });
     const search = { query: "Fixture Artist" };

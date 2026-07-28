@@ -12,6 +12,9 @@ export const channels = {
   queryLibrary: "library:query",
   loadAlbumArtwork: "library:load-album-artwork",
   findMusicBrainzAlbumCandidates: "identify:find-musicbrainz-album-candidates",
+  previewAcoustIdTrackLookup: "identify:preview-acoustid-track-lookup",
+  confirmAcoustIdTrackLookup: "identify:confirm-acoustid-track-lookup",
+  cancelAcoustIdTrackLookup: "identify:cancel-acoustid-track-lookup",
   loadMusicBrainzReleaseTracks: "identify:load-musicbrainz-release-tracks",
   loadCoverArtArchiveArtwork: "identify:load-cover-art-archive-artwork",
   previewCoverArtArchiveArtworkEdit:

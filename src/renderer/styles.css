@@ -2627,6 +2627,88 @@ pre {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.track-identification {
+  margin: 0 0 0.85rem;
+  border: 1px solid #9cafa1;
+  border-radius: 12px;
+  background: #f5f8f5;
+}
+.track-identification > summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  font-weight: 750;
+}
+.track-identification > summary small {
+  color: #526159;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: right;
+}
+.track-identification[open] > summary {
+  border-bottom: 1px solid #cbd4cd;
+}
+.track-identification-body {
+  padding: 1rem;
+}
+.track-identification-body > p:first-child {
+  margin-top: 0;
+}
+.track-identification-payload {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
+.track-identification-payload > div,
+.track-identification-results li > article {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid #d5ddd7;
+  border-radius: 10px;
+  background: white;
+}
+.track-identification-payload dt,
+.track-identification-results dt {
+  color: #526159;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.track-identification-payload dd,
+.track-identification-results dd {
+  margin-top: 0.2rem;
+  overflow-wrap: anywhere;
+}
+.track-identification-results > header,
+.track-identification-results article > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.track-identification-results h4,
+.track-identification-results h5,
+.track-identification-results header p {
+  margin: 0;
+}
+.track-identification-results > ol {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.track-identification-results article > dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
 .tag-comparison {
   overflow: hidden;
   border: 1px solid #b8c3bb;
@@ -4177,6 +4259,20 @@ td {
   }
   .metadata-more-fields > summary small {
     text-align: left;
+  }
+  .track-identification > summary,
+  .track-identification-results > header,
+  .track-identification-results article > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .track-identification > summary small {
+    text-align: left;
+  }
+  .track-identification-payload,
+  .track-identification-results article > dl {
+    grid-template-columns: 1fr;
   }
   .comparison-mobile-label {
     display: block;

@@ -16,6 +16,9 @@ import { WorkerLibraryQualityQuery } from "./adapters/database/worker-library-qu
 import { WorkerLibraryFileSystem } from "./adapters/filesystem/library-filesystem";
 import { MusicMetadataReader } from "./adapters/metadata/metadata-reader";
 import { MusicBrainzClient } from "./adapters/providers/musicbrainz-client";
+import { AcoustIdClient } from "./adapters/providers/acoustid-client";
+import { FpcalcFingerprinter } from "./adapters/fingerprint/fpcalc-fingerprinter";
+import { resolveBundledFpcalcPath } from "./adapters/fingerprint/fpcalc-path";
 import { CoverArtArchiveClient } from "./adapters/providers/cover-art-archive-client";
 import { ElectronArtworkThumbnailEncoder } from "./adapters/artwork/artwork-thumbnail";
 import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
@@ -30,6 +33,7 @@ import { EditTrackTags } from "./application/edit-track-tags";
 import { ManageLibraryRoots } from "./application/manage-library-roots";
 import { LoadAlbumArtwork } from "./application/load-album-artwork";
 import { FindAlbumCandidates } from "./application/find-album-candidates";
+import { IdentifyTrackByFingerprint } from "./application/identify-track-by-fingerprint";
 import { FindReleaseArtwork } from "./application/find-release-artwork";
 import { ManageFavoriteArtists } from "./application/manage-favorite-artists";
 import { RefreshRadar } from "./application/refresh-radar";
@@ -44,6 +48,7 @@ import { channels } from "../shared/contracts/channels";
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
+declare const OUTGROOVE_ACOUSTID_API_KEY: string | null;
 
 const smokeTest =
   process.argv.includes("--smoke-test") ||
@@ -87,6 +92,21 @@ async function createWindow(): Promise<void> {
   const musicBrainz = new MusicBrainzClient(
     database,
     `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`,
+  );
+  const providerUserAgent = `Outgroove/${app.getVersion()} (https://github.com/leahfrom/outgroove)`;
+  const acoustId = new AcoustIdClient(
+    database,
+    OUTGROOVE_ACOUSTID_API_KEY ?? undefined,
+    providerUserAgent,
+  );
+  const fingerprinter = new FpcalcFingerprinter(
+    resolveBundledFpcalcPath({
+      platform: process.platform,
+      architecture: process.arch,
+      packaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+    }),
   );
   const coverArtArchive = new CoverArtArchiveClient(
     database,
@@ -135,6 +155,11 @@ async function createWindow(): Promise<void> {
     libraryRoots: new ManageLibraryRoots(database),
     artwork,
     albumCandidates: new FindAlbumCandidates(database, musicBrainz),
+    trackIdentification: new IdentifyTrackByFingerprint(
+      database,
+      fingerprinter,
+      acoustId,
+    ),
     releaseArtwork: new FindReleaseArtwork(
       database,
       coverArtArchive,
