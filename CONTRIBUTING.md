@@ -57,10 +57,9 @@ git push origin v0.2.0
 
 Pushing a stable `vX.Y.Z` tag starts the release workflow. It independently
 verifies and packages macOS arm64, Windows x64, and Linux x64, then publishes
-their ZIP files and SHA-256 checksums as a GitHub prerelease. The release is
-published only after every platform build succeeds. Artifacts remain marked as
-prereleases until signing, notarization, and the full manual release matrix are
-implemented.
+the signed/notarized macOS DMG, platform ZIPs, Windows Setup application, and
+SHA-256 checksums as a GitHub prerelease. The release is published only after
+every platform build succeeds.
 
 Use the [release runbook](docs/release-runbook.md) for the complete release
 checklist and for the only authorized manual fallback when GitHub Actions jobs
@@ -89,6 +88,9 @@ On the private GitHub repository, protect both long-lived branches:
 - restrict `main` pull requests to the Gitflow policy enforced by CI;
 - use merge commits for release/hotfix PRs and the `main` back-merge.
 
-Signing, notarization, and installer publication are not enabled yet. A stable
-SemVer tag automatically publishes unsigned ZIP archives as a GitHub prerelease;
-it does not claim that an artifact is signed or production-supported.
+Tagged macOS builds require the Developer ID certificate and App Store Connect
+Team API-key secrets documented in
+[the macOS signing guide](docs/macos-signing.md). Missing credentials fail the
+macOS job instead of publishing an unsigned substitute. Windows artifacts
+remain unsigned, and prerelease publication does not by itself claim full
+production support.
