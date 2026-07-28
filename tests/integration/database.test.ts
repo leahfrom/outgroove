@@ -516,6 +516,18 @@ describe("database migration and backup", () => {
       ["Future Fixture", ["upcoming"]],
       ["Recent Fixture", ["recent"]],
     ]);
+    expect(database.listFavoriteArtists()).toMatchObject([
+      { id: favorite.id, unseenRadarCount: 2 },
+    ]);
+    expect(
+      database.listRadarItems("recent", "all", false, "2026-07-28").summary,
+    ).toEqual({
+      current: 2,
+      unseen: 2,
+      upcoming: 1,
+      recent: 1,
+      newlyFound: 0,
+    });
     expect(
       database.listRadarItems("all", "all", false, "2026-07-28", 1, 1),
     ).toMatchObject({
@@ -599,6 +611,7 @@ describe("database migration and backup", () => {
       "2026-07-28T10:00:00.000Z",
       "2026-07-28",
     );
+    expect(database.getFavoriteArtist(favorite.id)?.unseenRadarCount).toBe(1);
     expect(
       database.listRadarItems(
         "all",
@@ -620,6 +633,7 @@ describe("database migration and backup", () => {
       "2026-07-28T10:01:00.000Z",
       "2026-07-28",
     );
+    expect(database.getFavoriteArtist(favorite.id)?.unseenRadarCount).toBe(1);
     const discovered = {
       ...future,
       releaseGroupId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
@@ -654,6 +668,22 @@ describe("database migration and backup", () => {
       database.listRadarItems("all", "all", false, "2026-07-29"),
     ).toMatchObject({
       totalItems: 1,
+      summary: {
+        current: 1,
+        unseen: 1,
+        upcoming: 0,
+        recent: 0,
+        newlyFound: 1,
+      },
+    });
+    expect(
+      database.listRadarItems("all", "all", true, "2026-07-29").summary,
+    ).toEqual({
+      current: 2,
+      unseen: 1,
+      upcoming: 0,
+      recent: 1,
+      newlyFound: 1,
     });
     expect(
       database
@@ -668,6 +698,7 @@ describe("database migration and backup", () => {
       lastSuccessfulRefreshAt: "2026-07-29T09:00:00.000Z",
       lastProviderFetchAt: "2026-07-29T08:00:00.000Z",
       lastRefreshTruncated: true,
+      unseenRadarCount: 1,
     });
     database.close();
   });

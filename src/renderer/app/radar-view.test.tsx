@@ -21,6 +21,7 @@ const favorite: FavoriteArtistDto = {
   lastSuccessfulRefreshAt: null,
   lastProviderFetchAt: null,
   lastRefreshTruncated: false,
+  unseenRadarCount: 7,
 };
 
 const result: FavoriteArtistSearchResultDto = {
@@ -93,6 +94,13 @@ function renderView(
       radarRefreshAllCancelling={false}
       radarRefreshAllResult={undefined}
       radarRefreshResult={undefined}
+      radarSummary={{
+        current: 21,
+        unseen: 7,
+        upcoming: 3,
+        recent: 4,
+        newlyFound: 2,
+      }}
       radarTotalItems={0}
       radarUnseenOnly={false}
       radarView="all"
@@ -210,6 +218,7 @@ describe("Radar favorite artists", () => {
       removal: favorite,
     });
     const user = userEvent.setup();
+    expect(screen.getByText("7 unseen releases")).toBeVisible();
     const filter = screen.getByRole("search", {
       name: "Search saved favorite artists",
     });

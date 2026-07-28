@@ -145,6 +145,7 @@ interface FavoriteArtistRow {
   lastSuccessfulRefreshAt: string | null;
   lastProviderFetchAt: string | null;
   lastRefreshTruncated: number;
+  unseenRadarCount: number;
 }
 
 interface RadarItemRow {
@@ -829,7 +830,11 @@ export class CatalogDatabase {
           created_at AS createdAt,
           last_successful_refresh_at AS lastSuccessfulRefreshAt,
           last_provider_fetch_at AS lastProviderFetchAt,
-          last_refresh_truncated AS lastRefreshTruncated
+          last_refresh_truncated AS lastRefreshTruncated,
+          (SELECT COUNT(*) FROM radar_items r
+           WHERE r.favorite_artist_id=favorite_artists.id
+             AND r.present=1 AND r.seen_at IS NULL
+             AND r.dismissed_at IS NULL) AS unseenRadarCount
          FROM favorite_artists
          ORDER BY sort_name COLLATE NOCASE, sort_name, name, id
          LIMIT 500`,
@@ -927,6 +932,7 @@ export class CatalogDatabase {
       lastSuccessfulRefreshAt: null,
       lastProviderFetchAt: null,
       lastRefreshTruncated: false,
+      unseenRadarCount: 0,
     };
     this.connection
       .prepare(
@@ -956,7 +962,11 @@ export class CatalogDatabase {
           created_at AS createdAt,
           last_successful_refresh_at AS lastSuccessfulRefreshAt,
           last_provider_fetch_at AS lastProviderFetchAt,
-          last_refresh_truncated AS lastRefreshTruncated
+          last_refresh_truncated AS lastRefreshTruncated,
+          (SELECT COUNT(*) FROM radar_items r
+           WHERE r.favorite_artist_id=favorite_artists.id
+             AND r.present=1 AND r.seen_at IS NULL
+             AND r.dismissed_at IS NULL) AS unseenRadarCount
          FROM favorite_artists WHERE id=?`,
       )
       .get(id) as FavoriteArtistRow | undefined;
@@ -1140,6 +1150,35 @@ export class CatalogDatabase {
         today,
         view,
       ) as number;
+    const summary = this.connection
+      .prepare(
+        `SELECT COUNT(*) AS current,
+          COALESCE(SUM(CASE WHEN r.seen_at IS NULL THEN 1 ELSE 0 END), 0)
+            AS unseen,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'upcoming'
+          )), 0) AS upcoming,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'recent'
+          )), 0) AS recent,
+          COALESCE(SUM(outgroove_radar_has_reason(
+            r.first_release_date, r.discovered_after_baseline, ?, 'newly-found'
+          )), 0) AS newlyFound
+         FROM radar_items r
+         WHERE r.present=1
+           AND outgroove_radar_has_primary_type(r.primary_type, ?)=1
+           AND (? IS NULL OR r.favorite_artist_id=?)
+           AND (?=1 OR r.dismissed_at IS NULL)`,
+      )
+      .get(
+        today,
+        today,
+        today,
+        primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        includeDismissed ? 1 : 0,
+      ) as RadarPageDto["summary"];
     const rows = this.connection
       .prepare(
         `SELECT r.id, r.favorite_artist_id AS favoriteArtistId,
@@ -1182,6 +1221,7 @@ export class CatalogDatabase {
       totalItems,
       offset,
       limit,
+      summary,
     };
   }
 
