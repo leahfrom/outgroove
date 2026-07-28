@@ -81,6 +81,8 @@ function renderView(
         lastFailed: 0,
       }}
       radarError={undefined}
+      radarFavoriteArtistId={null}
+      radarFilterFavorites={[favorite]}
       radarIncludeDismissed={false}
       radarItems={[]}
       radarLimit={20}
@@ -92,6 +94,7 @@ function renderView(
       radarRefreshAllResult={undefined}
       radarRefreshResult={undefined}
       radarTotalItems={0}
+      radarUnseenOnly={false}
       radarView="all"
       refreshingFavoriteId={undefined}
       removal={undefined}
@@ -104,11 +107,13 @@ function renderView(
       onFavoriteFilterTextChange={vi.fn()}
       onFilterFavorites={vi.fn()}
       onRadarDismissed={vi.fn()}
+      onRadarFavoriteArtistChange={vi.fn()}
       onRadarIncludeDismissedChange={vi.fn()}
       onRadarOpen={vi.fn()}
       onRadarPage={vi.fn()}
       onRadarPrimaryTypeChange={vi.fn()}
       onRadarSeen={vi.fn()}
+      onRadarUnseenOnlyChange={vi.fn()}
       onRadarViewChange={vi.fn()}
       onRadarBackgroundChange={vi.fn()}
       onRefreshAll={vi.fn()}

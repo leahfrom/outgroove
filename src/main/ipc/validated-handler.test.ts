@@ -192,6 +192,8 @@ describe("validated IPC handlers", () => {
     const page = {
       view: "newly-found",
       primaryType: "album",
+      favoriteArtistId,
+      unseenOnly: true,
       includeDismissed: false,
       offset: 0,
       limit: 20,
@@ -199,11 +201,30 @@ describe("validated IPC handlers", () => {
     await expect(listHandler({}, page)).resolves.toMatchObject({ ok: true });
     expect(list).toHaveBeenCalledWith(page);
     for (const request of [
+      {
+        view: page.view,
+        primaryType: page.primaryType,
+        unseenOnly: page.unseenOnly,
+        includeDismissed: page.includeDismissed,
+        offset: page.offset,
+        limit: page.limit,
+      },
+      {
+        view: page.view,
+        primaryType: page.primaryType,
+        favoriteArtistId: page.favoriteArtistId,
+        includeDismissed: page.includeDismissed,
+        offset: page.offset,
+        limit: page.limit,
+      },
       { ...page, view: "unknown" },
       { ...page, primaryType: "soundtrack" },
+      { ...page, favoriteArtistId: "not-an-id" },
+      { ...page, unseenOnly: 1 },
       { ...page, limit: 51 },
       { ...page, offset: -1 },
       { ...page, provider: "musicbrainz" },
+      { ...page, path: "/private/library" },
     ])
       await expect(listHandler({}, request)).resolves.toMatchObject({
         ok: false,

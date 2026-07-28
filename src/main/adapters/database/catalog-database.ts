@@ -1113,9 +1113,13 @@ export class CatalogDatabase {
     today: string,
     offset = 0,
     limit = 50,
+    favoriteArtistId: string | null = null,
+    unseenOnly = false,
   ): RadarPageDto {
     const where = `r.present=1
       AND outgroove_radar_has_primary_type(r.primary_type, ?)=1
+      AND (? IS NULL OR r.favorite_artist_id=?)
+      AND (?=0 OR r.seen_at IS NULL)
       AND (?=1 OR r.dismissed_at IS NULL)
       AND (?='all' OR outgroove_radar_has_reason(
         r.first_release_date, r.discovered_after_baseline, ?, ?
@@ -1126,7 +1130,16 @@ export class CatalogDatabase {
          WHERE ${where}`,
       )
       .pluck()
-      .get(primaryType, includeDismissed ? 1 : 0, view, today, view) as number;
+      .get(
+        primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        unseenOnly ? 1 : 0,
+        includeDismissed ? 1 : 0,
+        view,
+        today,
+        view,
+      ) as number;
     const rows = this.connection
       .prepare(
         `SELECT r.id, r.favorite_artist_id AS favoriteArtistId,
@@ -1152,6 +1165,9 @@ export class CatalogDatabase {
       )
       .all(
         primaryType,
+        favoriteArtistId,
+        favoriteArtistId,
+        unseenOnly ? 1 : 0,
         includeDismissed ? 1 : 0,
         view,
         today,

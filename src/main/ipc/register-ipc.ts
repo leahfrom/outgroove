@@ -384,13 +384,23 @@ export function registerIpc(
     channels.listRadarItems,
     createValidatedHandler(
       radarListRequestSchema,
-      ({ view, primaryType, includeDismissed, offset, limit }) =>
+      ({
+        view,
+        primaryType,
+        favoriteArtistId,
+        unseenOnly,
+        includeDismissed,
+        offset,
+        limit,
+      }) =>
         dependencies.radar.list(
           view,
           primaryType,
           includeDismissed,
           offset,
           limit,
+          favoriteArtistId,
+          unseenOnly,
         ),
     ),
   );

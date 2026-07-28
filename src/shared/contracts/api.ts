@@ -114,6 +114,8 @@ export const radarListRequestSchema = z
   .object({
     view: z.enum(radarViews),
     primaryType: z.enum(radarPrimaryTypeFilters),
+    favoriteArtistId: z.uuid().nullable(),
+    unseenOnly: z.boolean(),
     includeDismissed: z.boolean(),
     offset: z.number().int().min(0),
     limit: z.number().int().min(1).max(50),

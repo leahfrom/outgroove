@@ -1,4 +1,5 @@
 import type {
+  FavoriteArtistDto,
   RadarItemDto,
   RadarRefreshResultDto,
   radarViews,
@@ -43,6 +44,8 @@ const primaryTypeLabels: Record<RadarPrimaryTypeFilter, string> = {
 export function RadarReleases({
   actionBusyId,
   error,
+  favoriteArtistId,
+  favorites,
   includeDismissed,
   items,
   limit,
@@ -51,17 +54,22 @@ export function RadarReleases({
   primaryType,
   refreshResult,
   totalItems,
+  unseenOnly,
   view,
   onDismissed,
+  onFavoriteArtistChange,
   onIncludeDismissedChange,
   onOpen,
   onPage,
   onPrimaryTypeChange,
   onSeen,
+  onUnseenOnlyChange,
   onViewChange,
 }: {
   readonly actionBusyId: string | undefined;
   readonly error: string | undefined;
+  readonly favoriteArtistId: string | null;
+  readonly favorites: readonly FavoriteArtistDto[];
   readonly includeDismissed: boolean;
   readonly items: readonly RadarItemDto[];
   readonly limit: number;
@@ -70,13 +78,16 @@ export function RadarReleases({
   readonly primaryType: RadarPrimaryTypeFilter;
   readonly refreshResult: RadarRefreshResultDto | undefined;
   readonly totalItems: number;
+  readonly unseenOnly: boolean;
   readonly view: RadarViewName;
   readonly onDismissed: (item: RadarItemDto, dismissed: boolean) => void;
+  readonly onFavoriteArtistChange: (id: string | null) => void;
   readonly onIncludeDismissedChange: (include: boolean) => void;
   readonly onOpen: (item: RadarItemDto) => void;
   readonly onPage: (offset: number) => void;
   readonly onPrimaryTypeChange: (value: RadarPrimaryTypeFilter) => void;
   readonly onSeen: (item: RadarItemDto, seen: boolean) => void;
+  readonly onUnseenOnlyChange: (unseenOnly: boolean) => void;
   readonly onViewChange: (view: RadarViewName) => void;
 }): React.JSX.Element {
   const end = Math.min(offset + items.length, totalItems);
@@ -94,6 +105,22 @@ export function RadarReleases({
         </div>
         <div className="radar-filters">
           <label>
+            Favorite artist
+            <select
+              value={favoriteArtistId ?? ""}
+              onChange={(event) =>
+                onFavoriteArtistChange(event.target.value || null)
+              }
+            >
+              <option value="">All favorite artists</option>
+              {favorites.map((favorite) => (
+                <option key={favorite.id} value={favorite.id}>
+                  {favorite.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Release type
             <select
               value={primaryType}
@@ -109,6 +136,14 @@ export function RadarReleases({
                 </option>
               ))}
             </select>
+          </label>
+          <label className="radar-dismissed-toggle">
+            <input
+              checked={unseenOnly}
+              type="checkbox"
+              onChange={(event) => onUnseenOnlyChange(event.target.checked)}
+            />
+            Unseen only
           </label>
           <label className="radar-dismissed-toggle">
             <input

@@ -31,6 +31,8 @@ interface RadarStore {
     today: string,
     offset: number,
     limit: number,
+    favoriteArtistId: string | null,
+    unseenOnly: boolean,
   ): RadarPageDto;
   setRadarItemSeen(
     id: string,
@@ -231,6 +233,8 @@ export class RefreshRadar {
     includeDismissed: boolean,
     offset: number,
     limit: number,
+    favoriteArtistId: string | null,
+    unseenOnly: boolean,
   ): RadarPageDto {
     return this.store.listRadarItems(
       view,
@@ -239,6 +243,8 @@ export class RefreshRadar {
       this.today(),
       offset,
       limit,
+      favoriteArtistId,
+      unseenOnly,
     );
   }
 
