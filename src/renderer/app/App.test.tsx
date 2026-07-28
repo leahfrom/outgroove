@@ -236,6 +236,18 @@ function api(applyVerified: boolean): OutgrooveApi {
     listFavoriteArtists: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     addFavoriteArtist: vi.fn(),
     removeFavoriteArtist: vi.fn(),
+    refreshRadar: vi.fn(),
+    cancelRadarRefresh: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
+    listRadarItems: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        value: { items: [], totalItems: 0, offset: 0, limit: 20 },
+      }),
+    ),
+    setRadarItemSeen: vi.fn(),
+    setRadarItemDismissed: vi.fn(),
     previewAlbumTitleEdit: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -421,6 +433,9 @@ describe("tag edit UI safety states", () => {
       type: "Group",
       country: "DE",
       createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
     };
     vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
       ok: true,
@@ -509,6 +524,112 @@ describe("tag edit UI safety states", () => {
       }),
     );
     expect(remove).toHaveBeenCalledWith({ id: saved.id });
+  });
+
+  it("routes explicit Radar refresh and item state through opaque local identities", async () => {
+    const mockApi = api(true);
+    const favorite = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+    };
+    const radarItem = {
+      id: "4f2f7939-d847-47e0-a08e-ae47ac0727b2",
+      favoriteArtistId: favorite.id,
+      favoriteArtistName: favorite.name,
+      musicBrainzReleaseGroupId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      representativeReleaseId: "11111111-1111-4111-8111-111111111111",
+      title: "Future Fixture",
+      primaryType: "Album",
+      secondaryTypes: [],
+      firstReleaseDate: "2027-03",
+      status: "Official",
+      country: "DE",
+      firstSeenAt: "2026-07-28T08:00:00.000Z",
+      lastSeenAt: "2026-07-28T08:00:00.000Z",
+      seenAt: null,
+      dismissedAt: null,
+      reasons: ["upcoming"] as const,
+    };
+    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
+      ok: true,
+      value: [favorite],
+    });
+    const list = vi.spyOn(mockApi, "listRadarItems").mockResolvedValue({
+      ok: true,
+      value: {
+        items: [radarItem],
+        totalItems: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+    const refresh = vi.spyOn(mockApi, "refreshRadar").mockResolvedValue({
+      ok: true,
+      value: {
+        favoriteArtistId: favorite.id,
+        favoriteArtistName: favorite.name,
+        added: 0,
+        updated: 0,
+        unchanged: 1,
+        total: 1,
+        source: "network",
+        providerFetchedAt: "2026-07-28T08:00:00.000Z",
+        refreshedAt: "2026-07-28T08:01:00.000Z",
+        truncated: false,
+      },
+    });
+    const seen = vi.spyOn(mockApi, "setRadarItemSeen").mockResolvedValue({
+      ok: true,
+      value: {
+        ...radarItem,
+        seenAt: "2026-07-28T08:02:00.000Z",
+      },
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    expect(await screen.findByText(radarItem.title)).toBeVisible();
+
+    const refreshButton = screen.getByRole("button", {
+      name: `Refresh releases for ${favorite.name}`,
+    });
+    refreshButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(refresh).toHaveBeenCalledWith({
+        favoriteArtistId: favorite.id,
+      }),
+    );
+    expect(refresh.mock.calls[0]?.[0]).not.toHaveProperty(
+      "musicBrainzArtistId",
+    );
+    expect(await screen.findByText(/Refreshed Fixture Artist:/u)).toBeVisible();
+
+    const markSeen = screen.getByRole("button", { name: "Mark seen" });
+    markSeen.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(seen).toHaveBeenCalledWith({ id: radarItem.id, seen: true }),
+    );
+    expect(list).toHaveBeenCalledWith({
+      view: "all",
+      includeDismissed: false,
+      offset: 0,
+      limit: 20,
+    });
   });
 
   it("preserves Library search and view state across navigation", async () => {
@@ -5997,6 +6118,7 @@ describe("tag edit UI safety states", () => {
             syncProfiles: 1,
             savedLibraryFilters: 2,
             favoriteArtists: 3,
+            radarItems: 12,
           },
         },
       }),

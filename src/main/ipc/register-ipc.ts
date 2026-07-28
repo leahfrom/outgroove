@@ -27,6 +27,10 @@ import {
   libraryRootRemovalPreviewRequestSchema,
   musicBrainzReleaseLookupRequestSchema,
   musicBrainzTrackMappingPreviewRequestSchema,
+  radarItemDismissRequestSchema,
+  radarItemSeenRequestSchema,
+  radarListRequestSchema,
+  radarRefreshRequestSchema,
   renameSyncProfileRequestSchema,
   removeFavoriteArtistRequestSchema,
   scanCancelRequestSchema,
@@ -61,6 +65,7 @@ import type { LoadAlbumArtwork } from "../application/load-album-artwork";
 import type { FindAlbumCandidates } from "../application/find-album-candidates";
 import type { FindReleaseArtwork } from "../application/find-release-artwork";
 import type { ManageFavoriteArtists } from "../application/manage-favorite-artists";
+import type { RefreshRadar } from "../application/refresh-radar";
 import { pathComparisonKey } from "../application/scan-library";
 import type { ScanJobCoordinator } from "../jobs/scan-job-coordinator";
 import { createValidatedHandler } from "./validated-handler";
@@ -75,6 +80,7 @@ interface Dependencies {
   albumCandidates: FindAlbumCandidates;
   releaseArtwork: FindReleaseArtwork;
   favoriteArtists: ManageFavoriteArtists;
+  radar: RefreshRadar;
   editor: EditAlbumTitle;
   artworkEditor: EditAlbumArtwork;
   artworkExporter: ExportAlbumArtwork;
@@ -328,6 +334,38 @@ export function registerIpc(
     channels.removeFavoriteArtist,
     createValidatedHandler(removeFavoriteArtistRequestSchema, ({ id }) =>
       dependencies.favoriteArtists.remove(id),
+    ),
+  );
+  ipcMain.handle(
+    channels.refreshRadar,
+    createValidatedHandler(radarRefreshRequestSchema, ({ favoriteArtistId }) =>
+      dependencies.radar.refresh(favoriteArtistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.cancelRadarRefresh,
+    createValidatedHandler(radarRefreshRequestSchema, ({ favoriteArtistId }) =>
+      dependencies.radar.cancel(favoriteArtistId),
+    ),
+  );
+  ipcMain.handle(
+    channels.listRadarItems,
+    createValidatedHandler(
+      radarListRequestSchema,
+      ({ view, includeDismissed, offset, limit }) =>
+        dependencies.radar.list(view, includeDismissed, offset, limit),
+    ),
+  );
+  ipcMain.handle(
+    channels.setRadarItemSeen,
+    createValidatedHandler(radarItemSeenRequestSchema, ({ id, seen }) =>
+      dependencies.radar.setSeen(id, seen),
+    ),
+  );
+  ipcMain.handle(
+    channels.setRadarItemDismissed,
+    createValidatedHandler(radarItemDismissRequestSchema, ({ id, dismissed }) =>
+      dependencies.radar.setDismissed(id, dismissed),
     ),
   );
   ipcMain.handle(

@@ -1,0 +1,20 @@
+{
+  "release-count": 4,
+  "release-offset": 3,
+  "releases": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "title": "Historical Fixture",
+      "status": "Official",
+      "date": "2001",
+      "country": "GB",
+      "release-group": {
+        "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "title": "Historical Fixture",
+        "primary-type": "Album",
+        "secondary-types": ["Compilation"],
+        "first-release-date": "2001"
+      }
+    }
+  ]
+}

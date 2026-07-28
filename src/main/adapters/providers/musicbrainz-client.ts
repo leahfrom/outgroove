@@ -6,6 +6,8 @@ import type {
   MusicBrainzReleaseTracklist,
 } from "../../../shared/domain/album-identification";
 import type { MusicBrainzArtistCandidate } from "../../../shared/domain/favorite-artist";
+import { isValidPartialDate } from "../../../shared/domain/partial-date";
+import type { RadarReleaseGroupObservation } from "../../../shared/domain/radar";
 
 const responseSchemaVersion = 1;
 const provider = "musicbrainz";
@@ -96,6 +98,38 @@ const musicBrainzArtistSearchResponseSchema = z
       )
       .max(8)
       .default([]),
+  })
+  .loose();
+
+const musicBrainzArtistReleasesResponseSchema = z
+  .object({
+    "release-count": z.number().int().nonnegative().max(1_000_000),
+    "release-offset": z.number().int().nonnegative(),
+    releases: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            title: z.string().min(1).max(1000),
+            status: z.string().max(100).nullable().optional(),
+            date: z.string().max(32).nullable().optional(),
+            country: z.string().max(10).nullable().optional(),
+            "release-group": z
+              .object({
+                id: z.uuid(),
+                title: z.string().min(1).max(1000),
+                "primary-type": z.string().max(100).nullable().optional(),
+                "secondary-types": z
+                  .array(z.string().min(1).max(100))
+                  .max(100)
+                  .optional(),
+                "first-release-date": z.string().max(32).nullable().optional(),
+              })
+              .loose(),
+          })
+          .loose(),
+      )
+      .max(100),
   })
   .loose();
 
@@ -205,6 +239,13 @@ export interface MusicBrainzArtistSearchResult {
   readonly fetchedAt: string;
 }
 
+export interface MusicBrainzArtistReleasesResult {
+  readonly observations: readonly RadarReleaseGroupObservation[];
+  readonly source: "network" | "cache" | "stale-cache";
+  readonly fetchedAt: string;
+  readonly truncated: boolean;
+}
+
 interface Options {
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
@@ -246,6 +287,17 @@ function artistRequestKey(query: string): string {
   return JSON.stringify({
     artistSearch: query.normalize("NFC").trim(),
   });
+}
+
+function artistReleasesRequestKey(artistId: string, offset: number): string {
+  return JSON.stringify({ artistReleases: artistId, offset });
+}
+
+function validProviderDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!isValidPartialDate(value))
+    throw new Error("MusicBrainz returned an invalid partial release date.");
+  return value;
 }
 
 function mapResponse(
@@ -294,6 +346,61 @@ function mapArtistResponse(
     area: artist.area?.name ?? null,
     score: artist.score ?? 0,
   }));
+}
+
+function mapArtistReleases(
+  releases: z.infer<typeof musicBrainzArtistReleasesResponseSchema>["releases"],
+): readonly RadarReleaseGroupObservation[] {
+  const grouped = new Map<
+    string,
+    {
+      observation: RadarReleaseGroupObservation;
+      representativeDate: string | null;
+    }
+  >();
+  for (const release of releases) {
+    const releaseGroup = release["release-group"];
+    const releaseGroupId = releaseGroup.id.toLocaleLowerCase("en-US");
+    const releaseId = release.id.toLocaleLowerCase("en-US");
+    const releaseDate = validProviderDate(release.date);
+    const observation: RadarReleaseGroupObservation = {
+      releaseGroupId,
+      representativeReleaseId: releaseId,
+      title: releaseGroup.title,
+      primaryType: releaseGroup["primary-type"] ?? null,
+      secondaryTypes: [
+        ...new Set(releaseGroup["secondary-types"] ?? []),
+      ].sort(),
+      firstReleaseDate: validProviderDate(releaseGroup["first-release-date"]),
+      status: release.status ?? null,
+      country: release.country ?? null,
+    };
+    const existing = grouped.get(releaseGroupId);
+    if (!existing) {
+      grouped.set(releaseGroupId, {
+        observation,
+        representativeDate: releaseDate,
+      });
+      continue;
+    }
+    const existingKey = `${existing.representativeDate ?? "9999"}:${existing.observation.representativeReleaseId}`;
+    const candidateKey = `${releaseDate ?? "9999"}:${releaseId}`;
+    if (candidateKey < existingKey)
+      grouped.set(releaseGroupId, {
+        observation,
+        representativeDate: releaseDate,
+      });
+  }
+  return [...grouped.values()]
+    .map(({ observation }) => observation)
+    .sort(
+      (left, right) =>
+        (left.firstReleaseDate ?? "9999").localeCompare(
+          right.firstReleaseDate ?? "9999",
+        ) ||
+        left.title.localeCompare(right.title) ||
+        left.releaseGroupId.localeCompare(right.releaseGroupId),
+    );
 }
 
 function mapArtistCredits(
@@ -355,6 +462,10 @@ export class MusicBrainzClient {
     string,
     Promise<MusicBrainzArtistSearchResult>
   >();
+  private readonly artistReleasesInFlight = new Map<
+    string,
+    Promise<MusicBrainzArtistReleasesResult>
+  >();
   private nextRequestAt = 0;
 
   constructor(
@@ -411,6 +522,20 @@ export class MusicBrainzClient {
       this.artistInFlight.delete(key),
     );
     this.artistInFlight.set(key, pending);
+    return pending;
+  }
+
+  browseArtistReleases(
+    artistId: string,
+    signal: AbortSignal,
+  ): Promise<MusicBrainzArtistReleasesResult> {
+    const normalizedId = artistId.toLocaleLowerCase("en-US");
+    const existing = this.artistReleasesInFlight.get(normalizedId);
+    if (existing) return existing;
+    const pending = this.executeArtistReleases(normalizedId, signal).finally(
+      () => this.artistReleasesInFlight.delete(normalizedId),
+    );
+    this.artistReleasesInFlight.set(normalizedId, pending);
     return pending;
   }
 
@@ -491,6 +616,41 @@ export class MusicBrainzClient {
     return {
       candidates: mapArtistResponse(parsed.data),
       source: "cache",
+      fetchedAt: cached.fetchedAt,
+      expired: Date.parse(cached.expiresAt) <= this.now(),
+    };
+  }
+
+  private readCachedArtistReleases(key: string):
+    | {
+        readonly payload: z.infer<
+          typeof musicBrainzArtistReleasesResponseSchema
+        >;
+        readonly fetchedAt: string;
+        readonly expired: boolean;
+      }
+    | undefined {
+    const cached = this.cache.getProviderCache(provider, key);
+    if (
+      cached?.status !== 200 ||
+      cached.responseSchemaVersion !== responseSchemaVersion
+    )
+      return undefined;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(cached.payloadJson) as unknown;
+    } catch {
+      return undefined;
+    }
+    const parsed = musicBrainzArtistReleasesResponseSchema.safeParse(payload);
+    if (!parsed.success) return undefined;
+    try {
+      mapArtistReleases(parsed.data.releases);
+    } catch {
+      return undefined;
+    }
+    return {
+      payload: parsed.data,
       fetchedAt: cached.fetchedAt,
       expired: Date.parse(cached.expiresAt) <= this.now(),
     };
@@ -587,6 +747,93 @@ export class MusicBrainzClient {
       if (cached) return { ...cached, source: "stale-cache" };
       throw error;
     }
+  }
+
+  private async executeArtistReleases(
+    artistId: string,
+    signal: AbortSignal,
+  ): Promise<MusicBrainzArtistReleasesResult> {
+    const releases: z.infer<
+      typeof musicBrainzArtistReleasesResponseSchema
+    >["releases"] = [];
+    let offset = 0;
+    let total = 0;
+    let expectedTotal: number | undefined;
+    let fetchedAt = "";
+    let source: MusicBrainzArtistReleasesResult["source"] = "cache";
+    do {
+      const key = artistReleasesRequestKey(artistId, offset);
+      const cached = this.readCachedArtistReleases(key);
+      let page:
+        | {
+            payload: z.infer<typeof musicBrainzArtistReleasesResponseSchema>;
+            source: MusicBrainzArtistReleasesResult["source"];
+            fetchedAt: string;
+          }
+        | undefined;
+      if (cached && !cached.expired)
+        page = {
+          payload: cached.payload,
+          source: "cache",
+          fetchedAt: cached.fetchedAt,
+        };
+      else {
+        const url = new URL("https://musicbrainz.org/ws/2/release/");
+        url.searchParams.set("artist", artistId);
+        url.searchParams.set("inc", "release-groups");
+        url.searchParams.set("status", "official");
+        url.searchParams.set("fmt", "json");
+        url.searchParams.set("limit", "100");
+        url.searchParams.set("offset", String(offset));
+        try {
+          const response = await this.performRequest(url, signal);
+          const payload = musicBrainzArtistReleasesResponseSchema.parse(
+            JSON.parse(response.rawPayload) as unknown,
+          );
+          mapArtistReleases(payload.releases);
+          this.cacheResponse(key, response.status, response.fetchedAt, payload);
+          page = {
+            payload,
+            source: "network",
+            fetchedAt: response.fetchedAt,
+          };
+        } catch (error) {
+          if (signal.aborted) throw error;
+          if (!cached) throw error;
+          page = {
+            payload: cached.payload,
+            source: "stale-cache",
+            fetchedAt: cached.fetchedAt,
+          };
+        }
+      }
+      if (page.payload["release-offset"] !== offset)
+        throw new Error("MusicBrainz returned an unexpected release page.");
+      if (
+        expectedTotal !== undefined &&
+        page.payload["release-count"] !== expectedTotal
+      )
+        throw new Error(
+          "MusicBrainz changed the release count during the Radar refresh.",
+        );
+      expectedTotal ??= page.payload["release-count"];
+      total = page.payload["release-count"];
+      if (page.payload.releases.length === 0 && offset < total)
+        throw new Error("MusicBrainz returned an incomplete release page.");
+      releases.push(...page.payload.releases.slice(0, 500 - releases.length));
+      offset += page.payload.releases.length;
+      fetchedAt =
+        !fetchedAt || page.fetchedAt > fetchedAt ? page.fetchedAt : fetchedAt;
+      if (page.source === "stale-cache") source = "stale-cache";
+      else if (page.source === "network" && source !== "stale-cache")
+        source = "network";
+    } while (offset < total && releases.length < 500);
+    return {
+      observations: mapArtistReleases(releases.slice(0, 500)),
+      source,
+      fetchedAt,
+      truncated: total > releases.length,
+    };
   }
 
   private async performRequest(

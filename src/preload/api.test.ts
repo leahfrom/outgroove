@@ -159,8 +159,41 @@ describe("preload saved-filter allowlist", () => {
       channels.removeFavoriteArtist,
       favorite,
     );
+    await api.refreshRadar({ favoriteArtistId: favorite.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.refreshRadar, {
+      favoriteArtistId: favorite.id,
+    });
+    await api.cancelRadarRefresh({ favoriteArtistId: favorite.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelRadarRefresh,
+      { favoriteArtistId: favorite.id },
+    );
+    const page = {
+      view: "all" as const,
+      includeDismissed: false,
+      offset: 0,
+      limit: 20,
+    };
+    await api.listRadarItems(page);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.listRadarItems,
+      page,
+    );
+    const seen = { id: favorite.id, seen: true };
+    await api.setRadarItemSeen(seen);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.setRadarItemSeen,
+      seen,
+    );
+    const dismissed = { id: favorite.id, dismissed: true };
+    await api.setRadarItemDismissed(dismissed);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.setRadarItemDismissed,
+      dismissed,
+    );
     expect(api).not.toHaveProperty("fetch");
     expect(api).not.toHaveProperty("provider");
+    expect(api).not.toHaveProperty("invoke");
   });
 
   it("maps optional folder artwork through fixed preview and apply channels", async () => {

@@ -1,8 +1,14 @@
 import type {
   FavoriteArtistDto,
   FavoriteArtistSearchResultDto,
+  RadarItemDto,
+  RadarRefreshResultDto,
+  radarViews,
 } from "../../shared/contracts/api";
 import { ModalSheet } from "./modal-sheet";
+import { RadarReleases } from "./radar-releases";
+
+type RadarReleaseView = (typeof radarViews)[number];
 
 export function RadarView({
   artistSearchError,
@@ -14,6 +20,17 @@ export function RadarView({
   favoriteArtistIds,
   favorites,
   mutationBusy,
+  radarActionBusyId,
+  radarError,
+  radarIncludeDismissed,
+  radarItems,
+  radarLimit,
+  radarLoading,
+  radarOffset,
+  radarRefreshResult,
+  radarTotalItems,
+  radarView,
+  refreshingFavoriteId,
   removal,
   onAdd,
   onArtistSearchTextChange,
@@ -23,6 +40,13 @@ export function RadarView({
   onConfirmRemoval,
   onFavoriteFilterTextChange,
   onFilterFavorites,
+  onRadarDismissed,
+  onRadarIncludeDismissedChange,
+  onRadarPage,
+  onRadarSeen,
+  onRadarViewChange,
+  onRefreshFavorite,
+  onCancelRefresh,
   onRemove,
   onSearchArtists,
 }: {
@@ -35,6 +59,17 @@ export function RadarView({
   readonly favoriteArtistIds: readonly string[];
   readonly favorites: readonly FavoriteArtistDto[];
   readonly mutationBusy: boolean;
+  readonly radarActionBusyId: string | undefined;
+  readonly radarError: string | undefined;
+  readonly radarIncludeDismissed: boolean;
+  readonly radarItems: readonly RadarItemDto[];
+  readonly radarLimit: number;
+  readonly radarLoading: boolean;
+  readonly radarOffset: number;
+  readonly radarRefreshResult: RadarRefreshResultDto | undefined;
+  readonly radarTotalItems: number;
+  readonly radarView: RadarReleaseView;
+  readonly refreshingFavoriteId: string | undefined;
   readonly removal: FavoriteArtistDto | undefined;
   readonly onAdd: (artistId: string) => void;
   readonly onArtistSearchTextChange: (value: string) => void;
@@ -44,6 +79,13 @@ export function RadarView({
   readonly onConfirmRemoval: () => void;
   readonly onFavoriteFilterTextChange: (value: string) => void;
   readonly onFilterFavorites: () => void;
+  readonly onRadarDismissed: (item: RadarItemDto, dismissed: boolean) => void;
+  readonly onRadarIncludeDismissedChange: (include: boolean) => void;
+  readonly onRadarPage: (offset: number) => void;
+  readonly onRadarSeen: (item: RadarItemDto, seen: boolean) => void;
+  readonly onRadarViewChange: (view: RadarReleaseView) => void;
+  readonly onRefreshFavorite: (favorite: FavoriteArtistDto) => void;
+  readonly onCancelRefresh: (favorite: FavoriteArtistDto) => void;
   readonly onRemove: (favorite: FavoriteArtistDto) => void;
   readonly onSearchArtists: () => void;
 }): React.JSX.Element {
@@ -55,8 +97,8 @@ export function RadarView({
           <p className="eyebrow">Radar foundation</p>
           <h2>Favorite artists</h2>
           <p>
-            Save exact MusicBrainz artist identities now. Release discovery and
-            Radar refresh will remain separate, explicit future actions.
+            Save exact MusicBrainz artist identities, then refresh one favorite
+            explicitly when you want to check its releases.
           </p>
         </div>
         <strong>
@@ -64,6 +106,24 @@ export function RadarView({
           {favorites.length === 1 ? "favorite" : "favorites"}
         </strong>
       </section>
+
+      <RadarReleases
+        actionBusyId={radarActionBusyId}
+        error={radarError}
+        includeDismissed={radarIncludeDismissed}
+        items={radarItems}
+        limit={radarLimit}
+        loading={radarLoading}
+        offset={radarOffset}
+        refreshResult={radarRefreshResult}
+        totalItems={radarTotalItems}
+        view={radarView}
+        onDismissed={onRadarDismissed}
+        onIncludeDismissedChange={onRadarIncludeDismissedChange}
+        onPage={onRadarPage}
+        onSeen={onRadarSeen}
+        onViewChange={onRadarViewChange}
+      />
 
       <section className="favorite-artists" aria-labelledby="saved-favorites">
         <div className="section-heading">
@@ -73,6 +133,8 @@ export function RadarView({
             <p>
               This list is stored in Outgroove’s database and stays available
               offline, through catalog rebuilds, and in verified backups.
+              Refreshing one favorite sends only that saved MusicBrainz artist
+              ID and never runs automatically.
             </p>
           </div>
           <form
@@ -131,16 +193,41 @@ export function RadarView({
                         .join(" · ") || "Artist details unavailable"}
                     </p>
                     <code>{favorite.musicBrainzArtistId}</code>
+                    <p>
+                      {favorite.lastSuccessfulRefreshAt
+                        ? `Last successful refresh ${favorite.lastSuccessfulRefreshAt}`
+                        : "Not refreshed yet"}
+                      {favorite.lastRefreshTruncated &&
+                        " · bounded at 500 releases"}
+                    </p>
                   </div>
-                  <button
-                    aria-label={`Remove ${favorite.name} from favorites`}
-                    className="secondary"
-                    disabled={mutationBusy}
-                    onClick={() => onRemove(favorite)}
-                    type="button"
-                  >
-                    Remove favorite
-                  </button>
+                  <div className="favorite-actions">
+                    {refreshingFavoriteId === favorite.id ? (
+                      <button
+                        type="button"
+                        onClick={() => onCancelRefresh(favorite)}
+                      >
+                        Cancel refresh for {favorite.name}
+                      </button>
+                    ) : (
+                      <button
+                        disabled={Boolean(refreshingFavoriteId)}
+                        type="button"
+                        onClick={() => onRefreshFavorite(favorite)}
+                      >
+                        Refresh releases for {favorite.name}
+                      </button>
+                    )}
+                    <button
+                      aria-label={`Remove ${favorite.name} from favorites`}
+                      className="secondary"
+                      disabled={mutationBusy || Boolean(refreshingFavoriteId)}
+                      onClick={() => onRemove(favorite)}
+                      type="button"
+                    >
+                      Remove favorite
+                    </button>
+                  </div>
                 </article>
               </li>
             ))}
@@ -279,8 +366,9 @@ export function RadarView({
             <p className="eyebrow">Confirmation required</p>
             <h2>Remove {removal.name}?</h2>
             <p>
-              This removes only Outgroove’s saved favorite identity. It does not
-              change audio, Library tags, provider caches, or DAP files.
+              This removes Outgroove’s saved favorite identity and its Radar
+              history. It does not change audio, Library tags, provider caches,
+              or DAP files.
             </p>
             <div className="actions">
               <button
