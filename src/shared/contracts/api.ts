@@ -869,6 +869,22 @@ export interface RadarRefreshResultDto {
   readonly truncated: boolean;
 }
 
+export interface RadarRefreshFailureDto {
+  readonly favoriteArtistId: string;
+  readonly favoriteArtistName: string;
+  readonly message: string;
+}
+
+export interface RadarRefreshAllResultDto {
+  readonly totalFavorites: number;
+  readonly completed: number;
+  readonly successful: number;
+  readonly failed: number;
+  readonly cancelled: boolean;
+  readonly results: readonly RadarRefreshResultDto[];
+  readonly failures: readonly RadarRefreshFailureDto[];
+}
+
 export interface RadarPageDto {
   readonly items: readonly RadarItemDto[];
   readonly totalItems: number;
@@ -975,6 +991,8 @@ export interface OutgrooveApi {
   cancelRadarRefresh(
     request: z.infer<typeof radarRefreshRequestSchema>,
   ): Promise<Result<{ readonly cancelled: boolean }>>;
+  refreshAllRadar(): Promise<Result<RadarRefreshAllResultDto>>;
+  cancelAllRadarRefresh(): Promise<Result<{ readonly cancelled: boolean }>>;
   listRadarItems(
     request: z.infer<typeof radarListRequestSchema>,
   ): Promise<Result<RadarPageDto>>;
@@ -1116,7 +1134,7 @@ export interface OutgrooveApi {
   ): Promise<Result<SyncRecoveryResultDto>>;
   onJobProgress(
     listener: (progress: {
-      job: "scan" | "tag-edit" | "sync" | "library-quality";
+      job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar";
       completed: number;
       total: number;
       detail: string;

@@ -21,6 +21,7 @@ import type {
   LibraryTrackDto,
   MusicBrainzReleaseTracklistDto,
   RadarItemDto,
+  RadarRefreshAllResultDto,
   RadarRefreshResultDto,
   SavedLibraryFilterDefinition,
   SavedLibraryFilterDto,
@@ -272,6 +273,11 @@ export function App(): React.JSX.Element {
   const [radarError, setRadarError] = useState<string>();
   const [radarRefreshResult, setRadarRefreshResult] =
     useState<RadarRefreshResultDto>();
+  const [radarRefreshAllResult, setRadarRefreshAllResult] =
+    useState<RadarRefreshAllResultDto>();
+  const [radarRefreshAllActive, setRadarRefreshAllActive] = useState(false);
+  const [radarRefreshAllCancelling, setRadarRefreshAllCancelling] =
+    useState(false);
   const [refreshingFavoriteId, setRefreshingFavoriteId] = useState<string>();
   const [radarActionBusyId, setRadarActionBusyId] = useState<string>();
   const [searchText, setSearchText] = useState("");
@@ -1249,6 +1255,59 @@ export function App(): React.JSX.Element {
       `Refreshed Radar for ${result.value.favoriteArtistName}.`,
       "success",
     );
+  };
+
+  const refreshAllFavoriteRadar = async (): Promise<void> => {
+    setRadarRefreshAllActive(true);
+    setRadarRefreshAllCancelling(false);
+    setRadarRefreshAllResult(undefined);
+    setRadarRefreshResult(undefined);
+    setRadarError(undefined);
+    const result = await window.outgroove.refreshAllRadar();
+    setRadarRefreshAllActive(false);
+    setRadarRefreshAllCancelling(false);
+    if (!result.ok) {
+      setRadarError(result.error.message);
+      return;
+    }
+    setRadarRefreshAllResult(result.value);
+    await refreshFavoriteArtists(favoriteFilter);
+    await refreshRadarItems(
+      radarView,
+      radarPrimaryType,
+      radarIncludeDismissed,
+      radarOffset,
+    );
+    if (result.value.cancelled) {
+      setNotice(
+        `Stopped Radar after ${result.value.completed} of ${result.value.totalFavorites} favorites.`,
+      );
+    } else if (result.value.failed > 0) {
+      setNotice(
+        `Radar refreshed ${result.value.successful} favorites; ${result.value.failed} need attention.`,
+        "error",
+      );
+    } else {
+      setNotice(
+        `Refreshed Radar for ${result.value.successful} favorites.`,
+        "success",
+      );
+    }
+  };
+
+  const cancelAllFavoriteRadarRefresh = (): void => {
+    setRadarRefreshAllCancelling(true);
+    void window.outgroove.cancelAllRadarRefresh().then((result) => {
+      if (!result.ok) {
+        setRadarRefreshAllCancelling(false);
+        setRadarError(result.error.message);
+        return;
+      }
+      if (!result.value.cancelled) {
+        setRadarRefreshAllCancelling(false);
+        setRadarError("No Refresh all operation is currently running.");
+      }
+    });
   };
 
   const cancelFavoriteRadarRefresh = (favorite: FavoriteArtistDto): void => {
@@ -3401,6 +3460,9 @@ export function App(): React.JSX.Element {
           radarLoading={radarLoading}
           radarOffset={radarOffset}
           radarPrimaryType={radarPrimaryType}
+          radarRefreshAllActive={radarRefreshAllActive}
+          radarRefreshAllCancelling={radarRefreshAllCancelling}
+          radarRefreshAllResult={radarRefreshAllResult}
           radarRefreshResult={radarRefreshResult}
           radarTotalItems={radarTotalItems}
           radarView={radarView}
@@ -3423,7 +3485,9 @@ export function App(): React.JSX.Element {
           onRadarPrimaryTypeChange={chooseRadarPrimaryType}
           onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
           onRadarViewChange={chooseRadarView}
+          onRefreshAll={() => void refreshAllFavoriteRadar()}
           onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}
+          onCancelRefreshAll={cancelAllFavoriteRadarRefresh}
           onCancelRefresh={cancelFavoriteRadarRefresh}
           onRemove={setFavoriteRemoval}
           onSearchArtists={() => void searchMusicBrainzArtists()}

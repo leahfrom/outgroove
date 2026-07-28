@@ -144,6 +144,26 @@ describe("validated IPC handlers", () => {
         error: { code: "INVALID_REQUEST" },
       });
 
+    const refreshAll = vi.fn();
+    const refreshAllHandler = createValidatedHandler(
+      emptyRequestSchema,
+      refreshAll,
+    );
+    await expect(refreshAllHandler({}, {})).resolves.toMatchObject({
+      ok: true,
+    });
+    expect(refreshAll).toHaveBeenCalledWith({});
+    for (const request of [
+      { favoriteArtistId },
+      { artistIds: [favoriteArtistId] },
+      { providerUrl: "https://example.com" },
+      { path: "/private/library" },
+    ])
+      await expect(refreshAllHandler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
     const list = vi.fn(() => ({ items: [], totalItems: 0 }));
     const listHandler = createValidatedHandler(radarListRequestSchema, list);
     const page = {

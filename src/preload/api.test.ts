@@ -168,6 +168,16 @@ describe("preload saved-filter allowlist", () => {
       channels.cancelRadarRefresh,
       { favoriteArtistId: favorite.id },
     );
+    await api.refreshAllRadar();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.refreshAllRadar,
+      {},
+    );
+    await api.cancelAllRadarRefresh();
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.cancelAllRadarRefresh,
+      {},
+    );
     const page = {
       view: "all" as const,
       primaryType: "all" as const,

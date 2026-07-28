@@ -87,6 +87,33 @@ describe("ActivityView", () => {
     expect(callbacks.onCancel).toHaveBeenCalledOnce();
   });
 
+  it("shows a Radar sweep as active work across navigation", () => {
+    render(
+      <ActivityView
+        {...callbacks}
+        busy={false}
+        progress={{
+          job: "radar",
+          completed: 2,
+          total: 5,
+          detail: "Refreshing Radar for Fixture Artist",
+        }}
+        scanActive={false}
+        scanJob={undefined}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Radar refresh" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("progressbar", { name: "Radar refresh progress" }),
+    ).toHaveAttribute("value", "2");
+    expect(screen.getByLabelText("Activity overview")).toHaveTextContent(
+      "Active1",
+    );
+  });
+
   it("gives a failed scan recovery priority without hiding its error", () => {
     render(
       <ActivityView

@@ -240,6 +240,10 @@ function api(applyVerified: boolean): OutgrooveApi {
     cancelRadarRefresh: vi.fn(() =>
       Promise.resolve({ ok: true, value: { cancelled: false } }),
     ),
+    refreshAllRadar: vi.fn(),
+    cancelAllRadarRefresh: vi.fn(() =>
+      Promise.resolve({ ok: true, value: { cancelled: false } }),
+    ),
     listRadarItems: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -588,6 +592,18 @@ describe("tag edit UI safety states", () => {
         truncated: false,
       },
     });
+    const refreshAll = vi.spyOn(mockApi, "refreshAllRadar").mockResolvedValue({
+      ok: true,
+      value: {
+        totalFavorites: 1,
+        completed: 1,
+        successful: 1,
+        failed: 0,
+        cancelled: false,
+        results: [],
+        failures: [],
+      },
+    });
     const seen = vi.spyOn(mockApi, "setRadarItemSeen").mockResolvedValue({
       ok: true,
       value: {
@@ -622,6 +638,18 @@ describe("tag edit UI safety states", () => {
         limit: 20,
       }),
     );
+
+    const refreshAllButton = screen.getByRole("button", {
+      name: "Refresh all favorites",
+    });
+    refreshAllButton.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(refreshAll).toHaveBeenCalledWith());
+    expect(
+      await screen.findByText(
+        "Completed 1 of 1 favorites: 1 successful and 0 failed.",
+      ),
+    ).toBeVisible();
 
     const refreshButton = screen.getByRole("button", {
       name: `Refresh releases for ${favorite.name}`,
@@ -660,6 +688,84 @@ describe("tag edit UI safety states", () => {
       offset: 0,
       limit: 20,
     });
+  });
+
+  it("routes Refresh all and cancellation without renderer-supplied artist identities", async () => {
+    const mockApi = api(true);
+    const favorite = {
+      id: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      musicBrainzArtistId: "7c08e5aa-3d6a-480f-8763-156120bc9bd9",
+      name: "Fixture Artist",
+      sortName: "Fixture Artist",
+      disambiguation: null,
+      type: "Group",
+      country: "DE",
+      createdAt: "2026-07-28T08:00:00.000Z",
+      lastSuccessfulRefreshAt: null,
+      lastProviderFetchAt: null,
+      lastRefreshTruncated: false,
+    };
+    vi.spyOn(mockApi, "listFavoriteArtists").mockResolvedValue({
+      ok: true,
+      value: [favorite],
+    });
+    let finishSweep:
+      | ((result: Awaited<ReturnType<OutgrooveApi["refreshAllRadar"]>>) => void)
+      | undefined;
+    const refreshAll = vi.spyOn(mockApi, "refreshAllRadar").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSweep = resolve;
+        }),
+    );
+    const cancelAll = vi
+      .spyOn(mockApi, "cancelAllRadarRefresh")
+      .mockResolvedValue({
+        ok: true,
+        value: { cancelled: true },
+      });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Radar");
+    const start = await screen.findByRole("button", {
+      name: "Refresh all favorites",
+    });
+    start.focus();
+    await user.keyboard("{Enter}");
+    expect(refreshAll).toHaveBeenCalledWith();
+
+    const cancel = await screen.findByRole("button", {
+      name: "Cancel refresh all",
+    });
+    cancel.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(cancelAll).toHaveBeenCalledWith());
+    expect(refreshAll.mock.calls[0]).toEqual([]);
+    expect(cancelAll.mock.calls[0]).toEqual([]);
+
+    act(() => {
+      finishSweep?.({
+        ok: true,
+        value: {
+          totalFavorites: 1,
+          completed: 0,
+          successful: 0,
+          failed: 0,
+          cancelled: true,
+          results: [],
+          failures: [],
+        },
+      });
+    });
+    expect(
+      await screen.findByText(
+        "Stopped after 0 of 1 favorites: 0 successful and 0 failed.",
+      ),
+    ).toBeVisible();
   });
 
   it("preserves Library search and view state across navigation", async () => {

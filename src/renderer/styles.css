@@ -3358,6 +3358,7 @@ td {
   color: #71352f;
 }
 .radar-introduction,
+.radar-refresh-all-result,
 .radar-releases,
 .favorite-artists,
 .artist-search {
@@ -3387,9 +3388,40 @@ td {
   max-width: 52rem;
   color: #526159;
 }
-.radar-introduction > strong {
+.radar-introduction-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.55rem;
+  align-items: end;
+}
+.radar-introduction-actions strong {
   flex: 0 0 auto;
   color: #526159;
+}
+.radar-refresh-all-result {
+  display: grid;
+  gap: 0.65rem;
+}
+.radar-refresh-all-result h2,
+.radar-refresh-all-result p {
+  margin: 0;
+}
+.radar-refresh-all-result details {
+  min-width: 0;
+}
+.radar-refresh-all-result ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.radar-refresh-all-result li span {
+  display: block;
+  color: #526159;
+}
+.radar-refresh-all-result .radar-refresh-failures li span {
+  color: #71352f;
 }
 .radar-releases {
   display: grid;
@@ -3708,6 +3740,9 @@ td {
   .artist-search-results header {
     align-items: stretch;
     flex-direction: column;
+  }
+  .radar-introduction-actions {
+    align-items: start;
   }
   .radar-releases ol,
   .radar-releases dl {
