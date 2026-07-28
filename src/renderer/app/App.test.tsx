@@ -250,6 +250,11 @@ function api(applyVerified: boolean): OutgrooveApi {
         value: {
           enabled: false,
           pauseOnBattery: true,
+          notificationsEnabled: false,
+          notificationCapability: {
+            available: false,
+            unavailableReason: "development",
+          },
           nextRefreshAt: null,
           lastCheckedAt: null,
           lastSuccessfulRefreshAt: null,
@@ -418,6 +423,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     onJobProgress: vi.fn(() => () => undefined),
     onScanJobUpdated: vi.fn(() => () => undefined),
     onRadarBackgroundRefreshUpdated: vi.fn(() => () => undefined),
+    onOpenRadarRequested: vi.fn(() => () => undefined),
   } as OutgrooveApi;
 }
 
@@ -455,6 +461,32 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("heading", { level: 1, name: "Activity" }),
     ).toBeVisible();
     expect(screen.queryByRole("search")).not.toBeInTheDocument();
+  });
+
+  it("routes a fixed native-notification click to unseen Radar items", async () => {
+    const mockApi = api(true);
+    let openRadar: (() => void) | undefined;
+    vi.spyOn(mockApi, "onOpenRadarRequested").mockImplementation((listener) => {
+      openRadar = listener;
+      return () => undefined;
+    });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    render(<App />);
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+
+    act(() => openRadar?.());
+
+    await waitFor(() =>
+      expect(
+        within(navigation).getByRole("button", { name: /^Radar/u }),
+      ).toHaveAttribute("aria-current", "page"),
+    );
+    expect(screen.getByRole("checkbox", { name: "Unseen only" })).toBeChecked();
   });
 
   it("routes explicit MusicBrainz artist selection and confirmed local removal through Radar", async () => {
@@ -624,6 +656,7 @@ describe("tag edit UI safety states", () => {
         favoriteArtistId: favorite.id,
         favoriteArtistName: favorite.name,
         added: 0,
+        newlyDiscovered: 0,
         updated: 0,
         unchanged: 1,
         total: 1,
@@ -866,6 +899,11 @@ describe("tag edit UI safety states", () => {
         value: {
           enabled: true,
           pauseOnBattery: true,
+          notificationsEnabled: false,
+          notificationCapability: {
+            available: true,
+            unavailableReason: null,
+          },
           nextRefreshAt: "2026-07-29T09:00:00.000Z",
           lastCheckedAt: null,
           lastSuccessfulRefreshAt: null,
@@ -901,6 +939,7 @@ describe("tag edit UI safety states", () => {
       expect(update).toHaveBeenCalledWith({
         enabled: true,
         pauseOnBattery: true,
+        notificationsEnabled: false,
       }),
     );
     expect(update.mock.calls[0]?.[0]).not.toHaveProperty("artistIds");
@@ -910,6 +949,11 @@ describe("tag edit UI safety states", () => {
       emit?.({
         enabled: true,
         pauseOnBattery: true,
+        notificationsEnabled: true,
+        notificationCapability: {
+          available: true,
+          unavailableReason: null,
+        },
         nextRefreshAt: "2026-07-29T09:30:00.000Z",
         lastCheckedAt: "2026-07-28T09:30:00.000Z",
         lastSuccessfulRefreshAt: null,

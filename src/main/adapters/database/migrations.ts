@@ -616,4 +616,12 @@ export const migrations: readonly { version: number; sql: string }[] = [
       INSERT INTO radar_background_settings (id) VALUES (1);
     `,
   },
+  {
+    version: 23,
+    sql: `
+      ALTER TABLE radar_background_settings
+        ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 0
+          CHECK (notifications_enabled IN (0, 1));
+    `,
+  },
 ];

@@ -117,6 +117,7 @@ describe("manual Radar refresh", () => {
     await expect(service.refresh(favorite.id)).resolves.toMatchObject({
       favoriteArtistName: "Fixture Artist",
       added: 1,
+      newlyDiscovered: 0,
       total: 1,
       source: "network",
     });
@@ -136,6 +137,29 @@ describe("manual Radar refresh", () => {
         truncated: false,
       },
     );
+  });
+
+  it("labels additions as newly discovered only after an earlier successful baseline", async () => {
+    const repository = store();
+    repository.getFavoriteArtist.mockReturnValue({
+      ...favorite,
+      lastSuccessfulRefreshAt: "2026-07-27T09:00:00.000Z",
+    });
+    const service = new RefreshRadar(repository, {
+      browseArtistReleases: vi.fn(() =>
+        Promise.resolve({
+          observations: [observation],
+          source: "network" as const,
+          fetchedAt: "2026-07-28T08:00:00.000Z",
+          truncated: false,
+        }),
+      ),
+    });
+
+    await expect(service.refresh(favorite.id)).resolves.toMatchObject({
+      added: 1,
+      newlyDiscovered: 1,
+    });
   });
 
   it("keeps the last successful snapshot unchanged for stale fallback", async () => {

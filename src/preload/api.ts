@@ -175,4 +175,10 @@ export const api: OutgrooveApi = {
         wrapped,
       );
   },
+  onOpenRadarRequested: (listener) => {
+    const wrapped = (): void => listener();
+    ipcRenderer.on(channels.openRadarRequested, wrapped);
+    return () =>
+      ipcRenderer.removeListener(channels.openRadarRequested, wrapped);
+  },
 };

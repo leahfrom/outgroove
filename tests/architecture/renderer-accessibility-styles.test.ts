@@ -28,4 +28,13 @@ describe("renderer accessibility styles", () => {
     );
     expect(styles).toContain("background: CanvasText");
   });
+
+  it("keeps Radar filter controls inside their responsive grid tracks", () => {
+    expect(styles).toContain(
+      ".radar-releases .section-heading {\n  display: flex;\n  flex-wrap: wrap;",
+    );
+    expect(styles).toContain(
+      ".radar-filters select {\n  display: block;\n  width: 100%;\n  min-width: 0;",
+    );
+  });
 });

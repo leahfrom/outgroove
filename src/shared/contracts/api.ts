@@ -108,6 +108,7 @@ export const radarBackgroundRefreshUpdateRequestSchema = z
   .object({
     enabled: z.boolean(),
     pauseOnBattery: z.boolean(),
+    notificationsEnabled: z.boolean(),
   })
   .strict();
 export const radarListRequestSchema = z
@@ -869,6 +870,7 @@ export interface RadarRefreshResultDto {
   readonly favoriteArtistId: string;
   readonly favoriteArtistName: string;
   readonly added: number;
+  readonly newlyDiscovered: number;
   readonly updated: number;
   readonly unchanged: number;
   readonly total: number;
@@ -903,9 +905,21 @@ export type RadarBackgroundRefreshOutcome =
   | "battery"
   | "busy";
 
-export interface RadarBackgroundRefreshSettingsDto {
+export type RadarNotificationUnavailableReason =
+  | "development"
+  | "unsupported"
+  | "unsigned-macos-build"
+  | "portable-windows-build";
+
+export interface RadarNotificationCapabilityDto {
+  readonly available: boolean;
+  readonly unavailableReason: RadarNotificationUnavailableReason | null;
+}
+
+export interface RadarBackgroundRefreshPreferencesDto {
   readonly enabled: boolean;
   readonly pauseOnBattery: boolean;
+  readonly notificationsEnabled: boolean;
   readonly nextRefreshAt: string | null;
   readonly lastCheckedAt: string | null;
   readonly lastSuccessfulRefreshAt: string | null;
@@ -913,6 +927,10 @@ export interface RadarBackgroundRefreshSettingsDto {
   readonly lastCompleted: number;
   readonly lastSucceeded: number;
   readonly lastFailed: number;
+}
+
+export interface RadarBackgroundRefreshSettingsDto extends RadarBackgroundRefreshPreferencesDto {
+  readonly notificationCapability: RadarNotificationCapabilityDto;
 }
 
 export interface RadarPageDto {
@@ -1189,6 +1207,7 @@ export interface OutgrooveApi {
   onRadarBackgroundRefreshUpdated(
     listener: (settings: RadarBackgroundRefreshSettingsDto) => void,
   ): () => void;
+  onOpenRadarRequested(listener: () => void): () => void;
 }
 
 export interface SerializableFailure extends AppError {

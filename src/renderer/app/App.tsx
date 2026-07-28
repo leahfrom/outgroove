@@ -1042,6 +1042,15 @@ export function App(): React.JSX.Element {
     refreshFavoriteArtists,
     refreshRadarItems,
   ]);
+  useEffect(
+    () =>
+      window.outgroove.onOpenRadarRequested(() => {
+        setActiveView("radar");
+        setRadarUnseenOnly(true);
+        setRadarOffset(0);
+      }),
+    [],
+  );
   useEffect(() => {
     void refreshSyncProfiles();
   }, [refreshSyncProfiles]);
@@ -1382,12 +1391,14 @@ export function App(): React.JSX.Element {
   const updateRadarBackgroundRefresh = async (
     enabled: boolean,
     pauseOnBattery: boolean,
+    notificationsEnabled: boolean,
   ): Promise<void> => {
     setRadarBackgroundBusy(true);
     setRadarBackgroundError(undefined);
     const result = await window.outgroove.updateRadarBackgroundRefreshSettings({
       enabled,
       pauseOnBattery,
+      notificationsEnabled,
     });
     setRadarBackgroundBusy(false);
     if (result.ok) setRadarBackgroundSettings(result.value);
@@ -3650,8 +3661,16 @@ export function App(): React.JSX.Element {
           onRadarSeen={(item, seen) => void setRadarSeen(item, seen)}
           onRadarUnseenOnlyChange={chooseRadarUnseenOnly}
           onRadarViewChange={chooseRadarView}
-          onRadarBackgroundChange={(enabled, pauseOnBattery) =>
-            void updateRadarBackgroundRefresh(enabled, pauseOnBattery)
+          onRadarBackgroundChange={(
+            enabled,
+            pauseOnBattery,
+            notificationsEnabled,
+          ) =>
+            void updateRadarBackgroundRefresh(
+              enabled,
+              pauseOnBattery,
+              notificationsEnabled,
+            )
           }
           onRefreshAll={() => void refreshAllFavoriteRadar()}
           onRefreshFavorite={(favorite) => void refreshFavoriteRadar(favorite)}
