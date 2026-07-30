@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   access,
   cp,
@@ -13,7 +15,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -71,6 +73,41 @@ async function setup(): Promise<{
   };
 }
 
+async function addSecondAlbum(
+  directory: string,
+  database: CatalogDatabase,
+  albumId: string,
+): Promise<{ id: string; sourcePath: string }> {
+  const root = database.listLibraryRoots()[0];
+  const source = database.getAlbum(albumId)?.tracks[0]?.path;
+  if (!root || !source) throw new Error("Sync fixture source missing");
+  const sourcePath = join(directory, "library", "second-album.mp3");
+  await copyFile(source, sourcePath);
+  const info = await stat(sourcePath);
+  database.upsertScannedFile(root.id, pathComparisonKey(sourcePath), {
+    path: sourcePath,
+    size: info.size,
+    modifiedMs: info.mtimeMs,
+    format: "MPEG",
+    durationSeconds: 1,
+    tags: {
+      title: "Other Track",
+      album: "Second Album",
+      artist: "Other Artist",
+      albumArtist: "Other Artist",
+      trackNumber: 1,
+      discNumber: 1,
+      year: "2025",
+    },
+    nativeTags: [],
+  });
+  const album = database
+    .listAlbums()
+    .find((candidate) => candidate.title === "Second Album");
+  if (!album) throw new Error("Second sync album missing");
+  return { id: album.id, sourcePath };
+}
+
 async function firstRecovery(
   sync: DeviceSync,
 ): Promise<Awaited<ReturnType<DeviceSync["previewRecovery"]>>> {
@@ -81,7 +118,7 @@ async function firstRecovery(
 
 describe("deterministic manifest-based sync", () => {
   it("removes a reviewed profile without reading or changing target files", async () => {
-    const { database, target, profileId } = await setup();
+    const { database, target, profileId, albumId } = await setup();
     const sync = new DeviceSync(database);
     const plan = await sync.plan(profileId);
     await sync.apply(plan.id, plan.confirmationToken);
@@ -138,6 +175,22 @@ describe("deterministic manifest-based sync", () => {
     expect(await readFile(join(target, ".outgroove", "manifest.json"))).toEqual(
       before.manifest,
     );
+    const replacementProfile = database.createSyncProfile(
+      "Re-added target",
+      target,
+      [albumId],
+    );
+    const replacementPlan = await new DeviceSync(database).plan(
+      replacementProfile.id,
+      true,
+    );
+    expect(replacementPlan.removals).toEqual([]);
+    expect(replacementPlan.conflicts).toEqual([
+      expect.stringContaining("Unknown target file"),
+      expect.stringContaining("Unknown target file"),
+      expect.stringContaining("Unknown target file"),
+      expect.stringContaining("Unknown target file"),
+    ]);
   });
 
   it("blocks profile removal while an interrupted sync needs recovery", async () => {
@@ -669,7 +722,7 @@ describe("deterministic manifest-based sync", () => {
       },
     });
     const replacementPlan = await cancellingSync.plan(profileId);
-    expect(replacementPlan.copies).toHaveLength(2);
+    expect(replacementPlan.replacements).toHaveLength(2);
     const applying = cancellingSync.apply(
       replacementPlan.id,
       replacementPlan.confirmationToken,
@@ -679,11 +732,12 @@ describe("deterministic manifest-based sync", () => {
     releaseSecondCopy();
     await expect(applying).resolves.toMatchObject({
       outcome: "cancelled",
-      copied: 1,
+      copied: 0,
+      replaced: 1,
       rolledBack: 1,
       errors: [],
     });
-    for (const item of replacementPlan.copies)
+    for (const item of replacementPlan.replacements)
       expect(await readFile(join(target, item.relativeDestination))).toEqual(
         targetBefore.get(item.relativeDestination),
       );
@@ -819,7 +873,376 @@ describe("deterministic manifest-based sync", () => {
     const noOp = await sync.plan(profileId);
     expect(noOp.copies).toHaveLength(0);
     expect(noOp.unchanged).toHaveLength(2);
+    expect(noOp.hasChanges).toBe(false);
+    await expect(sync.apply(noOp.id, noOp.confirmationToken)).rejects.toThrow(
+      "no changes",
+    );
     database.close();
+  });
+
+  it("keeps cleanup off by default and removes only exact obsolete manifest-owned paths after opt-in", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const sync = new DeviceSync(database);
+    sync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await sync.plan(profileId);
+    const sourceHashes = new Map(
+      [...initial.copies].map((item) => [
+        item.sourcePath,
+        createHash("sha256")
+          .update(readFileSync(item.sourcePath))
+          .digest("hex"),
+      ]),
+    );
+    await sync.apply(initial.id, initial.confirmationToken);
+    const obsolete = initial.copies.filter(
+      (item) => item.sourcePath !== secondAlbum.sourcePath,
+    );
+    const unknown = join(target, "user-note.txt");
+    const unmanifested = join(target, "Other Artist", "unowned.txt");
+    await writeFile(unknown, "keep unknown");
+    await mkdir(dirname(unmanifested), { recursive: true });
+    await writeFile(unmanifested, "keep unmanifested");
+
+    sync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    const disabled = await sync.plan(profileId);
+    expect(disabled.cleanupEnabled).toBe(false);
+    expect(disabled.removals).toEqual([]);
+    expect(disabled.hasChanges).toBe(false);
+    await expect(
+      sync.apply(disabled.id, disabled.confirmationToken),
+    ).rejects.toThrow("no changes");
+    for (const item of obsolete)
+      expect(
+        await readFile(join(target, item.relativeDestination)),
+      ).toBeDefined();
+
+    const enabled = await sync.plan(profileId, true);
+    await expect(sync.plan(profileId, true)).resolves.toEqual(enabled);
+    expect(enabled.cleanupEnabled).toBe(true);
+    expect(enabled.removals.map((item) => item.relativeDestination)).toEqual(
+      obsolete.map((item) => item.relativeDestination).sort(),
+    );
+    expect(enabled.replacements).toEqual([]);
+    expect(enabled.unchanged).toHaveLength(1);
+    const result = await sync.apply(enabled.id, enabled.confirmationToken);
+    expect(result).toMatchObject({
+      outcome: "completed",
+      copied: 0,
+      replaced: 0,
+      removed: obsolete.length,
+      unchanged: 1,
+      errors: [],
+    });
+    for (const item of obsolete)
+      await expect(
+        access(join(target, item.relativeDestination)),
+      ).rejects.toThrow();
+    expect(
+      (
+        await stat(
+          dirname(join(target, obsolete[0]?.relativeDestination ?? "")),
+        )
+      ).isDirectory(),
+    ).toBe(true);
+    expect(await readFile(unknown, "utf8")).toBe("keep unknown");
+    expect(await readFile(unmanifested, "utf8")).toBe("keep unmanifested");
+    const manifest = JSON.parse(
+      await readFile(join(target, ".outgroove", "manifest.json"), "utf8"),
+    ) as { entries: { relativeDestination: string }[] };
+    expect(manifest.entries.map((entry) => entry.relativeDestination)).toEqual([
+      expect.stringContaining("Other Track.mp3"),
+    ]);
+    for (const [sourcePath, hash] of sourceHashes)
+      expect(
+        createHash("sha256").update(readFileSync(sourcePath)).digest("hex"),
+      ).toBe(hash);
+  });
+
+  it("distinguishes replacements from removals and refuses changed target or manifest state", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const sync = new DeviceSync(database);
+    sync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await sync.plan(profileId);
+    await sync.apply(initial.id, initial.confirmationToken);
+    sync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    const sourceInfo = await stat(secondAlbum.sourcePath);
+    await writeFile(
+      secondAlbum.sourcePath,
+      Buffer.concat([
+        await readFile(secondAlbum.sourcePath),
+        Buffer.from("replacement"),
+      ]),
+    );
+    const changedTime = new Date(sourceInfo.mtimeMs + 2_000);
+    await utimes(secondAlbum.sourcePath, changedTime, changedTime);
+    const mixed = await sync.plan(profileId, true);
+    expect(mixed.copies).toEqual([]);
+    expect(mixed.replacements).toHaveLength(1);
+    expect(mixed.removals).toHaveLength(2);
+
+    const removal = mixed.removals[0];
+    if (!removal) throw new Error("Removal fixture missing.");
+    const removalPath = join(target, removal.relativeDestination);
+    const removalBefore = await readFile(removalPath);
+    await writeFile(removalPath, "changed target");
+    await expect(sync.apply(mixed.id, mixed.confirmationToken)).rejects.toThrow(
+      "target changed after preview",
+    );
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+
+    const fresh = await sync.plan(profileId, true);
+    expect(fresh.errors).toEqual([
+      expect.stringContaining("size no longer matches"),
+    ]);
+    await expect(sync.apply(fresh.id, fresh.confirmationToken)).rejects.toThrow(
+      "Resolve sync conflicts",
+    );
+    await writeFile(removalPath, removalBefore);
+    const valid = await sync.plan(profileId, true);
+    expect(valid.errors).toEqual([]);
+    const targetManifestPath = join(target, ".outgroove", "manifest.json");
+    await writeFile(targetManifestPath, "{}");
+    await expect(sync.apply(valid.id, valid.confirmationToken)).rejects.toThrow(
+      "manifest is invalid",
+    );
+  });
+
+  it("forgets already-missing owned paths without deleting unknown files", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const sync = new DeviceSync(database);
+    sync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await sync.plan(profileId);
+    await sync.apply(initial.id, initial.confirmationToken);
+    sync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    const obsolete = initial.copies.filter(
+      (item) => item.sourcePath !== secondAlbum.sourcePath,
+    );
+    const missing = obsolete[0];
+    if (!missing) throw new Error("Missing-owned fixture absent.");
+    await rm(join(target, missing.relativeDestination));
+    const plan = await sync.plan(profileId, true);
+    expect(plan.absentOwned).toEqual([missing.relativeDestination]);
+    expect(plan.removals).toHaveLength(1);
+    await expect(
+      sync.apply(plan.id, plan.confirmationToken),
+    ).resolves.toMatchObject({ outcome: "completed", removed: 1, errors: [] });
+    const latest = database.getLatestManifest(profileId, target);
+    expect(latest?.manifest_json).not.toContain(missing.relativeDestination);
+  });
+
+  it("refuses a symlink substituted at a reviewed removal path", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const sync = new DeviceSync(database);
+    sync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await sync.plan(profileId);
+    await sync.apply(initial.id, initial.confirmationToken);
+    sync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    const plan = await sync.plan(profileId, true);
+    const removal = plan.removals[0];
+    if (!removal) throw new Error("Symlink-removal fixture absent.");
+    const removalPath = join(target, removal.relativeDestination);
+    const outside = join(directory, "outside-owned-replacement");
+    await writeFile(outside, "outside");
+    await rm(removalPath);
+    await symlink(outside, removalPath);
+
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "symbolic link",
+    );
+    expect(await readFile(outside, "utf8")).toBe("outside");
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("refuses a plan after its database ownership manifest changes", async () => {
+    const { database, target, profileId } = await setup();
+    const sync = new DeviceSync(database);
+    const plan = await sync.plan(profileId);
+    database.saveManifest(profileId, target, {
+      entries: plan.copies.map((item) => ({
+        sourceFileId: item.sourceFileId,
+        relativeDestination: item.relativeDestination,
+        signature: item.signature,
+        size: item.size,
+      })),
+    });
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "ownership manifest changed after preview",
+    );
+    for (const item of plan.copies)
+      await expect(
+        access(join(target, item.relativeDestination)),
+      ).rejects.toThrow();
+  });
+
+  it("cancels after a removal quarantine and restores the earlier manifest-owned file", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const initialSync = new DeviceSync(database);
+    initialSync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await initialSync.plan(profileId);
+    await initialSync.apply(initial.id, initial.confirmationToken);
+    initialSync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    let markQuarantined: () => void = () => undefined;
+    let releaseQuarantine: () => void = () => undefined;
+    const quarantined = new Promise<void>((resolve) => {
+      markQuarantined = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseQuarantine = resolve;
+    });
+    let hookCalls = 0;
+    const sync = new DeviceSync(database, {
+      afterRemovalQuarantined: async () => {
+        hookCalls++;
+        if (hookCalls === 1) {
+          markQuarantined();
+          await gate;
+        }
+      },
+    });
+    const plan = await sync.plan(profileId, true);
+    const applying = sync.apply(plan.id, plan.confirmationToken);
+    await quarantined;
+    expect(sync.cancel(plan.id).accepted).toBe(true);
+    releaseQuarantine();
+    await expect(applying).resolves.toMatchObject({
+      outcome: "cancelled",
+      removed: 1,
+      rolledBack: 1,
+      errors: [],
+    });
+    for (const item of plan.removals)
+      expect(
+        await readFile(join(target, item.relativeDestination)),
+      ).toBeDefined();
+    expect(database.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("recovers an interrupted removal quarantine without advancing the manifest", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const initialSync = new DeviceSync(database);
+    initialSync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await initialSync.plan(profileId);
+    await initialSync.apply(initial.id, initial.confirmationToken);
+    initialSync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    let markQuarantined: () => void = () => undefined;
+    const quarantined = new Promise<void>((resolve) => {
+      markQuarantined = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const interruptedSync = new DeviceSync(database, {
+      afterRemovalQuarantined: async () => {
+        markQuarantined();
+        await neverResume;
+      },
+    });
+    const plan = await interruptedSync.plan(profileId, true);
+    void interruptedSync.apply(plan.id, plan.confirmationToken);
+    await quarantined;
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview).toMatchObject({
+      mode: "rollback",
+      canRecover: true,
+    });
+    expect(preview.actions[0]?.action).toBe("restore");
+    expect(preview.actions[0]?.explanation).toContain("removal quarantine");
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).resolves.toMatchObject({ complete: true, recovered: 1 });
+    for (const item of plan.removals)
+      expect(
+        await readFile(join(target, item.relativeDestination)),
+      ).toBeDefined();
+    expect(reopened.listSyncHistory(profileId)).toHaveLength(1);
+  });
+
+  it("finishes quarantined removal cleanup after the new manifest committed", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const initialSync = new DeviceSync(database);
+    initialSync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await initialSync.plan(profileId);
+    await initialSync.apply(initial.id, initial.confirmationToken);
+    initialSync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    let markCommitted: () => void = () => undefined;
+    const committed = new Promise<void>((resolve) => {
+      markCommitted = resolve;
+    });
+    const neverResume = new Promise<void>(() => undefined);
+    const interruptedSync = new DeviceSync(database, {
+      afterManifestCommitted: async () => {
+        markCommitted();
+        await neverResume;
+      },
+    });
+    const plan = await interruptedSync.plan(profileId, true);
+    void interruptedSync.apply(plan.id, plan.confirmationToken);
+    await committed;
+    database.close();
+
+    const reopened = new CatalogDatabase(join(directory, "catalog.sqlite3"));
+    databases.push(reopened);
+    const recoverySync = new DeviceSync(reopened);
+    const preview = await firstRecovery(recoverySync);
+    expect(preview.mode).toBe("committed-cleanup");
+    expect(preview.actions.some((action) => action.action === "remove")).toBe(
+      true,
+    );
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).resolves.toMatchObject({ complete: true });
+    for (const item of plan.removals)
+      await expect(
+        access(join(target, item.relativeDestination)),
+      ).rejects.toThrow();
+    expect(reopened.listSyncHistory(profileId)).toHaveLength(2);
+    const manifest = JSON.parse(
+      await readFile(join(target, ".outgroove", "manifest.json"), "utf8"),
+    ) as { entries: unknown[] };
+    expect(manifest.entries).toHaveLength(1);
+  });
+
+  it("rolls back a partial removal failure and retains the previous manifest", async () => {
+    const { directory, database, target, profileId, albumId } = await setup();
+    const secondAlbum = await addSecondAlbum(directory, database, albumId);
+    const initialSync = new DeviceSync(database);
+    initialSync.updateProfileAlbums(profileId, [albumId, secondAlbum.id]);
+    const initial = await initialSync.plan(profileId);
+    await initialSync.apply(initial.id, initial.confirmationToken);
+    initialSync.updateProfileAlbums(profileId, [secondAlbum.id]);
+    const manifestBefore = database.getLatestManifest(
+      profileId,
+      target,
+    )?.manifest_json;
+    const failingSync = new DeviceSync(database, {
+      afterRemovalQuarantined: () =>
+        Promise.reject(new Error("simulated removal failure")),
+    });
+    const plan = await failingSync.plan(profileId, true);
+    const result = await failingSync.apply(plan.id, plan.confirmationToken);
+    expect(result).toMatchObject({
+      outcome: "failed",
+      removed: 1,
+      rolledBack: 1,
+      errors: [expect.stringContaining("simulated removal failure")],
+    });
+    expect(database.getLatestManifest(profileId, target)?.manifest_json).toBe(
+      manifestBefore,
+    );
+    for (const item of plan.removals)
+      expect(
+        await readFile(join(target, item.relativeDestination)),
+      ).toBeDefined();
   });
 
   it("plans, applies, manifests, and repeats an explicit multi-album selection deterministically", async () => {
@@ -902,6 +1325,63 @@ describe("deterministic manifest-based sync", () => {
     ]);
     expect(await readFile(destination, "utf8")).toBe("user owned");
     database.close();
+  });
+
+  it("blocks a case-folded ownership collision instead of adopting or replacing it", async () => {
+    const { database, target, profileId } = await setup();
+    const sync = new DeviceSync(database);
+    const initial = await sync.plan(profileId);
+    await sync.apply(initial.id, initial.confirmationToken);
+    const first = initial.copies[0];
+    const stored = database.getLatestManifest(profileId, target);
+    if (!first || !stored) throw new Error("Case-collision fixture missing.");
+    const manifest = JSON.parse(stored.manifest_json) as {
+      version: 1;
+      profileId: string;
+      entries: {
+        sourceFileId: string;
+        relativeDestination: string;
+        signature: string;
+        size: number;
+      }[];
+    };
+    const variant = join(
+      dirname(first.relativeDestination),
+      basename(first.relativeDestination).toLocaleUpperCase("en-US"),
+    );
+    manifest.entries = manifest.entries.map((entry) =>
+      entry.relativeDestination === first.relativeDestination
+        ? { ...entry, relativeDestination: variant }
+        : entry,
+    );
+    database.connection
+      .prepare(
+        `UPDATE sync_manifests SET manifest_json=?
+         WHERE id=(
+           SELECT id FROM sync_manifests
+           WHERE profile_id=? AND target_path=?
+           ORDER BY created_at DESC, id DESC LIMIT 1
+         )`,
+      )
+      .run(JSON.stringify(manifest), profileId, target);
+    await writeFile(
+      join(target, ".outgroove", "manifest.json"),
+      `${JSON.stringify(manifest, null, 2)}\n`,
+    );
+    const originalPath = join(target, first.relativeDestination);
+    const temporaryPath = `${originalPath}.case-change`;
+    await rename(originalPath, temporaryPath);
+    await rename(temporaryPath, join(target, variant));
+
+    const plan = await sync.plan(profileId, true);
+    expect(plan.conflicts).toEqual([
+      expect.stringContaining("differs by case or Unicode"),
+    ]);
+    expect(plan.removals).toEqual([]);
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "Resolve sync conflicts",
+    );
+    expect(await readFile(join(target, variant))).toBeDefined();
   });
 
   it("reports an unavailable selected album in the preview instead of silently omitting it", async () => {
@@ -1003,10 +1483,9 @@ describe("deterministic manifest-based sync", () => {
       source,
       Buffer.concat([await readFile(source), Buffer.from("changed")]),
     );
-    const result = await sync.apply(plan.id, plan.confirmationToken);
-    expect(result.errors).toEqual([
-      expect.stringContaining("Source changed after preview"),
-    ]);
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "source changed after preview",
+    );
     await expect(
       access(join(target, ".outgroove", "manifest.json")),
     ).rejects.toThrow();

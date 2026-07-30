@@ -24,10 +24,11 @@ and Windows are the initial supported targets, and Linux packages remain beta.
   lookup. Remote candidates never apply automatically.
 - Follow exact MusicBrainz artist identities in Radar with durable,
   offline-readable release snapshots and optional native notifications.
-- Build deterministic copy-only DAP plans with path validation, temporary
-  copies, verification, manifest-last commit, cancellation, and restart-safe
-  recovery. Saved profiles can be revised, retargeted, or explicitly removed
-  without touching target files. Unknown target files are never deleted.
+- Build deterministic DAP plans with path validation, temporary copies,
+  verification, manifest-last commit, cancellation, and restart-safe recovery.
+  Cleanup is off by default and can remove only exact obsolete paths proved
+  Outgroove-owned by the applicable earlier manifest after full preview and
+  confirmation. Unknown target files are never deleted.
 - Back up and verify the local SQLite catalog without copying or changing audio.
 
 The complete implemented behavior, format matrix, and known limitations are in

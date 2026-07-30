@@ -844,8 +844,10 @@ export function registerIpc(
   );
   ipcMain.handle(
     channels.planSync,
-    createValidatedHandler(syncPlanRequestSchema, ({ profileId }) =>
-      dependencies.sync.plan(profileId),
+    createValidatedHandler(
+      syncPlanRequestSchema,
+      ({ profileId, cleanupEnabled }) =>
+        dependencies.sync.plan(profileId, cleanupEnabled),
     ),
   );
   ipcMain.handle(

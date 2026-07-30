@@ -109,7 +109,7 @@ describe("database backup and restore", () => {
     const preview = await service.previewRestore(selectedPath);
     expect(preview).toMatchObject({
       sourceName: "selected.sqlite3",
-      schemaVersion: 23,
+      schemaVersion: 24,
       summary: {
         libraryRoots: 1,
         albums: 2,

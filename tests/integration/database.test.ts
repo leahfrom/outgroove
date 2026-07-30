@@ -248,11 +248,23 @@ describe("database migration and backup", () => {
     expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
   });
 
+  it("keeps the sync manifest-cleanup migration identical to its executable definition", () => {
+    const normalized = (sql: string): string =>
+      sql.replace(/\s+/gu, " ").trim();
+    const file = readFileSync(
+      join(process.cwd(), "migrations", "024_sync_manifest_cleanup.sql"),
+      "utf8",
+    );
+    const executable = migrations.find((migration) => migration.version === 24);
+    expect(executable).toBeDefined();
+    expect(normalized(executable?.sql ?? "")).toBe(normalized(file));
+  });
+
   it("migrates an empty database and opens a verified backup", async () => {
     const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
     temporary.push(directory);
     const source = new CatalogDatabase(join(directory, "source.sqlite3"));
-    expect(source.connection.pragma("user_version", { simple: true })).toBe(23);
+    expect(source.connection.pragma("user_version", { simple: true })).toBe(24);
     source.addLibraryRoot("/fixture/library", "/fixture/library");
     source.saveRadarBackgroundRefreshSettings({
       enabled: true,
@@ -305,7 +317,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(
       migrated.connection
@@ -347,7 +359,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(
       migrated.getProviderCache("musicbrainz", "artist-query")?.payloadJson,
@@ -420,7 +432,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listFavoriteArtists()[0]).toMatchObject({
       name: "Migrated Favorite",
@@ -464,7 +476,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listFavoriteArtists()[0]?.name).toBe(
       "Migrated Radar Favorite",
@@ -502,7 +514,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getRadarBackgroundRefreshSettings()).toMatchObject({
       enabled: true,
@@ -510,6 +522,54 @@ describe("database migration and backup", () => {
       notificationsEnabled: false,
       nextRefreshAt: "2026-07-29T09:00:00.000Z",
     });
+    migrated.close();
+  });
+
+  it("migrates schema v23 without losing an interrupted sync journal", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "outgroove-db-"));
+    temporary.push(directory);
+    const path = join(directory, "catalog.sqlite3");
+    const legacy = new Database(path);
+    for (const migration of migrations.filter((item) => item.version <= 23))
+      legacy.exec(migration.sql);
+    legacy.exec(`
+      INSERT INTO albums (id, grouping_key, title, album_artist)
+        VALUES ('album', 'fixture-album', 'Fixture Album', 'Fixture Artist');
+      INSERT INTO sync_profiles (id, name, target_path, album_id, created_at)
+        VALUES ('profile', 'Fixture DAP', '${directory.replaceAll("'", "''")}',
+          'album', '2026-01-01');
+      INSERT INTO sync_profile_albums (profile_id, album_id)
+        VALUES ('profile', 'album');
+      INSERT INTO sync_runs
+        (id, plan_id, profile_id, target_path, phase, state, created_at, updated_at)
+        VALUES ('run', 'plan', 'profile', '${directory.replaceAll("'", "''")}',
+          'copying', 'recovery-required', '2026-01-01', '2026-01-01');
+      INSERT INTO sync_run_changes
+        (id, run_id, sequence, kind, relative_destination, temporary_relative,
+         rollback_relative, expected_hash, installed)
+        VALUES ('change', 'run', 1, 'copy', 'owned.mp3', 'owned.tmp', NULL,
+          '${"a".repeat(64)}', 1);
+    `);
+    legacy.pragma("user_version = 23");
+    legacy.close();
+
+    const migrated = new CatalogDatabase(path);
+    expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
+      24,
+    );
+    expect(migrated.getSyncRun("run")?.changes).toMatchObject([
+      { id: "change", kind: "copy", installed: true },
+    ]);
+    expect(
+      migrated.addSyncRunChange("run", {
+        kind: "removal",
+        relativeDestination: "obsolete.mp3",
+        temporaryRelative: "obsolete.quarantine",
+        rollbackRelative: null,
+        expectedHash: "b".repeat(64),
+      }).kind,
+    ).toBe("removal");
+    expect(migrated.connection.pragma("foreign_key_check")).toEqual([]);
     migrated.close();
   });
 
@@ -889,7 +949,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listEditHistory("album")).toMatchObject([
       {
@@ -926,7 +986,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getSyncProfile("profile")).toMatchObject({
       id: "profile",
@@ -958,7 +1018,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getSyncProfile("profile")?.album_ids).toEqual(["album"]);
     const run = migrated.createSyncRun("plan", "profile", directory);
@@ -1039,7 +1099,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -1121,7 +1181,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -1163,7 +1223,7 @@ describe("database migration and backup", () => {
     legacy.close();
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getLatestScanJob()).toMatchObject({
       id: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -1194,7 +1254,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.listLibraryRoots()).toHaveLength(1);
     expect(
@@ -1247,7 +1307,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(
       migrated.queryLibrary({
@@ -1323,7 +1383,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "album-title-edit",
@@ -1378,7 +1438,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     expect(migrated.getEditOperation("operation")).toMatchObject({
       kind: "track-tags-batch-edit",
@@ -1432,7 +1492,7 @@ describe("database migration and backup", () => {
 
     const migrated = new CatalogDatabase(path);
     expect(migrated.connection.pragma("user_version", { simple: true })).toBe(
-      23,
+      24,
     );
     const albums = migrated.listAlbums();
     expect(albums).toHaveLength(2);

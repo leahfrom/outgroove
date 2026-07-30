@@ -237,7 +237,7 @@ export interface ProviderCacheRecord {
 export interface SyncRunChangeRecord {
   readonly id: string;
   readonly sequence: number;
-  readonly kind: "copy" | "playlist" | "manifest";
+  readonly kind: "copy" | "playlist" | "manifest" | "removal";
   readonly relativeDestination: string;
   readonly temporaryRelative: string;
   readonly rollbackRelative: string | null;

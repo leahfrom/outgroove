@@ -5736,6 +5736,9 @@ describe("tag edit UI safety states", () => {
       profileId,
       targetPath: "/fixture/dap",
       confirmationToken: "sync-confirmation-token-long-enough",
+      cleanupEnabled: false,
+      previousManifestHash: null,
+      targetIdentity: "1:2",
       copies: [album, secondAlbum].map((item) => ({
         sourceFileId: item.tracks[0]?.id ?? item.id,
         sourcePath: item.tracks[0]?.path ?? `/fixture/${item.id}.mp3`,
@@ -5743,10 +5746,14 @@ describe("tag edit UI safety states", () => {
         size: 100,
         signature: "100:1",
       })),
+      replacements: [],
       unchanged: [],
+      removals: [],
+      absentOwned: [],
       conflicts: [],
       errors: [],
       requiredBytes: 200,
+      hasChanges: true,
     };
     vi.spyOn(mockApi, "planSync").mockResolvedValue({ ok: true, value: plan });
     const applySync = vi.spyOn(mockApi, "applySync").mockResolvedValue({
@@ -5754,6 +5761,8 @@ describe("tag edit UI safety states", () => {
       value: {
         outcome: "completed",
         copied: 2,
+        replaced: 0,
+        removed: 0,
         rolledBack: 0,
         unchanged: 0,
         playlistPath: "/fixture/dap/Outgroove.m3u8",
@@ -5830,7 +5839,7 @@ describe("tag edit UI safety states", () => {
     ).toHaveFocus();
     expect(applySync).not.toHaveBeenCalled();
     const confirm = within(preview).getByRole("button", {
-      name: "Confirm and apply copy plan",
+      name: "Confirm and apply sync plan",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -5853,7 +5862,7 @@ describe("tag edit UI safety states", () => {
     );
     const retryConfirm = within(
       screen.getByLabelText("Sync confirmation"),
-    ).getByRole("button", { name: "Confirm and apply copy plan" });
+    ).getByRole("button", { name: "Confirm and apply sync plan" });
     await waitFor(() => expect(retryConfirm).toBeEnabled());
     retryConfirm.focus();
     await user.keyboard("{Enter}");
@@ -5870,6 +5879,8 @@ describe("tag edit UI safety states", () => {
       value: {
         outcome: "cancelled",
         copied: 1,
+        replaced: 0,
+        removed: 0,
         rolledBack: 1,
         unchanged: 0,
         playlistPath: "/fixture/dap/Outgroove.m3u8",
@@ -6098,6 +6109,9 @@ describe("tag edit UI safety states", () => {
         profileId,
         targetPath: "/fixture/dap",
         confirmationToken: "sync-confirmation-token-long-enough",
+        cleanupEnabled: false,
+        previousManifestHash: null,
+        targetIdentity: "1:2",
         copies: [
           {
             sourceFileId: album.tracks[0]?.id ?? album.id,
@@ -6107,10 +6121,14 @@ describe("tag edit UI safety states", () => {
             signature: "100:1",
           },
         ],
+        replacements: [],
         unchanged: [],
+        removals: [],
+        absentOwned: [],
         conflicts: [],
         errors: [],
         requiredBytes: 100,
+        hasChanges: true,
       },
     });
     const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
@@ -6174,7 +6192,10 @@ describe("tag edit UI safety states", () => {
     });
     preview.focus();
     await user.keyboard("{Enter}");
-    expect(planSync).toHaveBeenCalledWith({ profileId });
+    expect(planSync).toHaveBeenCalledWith({
+      profileId,
+      cleanupEnabled: false,
+    });
     expect(await screen.findByLabelText("Sync confirmation")).toHaveTextContent(
       "Fixture Album",
     );
@@ -6221,11 +6242,18 @@ describe("tag edit UI safety states", () => {
         profileId,
         targetPath: "/fixture/dap",
         confirmationToken: "sync-confirmation-token-long-enough",
+        cleanupEnabled: false,
+        previousManifestHash: null,
+        targetIdentity: "1:2",
         copies: [],
+        replacements: [],
         unchanged: [],
+        removals: [],
+        absentOwned: [],
         conflicts: [],
         errors: [],
         requiredBytes: 0,
+        hasChanges: false,
       },
     });
     const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
@@ -6572,11 +6600,18 @@ describe("tag edit UI safety states", () => {
         profileId,
         targetPath: "/fixture/dap",
         confirmationToken: "sync-confirmation-token-long-enough",
+        cleanupEnabled: false,
+        previousManifestHash: null,
+        targetIdentity: "1:2",
         copies: [],
+        replacements: [],
         unchanged: [],
+        removals: [],
+        absentOwned: [],
         conflicts: [],
         errors: [],
         requiredBytes: 0,
+        hasChanges: false,
       },
     });
     const chooseTarget = vi.spyOn(mockApi, "chooseSyncTargetAndCreateProfile");
