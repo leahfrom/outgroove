@@ -647,11 +647,24 @@ describe("validated IPC handlers", () => {
     const request = {
       planId: profileId,
       confirmationToken: "sync-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
     };
     await expect(apply({}, request)).resolves.toMatchObject({ ok: true });
     expect(applyUseCase).toHaveBeenCalledWith(request);
     await expect(
       apply({}, { ...request, removals: ["/Volumes/DAP/file.mp3"] }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    await expect(
+      apply(
+        {},
+        {
+          planId: profileId,
+          confirmationToken: request.confirmationToken,
+        },
+      ),
     ).resolves.toMatchObject({
       ok: false,
       error: { code: "INVALID_REQUEST" },
@@ -826,15 +839,21 @@ describe("validated IPC handlers", () => {
     );
     const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
     const confirmationToken = "sync-recovery-confirmation-token-long-enough";
-    await expect(
-      handler({}, { runId, confirmationToken }),
-    ).resolves.toMatchObject({ ok: true, value: { complete: true } });
-    expect(useCase).toHaveBeenCalledWith({ runId, confirmationToken });
+    const validRequest = {
+      runId,
+      confirmationToken,
+      targetVolumeConfirmed: false,
+    };
+    await expect(handler({}, validRequest)).resolves.toMatchObject({
+      ok: true,
+      value: { complete: true },
+    });
+    expect(useCase).toHaveBeenCalledWith(validRequest);
     for (const request of [
       { runId, confirmationToken: "short" },
       { runId: "not-a-uuid", confirmationToken },
-      { runId, confirmationToken, targetPath: "/Volumes/DAP" },
-      { runId, confirmationToken, deleteUnknownFiles: true },
+      { ...validRequest, targetPath: "/Volumes/DAP" },
+      { ...validRequest, deleteUnknownFiles: true },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,

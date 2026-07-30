@@ -373,6 +373,7 @@ describe("preload saved-filter allowlist", () => {
     const apply = {
       planId: update.id,
       confirmationToken: "sync-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
     };
     await api.applySync(apply);
     expect(electron.invoke).toHaveBeenLastCalledWith(channels.applySync, apply);
@@ -400,6 +401,7 @@ describe("preload saved-filter allowlist", () => {
     const recovery = {
       runId: update.id,
       confirmationToken: "sync-recovery-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
     };
     await api.applySyncRecovery(recovery);
     expect(electron.invoke).toHaveBeenLastCalledWith(

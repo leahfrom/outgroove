@@ -20,6 +20,7 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 
 import { CatalogDatabase } from "../src/main/adapters/database/catalog-database";
+import { inspectTargetFilesystem } from "../src/main/adapters/filesystem/target-volume";
 import { MusicMetadataReader } from "../src/main/adapters/metadata/metadata-reader";
 import {
   audioPayloadHash,
@@ -159,6 +160,7 @@ async function run(targetArgument: string): Promise<void> {
       "Disposable exFAT probe",
       syncTarget,
       [album.id],
+      (await inspectTargetFilesystem(syncTarget)).volumeIdentity,
     );
     const unknown = join(syncTarget, "user-owned-probe.txt");
     await writeFile(unknown, "must remain untouched", { flag: "wx" });
@@ -166,7 +168,12 @@ async function run(targetArgument: string): Promise<void> {
     const plan = await sync.plan(profile.id);
     assert.deepEqual(plan.errors, []);
     assert.deepEqual(plan.conflicts, []);
-    const applied = await sync.apply(plan.id, plan.confirmationToken);
+    const applied = await sync.apply(
+      plan.id,
+      plan.confirmationToken,
+      undefined,
+      plan.targetVolume.confirmationRequired,
+    );
     assert.deepEqual(applied.errors, []);
     assert.equal(await readFile(unknown, "utf8"), "must remain untouched");
     const repeated = await sync.plan(profile.id);

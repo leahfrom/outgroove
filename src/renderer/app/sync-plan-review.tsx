@@ -24,12 +24,14 @@ export function SyncPlanReview({
   applyingPlanId,
   cancellationRequested,
   cleanupEnabled,
+  targetVolumeConfirmed,
   planHeadingRef,
   onPreview,
   onManage,
   onApply,
   onCancel,
   onCleanupEnabledChange,
+  onTargetVolumeConfirmedChange,
 }: {
   readonly profile: ActiveSyncProfile;
   readonly plan: SyncPlanDto | undefined;
@@ -41,12 +43,14 @@ export function SyncPlanReview({
   readonly applyingPlanId: string | undefined;
   readonly cancellationRequested: boolean;
   readonly cleanupEnabled: boolean;
+  readonly targetVolumeConfirmed: boolean;
   readonly planHeadingRef: Ref<HTMLHeadingElement>;
   readonly onPreview: () => void;
   readonly onManage: () => void;
   readonly onApply: () => void;
   readonly onCancel: () => void;
   readonly onCleanupEnabledChange: (enabled: boolean) => void;
+  readonly onTargetVolumeConfirmedChange: (confirmed: boolean) => void;
 }): React.JSX.Element {
   const issueCount = plan ? plan.conflicts.length + plan.errors.length : 0;
   const planBlocked = issueCount > 0;
@@ -191,6 +195,14 @@ export function SyncPlanReview({
                 {formatFileSize(plan.requiredBytes)}
               </dd>
             </div>
+            <div>
+              <dt>Volume check</dt>
+              <dd>
+                {plan.targetVolume.status === "matched"
+                  ? "Recorded evidence matches"
+                  : "Confirmation required"}
+              </dd>
+            </div>
           </dl>
 
           {planBlocked && (
@@ -201,6 +213,43 @@ export function SyncPlanReview({
                 plan after resolving them.
               </span>
             </div>
+          )}
+          {plan.targetVolume.confirmationRequired && (
+            <section
+              className="sync-volume-confirmation"
+              aria-label="DAP volume identity confirmation"
+            >
+              <div>
+                <strong>
+                  Outgroove cannot verify this as the recorded volume.
+                </strong>
+                <span>
+                  {plan.targetVolume.status === "changed"
+                    ? "The current filesystem-device evidence differs from the evidence saved for this profile."
+                    : plan.targetVolume.status === "unrecorded"
+                      ? "This profile predates saved filesystem-device evidence."
+                      : "This operating system or target did not provide usable filesystem-device evidence."}
+                </span>
+                <span>
+                  Check the target path and device yourself. A matching
+                  Outgroove manifest proves file ownership, not physical-volume
+                  identity.
+                </span>
+              </div>
+              <label>
+                <input
+                  checked={targetVolumeConfirmed}
+                  disabled={busy || planBlocked || noChanges}
+                  onChange={(event) =>
+                    onTargetVolumeConfirmedChange(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  I confirm this is the intended DAP volume for this plan
+                </span>
+              </label>
+            </section>
           )}
           {noChanges && !planBlocked && (
             <div className="sync-plan-noop" role="status">
@@ -274,7 +323,12 @@ export function SyncPlanReview({
               </div>
               <button
                 className="primary"
-                disabled={busy || planBlocked}
+                disabled={
+                  busy ||
+                  planBlocked ||
+                  (plan.targetVolume.confirmationRequired &&
+                    !targetVolumeConfirmed)
+                }
                 onClick={onApply}
                 type="button"
               >

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
+import { inspectTargetFilesystem } from "../../src/main/adapters/filesystem/target-volume";
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
 import { SafeMetadataWriter } from "../../src/main/adapters/metadata/metadata-writer";
 import { DeviceSync } from "../../src/main/application/device-sync";
@@ -107,9 +108,12 @@ async function setupSync(): Promise<{
   ).execute(root.id);
   const album = database.listAlbums()[0];
   if (!album) throw new Error("Fixture album missing");
-  const profile = database.createSyncProfile("Windows lock DAP", target, [
-    album.id,
-  ]);
+  const profile = database.createSyncProfile(
+    "Windows lock DAP",
+    target,
+    [album.id],
+    (await inspectTargetFilesystem(target)).volumeIdentity,
+  );
   return { database, profileId: profile.id, target };
 }
 
@@ -152,7 +156,12 @@ describe.skipIf(process.platform !== "win32")(
       const sync = new DeviceSync(database);
       const initial = await sync.plan(profileId);
       expect(
-        await sync.apply(initial.id, initial.confirmationToken),
+        await sync.apply(
+          initial.id,
+          initial.confirmationToken,
+          undefined,
+          true,
+        ),
       ).toMatchObject({ errors: [] });
 
       const source = initial.copies[0]?.sourcePath;
@@ -176,6 +185,8 @@ describe.skipIf(process.platform !== "win32")(
         result = await sync.apply(
           replacement.id,
           replacement.confirmationToken,
+          undefined,
+          true,
         );
       } finally {
         await release();
