@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   AlbumArtworkEditPreviewDto,
@@ -589,6 +596,9 @@ export function App(): React.JSX.Element {
     undefined,
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
+  const albumCollectionScrollPosition = useRef({ left: 0, top: 0 });
+  const albumCollectionScrollRestorePending = useRef(false);
+  const albumPointerForwardId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
   const artistSearchRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
@@ -660,6 +670,11 @@ export function App(): React.JSX.Element {
         : undefined,
     [selectedAlbum],
   );
+  const prepareAlbumCollectionReturn = useCallback((albumId: string): void => {
+    albumReturnFocusId.current = albumId;
+    albumCollectionScrollRestorePending.current = true;
+    albumPointerForwardId.current = albumId;
+  }, []);
   useEffect(() => {
     if (!diagnosticDestination) return;
     const target = {
@@ -685,6 +700,9 @@ export function App(): React.JSX.Element {
   }, [selectedAlbumId]);
 
   useEffect(() => {
+    albumPointerForwardId.current = undefined;
+    albumCollectionScrollRestorePending.current = false;
+    albumReturnFocusId.current = undefined;
     setLibraryAlbumDetailOpen(false);
   }, [
     albumArtistFilter,
@@ -695,16 +713,20 @@ export function App(): React.JSX.Element {
     query,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       activeView !== "library" ||
       libraryAlbumDetailOpen ||
-      !albumReturnFocusId.current
+      !albumReturnFocusId.current ||
+      !albumCollectionScrollRestorePending.current
     )
       return;
     const albumId = albumReturnFocusId.current;
+    const position = albumCollectionScrollPosition.current;
     albumReturnFocusId.current = undefined;
-    albumTriggerRefs.current.get(albumId)?.focus();
+    albumCollectionScrollRestorePending.current = false;
+    albumTriggerRefs.current.get(albumId)?.focus({ preventScroll: true });
+    window.scrollTo(position.left, position.top);
   }, [activeView, libraryAlbumDetailOpen]);
 
   useEffect(() => {
@@ -754,7 +776,7 @@ export function App(): React.JSX.Element {
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+      if (selectedAlbumId) prepareAlbumCollectionReturn(selectedAlbumId);
       setLibraryAlbumDetailOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
@@ -763,7 +785,60 @@ export function App(): React.JSX.Element {
     activeView,
     libraryAlbumDetailOpen,
     libraryTrackEditorOpen,
+    prepareAlbumCollectionReturn,
     selectedAlbumId,
+    technicalTrack,
+  ]);
+
+  useEffect(() => {
+    const navigateWithPointerButtons = (event: MouseEvent): void => {
+      // DOM buttons 3 and 4 are the conventional browser Back/Forward side
+      // buttons. Keep this history local to the Library hierarchy.
+      const detailIsUnobstructed =
+        activeView === "library" &&
+        !libraryTrackEditorOpen &&
+        !technicalTrack &&
+        !libraryAlbumEditingTool &&
+        !albumIdentificationOpen;
+      if (
+        event.button === 3 &&
+        detailIsUnobstructed &&
+        libraryAlbumDetailOpen &&
+        selectedAlbum
+      ) {
+        event.preventDefault();
+        prepareAlbumCollectionReturn(selectedAlbum.id);
+        setLibraryAlbumDetailOpen(false);
+        return;
+      }
+      if (
+        event.button === 4 &&
+        detailIsUnobstructed &&
+        !libraryAlbumDetailOpen &&
+        selectedAlbum &&
+        albumPointerForwardId.current === selectedAlbum.id
+      ) {
+        event.preventDefault();
+        albumCollectionScrollPosition.current = {
+          left: window.scrollX,
+          top: window.scrollY,
+        };
+        albumPointerForwardId.current = undefined;
+        albumDetailFocusPending.current = true;
+        setLibraryAlbumDetailOpen(true);
+      }
+    };
+    window.addEventListener("mouseup", navigateWithPointerButtons);
+    return () =>
+      window.removeEventListener("mouseup", navigateWithPointerButtons);
+  }, [
+    activeView,
+    albumIdentificationOpen,
+    libraryAlbumDetailOpen,
+    libraryAlbumEditingTool,
+    libraryTrackEditorOpen,
+    prepareAlbumCollectionReturn,
+    selectedAlbum,
     technicalTrack,
   ]);
 
@@ -3299,6 +3374,11 @@ export function App(): React.JSX.Element {
             !albumIdFilter))));
 
   const openLibraryAlbum = (album: CatalogAlbum): void => {
+    albumCollectionScrollPosition.current = {
+      left: window.scrollX,
+      top: window.scrollY,
+    };
+    albumPointerForwardId.current = undefined;
     albumDetailFocusPending.current = true;
     setSelectedAlbumId(album.id);
     setLibraryAlbumDetailOpen(true);
@@ -3588,7 +3668,7 @@ export function App(): React.JSX.Element {
 
   const closeLibraryAlbum = (): void => {
     if (albumIdentificationOpen) closeAlbumIdentification();
-    if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+    if (selectedAlbumId) prepareAlbumCollectionReturn(selectedAlbumId);
     setLibraryAlbumDetailOpen(false);
   };
 
