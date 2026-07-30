@@ -181,20 +181,19 @@ describe.skipIf(process.platform !== "win32")(
       const manifestBefore = await readFile(manifestPath);
 
       const release = await holdExclusiveLock(destination);
-      let result;
       try {
-        result = await sync.apply(
-          replacement.id,
-          replacement.confirmationToken,
-          undefined,
-          true,
-        );
+        await expect(
+          sync.apply(
+            replacement.id,
+            replacement.confirmationToken,
+            undefined,
+            true,
+          ),
+        ).rejects.toMatchObject({ code: "EBUSY" });
       } finally {
         await release();
       }
 
-      expect(result.errors).toHaveLength(1);
-      expect(result.copied).toBe(0);
       expect(await readFile(destination)).toEqual(destinationBefore);
       expect(await readFile(manifestPath)).toEqual(manifestBefore);
     });
