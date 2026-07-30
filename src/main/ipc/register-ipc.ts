@@ -59,6 +59,7 @@ import {
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-library-quality-query";
+import { inspectTargetFilesystem } from "../adapters/filesystem/target-volume";
 import type { DatabaseBackupService } from "../application/database-backup";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
@@ -832,13 +833,15 @@ export function registerIpc(
           properties: ["openDirectory", "createDirectory"],
         });
         const targetPath = selected.filePaths[0];
-        return selected.canceled || !targetPath
-          ? null
-          : dependencies.database.createSyncProfile(
-              name,
-              normalize(resolve(targetPath)),
-              albumIds,
-            );
+        if (selected.canceled || !targetPath) return null;
+        const normalizedTarget = normalize(resolve(targetPath));
+        const evidence = await inspectTargetFilesystem(normalizedTarget);
+        return dependencies.database.createSyncProfile(
+          name,
+          normalizedTarget,
+          albumIds,
+          evidence.volumeIdentity,
+        );
       },
     ),
   );
@@ -854,8 +857,13 @@ export function registerIpc(
     channels.applySync,
     createValidatedHandler(
       syncApplyRequestSchema,
-      ({ planId, confirmationToken }) =>
-        dependencies.sync.apply(planId, confirmationToken, progress("sync")),
+      ({ planId, confirmationToken, targetVolumeConfirmed }) =>
+        dependencies.sync.apply(
+          planId,
+          confirmationToken,
+          progress("sync"),
+          targetVolumeConfirmed,
+        ),
     ),
   );
   ipcMain.handle(
@@ -880,8 +888,12 @@ export function registerIpc(
     channels.applySyncRecovery,
     createValidatedHandler(
       syncRecoveryApplyRequestSchema,
-      ({ runId, confirmationToken }) =>
-        dependencies.sync.recover(runId, confirmationToken),
+      ({ runId, confirmationToken, targetVolumeConfirmed }) =>
+        dependencies.sync.recover(
+          runId,
+          confirmationToken,
+          targetVolumeConfirmed,
+        ),
     ),
   );
 }

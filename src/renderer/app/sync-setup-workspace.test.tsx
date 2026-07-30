@@ -42,6 +42,7 @@ const targetPreview: SyncProfileTargetPreviewDto = {
   currentTargetPath: profile.targetPath,
   proposedTargetPath:
     "/fixture/a/different/very/long/target/path/for/the/same/profile",
+  proposedVolumeEvidenceAvailable: true,
 };
 const removalPreview: SyncProfileRemovalPreviewDto = {
   operationId: "d7fd6481-b31f-4ce4-8500-60276cbd494b",

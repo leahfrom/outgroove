@@ -26,6 +26,7 @@ const plan: SyncPlanDto = {
   cleanupEnabled: false,
   previousManifestHash: null,
   targetIdentity: "1:2",
+  targetVolume: { status: "matched", confirmationRequired: false },
   copies: [
     {
       sourceFileId: "file-1",
@@ -69,19 +70,23 @@ function review({
   currentHistory = history,
   applyingPlanId,
   cancellationRequested = false,
+  targetVolumeConfirmed = false,
   onPreview = vi.fn(),
   onApply = vi.fn(),
   onCancel = vi.fn(),
   onCleanupEnabledChange = vi.fn(),
+  onTargetVolumeConfirmedChange = vi.fn(),
 }: {
   currentPlan?: SyncPlanDto;
   currentHistory?: readonly SyncHistoryItemDto[];
   applyingPlanId?: string;
   cancellationRequested?: boolean;
+  targetVolumeConfirmed?: boolean;
   onPreview?: () => void;
   onApply?: () => void;
   onCancel?: () => void;
   onCleanupEnabledChange?: (enabled: boolean) => void;
+  onTargetVolumeConfirmedChange?: (confirmed: boolean) => void;
 } = {}) {
   return (
     <SyncPlanReview
@@ -89,6 +94,7 @@ function review({
       busy={false}
       cancellationRequested={cancellationRequested}
       cleanupEnabled={currentPlan?.cleanupEnabled ?? false}
+      targetVolumeConfirmed={targetVolumeConfirmed}
       editingProfile={false}
       history={currentHistory}
       historyLoading={false}
@@ -101,6 +107,7 @@ function review({
       onCleanupEnabledChange={onCleanupEnabledChange}
       onManage={vi.fn()}
       onPreview={onPreview}
+      onTargetVolumeConfirmedChange={onTargetVolumeConfirmedChange}
     />
   );
 }
@@ -212,6 +219,52 @@ describe("SyncPlanReview", () => {
       screen.getByRole("button", { name: "Cancel active sync" }),
     ).toBeDisabled();
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("requires a separate keyboard-accessible confirmation when volume evidence is uncertain", async () => {
+    const user = userEvent.setup();
+    const onTargetVolumeConfirmedChange = vi.fn();
+    const uncertainPlan: SyncPlanDto = {
+      ...plan,
+      targetVolume: {
+        status: "changed",
+        confirmationRequired: true,
+      },
+    };
+    const { rerender } = render(
+      review({
+        currentPlan: uncertainPlan,
+        onTargetVolumeConfirmedChange,
+      }),
+    );
+    const volumeConfirmation = screen.getByLabelText(
+      "DAP volume identity confirmation",
+    );
+    expect(volumeConfirmation).toHaveTextContent(
+      "differs from the evidence saved for this profile",
+    );
+    const acknowledgement = within(volumeConfirmation).getByRole("checkbox", {
+      name: "I confirm this is the intended DAP volume for this plan",
+    });
+    const apply = screen.getByRole("button", {
+      name: "Confirm and apply sync plan",
+    });
+    expect(apply).toBeDisabled();
+    acknowledgement.focus();
+    await user.keyboard(" ");
+    expect(onTargetVolumeConfirmedChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      review({
+        currentPlan: uncertainPlan,
+        targetVolumeConfirmed: true,
+      }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Confirm and apply sync plan",
+      }),
+    ).not.toBeDisabled();
   });
 
   it("keeps cleanup off by default and shows every exact removal before confirmation", async () => {

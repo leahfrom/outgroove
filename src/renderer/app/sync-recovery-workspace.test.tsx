@@ -51,6 +51,7 @@ const preview: SyncRecoveryPreviewDto = {
     "/fixture/target/Artist/Album/03 Track.flac changed externally and will remain untouched.",
   ],
   canRecover: true,
+  targetVolume: { status: "matched", confirmationRequired: false },
   confirmationToken: "sync-recovery-confirmation-token-long-enough",
 };
 
@@ -61,6 +62,8 @@ function workspace({
   onReview = vi.fn(),
   onConfirm = vi.fn(),
   onClosePreview = vi.fn(),
+  targetVolumeConfirmed = false,
+  onTargetVolumeConfirmedChange = vi.fn(),
 }: {
   recoveries?: readonly SyncRecoverySummaryDto[];
   currentPreview?: SyncRecoveryPreviewDto;
@@ -68,6 +71,8 @@ function workspace({
   onReview?: (recovery: SyncRecoverySummaryDto) => void;
   onConfirm?: (recovery: SyncRecoveryPreviewDto) => void;
   onClosePreview?: () => void;
+  targetVolumeConfirmed?: boolean;
+  onTargetVolumeConfirmedChange?: (confirmed: boolean) => void;
 } = {}) {
   return (
     <SyncRecoveryWorkspace
@@ -77,11 +82,13 @@ function workspace({
       preview={currentPreview}
       previewHeadingRef={createRef<HTMLHeadingElement>()}
       recoveries={recoveries}
+      targetVolumeConfirmed={targetVolumeConfirmed}
       onClosePreview={onClosePreview}
       onConfirm={onConfirm}
       onDismissFeedback={vi.fn()}
       onReturn={vi.fn()}
       onReview={onReview}
+      onTargetVolumeConfirmedChange={onTargetVolumeConfirmedChange}
     />
   );
 }
@@ -117,6 +124,47 @@ describe("SyncRecoveryWorkspace", () => {
     review.focus();
     await user.keyboard("{Enter}");
     expect(onReview).toHaveBeenCalledWith(rollbackRecovery);
+  });
+
+  it("requires explicit volume confirmation before an uncertain recovery", async () => {
+    const user = userEvent.setup();
+    const onTargetVolumeConfirmedChange = vi.fn();
+    const uncertainPreview: SyncRecoveryPreviewDto = {
+      ...preview,
+      targetVolume: { status: "changed", confirmationRequired: true },
+    };
+    const { rerender } = render(
+      workspace({
+        currentPreview: uncertainPreview,
+        onTargetVolumeConfirmedChange,
+      }),
+    );
+    const confirmation = screen.getByLabelText(
+      "Recovery volume identity confirmation",
+    );
+    const acknowledgement = within(confirmation).getByRole("checkbox", {
+      name: "I confirm this is the intended DAP volume for recovery",
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "Confirm recovery for Road DAP",
+      }),
+    ).toBeDisabled();
+    acknowledgement.focus();
+    await user.keyboard(" ");
+    expect(onTargetVolumeConfirmedChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      workspace({
+        currentPreview: uncertainPreview,
+        targetVolumeConfirmed: true,
+      }),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Confirm recovery for Road DAP",
+      }),
+    ).not.toBeDisabled();
   });
 
   it("groups reviewed actions, preserves warnings, and confirms only explicitly", async () => {

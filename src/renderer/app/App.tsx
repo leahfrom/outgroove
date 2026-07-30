@@ -547,6 +547,10 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [
+    syncRecoveryTargetVolumeConfirmed,
+    setSyncRecoveryTargetVolumeConfirmed,
+  ] = useState(false);
   const [syncRecoveryFeedback, setSyncRecoveryFeedback] =
     useState<SyncRecoveryFeedback>();
   const [syncTargetPreview, setSyncTargetPreview] =
@@ -561,6 +565,8 @@ export function App(): React.JSX.Element {
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
   const [syncCleanupEnabled, setSyncCleanupEnabled] = useState(false);
+  const [syncTargetVolumeConfirmed, setSyncTargetVolumeConfirmed] =
+    useState(false);
   const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
   const [syncCancellationRequested, setSyncCancellationRequested] =
     useState(false);
@@ -2988,8 +2994,10 @@ export function App(): React.JSX.Element {
       profileId: profile.id,
       cleanupEnabled,
     });
-    if (result.ok) setSyncPlan(result.value);
-    else setNotice(result.error.message, "error");
+    if (result.ok) {
+      setSyncPlan(result.value);
+      setSyncTargetVolumeConfirmed(false);
+    } else setNotice(result.error.message, "error");
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
@@ -3000,6 +3008,7 @@ export function App(): React.JSX.Element {
     setProfile(saved);
     setSyncPlan(undefined);
     setSyncCleanupEnabled(false);
+    setSyncTargetVolumeConfirmed(false);
     setSyncTargetPreview(undefined);
     void refreshSyncHistory(saved.id);
     setNotice(
@@ -3014,6 +3023,7 @@ export function App(): React.JSX.Element {
     setProfile(saved);
     setSyncPlan(undefined);
     setSyncCleanupEnabled(false);
+    setSyncTargetVolumeConfirmed(false);
     setEditingSyncProfileId(saved.id);
     setSyncAlbums(saved.albums);
     void refreshSyncHistory(saved.id);
@@ -3042,6 +3052,7 @@ export function App(): React.JSX.Element {
         setProfile(result.value);
         setSyncPlan(undefined);
         setSyncCleanupEnabled(false);
+        setSyncTargetVolumeConfirmed(false);
         setEditingSyncProfileId(undefined);
         setSyncAlbums([]);
         setSyncStage("review");
@@ -3140,6 +3151,7 @@ export function App(): React.JSX.Element {
         setProfile(result.value);
         setSyncPlan(undefined);
         setSyncCleanupEnabled(false);
+        setSyncTargetVolumeConfirmed(false);
         setSyncTargetPreview(undefined);
         setSyncStage("review");
         setSyncProfiles((current) =>
@@ -3201,6 +3213,7 @@ export function App(): React.JSX.Element {
           setProfile(undefined);
           setSyncPlan(undefined);
           setSyncCleanupEnabled(false);
+          setSyncTargetVolumeConfirmed(false);
           setSyncHistory([]);
           setSyncHistoryProfileId(undefined);
           setSyncStage("setup");
@@ -3226,6 +3239,7 @@ export function App(): React.JSX.Element {
       const result = await window.outgroove.applySync({
         planId: applyingPlan.id,
         confirmationToken: applyingPlan.confirmationToken,
+        targetVolumeConfirmed: syncTargetVolumeConfirmed,
       });
       if (result.ok) {
         if (result.value.outcome === "completed")
@@ -3247,6 +3261,7 @@ export function App(): React.JSX.Element {
           );
         if (result.value.outcome === "completed") {
           setSyncCleanupEnabled(false);
+          setSyncTargetVolumeConfirmed(false);
           await planSync(false);
           await refreshSyncHistory(applyingPlan.profileId);
         }
@@ -3289,6 +3304,7 @@ export function App(): React.JSX.Element {
       const result = await window.outgroove.applySyncRecovery({
         runId: recovery.runId,
         confirmationToken: recovery.confirmationToken,
+        targetVolumeConfirmed: syncRecoveryTargetVolumeConfirmed,
       });
       if (!result.ok) {
         setNotice(result.error.message, "error");
@@ -3340,6 +3356,7 @@ export function App(): React.JSX.Element {
   ): Promise<void> => {
     setSyncRecoveryFeedback(undefined);
     setSyncRecoveryPreview(undefined);
+    setSyncRecoveryTargetVolumeConfirmed(false);
     setBusy(true);
     try {
       const result = await window.outgroove.previewSyncRecovery({
@@ -4977,6 +4994,7 @@ export function App(): React.JSX.Element {
               busy={busy}
               cancellationRequested={syncCancellationRequested}
               cleanupEnabled={syncCleanupEnabled}
+              targetVolumeConfirmed={syncTargetVolumeConfirmed}
               editingProfile={editingSyncProfile?.id === profile.id}
               history={syncHistory}
               historyLoading={syncHistoryLoading}
@@ -4989,6 +5007,7 @@ export function App(): React.JSX.Element {
               onCleanupEnabledChange={(enabled) => {
                 setSyncCleanupEnabled(enabled);
                 setSyncPlan(undefined);
+                setSyncTargetVolumeConfirmed(false);
                 setNotice(
                   enabled
                     ? "Cleanup is enabled only for the next sync preview. Review every proposed removal before confirming."
@@ -4999,6 +5018,7 @@ export function App(): React.JSX.Element {
                 setSyncSetupSection("profiles");
                 setSyncStage("setup");
               }}
+              onTargetVolumeConfirmedChange={setSyncTargetVolumeConfirmed}
               onPreview={() => void planSync()}
             />
           )}
@@ -5010,14 +5030,19 @@ export function App(): React.JSX.Element {
               preview={syncRecoveryPreview}
               previewHeadingRef={syncRecoveryPreviewHeadingRef}
               recoveries={syncRecoveries}
+              targetVolumeConfirmed={syncRecoveryTargetVolumeConfirmed}
               onClosePreview={() => {
                 setSyncRecoveryPreview(undefined);
+                setSyncRecoveryTargetVolumeConfirmed(false);
                 setNotice("Closed the recovery review without changing files.");
               }}
               onConfirm={(recovery) => void applySyncRecovery(recovery)}
               onDismissFeedback={() => setSyncRecoveryFeedback(undefined)}
               onReturn={() => setSyncStage("setup")}
               onReview={(recovery) => void reviewSyncRecovery(recovery)}
+              onTargetVolumeConfirmedChange={
+                setSyncRecoveryTargetVolumeConfirmed
+              }
             />
           )}
         </main>

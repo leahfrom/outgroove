@@ -914,6 +914,8 @@ button:disabled {
 }
 .sync-cleanup-option input {
   flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
   margin-top: 0.2rem;
 }
 .sync-cleanup-option span,
@@ -941,6 +943,34 @@ button:disabled {
   border: 2px solid #496e56;
   border-radius: 12px;
   background: #fbfdfb;
+}
+.sync-volume-confirmation {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid #b87732;
+  border-radius: 10px;
+  background: #fff8ea;
+  color: #5f3b16;
+}
+.sync-volume-confirmation > div,
+.sync-volume-confirmation > div > span {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sync-volume-confirmation label {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  font-weight: 750;
+}
+.sync-volume-confirmation input {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin-top: 0.2rem;
 }
 .sync-plan-heading {
   display: flex;

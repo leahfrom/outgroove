@@ -20,6 +20,7 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
+import { inspectTargetFilesystem } from "../../src/main/adapters/filesystem/target-volume";
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
 import { DeviceSync } from "../../src/main/application/device-sync";
 import {
@@ -63,7 +64,12 @@ async function setup(): Promise<{
   ).execute(root.id);
   const album = database.listAlbums()[0];
   if (!album) throw new Error("Fixture album missing");
-  const profile = database.createSyncProfile("Fixture DAP", target, [album.id]);
+  const profile = database.createSyncProfile(
+    "Fixture DAP",
+    target,
+    [album.id],
+    (await inspectTargetFilesystem(target)).volumeIdentity,
+  );
   return {
     directory,
     database,
@@ -117,6 +123,76 @@ async function firstRecovery(
 }
 
 describe("deterministic manifest-based sync", () => {
+  it("records matching filesystem-device evidence in deterministic plans", async () => {
+    const { database, profileId } = await setup();
+    const sync = new DeviceSync(database);
+    const first = await sync.plan(profileId);
+    const repeated = await sync.plan(profileId);
+
+    expect(first.targetVolume).toEqual({
+      status: "matched",
+      confirmationRequired: false,
+    });
+    expect(repeated).toEqual(first);
+  });
+
+  it("requires explicit per-plan confirmation when recorded volume evidence differs", async () => {
+    const { database, profileId, target } = await setup();
+    database.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run("filesystem-device:different-volume", profileId);
+    const sync = new DeviceSync(database);
+    const plan = await sync.plan(profileId);
+
+    expect(plan.targetVolume).toEqual({
+      status: "changed",
+      confirmationRequired: true,
+    });
+    await expect(sync.apply(plan.id, plan.confirmationToken)).rejects.toThrow(
+      "Confirm the uncertain DAP volume identity",
+    );
+    await expect(
+      readFile(join(target, "Outgroove.m3u8")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    await expect(
+      sync.apply(plan.id, plan.confirmationToken, undefined, true),
+    ).resolves.toMatchObject({ outcome: "completed" });
+  });
+
+  it("does not invent volume evidence for a migrated or legacy profile", async () => {
+    const { database, profileId } = await setup();
+    database.connection
+      .prepare(
+        "UPDATE sync_profiles SET target_volume_identity=NULL WHERE id=?",
+      )
+      .run(profileId);
+
+    await expect(
+      new DeviceSync(database).plan(profileId),
+    ).resolves.toMatchObject({
+      targetVolume: {
+        status: "unrecorded",
+        confirmationRequired: true,
+      },
+    });
+  });
+
+  it("refuses a target root replaced by a symlink after retarget preview", async () => {
+    const { directory, database, profileId, target } = await setup();
+    const replacement = join(directory, "replacement-target");
+    await mkdir(replacement);
+    const sync = new DeviceSync(database);
+    const preview = await sync.previewProfileTarget(profileId, replacement);
+
+    await rm(replacement, { recursive: true });
+    await symlink(target, replacement, "dir");
+    await expect(
+      sync.applyProfileTarget(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("symbolic link");
+    expect(database.getSyncProfile(profileId)?.target_path).toBe(target);
+  });
+
   it("removes a reviewed profile without reading or changing target files", async () => {
     const { database, target, profileId, albumId } = await setup();
     const sync = new DeviceSync(database);
@@ -179,6 +255,7 @@ describe("deterministic manifest-based sync", () => {
       "Re-added target",
       target,
       [albumId],
+      (await inspectTargetFilesystem(target)).volumeIdentity,
     );
     const replacementPlan = await new DeviceSync(database).plan(
       replacementProfile.id,
@@ -227,16 +304,16 @@ describe("deterministic manifest-based sync", () => {
       join(replacement, firstRelative),
     );
     await writeFile(join(replacement, "Outgroove.m3u8"), "user playlist\n");
-    const preview = sync.previewProfileTarget(profileId, replacement);
+    const preview = await sync.previewProfileTarget(profileId, replacement);
     expect(preview).toMatchObject({
       profileId,
       currentTargetPath: target,
       proposedTargetPath: replacement,
     });
-    expect(() =>
+    await expect(
       sync.applyProfileTarget(preview.operationId, "wrong-confirmation-token"),
-    ).toThrow("no longer matches");
-    const retargeted = sync.applyProfileTarget(
+    ).rejects.toThrow("no longer matches");
+    const retargeted = await sync.applyProfileTarget(
       preview.operationId,
       preview.confirmationToken,
     );
@@ -254,8 +331,8 @@ describe("deterministic manifest-based sync", () => {
     );
     expect(replacementPlan.unchanged).toEqual([]);
 
-    const returnPreview = sync.previewProfileTarget(profileId, target);
-    sync.applyProfileTarget(
+    const returnPreview = await sync.previewProfileTarget(profileId, target);
+    await sync.applyProfileTarget(
       returnPreview.operationId,
       returnPreview.confirmationToken,
     );
@@ -300,7 +377,14 @@ describe("deterministic manifest-based sync", () => {
       canRecover: false,
     });
     await rename(disconnected, target);
+    reopened.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run("filesystem-device:different-volume", profileId);
     const preview = await firstRecovery(recoverySync);
+    expect(preview.targetVolume).toEqual({
+      status: "changed",
+      confirmationRequired: true,
+    });
     expect(preview.actions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -311,6 +395,9 @@ describe("deterministic manifest-based sync", () => {
     );
     await expect(
       recoverySync.recover(preview.runId, preview.confirmationToken),
+    ).rejects.toThrow("Confirm the uncertain DAP volume identity");
+    await expect(
+      recoverySync.recover(preview.runId, preview.confirmationToken, true),
     ).resolves.toMatchObject({ complete: true, recovered: 1, errors: [] });
     await expect(access(join(target, firstDestination))).rejects.toThrow();
     expect(reopened.listSyncRuns()).toEqual([]);
@@ -1274,16 +1361,22 @@ describe("deterministic manifest-based sync", () => {
       .listAlbums()
       .find((album) => album.title === "Second Album");
     if (!secondAlbum) throw new Error("Second sync album missing");
+    const targetVolumeIdentity = (await inspectTargetFilesystem(target))
+      .volumeIdentity;
     expect(() =>
-      database.createSyncProfile("Duplicate selection", target, [
-        albumId,
-        albumId,
-      ]),
+      database.createSyncProfile(
+        "Duplicate selection",
+        target,
+        [albumId, albumId],
+        targetVolumeIdentity,
+      ),
     ).toThrow("distinct albums");
-    const profile = database.createSyncProfile("Two albums", target, [
-      secondAlbum.id,
-      albumId,
-    ]);
+    const profile = database.createSyncProfile(
+      "Two albums",
+      target,
+      [secondAlbum.id, albumId],
+      (await inspectTargetFilesystem(target)).volumeIdentity,
+    );
     expect(profile.albumIds).toEqual([...profile.albumIds].sort());
     expect(database.getSyncProfile(profile.id)?.album_ids).toEqual(
       profile.albumIds,
@@ -1431,10 +1524,12 @@ describe("deterministic manifest-based sync", () => {
     database.connection
       .prepare("UPDATE tracks SET album_id=? WHERE file_id=?")
       .run(duplicateAlbumId, duplicateFileId);
-    const profile = database.createSyncProfile("Collision", target, [
-      albumId,
-      duplicateAlbumId,
-    ]);
+    const profile = database.createSyncProfile(
+      "Collision",
+      target,
+      [albumId, duplicateAlbumId],
+      (await inspectTargetFilesystem(target)).volumeIdentity,
+    );
     const sync = new DeviceSync(database);
     const plan = await sync.plan(profile.id);
     expect(plan.conflicts).toEqual([

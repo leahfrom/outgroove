@@ -3163,13 +3163,16 @@ export class CatalogDatabase {
     name: string,
     targetPath: string,
     albumIds: readonly string[],
+    targetVolumeIdentity: string | null = null,
   ): { id: string; name: string; targetPath: string; albumIds: string[] } {
     const selectedAlbumIds = this.validateSyncProfileAlbumIds(albumIds);
     const id = randomUUID();
     this.connection.transaction(() => {
       this.connection
         .prepare(
-          "INSERT INTO sync_profiles (id, name, target_path, album_id, created_at) VALUES (?, ?, ?, ?, ?)",
+          `INSERT INTO sync_profiles
+           (id, name, target_path, album_id, created_at, target_volume_identity)
+           VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -3177,6 +3180,7 @@ export class CatalogDatabase {
           targetPath,
           selectedAlbumIds[0],
           new Date().toISOString(),
+          targetVolumeIdentity,
         );
       const insertSelection = this.connection.prepare(
         "INSERT INTO sync_profile_albums (profile_id, album_id) VALUES (?, ?)",
@@ -3250,10 +3254,18 @@ export class CatalogDatabase {
     return profile;
   }
 
-  updateSyncProfileTarget(id: string, targetPath: string): SyncProfileDto {
+  updateSyncProfileTarget(
+    id: string,
+    targetPath: string,
+    targetVolumeIdentity: string | null = null,
+  ): SyncProfileDto {
     const updated = this.connection
-      .prepare("UPDATE sync_profiles SET target_path=? WHERE id=?")
-      .run(targetPath, id);
+      .prepare(
+        `UPDATE sync_profiles
+         SET target_path=?, target_volume_identity=?
+         WHERE id=?`,
+      )
+      .run(targetPath, targetVolumeIdentity, id);
     if (updated.changes === 0)
       throw new Error("Sync profile no longer exists.");
     const profile = this.listSyncProfiles().find(
@@ -3326,6 +3338,7 @@ export class CatalogDatabase {
         id: string;
         name: string;
         target_path: string;
+        target_volume_identity: string | null;
         album_id: string;
         album_ids: readonly string[];
         album_selections: readonly { id: string; title: string }[];
@@ -3333,10 +3346,17 @@ export class CatalogDatabase {
     | undefined {
     const profile = this.connection
       .prepare(
-        "SELECT id, name, target_path, album_id FROM sync_profiles WHERE id=?",
+        `SELECT id, name, target_path, target_volume_identity, album_id
+         FROM sync_profiles WHERE id=?`,
       )
       .get(id) as
-      | { id: string; name: string; target_path: string; album_id: string }
+      | {
+          id: string;
+          name: string;
+          target_path: string;
+          target_volume_identity: string | null;
+          album_id: string;
+        }
       | undefined;
     if (!profile) return undefined;
     const albumSelections = this.connection

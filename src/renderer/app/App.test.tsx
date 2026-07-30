@@ -5882,6 +5882,10 @@ describe("tag edit UI safety states", () => {
       cleanupEnabled: false,
       previousManifestHash: null,
       targetIdentity: "1:2",
+      targetVolume: {
+        status: "matched" as const,
+        confirmationRequired: false,
+      },
       copies: [album, secondAlbum].map((item) => ({
         sourceFileId: item.tracks[0]?.id ?? item.id,
         sourcePath: item.tracks[0]?.path ?? `/fixture/${item.id}.mp3`,
@@ -5989,6 +5993,7 @@ describe("tag edit UI safety states", () => {
     expect(applySync).toHaveBeenCalledWith({
       planId: plan.id,
       confirmationToken: plan.confirmationToken,
+      targetVolumeConfirmed: false,
     });
     await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
     expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
@@ -6095,6 +6100,7 @@ describe("tag edit UI safety states", () => {
           ],
           warnings: [],
           canRecover: true,
+          targetVolume: { status: "matched", confirmationRequired: false },
           confirmationToken,
         },
       });
@@ -6160,6 +6166,7 @@ describe("tag edit UI safety states", () => {
     expect(applySyncRecovery).toHaveBeenCalledWith({
       runId,
       confirmationToken,
+      targetVolumeConfirmed: false,
     });
     const failure = await screen.findByLabelText(
       "Recovery result for Road DAP",
@@ -6255,6 +6262,7 @@ describe("tag edit UI safety states", () => {
         cleanupEnabled: false,
         previousManifestHash: null,
         targetIdentity: "1:2",
+        targetVolume: { status: "matched", confirmationRequired: false },
         copies: [
           {
             sourceFileId: album.tracks[0]?.id ?? album.id,
@@ -6388,6 +6396,7 @@ describe("tag edit UI safety states", () => {
         cleanupEnabled: false,
         previousManifestHash: null,
         targetIdentity: "1:2",
+        targetVolume: { status: "matched", confirmationRequired: false },
         copies: [],
         replacements: [],
         unchanged: [],
@@ -6510,6 +6519,7 @@ describe("tag edit UI safety states", () => {
           profileName: "Road DAP",
           currentTargetPath: "/fixture/old-dap",
           proposedTargetPath: "/fixture/new-dap",
+          proposedVolumeEvidenceAvailable: true,
         },
       });
     const applyTarget = vi
@@ -6746,6 +6756,7 @@ describe("tag edit UI safety states", () => {
         cleanupEnabled: false,
         previousManifestHash: null,
         targetIdentity: "1:2",
+        targetVolume: { status: "matched", confirmationRequired: false },
         copies: [],
         replacements: [],
         unchanged: [],

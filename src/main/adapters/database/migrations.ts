@@ -654,4 +654,11 @@ export const migrations: readonly { version: number; sql: string }[] = [
         ON sync_run_changes(run_id, sequence);
     `,
   },
+  {
+    version: 25,
+    sql: `
+      ALTER TABLE sync_profiles
+        ADD COLUMN target_volume_identity TEXT;
+    `,
+  },
 ];

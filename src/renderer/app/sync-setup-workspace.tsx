@@ -482,6 +482,11 @@ export function SyncSetupWorkspace({
                 Existing sync history stays attached to the profile. A fresh
                 sync preview treats ownership separately for the new target.
               </p>
+              <p>
+                {targetPreview.proposedVolumeEvidenceAvailable
+                  ? "Outgroove will save the operating system’s filesystem-device evidence for comparison on future plans."
+                  : "This target did not provide usable filesystem-device evidence. Future plans will require a separate volume confirmation."}
+              </p>
               <div className="actions">
                 <button
                   className="primary"

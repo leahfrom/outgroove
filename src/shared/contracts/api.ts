@@ -469,11 +469,19 @@ export const syncPlanRequestSchema = z
   .object({ profileId: z.uuid(), cleanupEnabled: z.boolean() })
   .strict();
 export const syncApplyRequestSchema = z
-  .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
+  .object({
+    planId: z.uuid(),
+    confirmationToken: z.string().min(20),
+    targetVolumeConfirmed: z.boolean(),
+  })
   .strict();
 export const syncCancelRequestSchema = z.object({ planId: z.uuid() }).strict();
 export const syncRecoveryApplyRequestSchema = z
-  .object({ runId: z.uuid(), confirmationToken: z.string().min(20) })
+  .object({
+    runId: z.uuid(),
+    confirmationToken: z.string().min(20),
+    targetVolumeConfirmed: z.boolean(),
+  })
   .strict();
 export const syncRecoveryPreviewRequestSchema = z
   .object({ runId: z.uuid() })
@@ -775,6 +783,7 @@ export interface SyncProfileTargetPreviewDto {
   readonly profileName: string;
   readonly currentTargetPath: string;
   readonly proposedTargetPath: string;
+  readonly proposedVolumeEvidenceAvailable: boolean;
 }
 export interface SyncProfileRemovalPreviewDto {
   readonly operationId: string;
@@ -802,6 +811,10 @@ export interface SyncPlanDto {
   readonly cleanupEnabled: boolean;
   readonly previousManifestHash: string | null;
   readonly targetIdentity: string;
+  readonly targetVolume: {
+    readonly status: "matched" | "unrecorded" | "changed" | "unavailable";
+    readonly confirmationRequired: boolean;
+  };
   readonly copies: readonly SyncPlanItemDto[];
   readonly replacements: readonly SyncPlanItemDto[];
   readonly unchanged: readonly SyncPlanItemDto[];
@@ -843,6 +856,7 @@ export interface SyncRecoveryPreviewDto {
   }[];
   readonly warnings: readonly string[];
   readonly canRecover: boolean;
+  readonly targetVolume: SyncPlanDto["targetVolume"];
   readonly confirmationToken: string;
 }
 export interface SyncRecoverySummaryDto {
