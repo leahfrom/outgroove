@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.1 — 2026-07-30
+
+- Run the exact same complete Windows release gate that passed routine
+  pull-request CI, including bounded Vitest concurrency and the established
+  hosted-runner timeout. This prevents resource-contention timeouts during
+  exact-tag verification without skipping tests or weakening production
+  behavior.
+
 ## 0.17.0 — 2026-07-30
 
 - Add safe removal of saved DAP profiles through an exact database-only

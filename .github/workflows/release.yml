@@ -42,7 +42,20 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: npm run flow:validate-release-tag
-      - run: npm run verify
+      - if: runner.os != 'Windows'
+        run: npm run verify
+      # Match the proven Windows PR gate: the complete suite needs bounded
+      # concurrency and a wider per-test timeout on the hosted x64 runner.
+      - if: runner.os == 'Windows'
+        run: npm run format:check
+      - if: runner.os == 'Windows'
+        run: npm run lint
+      - if: runner.os == 'Windows'
+        run: npm run typecheck
+      - if: runner.os == 'Windows'
+        run: npm run version:check
+      - if: runner.os == 'Windows'
+        run: npm test -- --maxWorkers=2 --testTimeout=15000
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS'
         env:
