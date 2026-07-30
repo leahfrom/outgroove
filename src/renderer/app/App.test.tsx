@@ -418,6 +418,8 @@ function api(applyVerified: boolean): OutgrooveApi {
     renameSyncProfile: vi.fn(),
     chooseSyncProfileTarget: vi.fn(),
     applySyncProfileTarget: vi.fn(),
+    previewSyncProfileRemoval: vi.fn(),
+    applySyncProfileRemoval: vi.fn(),
     listSyncHistory: vi.fn(() => Promise.resolve({ ok: true, value: [] })),
     planSync: vi.fn(),
     applySync: vi.fn(),
@@ -6404,6 +6406,112 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
       "/fixture/new-dap",
     );
+    expect(planSync).not.toHaveBeenCalled();
+    expect(applySync).not.toHaveBeenCalled();
+  });
+
+  it("previews and confirms active DAP profile removal without proposing target deletion", async () => {
+    const mockApi = api(true);
+    const profileId = "86fb71a8-9faf-49f9-ad60-39e5bb28c02d";
+    const savedProfile = {
+      id: profileId,
+      name: "Road DAP",
+      targetPath: "/fixture/dap",
+      albumIds: [album.id],
+      albums: [
+        {
+          id: album.id,
+          title: album.title,
+          albumArtist: album.albumArtist,
+        },
+      ],
+      createdAt: "2026-07-22T10:00:00.000Z",
+    };
+    vi.spyOn(mockApi, "listSyncProfiles")
+      .mockResolvedValueOnce({ ok: true, value: [savedProfile] })
+      .mockResolvedValue({ ok: true, value: [] });
+    const previewRemoval = vi
+      .spyOn(mockApi, "previewSyncProfileRemoval")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          operationId: "853a8e28-560a-4261-b152-1fe31c26dc42",
+          confirmationToken: "sync-removal-confirmation-token-long-enough",
+          profileId,
+          profileName: savedProfile.name,
+          targetPath: savedProfile.targetPath,
+          albums: savedProfile.albums,
+          successfulSyncs: 3,
+          manifestTargets: [
+            { targetPath: savedProfile.targetPath, ownedFileCount: 12 },
+          ],
+        },
+      });
+    const applyRemoval = vi
+      .spyOn(mockApi, "applySyncProfileRemoval")
+      .mockResolvedValue({
+        ok: true,
+        value: {
+          profileId,
+          profileName: savedProfile.name,
+          removedSuccessfulSyncs: 3,
+        },
+      });
+    const planSync = vi.spyOn(mockApi, "planSync");
+    const applySync = vi.spyOn(mockApi, "applySync");
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Sync");
+    await openSyncSetupSection(user, "Saved profiles");
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Open DAP profile Road DAP",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Albums & profiles" }));
+    await openSyncProfileManagement(user, "Road DAP");
+
+    const remove = screen.getByRole("button", {
+      name: "Remove DAP profile Road DAP",
+    });
+    remove.focus();
+    await user.keyboard("{Enter}");
+    expect(previewRemoval).toHaveBeenCalledWith({ profileId });
+    const preview = await screen.findByLabelText(
+      "DAP profile removal confirmation",
+    );
+    expect(
+      within(preview).getByRole("heading", {
+        name: "Remove Road DAP from Outgroove?",
+      }),
+    ).toHaveFocus();
+    expect(preview).toHaveTextContent(
+      "No source audio or target file is read, changed, or deleted.",
+    );
+    expect(preview).toHaveTextContent(
+      "Files left on these targets become unknown to Outgroove.",
+    );
+    expect(applyRemoval).not.toHaveBeenCalled();
+
+    const confirm = within(preview).getByRole("button", {
+      name: "Remove profile from Outgroove",
+    });
+    confirm.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(applyRemoval).toHaveBeenCalledWith({
+        operationId: "853a8e28-560a-4261-b152-1fe31c26dc42",
+        confirmationToken: "sync-removal-confirmation-token-long-enough",
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "No profiles saved yet" }),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Active DAP profile")).toBeNull();
     expect(planSync).not.toHaveBeenCalled();
     expect(applySync).not.toHaveBeenCalled();
   });

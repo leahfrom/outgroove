@@ -73,6 +73,8 @@ export const channels = {
   renameSyncProfile: "sync:rename-profile",
   chooseSyncProfileTarget: "sync:choose-profile-target",
   applySyncProfileTarget: "sync:apply-profile-target",
+  previewSyncProfileRemoval: "sync:preview-profile-removal",
+  applySyncProfileRemoval: "sync:apply-profile-removal",
   listSyncHistory: "sync:list-history",
   createSyncProfile: "sync:choose-target-create-profile",
   planSync: "sync:plan",

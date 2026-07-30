@@ -44,6 +44,8 @@ import {
   syncHistoryRequestSchema,
   syncProfileTargetApplyRequestSchema,
   syncProfileTargetPreviewRequestSchema,
+  syncProfileRemovalApplyRequestSchema,
+  syncProfileRemovalPreviewRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
   syncPlanRequestSchema,
@@ -797,6 +799,21 @@ export function registerIpc(
       syncProfileTargetApplyRequestSchema,
       ({ operationId, confirmationToken }) =>
         dependencies.sync.applyProfileTarget(operationId, confirmationToken),
+    ),
+  );
+  ipcMain.handle(
+    channels.previewSyncProfileRemoval,
+    createValidatedHandler(
+      syncProfileRemovalPreviewRequestSchema,
+      ({ profileId }) => dependencies.sync.previewProfileRemoval(profileId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applySyncProfileRemoval,
+    createValidatedHandler(
+      syncProfileRemovalApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.sync.applyProfileRemoval(operationId, confirmationToken),
     ),
   );
   ipcMain.handle(

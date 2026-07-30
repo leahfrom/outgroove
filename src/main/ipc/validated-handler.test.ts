@@ -31,6 +31,8 @@ import {
   removeFavoriteArtistRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
+  syncProfileRemovalApplyRequestSchema,
+  syncProfileRemovalPreviewRequestSchema,
   syncProfileTargetApplyRequestSchema,
   syncProfileTargetPreviewRequestSchema,
   syncHistoryRequestSchema,
@@ -645,6 +647,53 @@ describe("validated IPC handlers", () => {
           operationId: profileId,
           confirmationToken: "short",
           targetPath: "/Volumes/DAP",
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
+  it("validates both stages of DAP profile removal without accepting target data", async () => {
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const preview = createValidatedHandler(
+      syncProfileRemovalPreviewRequestSchema,
+      vi.fn(),
+    );
+    await expect(preview({}, { profileId })).resolves.toMatchObject({
+      ok: true,
+    });
+    for (const request of [
+      { profileId: "not-a-uuid" },
+      { profileId, targetPath: "/Volumes/DAP" },
+      { profileId, deleteTargetFiles: true },
+    ])
+      await expect(preview({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const apply = createValidatedHandler(
+      syncProfileRemovalApplyRequestSchema,
+      vi.fn(),
+    );
+    await expect(
+      apply(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "confirmation-token-long-enough",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      apply(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "short",
+          deleteTargetFiles: true,
         },
       ),
     ).resolves.toMatchObject({

@@ -3356,6 +3356,79 @@ export class CatalogDatabase {
     };
   }
 
+  getSyncProfileRemovalState(id: string): {
+    readonly profile: SyncProfileDto;
+    readonly successfulSyncs: number;
+    readonly manifestTargets: readonly {
+      readonly targetPath: string;
+      readonly ownedFileCount: number;
+    }[];
+  } {
+    const profile = this.listSyncProfiles().find(
+      (candidate) => candidate.id === id,
+    );
+    if (!profile) throw new Error("Sync profile does not exist.");
+    const manifests = this.connection
+      .prepare(
+        `SELECT target_path, manifest_json
+         FROM sync_manifests
+         WHERE profile_id=?
+         ORDER BY target_path COLLATE NOCASE, target_path,
+           created_at DESC, id DESC`,
+      )
+      .all(id) as { target_path: string; manifest_json: string }[];
+    const manifestTargets = new Map<string, number>();
+    for (const manifest of manifests) {
+      if (manifestTargets.has(manifest.target_path)) continue;
+      const parsed = JSON.parse(manifest.manifest_json) as {
+        entries?: unknown;
+      };
+      if (!Array.isArray(parsed.entries))
+        throw new Error("Stored sync manifest is invalid.");
+      manifestTargets.set(manifest.target_path, parsed.entries.length);
+    }
+    return {
+      profile,
+      successfulSyncs: manifests.length,
+      manifestTargets: [...manifestTargets].map(
+        ([targetPath, ownedFileCount]) => ({
+          targetPath,
+          ownedFileCount,
+        }),
+      ),
+    };
+  }
+
+  deleteSyncProfile(id: string): number {
+    return this.connection.transaction(() => {
+      if (this.getSyncRunForProfile(id))
+        throw new Error(
+          "Recover this profile's interrupted sync before removing it.",
+        );
+      const successfulSyncs = this.connection
+        .prepare("SELECT COUNT(*) FROM sync_manifests WHERE profile_id=?")
+        .pluck()
+        .get(id) as number;
+      this.connection
+        .prepare(
+          `DELETE FROM sync_entries
+           WHERE manifest_id IN (
+             SELECT id FROM sync_manifests WHERE profile_id=?
+           )`,
+        )
+        .run(id);
+      this.connection
+        .prepare("DELETE FROM sync_manifests WHERE profile_id=?")
+        .run(id);
+      const removed = this.connection
+        .prepare("DELETE FROM sync_profiles WHERE id=?")
+        .run(id);
+      if (removed.changes !== 1)
+        throw new Error("Sync profile no longer exists.");
+      return successfulSyncs;
+    })();
+  }
+
   getLatestManifest(
     profileId: string,
     targetPath: string,
