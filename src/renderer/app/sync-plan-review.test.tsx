@@ -23,6 +23,9 @@ const plan: SyncPlanDto = {
   profileId: profile.id,
   targetPath: profile.targetPath,
   confirmationToken: "sync-confirmation-token-long-enough",
+  cleanupEnabled: false,
+  previousManifestHash: null,
+  targetIdentity: "1:2",
   copies: [
     {
       sourceFileId: "file-1",
@@ -33,6 +36,7 @@ const plan: SyncPlanDto = {
       signature: "2048:1",
     },
   ],
+  replacements: [],
   unchanged: [
     {
       sourceFileId: "file-2",
@@ -42,9 +46,12 @@ const plan: SyncPlanDto = {
       signature: "1024:1",
     },
   ],
+  removals: [],
+  absentOwned: [],
   conflicts: [],
   errors: [],
   requiredBytes: 2048,
+  hasChanges: true,
 };
 
 const history: readonly SyncHistoryItemDto[] = [
@@ -65,6 +72,7 @@ function review({
   onPreview = vi.fn(),
   onApply = vi.fn(),
   onCancel = vi.fn(),
+  onCleanupEnabledChange = vi.fn(),
 }: {
   currentPlan?: SyncPlanDto;
   currentHistory?: readonly SyncHistoryItemDto[];
@@ -73,12 +81,14 @@ function review({
   onPreview?: () => void;
   onApply?: () => void;
   onCancel?: () => void;
+  onCleanupEnabledChange?: (enabled: boolean) => void;
 } = {}) {
   return (
     <SyncPlanReview
       applyingPlanId={applyingPlanId}
       busy={false}
       cancellationRequested={cancellationRequested}
+      cleanupEnabled={currentPlan?.cleanupEnabled ?? false}
       editingProfile={false}
       history={currentHistory}
       historyLoading={false}
@@ -88,6 +98,7 @@ function review({
       profile={profile}
       onApply={onApply}
       onCancel={onCancel}
+      onCleanupEnabledChange={onCleanupEnabledChange}
       onManage={vi.fn()}
       onPreview={onPreview}
     />
@@ -101,7 +112,7 @@ describe("SyncPlanReview", () => {
     render(review({ onPreview }));
 
     expect(screen.getByLabelText("No sync plan")).toHaveTextContent(
-      "does not copy, replace, or delete anything",
+      "does not copy, replace, or remove anything",
     );
     const preview = screen.getByRole("button", { name: "Preview sync plan" });
     preview.focus();
@@ -138,7 +149,7 @@ describe("SyncPlanReview", () => {
     ).toBeVisible();
     const summary = within(confirmation).getByLabelText("Sync plan summary");
     expect(summary).toHaveTextContent("Copies1");
-    expect(summary).toHaveTextContent("Unchanged1");
+    expect(summary).toHaveTextContent("Skipped (unchanged)1");
     expect(summary).toHaveTextContent("Issues0");
     expect(summary).toHaveTextContent("2.00 KiB");
     expect(confirmation).toHaveTextContent("Source audio stays untouched");
@@ -159,7 +170,7 @@ describe("SyncPlanReview", () => {
     );
 
     const apply = within(confirmation).getByRole("button", {
-      name: "Confirm and apply copy plan",
+      name: "Confirm and apply sync plan",
     });
     apply.focus();
     await user.keyboard("{Enter}");
@@ -179,7 +190,7 @@ describe("SyncPlanReview", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Confirm and apply copy plan",
+        name: "Confirm and apply sync plan",
       }),
     ).toBeDisabled();
     const conflicts = screen.getByText("Conflicts").closest("details");
@@ -201,5 +212,87 @@ describe("SyncPlanReview", () => {
       screen.getByRole("button", { name: "Cancel active sync" }),
     ).toBeDisabled();
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("keeps cleanup off by default and shows every exact removal before confirmation", async () => {
+    const user = userEvent.setup();
+    const onCleanupEnabledChange = vi.fn();
+    const onApply = vi.fn();
+    const firstCopy = plan.copies[0];
+    if (!firstCopy) throw new Error("Copy fixture missing.");
+    const removalPlan: SyncPlanDto = {
+      ...plan,
+      cleanupEnabled: true,
+      replacements: [
+        {
+          ...firstCopy,
+          relativeDestination:
+            "Artist/A very long album title/01-02 Replacement.flac",
+          expectedTargetHash: "a".repeat(64),
+        },
+      ],
+      removals: [
+        {
+          relativeDestination:
+            "Artist/A very long obsolete album/01-01 Obsolete track.flac",
+          size: 4096,
+          expectedTargetHash: "b".repeat(64),
+        },
+      ],
+    };
+    const { rerender } = render(review({ onCleanupEnabledChange }));
+    const cleanup = screen.getByRole("checkbox", {
+      name: /Include cleanup of obsolete Outgroove-owned files in this plan/u,
+    });
+    expect(cleanup).not.toBeChecked();
+    cleanup.focus();
+    await user.keyboard(" ");
+    expect(onCleanupEnabledChange).toHaveBeenCalledWith(true);
+
+    rerender(review({ currentPlan: removalPlan, onApply }));
+    const confirmation = screen.getByLabelText("Sync confirmation");
+    expect(confirmation).toHaveTextContent("Copies1");
+    expect(confirmation).toHaveTextContent("Replacements1");
+    expect(confirmation).toHaveTextContent("Skipped (unchanged)1");
+    expect(confirmation).toHaveTextContent("Removals1");
+    const removalDisclosure = within(confirmation)
+      .getByText("Manifest-owned files to remove")
+      .closest("details");
+    expect(removalDisclosure).toHaveAttribute("open");
+    expect(removalDisclosure).toHaveTextContent(
+      "Artist/A very long obsolete album/01-01 Obsolete track.flac",
+    );
+    expect(confirmation).toHaveTextContent(
+      "Unknown target files are never removed.",
+    );
+    const apply = within(confirmation).getByRole("button", {
+      name: "Confirm and apply plan with 1 removal",
+    });
+    apply.focus();
+    await user.keyboard("{Enter}");
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not expose confirmation or apply for a no-op plan", () => {
+    render(
+      review({
+        currentPlan: {
+          ...plan,
+          copies: [],
+          unchanged: [...plan.copies, ...plan.unchanged],
+          requiredBytes: 0,
+          hasChanges: false,
+        },
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No target changes are needed.",
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Apply this plan?" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Confirm and apply/u }),
+    ).not.toBeInTheDocument();
   });
 });

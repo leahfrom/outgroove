@@ -367,6 +367,18 @@ describe("preload saved-filter allowlist", () => {
       history,
     );
 
+    const plan = { profileId: update.id, cleanupEnabled: true };
+    await api.planSync(plan);
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.planSync, plan);
+    const apply = {
+      planId: update.id,
+      confirmationToken: "sync-confirmation-token-long-enough",
+    };
+    await api.applySync(apply);
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.applySync, apply);
+    expect(api).not.toHaveProperty("deleteFile");
+    expect(api).not.toHaveProperty("invoke");
+
     const cancellation = { planId: update.id };
     await api.cancelSync(cancellation);
     expect(electron.invoke).toHaveBeenLastCalledWith(

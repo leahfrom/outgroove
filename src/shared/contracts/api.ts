@@ -465,7 +465,9 @@ export const syncProfileRemovalApplyRequestSchema = z
 export const syncHistoryRequestSchema = z
   .object({ profileId: z.uuid() })
   .strict();
-export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
+export const syncPlanRequestSchema = z
+  .object({ profileId: z.uuid(), cleanupEnabled: z.boolean() })
+  .strict();
 export const syncApplyRequestSchema = z
   .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
@@ -740,6 +742,12 @@ export interface SyncPlanItemDto {
   readonly relativeDestination: string;
   readonly size: number;
   readonly signature: string;
+  readonly expectedTargetHash?: string;
+}
+export interface SyncRemovalItemDto {
+  readonly relativeDestination: string;
+  readonly size: number;
+  readonly expectedTargetHash: string;
 }
 export interface SyncProfileDto {
   readonly id: string;
@@ -791,15 +799,24 @@ export interface SyncPlanDto {
   readonly profileId: string;
   readonly targetPath: string;
   readonly confirmationToken: string;
+  readonly cleanupEnabled: boolean;
+  readonly previousManifestHash: string | null;
+  readonly targetIdentity: string;
   readonly copies: readonly SyncPlanItemDto[];
+  readonly replacements: readonly SyncPlanItemDto[];
   readonly unchanged: readonly SyncPlanItemDto[];
+  readonly removals: readonly SyncRemovalItemDto[];
+  readonly absentOwned: readonly string[];
   readonly conflicts: readonly string[];
   readonly errors: readonly string[];
   readonly requiredBytes: number;
+  readonly hasChanges: boolean;
 }
 export interface SyncApplyResultDto {
   readonly outcome: "completed" | "cancelled" | "failed";
   readonly copied: number;
+  readonly replaced: number;
+  readonly removed: number;
   readonly rolledBack: number;
   readonly unchanged: number;
   readonly playlistPath: string;

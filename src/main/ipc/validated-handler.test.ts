@@ -36,6 +36,8 @@ import {
   syncProfileTargetApplyRequestSchema,
   syncProfileTargetPreviewRequestSchema,
   syncHistoryRequestSchema,
+  syncApplyRequestSchema,
+  syncPlanRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
   syncCancelRequestSchema,
@@ -609,6 +611,51 @@ describe("validated IPC handlers", () => {
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
+  });
+
+  it("accepts only explicit per-plan cleanup intent and opaque apply confirmation", async () => {
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const planUseCase = vi.fn();
+    const plan = createValidatedHandler(syncPlanRequestSchema, planUseCase);
+    await expect(
+      plan({}, { profileId, cleanupEnabled: false }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      plan({}, { profileId, cleanupEnabled: true }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(planUseCase).toHaveBeenNthCalledWith(1, {
+      profileId,
+      cleanupEnabled: false,
+    });
+    expect(planUseCase).toHaveBeenNthCalledWith(2, {
+      profileId,
+      cleanupEnabled: true,
+    });
+    for (const request of [
+      { profileId },
+      { profileId, cleanupEnabled: true, path: "/Volumes/DAP/file.mp3" },
+      { profileId, cleanupEnabled: true, removals: ["owned.mp3"] },
+      { profileId, cleanupEnabled: true, deleteUnknownFiles: true },
+    ])
+      await expect(plan({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const applyUseCase = vi.fn();
+    const apply = createValidatedHandler(syncApplyRequestSchema, applyUseCase);
+    const request = {
+      planId: profileId,
+      confirmationToken: "sync-confirmation-token-long-enough",
+    };
+    await expect(apply({}, request)).resolves.toMatchObject({ ok: true });
+    expect(applyUseCase).toHaveBeenCalledWith(request);
+    await expect(
+      apply({}, { ...request, removals: ["/Volumes/DAP/file.mp3"] }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
   });
 
   it("validates both stages of a DAP profile target change without accepting paths", async () => {

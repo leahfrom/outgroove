@@ -6,6 +6,7 @@ import {
   lstat,
   mkdir,
   open,
+  readFile,
   rename,
   stat,
   statfs,
@@ -48,6 +49,10 @@ interface Manifest {
 interface ApplyHooks {
   beforeCopy?: (item: SyncPlanItemDto) => Promise<void>;
   afterCopyInstalled?: (item: SyncPlanItemDto) => Promise<void>;
+  beforeRemoval?: (item: SyncPlanDto["removals"][number]) => Promise<void>;
+  afterRemovalQuarantined?: (
+    item: SyncPlanDto["removals"][number],
+  ) => Promise<void>;
   beforeManifest?: () => Promise<void>;
   afterTargetManifestInstalled?: () => Promise<void>;
   afterManifestCommitted?: () => Promise<void>;
@@ -57,10 +62,18 @@ interface ActiveApply {
   phase: "copying" | "finalizing";
 }
 interface InstalledCopy {
+  readonly kind: "copy";
   readonly destination: string;
   readonly expectedHash: string;
   readonly rollback?: string;
 }
+interface InstalledRemoval {
+  readonly kind: "removal";
+  readonly destination: string;
+  readonly quarantine: string;
+  readonly expectedHash: string;
+}
+type InstalledChange = InstalledCopy | InstalledRemoval;
 
 async function flushFile(path: string): Promise<void> {
   // Windows rejects FlushFileBuffers/fsync on a read-only handle.
@@ -150,6 +163,50 @@ function recordedRelativePath(
 
 function contentHash(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function manifestHash(manifestJson: string | undefined): string | null {
+  return manifestJson === undefined ? null : contentHash(manifestJson);
+}
+
+function parseManifest(manifestJson: string): Manifest {
+  const parsed = JSON.parse(manifestJson) as unknown;
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("version" in parsed) ||
+    parsed.version !== 1 ||
+    !("profileId" in parsed) ||
+    typeof parsed.profileId !== "string" ||
+    !("entries" in parsed) ||
+    !Array.isArray(parsed.entries) ||
+    parsed.entries.some(
+      (entry: unknown) =>
+        typeof entry !== "object" ||
+        entry === null ||
+        !("sourceFileId" in entry) ||
+        typeof entry.sourceFileId !== "string" ||
+        !("relativeDestination" in entry) ||
+        typeof entry.relativeDestination !== "string" ||
+        !("signature" in entry) ||
+        typeof entry.signature !== "string" ||
+        !("size" in entry) ||
+        typeof entry.size !== "number" ||
+        !Number.isSafeInteger(entry.size) ||
+        entry.size < 0,
+    )
+  )
+    throw new Error("Stored sync manifest is invalid.");
+  return parsed as Manifest;
+}
+
+async function targetIdentity(targetRoot: string): Promise<string> {
+  const info = await lstat(targetRoot);
+  if (info.isSymbolicLink())
+    throw new Error("Refusing a symbolic link as the DAP target.");
+  if (!info.isDirectory())
+    throw new Error("The DAP target is not a directory.");
+  return `${info.dev}:${info.ino}`;
 }
 
 function cancellationRequested(signal: AbortSignal): boolean {
@@ -341,7 +398,7 @@ export class DeviceSync {
     };
   }
 
-  async plan(profileId: string): Promise<SyncPlanDto> {
+  async plan(profileId: string, cleanupEnabled = false): Promise<SyncPlanDto> {
     const profileRevision = this.profileRevisions.get(profileId) ?? 0;
     const profile = this.database.getSyncProfile(profileId);
     if (!profile) throw new Error("Sync profile does not exist.");
@@ -350,18 +407,39 @@ export class DeviceSync {
       profile.target_path,
     );
     const previousManifest = previous
-      ? (JSON.parse(previous.manifest_json) as Manifest)
+      ? parseManifest(previous.manifest_json)
       : undefined;
-    const owned = new Map(
-      previousManifest?.entries.map((entry) => [
-        entry.relativeDestination.normalize("NFC").toLocaleLowerCase("en-US"),
-        entry,
-      ]) ?? [],
-    );
+    if (previousManifest && previousManifest.profileId !== profileId)
+      throw new Error("Stored sync manifest belongs to another DAP profile.");
+    const owned = new Map<
+      string,
+      NonNullable<typeof previousManifest>["entries"][number]
+    >();
     const copies: SyncPlanItemDto[] = [];
+    const replacements: SyncPlanItemDto[] = [];
     const unchanged: SyncPlanItemDto[] = [];
+    const removals: SyncPlanDto["removals"][number][] = [];
+    const absentOwned: string[] = [];
     const conflicts: string[] = [];
     const errors: string[] = [];
+    let plannedTargetIdentity = "";
+    try {
+      plannedTargetIdentity = await targetIdentity(profile.target_path);
+    } catch (error) {
+      errors.push(
+        `DAP target: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    for (const entry of previousManifest?.entries ?? []) {
+      const comparisonKey = entry.relativeDestination
+        .normalize("NFC")
+        .toLocaleLowerCase("en-US");
+      if (owned.has(comparisonKey))
+        errors.push(
+          `Earlier manifest contains a case or Unicode collision: ${entry.relativeDestination}`,
+        );
+      else owned.set(comparisonKey, entry);
+    }
     if (this.database.getSyncRunForProfile(profileId))
       errors.push(
         "Recover this profile's interrupted sync before applying another plan.",
@@ -392,7 +470,7 @@ export class DeviceSync {
           continue;
         }
         destinations.set(comparisonKey, track.path);
-        const item = {
+        const baseItem = {
           sourceFileId: track.id,
           sourcePath: track.path,
           relativeDestination: destination.relative,
@@ -400,9 +478,20 @@ export class DeviceSync {
           signature,
         };
         const owner = owned.get(comparisonKey);
-        let targetInfo: Awaited<ReturnType<typeof stat>> | undefined;
+        if (owner && owner.relativeDestination !== destination.relative) {
+          conflicts.push(
+            `Manifest-owned destination differs by case or Unicode: ${owner.relativeDestination} and ${destination.relative}`,
+          );
+          continue;
+        }
+        await safeRecordedPath(profile.target_path, destination.relative);
+        let targetInfo: Awaited<ReturnType<typeof lstat>> | undefined;
         try {
-          targetInfo = await stat(destination.absolute);
+          targetInfo = await lstat(destination.absolute);
+          if (targetInfo.isSymbolicLink())
+            throw new Error(
+              `Refusing a symbolic link at target destination: ${destination.relative}`,
+            );
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
@@ -410,19 +499,64 @@ export class DeviceSync {
           conflicts.push(
             `Unknown target file would be replaced: ${destination.relative}`,
           );
-        else if (
-          targetInfo &&
-          owner?.signature === signature &&
-          targetInfo.size === sourceInfo.size
-        )
-          unchanged.push(item);
-        else copies.push(item);
+        else if (targetInfo && owner) {
+          const expectedTargetHash = await streamingFileHash(
+            destination.absolute,
+          );
+          const item = { ...baseItem, expectedTargetHash };
+          if (
+            owner.signature === signature &&
+            targetInfo.size === sourceInfo.size
+          )
+            unchanged.push(item);
+          else replacements.push(item);
+        } else copies.push(baseItem);
       } catch (error) {
         errors.push(
           `${track.path}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    if (cleanupEnabled)
+      for (const [comparisonKey, entry] of [...owned].sort(
+        ([, left], [, right]) =>
+          left.relativeDestination.localeCompare(right.relativeDestination),
+      )) {
+        if (destinations.has(comparisonKey)) continue;
+        try {
+          const destination = await safeRecordedPath(
+            profile.target_path,
+            entry.relativeDestination,
+          );
+          let info: Awaited<ReturnType<typeof lstat>>;
+          try {
+            info = await lstat(destination);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+              absentOwned.push(entry.relativeDestination);
+              continue;
+            }
+            throw error;
+          }
+          if (info.isSymbolicLink())
+            throw new Error("Refusing a symbolic link at an owned path.");
+          if (!info.isFile())
+            throw new Error("Manifest-owned target path is not a file.");
+          if (info.size !== entry.size)
+            throw new Error(
+              "Manifest-owned target size no longer matches its ownership record.",
+            );
+          removals.push({
+            relativeDestination: entry.relativeDestination,
+            size: info.size,
+            expectedTargetHash: await streamingFileHash(destination),
+          });
+        } catch (error) {
+          errors.push(
+            `${entry.relativeDestination}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     for (const relativeArtifact of [
       "Outgroove.m3u8",
       join(".outgroove", "manifest.json"),
@@ -442,7 +576,29 @@ export class DeviceSync {
         );
       }
     }
-    const requiredBytes = copies.reduce((sum, item) => sum + item.size, 0);
+    if (previous) {
+      try {
+        const targetManifestPath = await safeRecordedPath(
+          profile.target_path,
+          join(".outgroove", "manifest.json"),
+        );
+        const targetManifest = parseManifest(
+          await readFile(targetManifestPath, "utf8"),
+        );
+        if (JSON.stringify(targetManifest) !== JSON.stringify(previousManifest))
+          errors.push(
+            "The target manifest no longer matches Outgroove’s latest ownership record.",
+          );
+      } catch (error) {
+        errors.push(
+          `Target manifest: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const requiredBytes = [...copies, ...replacements].reduce(
+      (sum, item) => sum + item.size,
+      0,
+    );
     try {
       const capacity = await statfs(profile.target_path);
       const available = capacity.bavail * capacity.bsize;
@@ -458,8 +614,14 @@ export class DeviceSync {
     const stable = JSON.stringify({
       profileId,
       targetPath: profile.target_path,
+      cleanupEnabled,
+      previousManifestHash: manifestHash(previous?.manifest_json),
+      targetIdentity: plannedTargetIdentity,
       copies,
+      replacements,
       unchanged,
+      removals,
+      absentOwned,
       conflicts,
       errors,
       requiredBytes,
@@ -473,11 +635,23 @@ export class DeviceSync {
       profileId,
       targetPath: profile.target_path,
       confirmationToken,
+      cleanupEnabled,
+      previousManifestHash: manifestHash(previous?.manifest_json),
+      targetIdentity: plannedTargetIdentity,
       copies,
+      replacements,
       unchanged,
+      removals,
+      absentOwned,
       conflicts,
       errors,
       requiredBytes,
+      hasChanges:
+        copies.length +
+          replacements.length +
+          removals.length +
+          absentOwned.length >
+        0,
     };
     if ((this.profileRevisions.get(profileId) ?? 0) !== profileRevision)
       throw new Error(
@@ -558,9 +732,50 @@ export class DeviceSync {
     }
     this.database.markSyncRunChangeInstalled(runId, prepared.record.id);
     return {
+      kind: "copy",
       destination,
       expectedHash: prepared.record.expectedHash,
       ...(prepared.rollback ? { rollback: prepared.rollback } : {}),
+    };
+  }
+
+  private async quarantineRemoval(
+    runId: string,
+    targetPath: string,
+    item: SyncPlanDto["removals"][number],
+  ): Promise<InstalledRemoval> {
+    const destination = await safeRecordedPath(
+      targetPath,
+      item.relativeDestination,
+    );
+    if ((await streamingFileHash(destination)) !== item.expectedTargetHash)
+      throw new Error(
+        "Manifest-owned target changed after preview; create a new plan.",
+      );
+    const quarantine = `${destination}.outgroove-${randomUUID()}.quarantine`;
+    const record = this.database.addSyncRunChange(runId, {
+      kind: "removal",
+      relativeDestination: recordedRelativePath(targetPath, destination),
+      temporaryRelative: recordedRelativePath(targetPath, quarantine),
+      rollbackRelative: null,
+      expectedHash: item.expectedTargetHash,
+    });
+    await rename(destination, quarantine);
+    try {
+      if ((await streamingFileHash(quarantine)) !== item.expectedTargetHash)
+        throw new Error(
+          "Manifest-owned target changed while it was being quarantined.",
+        );
+    } catch (error) {
+      await rename(quarantine, destination);
+      throw error;
+    }
+    this.database.markSyncRunChangeInstalled(runId, record.id);
+    return {
+      kind: "removal",
+      destination,
+      quarantine,
+      expectedHash: item.expectedTargetHash,
     };
   }
 
@@ -573,9 +788,20 @@ export class DeviceSync {
       ]) {
         if (!relativePath) continue;
         try {
-          await unlinkIfExists(
-            await safeRecordedPath(run.targetPath, relativePath),
+          const internalPath = await safeRecordedPath(
+            run.targetPath,
+            relativePath,
           );
+          if (
+            change.kind === "removal" &&
+            relativePath === change.temporaryRelative &&
+            (await pathExists(internalPath)) &&
+            (await streamingFileHash(internalPath)) !== change.expectedHash
+          )
+            throw new Error(
+              "Removal quarantine changed externally and was left untouched.",
+            );
+          await unlinkIfExists(internalPath);
         } catch (error) {
           errors.push(
             `${relativePath}: committed sync cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -620,6 +846,38 @@ export class DeviceSync {
           const rollback = change.rollbackRelative
             ? await safeRecordedPath(run.targetPath, change.rollbackRelative)
             : undefined;
+          if (change.kind === "removal") {
+            const quarantineExists = await pathExists(temporary);
+            const destinationExists = await pathExists(destination);
+            if (run.state === "committed-cleanup") {
+              if (quarantineExists)
+                actions.push({
+                  path: temporary,
+                  action: "remove",
+                  explanation:
+                    "Remove the quarantined manifest-owned file after the new manifest committed.",
+                });
+              continue;
+            }
+            if (quarantineExists && !destinationExists)
+              actions.push({
+                path: destination,
+                action: "restore",
+                explanation:
+                  "Restore the manifest-owned file from Outgroove’s removal quarantine.",
+              });
+            else if (quarantineExists)
+              warnings.push(
+                `${destination} appeared after the interrupted removal. It will remain untouched; the owned file remains recoverable at ${temporary}.`,
+              );
+            else if (!destinationExists) {
+              canRecover = false;
+              warnings.push(
+                `${destination} and its removal quarantine are both missing. Recovery cannot prove the owned file is safe.`,
+              );
+            }
+            continue;
+          }
           if (await pathExists(temporary))
             actions.push({
               path: temporary,
@@ -738,6 +996,39 @@ export class DeviceSync {
     const rollback = change.rollbackRelative
       ? await safeRecordedPath(run.targetPath, change.rollbackRelative)
       : undefined;
+    if (change.kind === "removal") {
+      const quarantineExists = await pathExists(temporary);
+      const destinationExists = await pathExists(destination);
+      if (run.state === "committed-cleanup") {
+        if (!quarantineExists) return { recovered: 0, notes };
+        if ((await streamingFileHash(temporary)) !== change.expectedHash) {
+          notes.push(`${temporary} changed externally and was left untouched.`);
+          throw new Error("Removal quarantine changed externally.");
+        }
+        await unlink(temporary);
+        return { recovered: 0, notes };
+      }
+      if (!quarantineExists) {
+        if (
+          destinationExists &&
+          (await streamingFileHash(destination)) === change.expectedHash
+        )
+          return { recovered: 0, notes };
+        throw new Error(
+          "Manifest-owned file and its valid removal quarantine are unavailable.",
+        );
+      }
+      if ((await streamingFileHash(temporary)) !== change.expectedHash)
+        throw new Error("Removal quarantine changed externally.");
+      if (destinationExists) {
+        notes.push(
+          `${destination} appeared externally and was left untouched. The owned file remains at ${temporary}.`,
+        );
+        throw new Error("Removal destination is no longer empty.");
+      }
+      await rename(temporary, destination);
+      return { recovered: 1, notes };
+    }
     await unlinkIfExists(temporary);
     if (run.state === "committed-cleanup") {
       if (rollback) await unlinkIfExists(rollback);
@@ -832,11 +1123,30 @@ export class DeviceSync {
   }
 
   private async rollbackInstalled(
-    installed: readonly InstalledCopy[],
+    installed: readonly InstalledChange[],
   ): Promise<{ rolledBack: number; errors: string[] }> {
     let rolledBack = 0;
     const errors: string[] = [];
     for (const change of [...installed].reverse()) {
+      if (change.kind === "removal") {
+        try {
+          if (
+            (await streamingFileHash(change.quarantine)) !== change.expectedHash
+          )
+            throw new Error("removal quarantine changed externally");
+          if (await pathExists(change.destination))
+            throw new Error(
+              "an unknown target file appeared at the removal destination",
+            );
+          await rename(change.quarantine, change.destination);
+          rolledBack++;
+        } catch (error) {
+          errors.push(
+            `${change.destination}: removal rollback failed because ${error instanceof Error ? error.message : String(error)}. The owned file remains recoverable at ${change.quarantine}.`,
+          );
+        }
+        continue;
+      }
       const quarantine = `${change.destination}.outgroove-${randomUUID()}.cancelled`;
       let quarantineHoldsInstalledCopy = false;
       try {
@@ -880,6 +1190,92 @@ export class DeviceSync {
     return { rolledBack, errors };
   }
 
+  private async validatePlanState(plan: SyncPlanDto): Promise<void> {
+    const profile = this.database.getSyncProfile(plan.profileId);
+    if (profile?.target_path !== plan.targetPath)
+      throw new Error(
+        "The DAP profile target changed after preview; create a new plan.",
+      );
+    if ((await targetIdentity(plan.targetPath)) !== plan.targetIdentity)
+      throw new Error(
+        "The DAP target changed after preview; reconnect the reviewed target and create a new plan.",
+      );
+    const previous = this.database.getLatestManifest(
+      plan.profileId,
+      plan.targetPath,
+    );
+    if (manifestHash(previous?.manifest_json) !== plan.previousManifestHash)
+      throw new Error(
+        "The ownership manifest changed after preview; create a new plan.",
+      );
+    if (previous) {
+      const databaseManifest = parseManifest(previous.manifest_json);
+      const targetManifestPath = await safeRecordedPath(
+        plan.targetPath,
+        join(".outgroove", "manifest.json"),
+      );
+      const targetManifest = parseManifest(
+        await readFile(targetManifestPath, "utf8"),
+      );
+      if (JSON.stringify(targetManifest) !== JSON.stringify(databaseManifest))
+        throw new Error(
+          "The target manifest changed after preview; create a new plan.",
+        );
+    }
+    for (const item of [
+      ...plan.copies,
+      ...plan.replacements,
+      ...plan.unchanged,
+    ]) {
+      const sourceInfo = await stat(item.sourcePath);
+      if (
+        `${sourceInfo.size}:${Math.trunc(sourceInfo.mtimeMs)}` !==
+        item.signature
+      )
+        throw new Error(
+          `${item.relativeDestination}: source changed after preview; create a new plan.`,
+        );
+      const destination = await safeRecordedPath(
+        plan.targetPath,
+        item.relativeDestination,
+      );
+      if (item.expectedTargetHash) {
+        if (
+          !(await pathExists(destination)) ||
+          (await streamingFileHash(destination)) !== item.expectedTargetHash
+        )
+          throw new Error(
+            `${item.relativeDestination}: target changed after preview; create a new plan.`,
+          );
+      } else if (await pathExists(destination))
+        throw new Error(
+          `${item.relativeDestination}: an unknown target file appeared after preview.`,
+        );
+    }
+    for (const item of plan.removals) {
+      const destination = await safeRecordedPath(
+        plan.targetPath,
+        item.relativeDestination,
+      );
+      if (
+        !(await pathExists(destination)) ||
+        (await streamingFileHash(destination)) !== item.expectedTargetHash
+      )
+        throw new Error(
+          `${item.relativeDestination}: manifest-owned target changed after preview; create a new plan.`,
+        );
+    }
+    for (const relativeDestination of plan.absentOwned)
+      if (
+        await pathExists(
+          await safeRecordedPath(plan.targetPath, relativeDestination),
+        )
+      )
+        throw new Error(
+          `${relativeDestination}: a target file appeared after preview; create a new plan.`,
+        );
+  }
+
   async apply(
     planId: string,
     confirmationToken: string,
@@ -891,8 +1287,13 @@ export class DeviceSync {
       throw new Error("Sync must be applied from its current preview.");
     if (plan.conflicts.length > 0 || plan.errors.length > 0)
       throw new Error("Resolve sync conflicts and errors before applying.");
+    if (!plan.hasChanges)
+      throw new Error("This sync plan has no changes to apply.");
+    if (plan.removals.length > 0 && !plan.cleanupEnabled)
+      throw new Error("Cleanup was not enabled for this sync plan.");
     if (this.applyingProfiles.has(plan.profileId))
       throw new Error("A sync is already applying for this profile.");
+    await this.validatePlanState(plan);
     const run = this.database.createSyncRun(
       plan.id,
       plan.profileId,
@@ -906,25 +1307,19 @@ export class DeviceSync {
     this.activeApplies.set(planId, active);
     try {
       const errors: string[] = [];
-      const installed: InstalledCopy[] = [];
-      const previous = this.database.getLatestManifest(
-        plan.profileId,
-        plan.targetPath,
+      const installed: InstalledChange[] = [];
+      const replacementDestinations = new Set(
+        plan.replacements.map((item) =>
+          item.relativeDestination.normalize("NFC").toLocaleLowerCase("en-US"),
+        ),
       );
-      const ownedDestinations = new Set(
-        previous
-          ? (JSON.parse(previous.manifest_json) as Manifest).entries.map(
-              (entry) =>
-                entry.relativeDestination
-                  .normalize("NFC")
-                  .toLocaleLowerCase("en-US"),
-            )
-          : [],
-      );
+      const plannedCopies = [...plan.copies, ...plan.replacements];
       let copied = 0;
+      let replaced = 0;
+      let removed = 0;
       let cancelled = false;
       let cleanupFailed = false;
-      for (const item of plan.copies) {
+      for (const item of plannedCopies) {
         if (cancellationRequested(active.controller.signal)) {
           cancelled = true;
           break;
@@ -951,6 +1346,10 @@ export class DeviceSync {
             recordedRelativePath(plan.targetPath, destination.absolute),
           );
           await mkdir(dirname(destination.absolute), { recursive: true });
+          await safeRecordedPath(
+            plan.targetPath,
+            recordedRelativePath(plan.targetPath, destination.absolute),
+          );
           const sourceHash = await streamingFileHash(item.sourcePath);
           const sourceAfterHash = await stat(item.sourcePath);
           if (
@@ -963,13 +1362,23 @@ export class DeviceSync {
           const comparisonKey = item.relativeDestination
             .normalize("NFC")
             .toLocaleLowerCase("en-US");
+          const replacesExisting = replacementDestinations.has(comparisonKey);
+          if (
+            replacesExisting &&
+            (!item.expectedTargetHash ||
+              (await streamingFileHash(destination.absolute)) !==
+                item.expectedTargetHash)
+          )
+            throw new Error(
+              "Manifest-owned target changed after preview; create a new plan.",
+            );
           const prepared = this.recordChange(
             run.id,
             plan.targetPath,
             "copy",
             destination.absolute,
             sourceHash,
-            ownedDestinations.has(comparisonKey),
+            replacesExisting,
           );
           temporary = prepared.temporary;
           await copyFile(item.sourcePath, temporary);
@@ -996,11 +1405,19 @@ export class DeviceSync {
             cancelled = true;
             break;
           }
-          if (ownedDestinations.has(comparisonKey)) {
+          if (replacesExisting) {
             if (!prepared.rollback)
               throw new Error("Owned replacement recovery path is missing.");
             await rename(destination.absolute, prepared.rollback);
             try {
+              if (
+                !item.expectedTargetHash ||
+                (await streamingFileHash(prepared.rollback)) !==
+                  item.expectedTargetHash
+              )
+                throw new Error(
+                  "Manifest-owned target changed while replacement was starting.",
+                );
               await rename(temporary, destination.absolute);
               temporary = undefined;
             } catch (error) {
@@ -1008,6 +1425,7 @@ export class DeviceSync {
               throw error;
             }
             installed.push({
+              kind: "copy",
               destination: destination.absolute,
               expectedHash: temporaryHash,
               rollback: prepared.rollback,
@@ -1035,6 +1453,7 @@ export class DeviceSync {
                 constants.COPYFILE_EXCL,
               );
               installed.push({
+                kind: "copy",
                 destination: destination.absolute,
                 expectedHash: temporaryHash,
               });
@@ -1047,6 +1466,7 @@ export class DeviceSync {
             }
             if (!recordedInstalledCopy)
               installed.push({
+                kind: "copy",
                 destination: destination.absolute,
                 expectedHash: temporaryHash,
               });
@@ -1054,8 +1474,13 @@ export class DeviceSync {
             temporary = undefined;
           }
           this.database.markSyncRunChangeInstalled(run.id, prepared.record.id);
-          copied++;
-          onProgress(copied, plan.copies.length, item.relativeDestination);
+          if (replacesExisting) replaced++;
+          else copied++;
+          onProgress(
+            copied + replaced + removed,
+            plannedCopies.length + plan.removals.length,
+            item.relativeDestination,
+          );
           await this.hooks.afterCopyInstalled?.(item);
         } catch (error) {
           let cleanupFailure = "";
@@ -1072,6 +1497,35 @@ export class DeviceSync {
           break;
         }
       }
+      if (!cancelled && errors.length === 0)
+        for (const item of plan.removals) {
+          if (cancellationRequested(active.controller.signal)) {
+            cancelled = true;
+            break;
+          }
+          try {
+            await this.hooks.beforeRemoval?.(item);
+            if (cancellationRequested(active.controller.signal)) {
+              cancelled = true;
+              break;
+            }
+            installed.push(
+              await this.quarantineRemoval(run.id, plan.targetPath, item),
+            );
+            removed++;
+            onProgress(
+              copied + replaced + removed,
+              plannedCopies.length + plan.removals.length,
+              item.relativeDestination,
+            );
+            await this.hooks.afterRemovalQuarantined?.(item);
+          } catch (error) {
+            errors.push(
+              `${item.relativeDestination}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            break;
+          }
+        }
       const playlistPath = join(plan.targetPath, "Outgroove.m3u8");
       const manifestPath = join(plan.targetPath, ".outgroove", "manifest.json");
       if (cancelled || errors.length > 0) {
@@ -1086,6 +1540,8 @@ export class DeviceSync {
         return {
           outcome: cancelled ? "cancelled" : "failed",
           copied,
+          replaced,
+          removed,
           rolledBack: rollback.rolledBack,
           unchanged: plan.unchanged.length,
           playlistPath,
@@ -1096,9 +1552,12 @@ export class DeviceSync {
       active.phase = "finalizing";
       this.database.updateSyncRun(run.id, { phase: "finalizing" });
       if (errors.length === 0) {
-        const allItems = [...plan.copies, ...plan.unchanged].sort(
-          (left, right) =>
-            left.relativeDestination.localeCompare(right.relativeDestination),
+        const allItems = [
+          ...plan.copies,
+          ...plan.replacements,
+          ...plan.unchanged,
+        ].sort((left, right) =>
+          left.relativeDestination.localeCompare(right.relativeDestination),
         );
         installed.push(
           await this.installTextArtifact(
@@ -1147,6 +1606,8 @@ export class DeviceSync {
       return {
         outcome: "completed",
         copied,
+        replaced,
+        removed,
         rolledBack: 0,
         unchanged: plan.unchanged.length,
         playlistPath,

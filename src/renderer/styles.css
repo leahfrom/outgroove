@@ -850,6 +850,30 @@ button:disabled {
   justify-content: flex-end;
   margin: 0;
 }
+.sync-cleanup-option {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  min-width: 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid #b9c9bd;
+}
+.sync-cleanup-option input {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+.sync-cleanup-option span,
+.sync-cleanup-option strong,
+.sync-cleanup-option small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sync-cleanup-option small {
+  margin-top: 0.2rem;
+  color: #3e4e44;
+}
 .sync-unsaved-status {
   grid-column: 1 / -1;
   padding-top: 0.75rem;
@@ -895,7 +919,7 @@ button:disabled {
 }
 .sync-plan-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
   margin: 0;
 }
@@ -927,6 +951,15 @@ button:disabled {
   border-radius: 9px;
   background: #fff1ef;
   color: #71352f;
+}
+.sync-plan-noop {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.8rem;
+  border: 1px solid #8ca394;
+  border-radius: 9px;
+  background: #eef8f1;
+  color: #245c39;
 }
 .sync-plan-details {
   display: grid;

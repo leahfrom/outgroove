@@ -543,6 +543,7 @@ export function App(): React.JSX.Element {
     albumIds: readonly string[];
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
+  const [syncCleanupEnabled, setSyncCleanupEnabled] = useState(false);
   const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
   const [syncCancellationRequested, setSyncCancellationRequested] =
     useState(false);
@@ -2894,9 +2895,14 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const planSync = async (): Promise<void> => {
+  const planSync = async (
+    cleanupEnabled = syncCleanupEnabled,
+  ): Promise<void> => {
     if (!profile) return;
-    const result = await window.outgroove.planSync({ profileId: profile.id });
+    const result = await window.outgroove.planSync({
+      profileId: profile.id,
+      cleanupEnabled,
+    });
     if (result.ok) setSyncPlan(result.value);
     else setNotice(result.error.message, "error");
   };
@@ -2908,6 +2914,7 @@ export function App(): React.JSX.Element {
     setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncCleanupEnabled(false);
     setSyncTargetPreview(undefined);
     void refreshSyncHistory(saved.id);
     setNotice(
@@ -2921,6 +2928,7 @@ export function App(): React.JSX.Element {
     setSyncSetupSection("selection");
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncCleanupEnabled(false);
     setEditingSyncProfileId(saved.id);
     setSyncAlbums(saved.albums);
     void refreshSyncHistory(saved.id);
@@ -2948,6 +2956,7 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setProfile(result.value);
         setSyncPlan(undefined);
+        setSyncCleanupEnabled(false);
         setEditingSyncProfileId(undefined);
         setSyncAlbums([]);
         setSyncStage("review");
@@ -3045,6 +3054,7 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setProfile(result.value);
         setSyncPlan(undefined);
+        setSyncCleanupEnabled(false);
         setSyncTargetPreview(undefined);
         setSyncStage("review");
         setSyncProfiles((current) =>
@@ -3105,6 +3115,7 @@ export function App(): React.JSX.Element {
         if (removedActiveProfile) {
           setProfile(undefined);
           setSyncPlan(undefined);
+          setSyncCleanupEnabled(false);
           setSyncHistory([]);
           setSyncHistoryProfileId(undefined);
           setSyncStage("setup");
@@ -3134,7 +3145,7 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         if (result.value.outcome === "completed")
           setNotice(
-            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
             result.value.errors.length === 0 ? "success" : "error",
           );
         else if (result.value.outcome === "cancelled")
@@ -3150,7 +3161,8 @@ export function App(): React.JSX.Element {
             "error",
           );
         if (result.value.outcome === "completed") {
-          await planSync();
+          setSyncCleanupEnabled(false);
+          await planSync(false);
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
@@ -4873,6 +4885,7 @@ export function App(): React.JSX.Element {
               applyingPlanId={syncApplyingPlanId}
               busy={busy}
               cancellationRequested={syncCancellationRequested}
+              cleanupEnabled={syncCleanupEnabled}
               editingProfile={editingSyncProfile?.id === profile.id}
               history={syncHistory}
               historyLoading={syncHistoryLoading}
@@ -4882,6 +4895,15 @@ export function App(): React.JSX.Element {
               profile={profile}
               onApply={() => void applySync()}
               onCancel={() => void cancelSync()}
+              onCleanupEnabledChange={(enabled) => {
+                setSyncCleanupEnabled(enabled);
+                setSyncPlan(undefined);
+                setNotice(
+                  enabled
+                    ? "Cleanup is enabled only for the next sync preview. Review every proposed removal before confirming."
+                    : "Cleanup is disabled. The next preview will not propose removals.",
+                );
+              }}
               onManage={() => {
                 setSyncSetupSection("profiles");
                 setSyncStage("setup");
