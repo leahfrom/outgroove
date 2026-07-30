@@ -230,7 +230,7 @@ export function SyncRecoveryWorkspace({
               <dt>Volume check</dt>
               <dd>
                 {preview.targetVolume.status === "matched"
-                  ? "Recorded evidence matches"
+                  ? "Persistent identity matches"
                   : "Confirmation required"}
               </dd>
             </div>

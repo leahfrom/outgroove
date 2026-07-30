@@ -199,7 +199,7 @@ export function SyncPlanReview({
               <dt>Volume check</dt>
               <dd>
                 {plan.targetVolume.status === "matched"
-                  ? "Recorded evidence matches"
+                  ? "Persistent identity matches"
                   : "Confirmation required"}
               </dd>
             </div>
@@ -225,10 +225,10 @@ export function SyncPlanReview({
                 </strong>
                 <span>
                   {plan.targetVolume.status === "changed"
-                    ? "The current filesystem-device evidence differs from the evidence saved for this profile."
+                    ? "The current persistent volume identity differs from the evidence saved for this profile."
                     : plan.targetVolume.status === "unrecorded"
-                      ? "This profile predates saved filesystem-device evidence."
-                      : "This operating system or target did not provide usable filesystem-device evidence."}
+                      ? "This profile does not have a saved persistent volume identity."
+                      : "This operating system or target did not provide a persistent volume identity."}
                 </span>
                 <span>
                   Check the target path and device yourself. A matching

@@ -459,13 +459,22 @@ export function SyncSetupWorkspace({
               aria-label="DAP target confirmation"
             >
               <div>
-                <p className="eyebrow">Target change preview</p>
+                <p className="eyebrow">
+                  {targetPreview.identityRefresh
+                    ? "Volume identity refresh"
+                    : "Target change preview"}
+                </p>
                 <h4 ref={targetPreviewHeadingRef} tabIndex={-1}>
-                  Review target for {targetPreview.profileName}
+                  {targetPreview.identityRefresh
+                    ? `Refresh identity for ${targetPreview.profileName}`
+                    : `Review target for ${targetPreview.profileName}`}
                 </h4>
                 <p>
-                  This updates only the saved destination. No source audio or
-                  target files are read, copied, replaced, or deleted.
+                  {targetPreview.identityRefresh
+                    ? "This replaces only the saved volume evidence after rechecking the selected target."
+                    : "This updates only the saved destination and its volume evidence."}{" "}
+                  No source audio or target files are copied, replaced, or
+                  deleted.
                 </p>
               </div>
               <dl>
@@ -474,18 +483,23 @@ export function SyncSetupWorkspace({
                   <dd>{targetPreview.currentTargetPath}</dd>
                 </div>
                 <div>
-                  <dt>New target</dt>
+                  <dt>
+                    {targetPreview.identityRefresh
+                      ? "Rechecked target"
+                      : "New target"}
+                  </dt>
                   <dd>{targetPreview.proposedTargetPath}</dd>
                 </div>
               </dl>
               <p>
-                Existing sync history stays attached to the profile. A fresh
-                sync preview treats ownership separately for the new target.
+                {targetPreview.identityRefresh
+                  ? "Existing sync history and manifest ownership stay attached to this exact profile and target."
+                  : "Existing sync history stays attached to the profile. A fresh sync preview treats ownership separately for the new target."}
               </p>
               <p>
                 {targetPreview.proposedVolumeEvidenceAvailable
-                  ? "Outgroove will save the operating system’s filesystem-device evidence for comparison on future plans."
-                  : "This target did not provide usable filesystem-device evidence. Future plans will require a separate volume confirmation."}
+                  ? "Outgroove will save a one-way digest of the operating system’s persistent volume identity for comparison on future plans."
+                  : "This target did not provide a persistent volume identity. Future plans will require a separate volume confirmation."}
               </p>
               <div className="actions">
                 <button
@@ -494,10 +508,14 @@ export function SyncSetupWorkspace({
                   onClick={onConfirmTarget}
                   type="button"
                 >
-                  Confirm DAP target change
+                  {targetPreview.identityRefresh
+                    ? "Confirm volume identity refresh"
+                    : "Confirm DAP target change"}
                 </button>
                 <button disabled={busy} onClick={onCancelTarget} type="button">
-                  Cancel DAP target change
+                  {targetPreview.identityRefresh
+                    ? "Cancel identity refresh"
+                    : "Cancel DAP target change"}
                 </button>
               </div>
             </section>

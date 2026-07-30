@@ -43,6 +43,7 @@ const targetPreview: SyncProfileTargetPreviewDto = {
   proposedTargetPath:
     "/fixture/a/different/very/long/target/path/for/the/same/profile",
   proposedVolumeEvidenceAvailable: true,
+  identityRefresh: false,
 };
 const removalPreview: SyncProfileRemovalPreviewDto = {
   operationId: "d7fd6481-b31f-4ce4-8500-60276cbd494b",
@@ -253,7 +254,7 @@ describe("SyncSetupWorkspace", () => {
     expect(preview).toHaveTextContent(targetPreview.currentTargetPath);
     expect(preview).toHaveTextContent(targetPreview.proposedTargetPath);
     expect(preview).toHaveTextContent(
-      "No source audio or target files are read, copied, replaced, or deleted.",
+      "No source audio or target files are copied, replaced, or deleted.",
     );
     expect(onConfirmTarget).not.toHaveBeenCalled();
 
@@ -269,6 +270,43 @@ describe("SyncSetupWorkspace", () => {
     });
     cancel.focus();
     await user.keyboard("{Enter}");
+    expect(onCancelTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels an explicit same-target persistent identity refresh", async () => {
+    const user = userEvent.setup();
+    const onConfirmTarget = vi.fn();
+    const onCancelTarget = vi.fn();
+    render(
+      workspace({
+        activeSection: "profiles",
+        currentTargetPreview: {
+          ...targetPreview,
+          proposedTargetPath: targetPreview.currentTargetPath,
+          identityRefresh: true,
+        },
+        onConfirmTarget,
+        onCancelTarget,
+      }),
+    );
+
+    const preview = screen.getByLabelText("DAP target confirmation");
+    expect(preview).toHaveTextContent("Volume identity refresh");
+    expect(preview).toHaveTextContent(
+      "Existing sync history and manifest ownership stay attached",
+    );
+    expect(preview).toHaveTextContent("one-way digest");
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Confirm volume identity refresh",
+      }),
+    );
+    expect(onConfirmTarget).toHaveBeenCalledTimes(1);
+    await user.click(
+      within(preview).getByRole("button", {
+        name: "Cancel identity refresh",
+      }),
+    );
     expect(onCancelTarget).toHaveBeenCalledTimes(1);
   });
 

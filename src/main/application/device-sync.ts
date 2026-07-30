@@ -37,6 +37,8 @@ import { streamingFileHash } from "../adapters/filesystem/streaming-hash";
 import { inspectTargetFilesystem } from "../adapters/filesystem/target-volume";
 import { containedDestination, trackDestinationSegments } from "./sync-paths";
 
+export type TargetFilesystemInspector = typeof inspectTargetFilesystem;
+
 interface Manifest {
   readonly version: 1;
   readonly profileId: string;
@@ -207,6 +209,7 @@ function cancellationRequested(signal: AbortSignal): boolean {
 
 export class DeviceSync {
   private readonly plans = new Map<string, SyncPlanDto>();
+  private readonly planVolumeIdentities = new Map<string, string | null>();
   private readonly profileRevisions = new Map<string, number>();
   private readonly applyingProfiles = new Set<string>();
   private readonly activeApplies = new Map<string, ActiveApply>();
@@ -214,6 +217,7 @@ export class DeviceSync {
     string,
     {
       readonly preview: SyncProfileTargetPreviewDto;
+      readonly currentVolumeIdentity: string | null;
       readonly proposedRootIdentity: string;
       readonly proposedVolumeIdentity: string | null;
     }
@@ -226,7 +230,13 @@ export class DeviceSync {
   constructor(
     private readonly database: CatalogDatabase,
     private readonly hooks: ApplyHooks = {},
+    private readonly inspectTarget: TargetFilesystemInspector = inspectTargetFilesystem,
   ) {}
+
+  private deletePlan(planId: string): void {
+    this.plans.delete(planId);
+    this.planVolumeIdentities.delete(planId);
+  }
 
   updateProfileAlbums(
     profileId: string,
@@ -240,7 +250,7 @@ export class DeviceSync {
       (this.profileRevisions.get(profileId) ?? 0) + 1,
     );
     for (const [planId, plan] of this.plans)
-      if (plan.profileId === profileId) this.plans.delete(planId);
+      if (plan.profileId === profileId) this.deletePlan(planId);
     return profile;
   }
 
@@ -248,19 +258,29 @@ export class DeviceSync {
     profileId: string,
     proposedTargetPath: string,
   ): Promise<SyncProfileTargetPreviewDto> {
-    const profile = this.database
-      .listSyncProfiles()
-      .find((candidate) => candidate.id === profileId);
+    const profile = this.database.getSyncProfile(profileId);
     if (!profile) throw new Error("Sync profile does not exist.");
-    if (profile.targetPath === proposedTargetPath)
-      throw new Error("This DAP profile already uses the selected target.");
-    const proposedEvidence = await inspectTargetFilesystem(proposedTargetPath);
+    const proposedEvidence = await this.inspectTarget(proposedTargetPath);
+    const identityRefresh = profile.target_path === proposedTargetPath;
+    if (
+      identityRefresh &&
+      proposedEvidence.volumeIdentity === profile.target_volume_identity
+    )
+      throw new Error(
+        "This DAP profile already uses the selected target and recorded volume identity.",
+      );
+    if (identityRefresh && proposedEvidence.volumeIdentity === null)
+      throw new Error(
+        "A persistent volume identity is unavailable for this target, so there is no stronger evidence to save.",
+      );
     const operationId = randomUUID();
     const stable = JSON.stringify({
       operationId,
       profileId,
-      currentTargetPath: profile.targetPath,
+      currentTargetPath: profile.target_path,
+      currentVolumeIdentity: profile.target_volume_identity,
       proposedTargetPath,
+      proposedVolumeIdentity: proposedEvidence.volumeIdentity,
     });
     const preview = {
       operationId,
@@ -269,12 +289,14 @@ export class DeviceSync {
         .digest("base64url"),
       profileId,
       profileName: profile.name,
-      currentTargetPath: profile.targetPath,
+      currentTargetPath: profile.target_path,
       proposedTargetPath,
       proposedVolumeEvidenceAvailable: proposedEvidence.volumeIdentity !== null,
+      identityRefresh,
     };
     this.targetPreviews.set(operationId, {
       preview,
+      currentVolumeIdentity: profile.target_volume_identity,
       proposedRootIdentity: proposedEvidence.rootIdentity,
       proposedVolumeIdentity: proposedEvidence.volumeIdentity,
     });
@@ -287,8 +309,12 @@ export class DeviceSync {
   ): Promise<SyncProfileDto> {
     const storedPreview = this.targetPreviews.get(operationId);
     if (!storedPreview) throw new Error("DAP target preview does not exist.");
-    const { preview, proposedRootIdentity, proposedVolumeIdentity } =
-      storedPreview;
+    const {
+      preview,
+      currentVolumeIdentity,
+      proposedRootIdentity,
+      proposedVolumeIdentity,
+    } = storedPreview;
     if (preview.confirmationToken !== confirmationToken)
       throw new Error("DAP target confirmation no longer matches the preview.");
     if (this.applyingProfiles.has(preview.profileId))
@@ -298,11 +324,14 @@ export class DeviceSync {
         "Recover this profile's interrupted sync before changing its target.",
       );
     const current = this.database.getSyncProfile(preview.profileId);
-    if (current?.target_path !== preview.currentTargetPath)
+    if (
+      current?.target_path !== preview.currentTargetPath ||
+      current.target_volume_identity !== currentVolumeIdentity
+    )
       throw new Error(
         "The DAP profile changed after preview. Choose its target again.",
       );
-    const currentEvidence = await inspectTargetFilesystem(
+    const currentEvidence = await this.inspectTarget(
       preview.proposedTargetPath,
     );
     if (
@@ -322,7 +351,7 @@ export class DeviceSync {
       (this.profileRevisions.get(preview.profileId) ?? 0) + 1,
     );
     for (const [planId, plan] of this.plans)
-      if (plan.profileId === preview.profileId) this.plans.delete(planId);
+      if (plan.profileId === preview.profileId) this.deletePlan(planId);
     for (const [id, candidate] of this.targetPreviews)
       if (candidate.preview.profileId === preview.profileId)
         this.targetPreviews.delete(id);
@@ -384,7 +413,7 @@ export class DeviceSync {
       preview.profileId,
     );
     for (const [planId, plan] of this.plans)
-      if (plan.profileId === preview.profileId) this.plans.delete(planId);
+      if (plan.profileId === preview.profileId) this.deletePlan(planId);
     for (const [id, candidate] of this.targetPreviews)
       if (candidate.preview.profileId === preview.profileId)
         this.targetPreviews.delete(id);
@@ -440,7 +469,7 @@ export class DeviceSync {
     let plannedTargetIdentity = "";
     let currentVolumeIdentity: string | null = null;
     try {
-      const evidence = await inspectTargetFilesystem(profile.target_path);
+      const evidence = await this.inspectTarget(profile.target_path);
       plannedTargetIdentity = evidence.rootIdentity;
       currentVolumeIdentity = evidence.volumeIdentity;
     } catch (error) {
@@ -647,6 +676,7 @@ export class DeviceSync {
       cleanupEnabled,
       previousManifestHash: manifestHash(previous?.manifest_json),
       targetIdentity: plannedTargetIdentity,
+      currentVolumeIdentity,
       targetVolume,
       copies,
       replacements,
@@ -690,6 +720,7 @@ export class DeviceSync {
         "The DAP profile changed while its preview was being prepared. Preview it again.",
       );
     this.plans.set(id, plan);
+    this.planVolumeIdentities.set(id, currentVolumeIdentity);
     return plan;
   }
 
@@ -854,8 +885,10 @@ export class DeviceSync {
     const profile = this.database.getSyncProfile(run.profileId);
     let targetVolumeStatus: SyncPlanDto["targetVolume"]["status"] =
       "unavailable";
+    let currentVolumeIdentity: string | null = null;
     try {
-      const evidence = await inspectTargetFilesystem(run.targetPath);
+      const evidence = await this.inspectTarget(run.targetPath);
+      currentVolumeIdentity = evidence.volumeIdentity;
       targetVolumeStatus =
         evidence.volumeIdentity === null
           ? "unavailable"
@@ -976,6 +1009,7 @@ export class DeviceSync {
       actions,
       warnings,
       canRecover,
+      currentVolumeIdentity,
       targetVolumeStatus,
     });
     return {
@@ -1244,12 +1278,17 @@ export class DeviceSync {
       throw new Error(
         "The DAP profile target changed after preview; create a new plan.",
       );
-    if (
-      (await inspectTargetFilesystem(plan.targetPath)).rootIdentity !==
-      plan.targetIdentity
-    )
+    const currentEvidence = await this.inspectTarget(plan.targetPath);
+    if (currentEvidence.rootIdentity !== plan.targetIdentity)
       throw new Error(
         "The DAP target changed after preview; reconnect the reviewed target and create a new plan.",
+      );
+    if (
+      !this.planVolumeIdentities.has(plan.id) ||
+      currentEvidence.volumeIdentity !== this.planVolumeIdentities.get(plan.id)
+    )
+      throw new Error(
+        "The DAP volume identity changed after preview; create a new plan.",
       );
     const previous = this.database.getLatestManifest(
       plan.profileId,
@@ -1652,7 +1691,7 @@ export class DeviceSync {
           manifest,
         );
         await this.hooks.afterManifestCommitted?.();
-        this.plans.delete(planId);
+        this.deletePlan(planId);
         errors.push(
           ...(await this.cleanupCommittedRun(
             this.database.getSyncRun(run.id) ?? run,
