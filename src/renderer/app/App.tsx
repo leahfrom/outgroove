@@ -36,6 +36,7 @@ import type {
   SyncRecoverySummaryDto,
   SyncPlanDto,
   SyncProfileDto,
+  SyncProfileRemovalPreviewDto,
   SyncProfileTargetPreviewDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
@@ -533,6 +534,8 @@ export function App(): React.JSX.Element {
     useState<SyncRecoveryFeedback>();
   const [syncTargetPreview, setSyncTargetPreview] =
     useState<SyncProfileTargetPreviewDto>();
+  const [syncProfileRemovalPreview, setSyncProfileRemovalPreview] =
+    useState<SyncProfileRemovalPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -563,6 +566,7 @@ export function App(): React.JSX.Element {
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const syncPlanHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncTargetPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncProfileRemovalPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
   const albumDetailHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -1084,6 +1088,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (syncTargetPreview) syncTargetPreviewHeadingRef.current?.focus();
   }, [syncTargetPreview]);
+  useEffect(() => {
+    if (syncProfileRemovalPreview)
+      syncProfileRemovalPreviewHeadingRef.current?.focus();
+  }, [syncProfileRemovalPreview]);
   useEffect(() => {
     if (syncRecoveryPreview) syncRecoveryPreviewHeadingRef.current?.focus();
   }, [syncRecoveryPreview]);
@@ -3014,6 +3022,7 @@ export function App(): React.JSX.Element {
         setSyncSetupSection("profiles");
         setProfile(saved);
         setSyncPlan(undefined);
+        setSyncProfileRemovalPreview(undefined);
         setSyncTargetPreview(result.value);
         setNotice(
           `Review the DAP target change for “${saved.name}”. No files have been changed.`,
@@ -3046,6 +3055,63 @@ export function App(): React.JSX.Element {
         await refreshSyncProfiles();
         setNotice(
           `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          "success",
+        );
+      } else setNotice(result.error.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewSyncProfileRemoval = async (
+    saved: SyncProfileDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewSyncProfileRemoval({
+        profileId: saved.id,
+      });
+      if (result.ok) {
+        setSyncSetupSection("profiles");
+        setSyncTargetPreview(undefined);
+        setSyncProfileRemovalPreview(result.value);
+        setNotice(
+          `Review removal of DAP profile “${saved.name}”. No source audio or target file has been changed.`,
+        );
+      } else setNotice(result.error.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applySyncProfileRemoval = async (): Promise<void> => {
+    if (!syncProfileRemovalPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncProfileRemoval({
+        operationId: syncProfileRemovalPreview.operationId,
+        confirmationToken: syncProfileRemovalPreview.confirmationToken,
+      });
+      if (result.ok) {
+        const removedActiveProfile = profile?.id === result.value.profileId;
+        setSyncProfileRemovalPreview(undefined);
+        setSyncTargetPreview(undefined);
+        setRenamingSyncProfileId(undefined);
+        setSyncProfileNameDraft("");
+        if (editingSyncProfileId === result.value.profileId) {
+          setEditingSyncProfileId(undefined);
+          setSyncAlbums([]);
+        }
+        if (removedActiveProfile) {
+          setProfile(undefined);
+          setSyncPlan(undefined);
+          setSyncHistory([]);
+          setSyncHistoryProfileId(undefined);
+          setSyncStage("setup");
+        }
+        await refreshSyncProfiles();
+        setNotice(
+          `Removed DAP profile “${result.value.profileName}” and ${result.value.removedSuccessfulSyncs} saved ${result.value.removedSuccessfulSyncs === 1 ? "sync record" : "sync records"}. Target files were left unchanged and are now unknown to Outgroove.`,
           "success",
         );
       } else setNotice(result.error.message, "error");
@@ -4764,6 +4830,8 @@ export function App(): React.JSX.Element {
               renamingProfileId={renamingSyncProfileId}
               selectedAlbum={selectedAlbum}
               selectedAlbums={syncAlbums}
+              removalPreview={syncProfileRemovalPreview}
+              removalPreviewHeadingRef={syncProfileRemovalPreviewHeadingRef}
               targetPreview={syncTargetPreview}
               targetPreviewHeadingRef={syncTargetPreviewHeadingRef}
               onBrowseLibrary={() => setActiveView("library")}
@@ -4772,6 +4840,10 @@ export function App(): React.JSX.Element {
               onCancelTarget={() => {
                 setSyncTargetPreview(undefined);
                 setNotice("Discarded the DAP target change preview.");
+              }}
+              onCancelRemoval={() => {
+                setSyncProfileRemovalPreview(undefined);
+                setNotice("Kept the DAP profile.");
               }}
               onChooseProfileTarget={(saved) =>
                 void chooseSyncProfileTarget(saved)
@@ -4782,9 +4854,13 @@ export function App(): React.JSX.Element {
                 setNotice("Cleared the DAP album selection.");
               }}
               onConfirmTarget={() => void applySyncProfileTarget()}
+              onConfirmRemoval={() => void applySyncProfileRemoval()}
               onEditProfileAlbums={editSyncProfileAlbums}
               onOpenProfile={openSyncProfile}
               onProfileNameDraftChange={setSyncProfileNameDraft}
+              onPreviewRemoval={(saved) =>
+                void previewSyncProfileRemoval(saved)
+              }
               onRenameProfile={(saved) => void renameSyncProfile(saved)}
               onSaveAlbumSelection={() => void saveSyncProfileAlbums()}
               onSelectSection={setSyncSetupSection}

@@ -456,6 +456,12 @@ export const syncProfileTargetPreviewRequestSchema = z
 export const syncProfileTargetApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const syncProfileRemovalPreviewRequestSchema = z
+  .object({ profileId: z.uuid() })
+  .strict();
+export const syncProfileRemovalApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 export const syncHistoryRequestSchema = z
   .object({ profileId: z.uuid() })
   .strict();
@@ -761,6 +767,24 @@ export interface SyncProfileTargetPreviewDto {
   readonly profileName: string;
   readonly currentTargetPath: string;
   readonly proposedTargetPath: string;
+}
+export interface SyncProfileRemovalPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly albums: SyncProfileDto["albums"];
+  readonly successfulSyncs: number;
+  readonly manifestTargets: readonly {
+    readonly targetPath: string;
+    readonly ownedFileCount: number;
+  }[];
+}
+export interface SyncProfileRemovalResultDto {
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly removedSuccessfulSyncs: number;
 }
 export interface SyncPlanDto {
   readonly id: string;
@@ -1219,6 +1243,12 @@ export interface OutgrooveApi {
   applySyncProfileTarget(
     request: z.infer<typeof syncProfileTargetApplyRequestSchema>,
   ): Promise<Result<SyncProfileDto>>;
+  previewSyncProfileRemoval(
+    request: z.infer<typeof syncProfileRemovalPreviewRequestSchema>,
+  ): Promise<Result<SyncProfileRemovalPreviewDto>>;
+  applySyncProfileRemoval(
+    request: z.infer<typeof syncProfileRemovalApplyRequestSchema>,
+  ): Promise<Result<SyncProfileRemovalResultDto>>;
   listSyncHistory(
     request: z.infer<typeof syncHistoryRequestSchema>,
   ): Promise<Result<readonly SyncHistoryItemDto[]>>;

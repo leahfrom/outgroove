@@ -2,6 +2,7 @@ import type { Ref } from "react";
 
 import type {
   SyncProfileDto,
+  SyncProfileRemovalPreviewDto,
   SyncProfileTargetPreviewDto,
 } from "../../shared/contracts/api";
 
@@ -24,6 +25,8 @@ export function SyncSetupWorkspace({
   profileNameDraft,
   targetPreview,
   targetPreviewHeadingRef,
+  removalPreview,
+  removalPreviewHeadingRef,
   busy,
   onSelectSection,
   onToggleAlbum,
@@ -41,6 +44,9 @@ export function SyncSetupWorkspace({
   onCancelRename,
   onConfirmTarget,
   onCancelTarget,
+  onPreviewRemoval,
+  onConfirmRemoval,
+  onCancelRemoval,
 }: {
   readonly activeSection: SyncSetupSection;
   readonly selectedAlbum: SyncAlbumSummary | undefined;
@@ -52,6 +58,8 @@ export function SyncSetupWorkspace({
   readonly profileNameDraft: string;
   readonly targetPreview: SyncProfileTargetPreviewDto | undefined;
   readonly targetPreviewHeadingRef: Ref<HTMLHeadingElement>;
+  readonly removalPreview: SyncProfileRemovalPreviewDto | undefined;
+  readonly removalPreviewHeadingRef: Ref<HTMLHeadingElement>;
   readonly busy: boolean;
   readonly onSelectSection: (section: SyncSetupSection) => void;
   readonly onToggleAlbum: (album: SyncAlbumSummary) => void;
@@ -69,6 +77,9 @@ export function SyncSetupWorkspace({
   readonly onCancelRename: () => void;
   readonly onConfirmTarget: () => void;
   readonly onCancelTarget: () => void;
+  readonly onPreviewRemoval: (profile: SyncProfileDto) => void;
+  readonly onConfirmRemoval: () => void;
+  readonly onCancelRemoval: () => void;
 }): React.JSX.Element {
   const selectedAlbumIsInDraft = selectedAlbum
     ? selectedAlbums.some((album) => album.id === selectedAlbum.id)
@@ -408,18 +419,32 @@ export function SyncSetupWorkspace({
                           </div>
                         </form>
                       ) : (
-                        <button
-                          aria-label={`Rename DAP profile ${saved.name}`}
-                          disabled={
-                            busy ||
-                            Boolean(editingProfile) ||
-                            Boolean(renamingProfileId)
-                          }
-                          onClick={() => onStartRename(saved)}
-                          type="button"
-                        >
-                          Rename profile
-                        </button>
+                        <>
+                          <button
+                            aria-label={`Rename DAP profile ${saved.name}`}
+                            disabled={
+                              busy ||
+                              Boolean(editingProfile) ||
+                              Boolean(renamingProfileId)
+                            }
+                            onClick={() => onStartRename(saved)}
+                            type="button"
+                          >
+                            Rename profile
+                          </button>
+                          <button
+                            aria-label={`Remove DAP profile ${saved.name}`}
+                            disabled={
+                              busy ||
+                              Boolean(editingProfile) ||
+                              Boolean(renamingProfileId)
+                            }
+                            onClick={() => onPreviewRemoval(saved)}
+                            type="button"
+                          >
+                            Remove profile
+                          </button>
+                        </>
                       )}
                     </div>
                   </details>
@@ -468,6 +493,97 @@ export function SyncSetupWorkspace({
                 </button>
                 <button disabled={busy} onClick={onCancelTarget} type="button">
                   Cancel DAP target change
+                </button>
+              </div>
+            </section>
+          )}
+
+          {removalPreview && (
+            <section
+              className="sync-profile-removal-preview"
+              aria-label="DAP profile removal confirmation"
+            >
+              <div>
+                <p className="eyebrow">Profile removal preview</p>
+                <h4 ref={removalPreviewHeadingRef} tabIndex={-1}>
+                  Remove {removalPreview.profileName} from Outgroove?
+                </h4>
+                <p>
+                  This removes only Outgroove’s saved profile, sync history, and
+                  ownership records. No source audio or target file is read,
+                  changed, or deleted.
+                </p>
+              </div>
+              <dl>
+                <div>
+                  <dt>Saved target</dt>
+                  <dd>{removalPreview.targetPath}</dd>
+                </div>
+                <div>
+                  <dt>Selected albums</dt>
+                  <dd>{removalPreview.albums.length}</dd>
+                </div>
+                <div>
+                  <dt>Successful sync records</dt>
+                  <dd>{removalPreview.successfulSyncs}</dd>
+                </div>
+                <div>
+                  <dt>Targets with ownership records</dt>
+                  <dd>{removalPreview.manifestTargets.length}</dd>
+                </div>
+              </dl>
+              <details>
+                <summary>
+                  Review albums and ownership records before removal
+                </summary>
+                <div className="sync-profile-removal-details">
+                  <section>
+                    <h5>Albums</h5>
+                    <ul>
+                      {removalPreview.albums.map((album) => (
+                        <li key={album.id}>
+                          <strong>{album.title}</strong>
+                          <span>{album.albumArtist}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section>
+                    <h5>Recorded targets</h5>
+                    {removalPreview.manifestTargets.length === 0 ? (
+                      <p>No successful sync manifest is stored.</p>
+                    ) : (
+                      <ul>
+                        {removalPreview.manifestTargets.map((target) => (
+                          <li key={target.targetPath}>
+                            <strong>{target.targetPath}</strong>
+                            <span>
+                              {target.ownedFileCount}{" "}
+                              {target.ownedFileCount === 1 ? "file" : "files"}{" "}
+                              in its latest manifest
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+              </details>
+              <p>
+                Files left on these targets become unknown to Outgroove.
+                Re-adding the folder later will not adopt, replace, or delete
+                them automatically.
+              </p>
+              <div className="actions">
+                <button
+                  disabled={busy}
+                  onClick={onConfirmRemoval}
+                  type="button"
+                >
+                  Remove profile from Outgroove
+                </button>
+                <button disabled={busy} onClick={onCancelRemoval} type="button">
+                  Keep profile
                 </button>
               </div>
             </section>

@@ -80,6 +80,85 @@ async function firstRecovery(
 }
 
 describe("deterministic manifest-based sync", () => {
+  it("removes a reviewed profile without reading or changing target files", async () => {
+    const { database, target, profileId } = await setup();
+    const sync = new DeviceSync(database);
+    const plan = await sync.plan(profileId);
+    await sync.apply(plan.id, plan.confirmationToken);
+    const first = plan.copies[0];
+    if (!first) throw new Error("Sync removal fixture copy missing.");
+    const copiedPath = join(target, first.relativeDestination);
+    const before = {
+      copied: await readFile(copiedPath),
+      playlist: await readFile(join(target, "Outgroove.m3u8")),
+      manifest: await readFile(join(target, ".outgroove", "manifest.json")),
+    };
+
+    const preview = sync.previewProfileRemoval(profileId);
+    expect(preview).toMatchObject({
+      profileId,
+      profileName: "Fixture DAP",
+      targetPath: target,
+      successfulSyncs: 1,
+      manifestTargets: [
+        { targetPath: target, ownedFileCount: plan.copies.length },
+      ],
+    });
+    expect(preview.albums).toHaveLength(1);
+    expect(() =>
+      sync.applyProfileRemoval(preview.operationId, "wrong-confirmation-token"),
+    ).toThrow("no longer matches");
+
+    database.renameSyncProfile(profileId, "Changed after preview");
+    expect(() =>
+      sync.applyProfileRemoval(preview.operationId, preview.confirmationToken),
+    ).toThrow("changed after preview");
+    expect(database.getSyncProfile(profileId)).toBeDefined();
+
+    const fresh = sync.previewProfileRemoval(profileId);
+    expect(
+      sync.applyProfileRemoval(fresh.operationId, fresh.confirmationToken),
+    ).toEqual({
+      profileId,
+      profileName: "Changed after preview",
+      removedSuccessfulSyncs: 1,
+    });
+    expect(database.getSyncProfile(profileId)).toBeUndefined();
+    expect(database.listSyncProfiles()).toEqual([]);
+    expect(
+      database.connection
+        .prepare("SELECT COUNT(*) FROM sync_manifests WHERE profile_id=?")
+        .pluck()
+        .get(profileId),
+    ).toBe(0);
+    expect(await readFile(copiedPath)).toEqual(before.copied);
+    expect(await readFile(join(target, "Outgroove.m3u8"))).toEqual(
+      before.playlist,
+    );
+    expect(await readFile(join(target, ".outgroove", "manifest.json"))).toEqual(
+      before.manifest,
+    );
+  });
+
+  it("blocks profile removal while an interrupted sync needs recovery", async () => {
+    const { database, target, profileId } = await setup();
+    database.createSyncRun(
+      "8d920723-f52b-472b-a6fe-cc910d18ad01",
+      profileId,
+      target,
+    );
+    const sync = new DeviceSync(database);
+
+    expect(() => sync.previewProfileRemoval(profileId)).toThrow(
+      "Recover this profile's interrupted sync",
+    );
+    expect(() => database.deleteSyncProfile(profileId)).toThrow(
+      "Recover this profile's interrupted sync",
+    );
+    expect(database.getSyncProfile(profileId)).toBeDefined();
+    expect(database.getSyncRunForProfile(profileId)).toBeDefined();
+  });
+
   it("retargets only after confirmation and scopes manifest ownership to that target", async () => {
     const { directory, database, target, profileId } = await setup();
     const sync = new DeviceSync(database);

@@ -20,6 +20,8 @@ import type {
   SyncPlanDto,
   SyncPlanItemDto,
   SyncProfileDto,
+  SyncProfileRemovalPreviewDto,
+  SyncProfileRemovalResultDto,
   SyncProfileTargetPreviewDto,
   SyncRecoveryPreviewDto,
   SyncRecoveryResultDto,
@@ -163,6 +165,10 @@ export class DeviceSync {
     string,
     SyncProfileTargetPreviewDto
   >();
+  private readonly profileRemovalPreviews = new Map<
+    string,
+    SyncProfileRemovalPreviewDto
+  >();
 
   constructor(
     private readonly database: CatalogDatabase,
@@ -249,6 +255,90 @@ export class DeviceSync {
       if (candidate.profileId === preview.profileId)
         this.targetPreviews.delete(id);
     return profile;
+  }
+
+  previewProfileRemoval(profileId: string): SyncProfileRemovalPreviewDto {
+    if (this.applyingProfiles.has(profileId))
+      throw new Error("Wait for the active sync before removing this profile.");
+    if (this.database.getSyncRunForProfile(profileId))
+      throw new Error(
+        "Recover this profile's interrupted sync before removing it.",
+      );
+    const state = this.profileRemovalState(profileId);
+    const operationId = randomUUID();
+    const stable = JSON.stringify({ operationId, ...state });
+    const preview = {
+      operationId,
+      confirmationToken: createHash("sha256")
+        .update(`outgroove-sync-profile-removal:${stable}`)
+        .digest("base64url"),
+      ...state,
+    };
+    this.profileRemovalPreviews.set(operationId, preview);
+    return preview;
+  }
+
+  applyProfileRemoval(
+    operationId: string,
+    confirmationToken: string,
+  ): SyncProfileRemovalResultDto {
+    const preview = this.profileRemovalPreviews.get(operationId);
+    if (!preview)
+      throw new Error("DAP profile removal preview does not exist.");
+    if (preview.confirmationToken !== confirmationToken)
+      throw new Error(
+        "DAP profile removal confirmation no longer matches the preview.",
+      );
+    if (this.applyingProfiles.has(preview.profileId))
+      throw new Error("Wait for the active sync before removing this profile.");
+    if (this.database.getSyncRunForProfile(preview.profileId))
+      throw new Error(
+        "Recover this profile's interrupted sync before removing it.",
+      );
+    const current = this.profileRemovalState(preview.profileId);
+    const reviewed = {
+      profileId: preview.profileId,
+      profileName: preview.profileName,
+      targetPath: preview.targetPath,
+      albums: preview.albums,
+      successfulSyncs: preview.successfulSyncs,
+      manifestTargets: preview.manifestTargets,
+    };
+    if (JSON.stringify(current) !== JSON.stringify(reviewed))
+      throw new Error(
+        "The DAP profile changed after preview. Review its removal again.",
+      );
+    const removedSuccessfulSyncs = this.database.deleteSyncProfile(
+      preview.profileId,
+    );
+    for (const [planId, plan] of this.plans)
+      if (plan.profileId === preview.profileId) this.plans.delete(planId);
+    for (const [id, candidate] of this.targetPreviews)
+      if (candidate.profileId === preview.profileId)
+        this.targetPreviews.delete(id);
+    for (const [id, candidate] of this.profileRemovalPreviews)
+      if (candidate.profileId === preview.profileId)
+        this.profileRemovalPreviews.delete(id);
+    this.profileRevisions.delete(preview.profileId);
+    return {
+      profileId: preview.profileId,
+      profileName: preview.profileName,
+      removedSuccessfulSyncs,
+    };
+  }
+
+  private profileRemovalState(
+    profileId: string,
+  ): Omit<SyncProfileRemovalPreviewDto, "operationId" | "confirmationToken"> {
+    const state = this.database.getSyncProfileRemovalState(profileId);
+    return {
+      profileId: state.profile.id,
+      profileName: state.profile.name,
+      targetPath: state.profile.targetPath,
+      albums: state.profile.albums,
+      successfulSyncs: state.successfulSyncs,
+      manifestTargets: state.manifestTargets,
+    };
   }
 
   async plan(profileId: string): Promise<SyncPlanDto> {

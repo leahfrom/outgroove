@@ -349,6 +349,17 @@ describe("preload saved-filter allowlist", () => {
       targetChange,
     );
 
+    await api.previewSyncProfileRemoval({ profileId: update.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewSyncProfileRemoval,
+      { profileId: update.id },
+    );
+    await api.applySyncProfileRemoval(targetChange);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.applySyncProfileRemoval,
+      targetChange,
+    );
+
     const history = { profileId: update.id };
     await api.listSyncHistory(history);
     expect(electron.invoke).toHaveBeenLastCalledWith(
