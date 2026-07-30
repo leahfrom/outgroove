@@ -20,9 +20,15 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
-import { inspectTargetFilesystem } from "../../src/main/adapters/filesystem/target-volume";
+import {
+  inspectTargetFilesystem,
+  type PersistentVolumeProbe,
+} from "../../src/main/adapters/filesystem/target-volume";
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
-import { DeviceSync } from "../../src/main/application/device-sync";
+import {
+  DeviceSync as ProductionDeviceSync,
+  type TargetFilesystemInspector,
+} from "../../src/main/application/device-sync";
 import {
   pathComparisonKey,
   ScanLibrary,
@@ -31,6 +37,22 @@ import { LocalMetadataJobRunner } from "../../src/main/jobs/metadata-runner";
 
 const temporary: string[] = [];
 const databases: CatalogDatabase[] = [];
+const fixtureVolumeIdentity = `persistent-volume:test:${"1".repeat(64)}`;
+const fixtureVolumeProbe: PersistentVolumeProbe = {
+  inspect: () => Promise.resolve(fixtureVolumeIdentity),
+};
+const inspectFixtureTarget: TargetFilesystemInspector = (targetRoot) =>
+  inspectTargetFilesystem(targetRoot, fixtureVolumeProbe, "linux");
+
+class DeviceSync extends ProductionDeviceSync {
+  constructor(
+    database: CatalogDatabase,
+    hooks: ConstructorParameters<typeof ProductionDeviceSync>[1] = {},
+  ) {
+    super(database, hooks, inspectFixtureTarget);
+  }
+}
+
 afterEach(async () => {
   for (const database of databases.splice(0)) database.close();
   await Promise.all(
@@ -68,7 +90,7 @@ async function setup(): Promise<{
     "Fixture DAP",
     target,
     [album.id],
-    (await inspectTargetFilesystem(target)).volumeIdentity,
+    (await inspectFixtureTarget(target)).volumeIdentity,
   );
   return {
     directory,
@@ -123,7 +145,7 @@ async function firstRecovery(
 }
 
 describe("deterministic manifest-based sync", () => {
-  it("records matching filesystem-device evidence in deterministic plans", async () => {
+  it("records matching persistent volume evidence in deterministic plans", async () => {
     const { database, profileId } = await setup();
     const sync = new DeviceSync(database);
     const first = await sync.plan(profileId);
@@ -160,6 +182,36 @@ describe("deterministic manifest-based sync", () => {
     ).resolves.toMatchObject({ outcome: "completed" });
   });
 
+  it("refuses persistent volume substitution after preview even when ambiguity was confirmed", async () => {
+    const { database, profileId, target } = await setup();
+    database.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run(`persistent-volume:test:${"2".repeat(64)}`, profileId);
+    let observedIdentity = fixtureVolumeIdentity;
+    const inspectMutableTarget: TargetFilesystemInspector = (targetRoot) =>
+      inspectTargetFilesystem(
+        targetRoot,
+        {
+          inspect: () => Promise.resolve(observedIdentity),
+        },
+        "linux",
+      );
+    const sync = new ProductionDeviceSync(database, {}, inspectMutableTarget);
+    const plan = await sync.plan(profileId);
+    expect(plan.targetVolume).toEqual({
+      status: "changed",
+      confirmationRequired: true,
+    });
+
+    observedIdentity = `persistent-volume:test:${"3".repeat(64)}`;
+    await expect(
+      sync.apply(plan.id, plan.confirmationToken, undefined, true),
+    ).rejects.toThrow("volume identity changed after preview");
+    await expect(
+      readFile(join(target, "Outgroove.m3u8")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("does not invent volume evidence for a migrated or legacy profile", async () => {
     const { database, profileId } = await setup();
     database.connection
@@ -191,6 +243,96 @@ describe("deterministic manifest-based sync", () => {
       sync.applyProfileTarget(preview.operationId, preview.confirmationToken),
     ).rejects.toThrow("symbolic link");
     expect(database.getSyncProfile(profileId)?.target_path).toBe(target);
+  });
+
+  it("refreshes persistent identity for the same target only after an exact preview", async () => {
+    const { database, profileId, target } = await setup();
+    database.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run("filesystem-device:legacy", profileId);
+    const sync = new DeviceSync(database);
+
+    const preview = await sync.previewProfileTarget(profileId, target);
+    expect(preview).toMatchObject({
+      profileId,
+      currentTargetPath: target,
+      proposedTargetPath: target,
+      proposedVolumeEvidenceAvailable: true,
+      identityRefresh: true,
+    });
+    await expect(
+      sync.applyProfileTarget(preview.operationId, "wrong-confirmation-token"),
+    ).rejects.toThrow("no longer matches");
+
+    database.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run("filesystem-device:changed-after-preview", profileId);
+    await expect(
+      sync.applyProfileTarget(preview.operationId, preview.confirmationToken),
+    ).rejects.toThrow("changed after preview");
+
+    const fresh = await sync.previewProfileTarget(profileId, target);
+    await expect(
+      sync.applyProfileTarget(fresh.operationId, fresh.confirmationToken),
+    ).resolves.toMatchObject({ id: profileId, targetPath: target });
+    expect(database.getSyncProfile(profileId)?.target_volume_identity).toBe(
+      fixtureVolumeIdentity,
+    );
+    await expect(sync.plan(profileId)).resolves.toMatchObject({
+      targetVolume: { status: "matched", confirmationRequired: false },
+    });
+    await expect(sync.previewProfileTarget(profileId, target)).rejects.toThrow(
+      "already uses the selected target and recorded volume identity",
+    );
+  });
+
+  it("does not clear existing evidence when same-target persistent identity is unavailable", async () => {
+    const { database, profileId, target } = await setup();
+    const unavailable = new ProductionDeviceSync(database, {}, () =>
+      Promise.resolve({
+        rootIdentity: "fixture-root",
+        volumeIdentity: null,
+      }),
+    );
+
+    await expect(
+      unavailable.previewProfileTarget(profileId, target),
+    ).rejects.toThrow("no stronger evidence to save");
+    expect(database.getSyncProfile(profileId)?.target_volume_identity).toBe(
+      fixtureVolumeIdentity,
+    );
+  });
+
+  it("invalidates an ambiguous recovery preview when the persistent identity changes again", async () => {
+    const { database, profileId, target } = await setup();
+    database.connection
+      .prepare("UPDATE sync_profiles SET target_volume_identity=? WHERE id=?")
+      .run(`persistent-volume:test:${"2".repeat(64)}`, profileId);
+    const run = database.createSyncRun(
+      "8d920723-f52b-472b-a6fe-cc910d18ad01",
+      profileId,
+      target,
+    );
+    database.updateSyncRun(run.id, { state: "recovery-required" });
+    let observedIdentity = fixtureVolumeIdentity;
+    const sync = new ProductionDeviceSync(database, {}, (targetRoot) =>
+      inspectTargetFilesystem(
+        targetRoot,
+        { inspect: () => Promise.resolve(observedIdentity) },
+        "linux",
+      ),
+    );
+    const preview = await sync.previewRecovery(run.id);
+    expect(preview.targetVolume).toEqual({
+      status: "changed",
+      confirmationRequired: true,
+    });
+
+    observedIdentity = `persistent-volume:test:${"3".repeat(64)}`;
+    await expect(
+      sync.recover(run.id, preview.confirmationToken, true),
+    ).rejects.toThrow("Sync recovery changed");
+    expect(database.getSyncRun(run.id)).toBeDefined();
   });
 
   it("removes a reviewed profile without reading or changing target files", async () => {
@@ -255,7 +397,7 @@ describe("deterministic manifest-based sync", () => {
       "Re-added target",
       target,
       [albumId],
-      (await inspectTargetFilesystem(target)).volumeIdentity,
+      (await inspectFixtureTarget(target)).volumeIdentity,
     );
     const replacementPlan = await new DeviceSync(database).plan(
       replacementProfile.id,
@@ -1361,7 +1503,7 @@ describe("deterministic manifest-based sync", () => {
       .listAlbums()
       .find((album) => album.title === "Second Album");
     if (!secondAlbum) throw new Error("Second sync album missing");
-    const targetVolumeIdentity = (await inspectTargetFilesystem(target))
+    const targetVolumeIdentity = (await inspectFixtureTarget(target))
       .volumeIdentity;
     expect(() =>
       database.createSyncProfile(
@@ -1375,7 +1517,7 @@ describe("deterministic manifest-based sync", () => {
       "Two albums",
       target,
       [secondAlbum.id, albumId],
-      (await inspectTargetFilesystem(target)).volumeIdentity,
+      (await inspectFixtureTarget(target)).volumeIdentity,
     );
     expect(profile.albumIds).toEqual([...profile.albumIds].sort());
     expect(database.getSyncProfile(profile.id)?.album_ids).toEqual(

@@ -6520,6 +6520,7 @@ describe("tag edit UI safety states", () => {
           currentTargetPath: "/fixture/old-dap",
           proposedTargetPath: "/fixture/new-dap",
           proposedVolumeEvidenceAvailable: true,
+          identityRefresh: false,
         },
       });
     const applyTarget = vi
@@ -6560,7 +6561,7 @@ describe("tag edit UI safety states", () => {
     expect(within(preview).getByText("/fixture/old-dap")).toBeVisible();
     expect(within(preview).getByText("/fixture/new-dap")).toBeVisible();
     expect(preview).toHaveTextContent(
-      "No source audio or target files are read, copied, replaced, or deleted.",
+      "No source audio or target files are copied, replaced, or deleted.",
     );
     expect(applyTarget).not.toHaveBeenCalled();
 

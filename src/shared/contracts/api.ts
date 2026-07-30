@@ -784,6 +784,7 @@ export interface SyncProfileTargetPreviewDto {
   readonly currentTargetPath: string;
   readonly proposedTargetPath: string;
   readonly proposedVolumeEvidenceAvailable: boolean;
+  readonly identityRefresh: boolean;
 }
 export interface SyncProfileRemovalPreviewDto {
   readonly operationId: string;

@@ -3130,7 +3130,9 @@ export function App(): React.JSX.Element {
         setSyncProfileRemovalPreview(undefined);
         setSyncTargetPreview(result.value);
         setNotice(
-          `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+          result.value.identityRefresh
+            ? `Review the persistent volume identity refresh for “${saved.name}”. No files have been changed.`
+            : `Review the DAP target change for “${saved.name}”. No files have been changed.`,
         );
       } else if (!result.ok) setNotice(result.error.message, "error");
       else setNotice("DAP target selection cancelled.");
@@ -3161,7 +3163,9 @@ export function App(): React.JSX.Element {
         );
         await refreshSyncProfiles();
         setNotice(
-          `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          syncTargetPreview.identityRefresh
+            ? `Refreshed the persistent volume identity for “${result.value.name}”. Existing sync history was preserved; create a fresh preview before applying.`
+            : `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
           "success",
         );
       } else setNotice(result.error.message, "error");
