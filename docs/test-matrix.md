@@ -1,6 +1,6 @@
 # Release verification matrix
 
-The v0.17.1 release candidate requires fresh verification on native macOS
+The v0.17.2 release candidate requires fresh verification on native macOS
 arm64, Windows x64, and Linux x64 GitHub-hosted runners. Local macOS evidence
 and GitHub Actions results are recorded on the release pull request before the
 prerelease is published. The commands, evidence format, manual Windows
@@ -40,7 +40,7 @@ No cross-platform support claim should be made from CI alone. The Windows
 runner exercises real NTFS sharing rules, persistent identity, packaging, and
 an automated packaged launch, but not a manual installed application workflow
 or removable target. Physical exFAT media and a real DAP are unavailable for
-v0.17.1 and are explicitly unverified rather than simulated or waived as
+v0.17.2 and are explicitly unverified rather than simulated or waived as
 passed. macOS Intel, Linux desktop/mount behavior, and actual DAP playlist
 behavior also remain manual release checks. The exFAT row changes to passed
 only after the controlled procedure in
