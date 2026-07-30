@@ -18,10 +18,24 @@ describe("CI workflow triggers", () => {
     expect(workflow).toContain("cancel-in-progress: true");
   });
 
-  it("uses one Linux package smoke job for routine pull requests", () => {
+  it("keeps the routine Linux verification, package, and smoke job", () => {
     expect(workflow).not.toContain("macos-latest");
-    expect(workflow).not.toContain("windows-2022");
     expect(workflow).toContain("ubuntu-latest");
+    expect(workflow).toContain("Verify, package, and smoke (Linux)");
+    expect(workflow).toContain("xvfb-run -a npm run test:smoke");
+  });
+
+  it("runs native Sync verification, packaging, and smoke on Windows", () => {
+    expect(workflow).toContain("Native Sync validation (Windows)");
+    expect(workflow).toContain("runs-on: windows-2022");
+    expect(workflow).toContain("timeout-minutes: 30");
+    expect(workflow.match(/npm run verify/gu)).toHaveLength(2);
+    expect(workflow.match(/npm run package/gu)).toHaveLength(2);
+    expect(workflow.match(/npm run test:smoke/gu)).toHaveLength(2);
+    expect(workflow).not.toContain("continue-on-error");
+  });
+
+  it("keeps packaging and smoke required in both jobs", () => {
     expect(workflow).toContain("npm run package");
     expect(workflow).toContain("npm run test:smoke");
   });
