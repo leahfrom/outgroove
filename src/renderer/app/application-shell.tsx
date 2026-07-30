@@ -44,12 +44,14 @@ const viewCopy: Record<
 
 export function ApplicationShell({
   activeView,
+  inspectionSessionId,
   notice,
   onDismissNotice,
   onNavigate,
   children,
 }: {
   readonly activeView: AppView;
+  readonly inspectionSessionId?: string;
   readonly notice: AppNotice | undefined;
   readonly onDismissNotice: () => void;
   readonly onNavigate: (view: AppView) => void;
@@ -83,6 +85,24 @@ export function ApplicationShell({
         </p>
       </aside>
       <div className="application-surface">
+        {inspectionSessionId && (
+          <div
+            aria-label="Isolated packaged inspection profile"
+            className="inspection-banner"
+            role="status"
+          >
+            <strong>
+              <span aria-hidden="true" className="inspection-banner-dot" />
+              Isolated inspection profile
+            </strong>
+            <span className="inspection-banner-details">
+              <span>Disposable fixture data only</span>
+              <span className="inspection-banner-session">
+                Session <code>{inspectionSessionId.slice(0, 8)}</code>
+              </span>
+            </span>
+          </div>
+        )}
         <header className="view-header">
           <div>
             <p className="eyebrow">Outgroove workspace</p>

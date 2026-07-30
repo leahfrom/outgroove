@@ -41,6 +41,10 @@ import { RadarBackgroundRefresh } from "./application/radar-background-refresh";
 import { OpenRadarItem } from "./application/open-radar-item";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
+import {
+  loadPackagedInspectionSession,
+  writePackagedInspectionReadyMarker,
+} from "./inspection/packaged-inspection";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
 import { ScanJobCoordinator } from "./jobs/scan-job-coordinator";
 import { contentSecurityPolicy } from "./windows/security-policy";
@@ -49,14 +53,31 @@ import { channels } from "../shared/contracts/channels";
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 declare const OUTGROOVE_ACOUSTID_API_KEY: string | null;
+declare const OUTGROOVE_INSPECTION_BUILD: boolean;
 
 const smokeTest =
   process.argv.includes("--smoke-test") ||
   process.env.OUTGROOVE_SMOKE_TEST === "1";
+const packagedInspection = loadPackagedInspectionSession(
+  OUTGROOVE_INSPECTION_BUILD,
+  process.argv,
+);
+if (packagedInspection && smokeTest)
+  throw new Error(
+    "Packaged inspection and automated smoke modes cannot run together.",
+  );
+if (packagedInspection) {
+  app.setName("Outgroove Inspection");
+  app.setPath("userData", packagedInspection.userData);
+}
 if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
   app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
 if (process.platform === "win32")
-  app.setAppUserModelId("com.squirrel.Outgroove.Outgroove");
+  app.setAppUserModelId(
+    packagedInspection
+      ? "com.squirrel.Outgroove.Inspection"
+      : "com.squirrel.Outgroove.Outgroove",
+  );
 
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
@@ -65,6 +86,7 @@ let radarBackground: RadarBackgroundRefresh | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
+    title: packagedInspection ? "Outgroove Inspection" : "Outgroove",
     width: 1180,
     height: 780,
     minWidth: 860,
@@ -79,6 +101,11 @@ async function createWindow(): Promise<void> {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
+  if (packagedInspection)
+    window.on("page-title-updated", (event) => {
+      event.preventDefault();
+      window.setTitle("Outgroove Inspection");
+    });
   window.once("ready-to-show", () => window.show());
 
   const databasePath = join(app.getPath("userData"), "outgroove.sqlite3");
@@ -189,12 +216,40 @@ async function createWindow(): Promise<void> {
     },
   });
 
+  if (packagedInspection?.fixtureLibraryRoot) {
+    const fixtureRoot = packagedInspection.fixtureLibraryRoot;
+    const root = database.addLibraryRoot(
+      fixtureRoot,
+      pathComparisonKey(fixtureRoot),
+    );
+    const result = await scanner.execute(root.id);
+    if (result.parsed !== 2 || result.errors !== 0)
+      throw new Error(
+        "Packaged inspection could not seed its redistributable fixture Library.",
+      );
+  }
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL)
     await window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   else
     await window.loadFile(
       join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      packagedInspection
+        ? {
+            query: {
+              outgrooveInspection: packagedInspection.sessionId,
+            },
+          }
+        : undefined,
     );
+  if (packagedInspection) {
+    await writePackagedInspectionReadyMarker(packagedInspection, {
+      pid: process.pid,
+      appPath: app.getAppPath(),
+      executablePath: app.getPath("exe"),
+      databasePath,
+    });
+  }
   radarBackground.start();
   window.once("closed", () => {
     radarBackground?.stop();

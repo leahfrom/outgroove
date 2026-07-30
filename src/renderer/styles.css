@@ -70,6 +70,59 @@ button:disabled {
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
   min-height: 100vh;
 }
+.inspection-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin: 0 0 1.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #bd7a22;
+  border-radius: 12px;
+  background: #fff3d9;
+  color: #402400;
+  box-shadow: 0 1px 2px rgb(64 36 0 / 8%);
+}
+.inspection-banner strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.inspection-banner-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #a35c08;
+  box-shadow: 0 0 0 3px rgb(163 92 8 / 14%);
+}
+.inspection-banner-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem 0.75rem;
+  min-width: 0;
+  text-align: right;
+}
+.inspection-banner-session {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(138 79 8 / 10%);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.inspection-banner code {
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
 .primary-sidebar {
   position: sticky;
   top: 0;
@@ -4166,6 +4219,13 @@ td {
   }
 }
 @media (max-width: 600px) {
+  .inspection-banner {
+    grid-template-columns: 1fr;
+  }
+  .inspection-banner-details {
+    justify-content: flex-start;
+    text-align: left;
+  }
   .candidate-artwork-preview {
     grid-template-columns: 1fr;
   }

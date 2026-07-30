@@ -128,6 +128,15 @@ type RadarReleaseView = (typeof radarViews)[number];
 const radarPageLimit = 20;
 
 const PAGE_SIZE = 20;
+const inspectionSessionPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function packagedInspectionSessionId(): string | undefined {
+  const value = new URLSearchParams(window.location.search).get(
+    "outgrooveInspection",
+  );
+  return value && inspectionSessionPattern.test(value) ? value : undefined;
+}
 
 function draftForTrack(track: CatalogAlbum["tracks"][number]) {
   return {
@@ -222,6 +231,7 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 }
 
 export function App(): React.JSX.Element {
+  const inspectionSessionId = useMemo(packagedInspectionSessionId, []);
   const [activeView, setActiveView] = useState<AppView>("library");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
   const [syncSetupSection, setSyncSetupSection] =
@@ -3750,6 +3760,7 @@ export function App(): React.JSX.Element {
   return (
     <ApplicationShell
       activeView={activeView}
+      {...(inspectionSessionId ? { inspectionSessionId } : {})}
       notice={notice}
       onDismissNotice={() => setNoticeState(undefined)}
       onNavigate={setActiveView}

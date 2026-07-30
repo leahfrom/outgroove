@@ -92,6 +92,7 @@ npm run typecheck
 npm run verify
 npm run package
 npm run test:smoke
+npm run inspect:package
 ```
 
 Automated write tests use only generated, redistributable fixtures copied into
