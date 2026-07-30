@@ -34,6 +34,27 @@ describe("release workflow", () => {
     expect(workflow).not.toContain("pull_request:");
   });
 
+  it("runs the complete Windows suite with the proven hosted-runner bounds", () => {
+    expect(workflow).toContain(
+      "if: runner.os != 'Windows'\n        run: npm run verify",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run format:check",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run lint",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run typecheck",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run version:check",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm test -- --maxWorkers=2 --testTimeout=15000",
+    );
+  });
+
   it("limits write permission to the publishing job", () => {
     expect(workflow).toContain("permissions:\n  contents: read");
     expect(workflow.match(/contents: write/gu)).toHaveLength(1);
