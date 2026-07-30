@@ -3,6 +3,7 @@
   "version": "0.16.0",
   "description": "Local-first music library and safe DAP sync",
   "author": "Outgroove contributors",
+  "license": "GPL-3.0-or-later",
   "main": ".vite/build/main.js",
   "private": true,
   "packageManager": "npm@11.18.0",
