@@ -1,7 +1,12 @@
 # Third-party notices
 
-This file supplements the license files shipped with Outgroove's dependencies.
-It is not legal advice.
+Outgroove's original source code is licensed under GPL-3.0-or-later. This file
+supplements the license files shipped with its dependencies; every third-party
+component retains its own license and copyright notices.
+
+The direct JavaScript dependencies use GPL-compatible MIT, Apache-2.0, BSD, or
+ISC terms. The LGPL components called out below remain separately replaceable
+files and retain their LGPL terms. This inventory is not legal advice.
 
 ## taglib-wasm 1.5.3
 

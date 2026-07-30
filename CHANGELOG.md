@@ -336,4 +336,4 @@
 - Expand metadata safety, filesystem conformance, and 100,000-file performance
   coverage.
 
-Earlier prerelease history is available on the private GitHub Releases page.
+Earlier prerelease history is available on the GitHub Releases page.
