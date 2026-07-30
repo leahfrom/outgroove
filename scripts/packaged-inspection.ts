@@ -167,7 +167,9 @@ async function launchInspection(seedFixtureLibrary: boolean): Promise<{
     const fixtureLibraryRoot = seedFixtureLibrary
       ? join(root, "fixture-library")
       : null;
-    const configPath = join(root, "inspection.json");
+    // Preserve the generated spelling for the validated launch argument.
+    // Windows realpath may expose an 8.3 alias; main canonicalizes it again.
+    const configPath = join(createdRoot, "inspection.json");
     const readyMarker = join(root, "ready.json");
     await mkdir(userData);
     await mkdir(targetRoot);

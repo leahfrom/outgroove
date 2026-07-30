@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { link, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
@@ -119,11 +125,16 @@ export function loadPackagedInspectionSession(
     temporaryDirectory,
     "temporary directory",
   );
-  const canonicalConfigPath = realpathSync(configPath);
+  const suppliedRoot = dirname(resolve(configPath));
   if (
-    !isContained(canonicalTemporaryDirectory, canonicalConfigPath) ||
-    !hasInspectionRootPrefix(dirname(canonicalConfigPath))
+    !hasInspectionRootPrefix(suppliedRoot) ||
+    lstatSync(suppliedRoot).isSymbolicLink()
   )
+    throw new Error(
+      "Packaged inspection configuration must be inside a generated Outgroove temporary directory.",
+    );
+  const canonicalConfigPath = realpathSync(configPath);
+  if (!isContained(canonicalTemporaryDirectory, canonicalConfigPath))
     throw new Error(
       "Packaged inspection configuration must be inside a generated Outgroove temporary directory.",
     );
@@ -133,7 +144,7 @@ export function loadPackagedInspectionSession(
   const root = existingDirectory(parsed.root, "root");
   if (
     !isContained(canonicalTemporaryDirectory, root) ||
-    !hasInspectionRootPrefix(root)
+    relative(root, dirname(canonicalConfigPath)) !== ""
   )
     throw new Error(
       "Packaged inspection root must be a generated Outgroove directory inside the OS temporary directory.",

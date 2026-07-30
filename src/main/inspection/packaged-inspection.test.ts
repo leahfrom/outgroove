@@ -21,15 +21,17 @@ import {
 const temporaryRoots: string[] = [];
 
 async function fixture() {
-  const root = await realpath(
-    await mkdtemp(join(tmpdir(), "outgroove-inspection-")),
-  );
+  const createdRoot = await mkdtemp(join(tmpdir(), "outgroove-inspection-"));
+  const root = await realpath(createdRoot);
   temporaryRoots.push(root);
   const userData = join(root, "profile");
   const targetRoot = join(root, "target");
   const fixtureLibraryRoot = join(root, "fixture-library");
   const readyMarker = join(root, "ready.json");
-  const configPath = join(root, "inspection.json");
+  // Keep the generated spelling for the configuration argument. Windows
+  // canonicalization may expose an 8.3 alias; the loader separately resolves
+  // this path and requires it to map back to the exact canonical root.
+  const configPath = join(createdRoot, "inspection.json");
   await mkdir(userData);
   await mkdir(targetRoot);
   await mkdir(fixtureLibraryRoot);

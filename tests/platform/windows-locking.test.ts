@@ -173,7 +173,8 @@ describe.skipIf(process.platform !== "win32")(
         Buffer.concat([await readFile(source), Buffer.from("changed")]),
       );
       const replacement = await sync.plan(profileId);
-      expect(replacement.copies).toHaveLength(1);
+      expect(replacement.copies).toHaveLength(0);
+      expect(replacement.replacements).toHaveLength(1);
       const destination = join(target, relativeDestination);
       const manifestPath = join(target, ".outgroove", "manifest.json");
       const destinationBefore = await readFile(destination);
