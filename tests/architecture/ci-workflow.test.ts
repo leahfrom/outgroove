@@ -25,8 +25,8 @@ describe("CI workflow triggers", () => {
     expect(workflow).toContain("xvfb-run -a npm run test:smoke");
   });
 
-  it("runs native Sync verification, packaging, and smoke on Windows", () => {
-    expect(workflow).toContain("Native Sync validation (Windows)");
+  it("runs complete verification, packaging, and smoke on Windows", () => {
+    expect(workflow).toContain("Verify, package, and smoke (Windows)");
     expect(workflow).toContain("runs-on: windows-2022");
     expect(workflow).toContain("timeout-minutes: 30");
     expect(workflow).toContain(

@@ -265,16 +265,25 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged discovery, metadata, and SQLite workers could not scan their fixtures.",
       );
-    const qualityPage = await qualityQuery.query({
-      query: "",
-      offset: 0,
-      limit: 20,
-      qualityFilter: "all",
-    });
-    if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
-      throw new Error(
-        "Packaged library data-quality worker returned an invalid page.",
-      );
+    // The loaded renderer owns the production query coordinator and may cancel
+    // its active query as the visible Library view changes. Keep this packaged
+    // worker check independent so renderer timing cannot supersede the smoke
+    // assertion itself.
+    const smokeQualityQuery = new WorkerLibraryQualityQuery(databasePath);
+    try {
+      const qualityPage = await smokeQualityQuery.query({
+        query: "",
+        offset: 0,
+        limit: 20,
+        qualityFilter: "all",
+      });
+      if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
+        throw new Error(
+          "Packaged library data-quality worker returned an invalid page.",
+        );
+    } finally {
+      await smokeQualityQuery.close();
+    }
     const preservationRoot = database.addLibraryRoot(
       join(app.getAppPath(), "fixtures", "audio", "preservation"),
       pathComparisonKey(
