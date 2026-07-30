@@ -16,6 +16,8 @@ export const api: OutgrooveApi = {
   getLatestScanJob: () => ipcRenderer.invoke(channels.getLatestScanJob, {}),
   createDatabaseBackup: () =>
     ipcRenderer.invoke(channels.createDatabaseBackup, {}),
+  exportDiagnosticReport: () =>
+    ipcRenderer.invoke(channels.exportDiagnosticReport, {}),
   chooseDatabaseRestore: () =>
     ipcRenderer.invoke(channels.chooseDatabaseRestore, {}),
   applyDatabaseRestore: (request) =>
@@ -138,6 +140,10 @@ export const api: OutgrooveApi = {
     ipcRenderer.invoke(channels.chooseSyncProfileTarget, request),
   applySyncProfileTarget: (request) =>
     ipcRenderer.invoke(channels.applySyncProfileTarget, request),
+  previewSyncProfileRemoval: (request) =>
+    ipcRenderer.invoke(channels.previewSyncProfileRemoval, request),
+  applySyncProfileRemoval: (request) =>
+    ipcRenderer.invoke(channels.applySyncProfileRemoval, request),
   listSyncHistory: (request) =>
     ipcRenderer.invoke(channels.listSyncHistory, request),
   planSync: (request) => ipcRenderer.invoke(channels.planSync, request),

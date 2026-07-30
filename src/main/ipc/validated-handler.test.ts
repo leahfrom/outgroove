@@ -31,9 +31,13 @@ import {
   removeFavoriteArtistRequestSchema,
   scanRequestSchema,
   syncProfileRequestSchema,
+  syncProfileRemovalApplyRequestSchema,
+  syncProfileRemovalPreviewRequestSchema,
   syncProfileTargetApplyRequestSchema,
   syncProfileTargetPreviewRequestSchema,
   syncHistoryRequestSchema,
+  syncApplyRequestSchema,
+  syncPlanRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
   syncCancelRequestSchema,
@@ -518,6 +522,26 @@ describe("validated IPC handlers", () => {
     expect(useCase).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps diagnostic destination selection out of renderer requests", async () => {
+    const exportReport = vi.fn(() => ({ pathRedacted: true }));
+    const handler = createValidatedHandler(emptyRequestSchema, exportReport);
+    await expect(handler({}, {})).resolves.toMatchObject({
+      ok: true,
+      value: { pathRedacted: true },
+    });
+    for (const request of [
+      { path: "/private/tmp/report.json" },
+      { destinationPath: "C:\\Users\\Fixture\\report.json" },
+      { includePaths: true },
+      { includeErrors: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+    expect(exportReport).toHaveBeenCalledTimes(1);
+  });
+
   it("validates bounded, distinct multi-album DAP selections without accepting target paths", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(syncProfileRequestSchema, useCase);
@@ -609,6 +633,64 @@ describe("validated IPC handlers", () => {
       });
   });
 
+  it("accepts only explicit per-plan cleanup intent and opaque apply confirmation", async () => {
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const planUseCase = vi.fn();
+    const plan = createValidatedHandler(syncPlanRequestSchema, planUseCase);
+    await expect(
+      plan({}, { profileId, cleanupEnabled: false }),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      plan({}, { profileId, cleanupEnabled: true }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(planUseCase).toHaveBeenNthCalledWith(1, {
+      profileId,
+      cleanupEnabled: false,
+    });
+    expect(planUseCase).toHaveBeenNthCalledWith(2, {
+      profileId,
+      cleanupEnabled: true,
+    });
+    for (const request of [
+      { profileId },
+      { profileId, cleanupEnabled: true, path: "/Volumes/DAP/file.mp3" },
+      { profileId, cleanupEnabled: true, removals: ["owned.mp3"] },
+      { profileId, cleanupEnabled: true, deleteUnknownFiles: true },
+    ])
+      await expect(plan({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const applyUseCase = vi.fn();
+    const apply = createValidatedHandler(syncApplyRequestSchema, applyUseCase);
+    const request = {
+      planId: profileId,
+      confirmationToken: "sync-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
+    };
+    await expect(apply({}, request)).resolves.toMatchObject({ ok: true });
+    expect(applyUseCase).toHaveBeenCalledWith(request);
+    await expect(
+      apply({}, { ...request, removals: ["/Volumes/DAP/file.mp3"] }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+    await expect(
+      apply(
+        {},
+        {
+          planId: profileId,
+          confirmationToken: request.confirmationToken,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
   it("validates both stages of a DAP profile target change without accepting paths", async () => {
     const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
     const chooseTarget = createValidatedHandler(
@@ -645,6 +727,53 @@ describe("validated IPC handlers", () => {
           operationId: profileId,
           confirmationToken: "short",
           targetPath: "/Volumes/DAP",
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_REQUEST" },
+    });
+  });
+
+  it("validates both stages of DAP profile removal without accepting target data", async () => {
+    const profileId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const preview = createValidatedHandler(
+      syncProfileRemovalPreviewRequestSchema,
+      vi.fn(),
+    );
+    await expect(preview({}, { profileId })).resolves.toMatchObject({
+      ok: true,
+    });
+    for (const request of [
+      { profileId: "not-a-uuid" },
+      { profileId, targetPath: "/Volumes/DAP" },
+      { profileId, deleteTargetFiles: true },
+    ])
+      await expect(preview({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+
+    const apply = createValidatedHandler(
+      syncProfileRemovalApplyRequestSchema,
+      vi.fn(),
+    );
+    await expect(
+      apply(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "confirmation-token-long-enough",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      apply(
+        {},
+        {
+          operationId: profileId,
+          confirmationToken: "short",
+          deleteTargetFiles: true,
         },
       ),
     ).resolves.toMatchObject({
@@ -730,15 +859,21 @@ describe("validated IPC handlers", () => {
     );
     const runId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
     const confirmationToken = "sync-recovery-confirmation-token-long-enough";
-    await expect(
-      handler({}, { runId, confirmationToken }),
-    ).resolves.toMatchObject({ ok: true, value: { complete: true } });
-    expect(useCase).toHaveBeenCalledWith({ runId, confirmationToken });
+    const validRequest = {
+      runId,
+      confirmationToken,
+      targetVolumeConfirmed: false,
+    };
+    await expect(handler({}, validRequest)).resolves.toMatchObject({
+      ok: true,
+      value: { complete: true },
+    });
+    expect(useCase).toHaveBeenCalledWith(validRequest);
     for (const request of [
       { runId, confirmationToken: "short" },
       { runId: "not-a-uuid", confirmationToken },
-      { runId, confirmationToken, targetPath: "/Volumes/DAP" },
-      { runId, confirmationToken, deleteUnknownFiles: true },
+      { ...validRequest, targetPath: "/Volumes/DAP" },
+      { ...validRequest, deleteUnknownFiles: true },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
         ok: false,

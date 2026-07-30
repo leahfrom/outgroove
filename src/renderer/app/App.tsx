@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   AlbumArtworkEditPreviewDto,
@@ -36,6 +43,7 @@ import type {
   SyncRecoverySummaryDto,
   SyncPlanDto,
   SyncProfileDto,
+  SyncProfileRemovalPreviewDto,
   SyncProfileTargetPreviewDto,
   TagEditResultDto,
   TagEditHistoryItemDto,
@@ -127,6 +135,15 @@ type RadarReleaseView = (typeof radarViews)[number];
 const radarPageLimit = 20;
 
 const PAGE_SIZE = 20;
+const inspectionSessionPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function packagedInspectionSessionId(): string | undefined {
+  const value = new URLSearchParams(window.location.search).get(
+    "outgrooveInspection",
+  );
+  return value && inspectionSessionPattern.test(value) ? value : undefined;
+}
 
 function draftForTrack(track: CatalogAlbum["tracks"][number]) {
   return {
@@ -221,6 +238,7 @@ function diagnosticActionLabel(workflow: AlbumDiagnosticWorkflow): string {
 }
 
 export function App(): React.JSX.Element {
+  const inspectionSessionId = useMemo(packagedInspectionSessionId, []);
   const [activeView, setActiveView] = useState<AppView>("library");
   const [syncStage, setSyncStage] = useState<SyncStage>("setup");
   const [syncSetupSection, setSyncSetupSection] =
@@ -529,10 +547,16 @@ export function App(): React.JSX.Element {
   >([]);
   const [syncRecoveryPreview, setSyncRecoveryPreview] =
     useState<SyncRecoveryPreviewDto>();
+  const [
+    syncRecoveryTargetVolumeConfirmed,
+    setSyncRecoveryTargetVolumeConfirmed,
+  ] = useState(false);
   const [syncRecoveryFeedback, setSyncRecoveryFeedback] =
     useState<SyncRecoveryFeedback>();
   const [syncTargetPreview, setSyncTargetPreview] =
     useState<SyncProfileTargetPreviewDto>();
+  const [syncProfileRemovalPreview, setSyncProfileRemovalPreview] =
+    useState<SyncProfileRemovalPreviewDto>();
   const [profile, setProfile] = useState<{
     id: string;
     name: string;
@@ -540,6 +564,9 @@ export function App(): React.JSX.Element {
     albumIds: readonly string[];
   }>();
   const [syncPlan, setSyncPlan] = useState<SyncPlanDto>();
+  const [syncCleanupEnabled, setSyncCleanupEnabled] = useState(false);
+  const [syncTargetVolumeConfirmed, setSyncTargetVolumeConfirmed] =
+    useState(false);
   const [syncApplyingPlanId, setSyncApplyingPlanId] = useState<string>();
   const [syncCancellationRequested, setSyncCancellationRequested] =
     useState(false);
@@ -563,6 +590,7 @@ export function App(): React.JSX.Element {
   const albumTitleEditorRef = useRef<HTMLElement>(null);
   const syncPlanHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncTargetPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const syncProfileRemovalPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryPreviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const syncRecoveryFeedbackHeadingRef = useRef<HTMLHeadingElement>(null);
   const albumDetailHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -574,6 +602,9 @@ export function App(): React.JSX.Element {
     undefined,
   );
   const albumReturnFocusId = useRef<string | undefined>(undefined);
+  const albumCollectionScrollPosition = useRef({ left: 0, top: 0 });
+  const albumCollectionScrollRestorePending = useRef(false);
+  const albumPointerForwardId = useRef<string | undefined>(undefined);
   const libraryRequestId = useRef(0);
   const artistSearchRequestId = useRef(0);
   const albumIdentificationRequestId = useRef(0);
@@ -645,6 +676,11 @@ export function App(): React.JSX.Element {
         : undefined,
     [selectedAlbum],
   );
+  const prepareAlbumCollectionReturn = useCallback((albumId: string): void => {
+    albumReturnFocusId.current = albumId;
+    albumCollectionScrollRestorePending.current = true;
+    albumPointerForwardId.current = albumId;
+  }, []);
   useEffect(() => {
     if (!diagnosticDestination) return;
     const target = {
@@ -670,6 +706,9 @@ export function App(): React.JSX.Element {
   }, [selectedAlbumId]);
 
   useEffect(() => {
+    albumPointerForwardId.current = undefined;
+    albumCollectionScrollRestorePending.current = false;
+    albumReturnFocusId.current = undefined;
     setLibraryAlbumDetailOpen(false);
   }, [
     albumArtistFilter,
@@ -680,16 +719,20 @@ export function App(): React.JSX.Element {
     query,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       activeView !== "library" ||
       libraryAlbumDetailOpen ||
-      !albumReturnFocusId.current
+      !albumReturnFocusId.current ||
+      !albumCollectionScrollRestorePending.current
     )
       return;
     const albumId = albumReturnFocusId.current;
+    const position = albumCollectionScrollPosition.current;
     albumReturnFocusId.current = undefined;
-    albumTriggerRefs.current.get(albumId)?.focus();
+    albumCollectionScrollRestorePending.current = false;
+    albumTriggerRefs.current.get(albumId)?.focus({ preventScroll: true });
+    window.scrollTo(position.left, position.top);
   }, [activeView, libraryAlbumDetailOpen]);
 
   useEffect(() => {
@@ -739,7 +782,7 @@ export function App(): React.JSX.Element {
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       event.preventDefault();
-      if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+      if (selectedAlbumId) prepareAlbumCollectionReturn(selectedAlbumId);
       setLibraryAlbumDetailOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
@@ -748,7 +791,60 @@ export function App(): React.JSX.Element {
     activeView,
     libraryAlbumDetailOpen,
     libraryTrackEditorOpen,
+    prepareAlbumCollectionReturn,
     selectedAlbumId,
+    technicalTrack,
+  ]);
+
+  useEffect(() => {
+    const navigateWithPointerButtons = (event: MouseEvent): void => {
+      // DOM buttons 3 and 4 are the conventional browser Back/Forward side
+      // buttons. Keep this history local to the Library hierarchy.
+      const detailIsUnobstructed =
+        activeView === "library" &&
+        !libraryTrackEditorOpen &&
+        !technicalTrack &&
+        !libraryAlbumEditingTool &&
+        !albumIdentificationOpen;
+      if (
+        event.button === 3 &&
+        detailIsUnobstructed &&
+        libraryAlbumDetailOpen &&
+        selectedAlbum
+      ) {
+        event.preventDefault();
+        prepareAlbumCollectionReturn(selectedAlbum.id);
+        setLibraryAlbumDetailOpen(false);
+        return;
+      }
+      if (
+        event.button === 4 &&
+        detailIsUnobstructed &&
+        !libraryAlbumDetailOpen &&
+        selectedAlbum &&
+        albumPointerForwardId.current === selectedAlbum.id
+      ) {
+        event.preventDefault();
+        albumCollectionScrollPosition.current = {
+          left: window.scrollX,
+          top: window.scrollY,
+        };
+        albumPointerForwardId.current = undefined;
+        albumDetailFocusPending.current = true;
+        setLibraryAlbumDetailOpen(true);
+      }
+    };
+    window.addEventListener("mouseup", navigateWithPointerButtons);
+    return () =>
+      window.removeEventListener("mouseup", navigateWithPointerButtons);
+  }, [
+    activeView,
+    albumIdentificationOpen,
+    libraryAlbumDetailOpen,
+    libraryAlbumEditingTool,
+    libraryTrackEditorOpen,
+    prepareAlbumCollectionReturn,
+    selectedAlbum,
     technicalTrack,
   ]);
 
@@ -1084,6 +1180,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (syncTargetPreview) syncTargetPreviewHeadingRef.current?.focus();
   }, [syncTargetPreview]);
+  useEffect(() => {
+    if (syncProfileRemovalPreview)
+      syncProfileRemovalPreviewHeadingRef.current?.focus();
+  }, [syncProfileRemovalPreview]);
   useEffect(() => {
     if (syncRecoveryPreview) syncRecoveryPreviewHeadingRef.current?.focus();
   }, [syncRecoveryPreview]);
@@ -1668,6 +1768,22 @@ export function App(): React.JSX.Element {
       else
         setNotice(
           `Database backup verified and saved to ${result.value.path}`,
+          "success",
+        );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportDiagnosticReport = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.exportDiagnosticReport();
+      if (!result.ok) setNotice(result.error.message, "error");
+      else if (!result.value) setNotice("Diagnostic report export cancelled.");
+      else
+        setNotice(
+          `Path-redacted diagnostic report verified and saved to ${result.value.path}`,
           "success",
         );
     } finally {
@@ -2886,11 +3002,18 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const planSync = async (): Promise<void> => {
+  const planSync = async (
+    cleanupEnabled = syncCleanupEnabled,
+  ): Promise<void> => {
     if (!profile) return;
-    const result = await window.outgroove.planSync({ profileId: profile.id });
-    if (result.ok) setSyncPlan(result.value);
-    else setNotice(result.error.message, "error");
+    const result = await window.outgroove.planSync({
+      profileId: profile.id,
+      cleanupEnabled,
+    });
+    if (result.ok) {
+      setSyncPlan(result.value);
+      setSyncTargetVolumeConfirmed(false);
+    } else setNotice(result.error.message, "error");
   };
 
   const openSyncProfile = (saved: SyncProfileDto): void => {
@@ -2900,6 +3023,8 @@ export function App(): React.JSX.Element {
     setSyncAlbums([]);
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncCleanupEnabled(false);
+    setSyncTargetVolumeConfirmed(false);
     setSyncTargetPreview(undefined);
     void refreshSyncHistory(saved.id);
     setNotice(
@@ -2913,6 +3038,8 @@ export function App(): React.JSX.Element {
     setSyncSetupSection("selection");
     setProfile(saved);
     setSyncPlan(undefined);
+    setSyncCleanupEnabled(false);
+    setSyncTargetVolumeConfirmed(false);
     setEditingSyncProfileId(saved.id);
     setSyncAlbums(saved.albums);
     void refreshSyncHistory(saved.id);
@@ -2940,6 +3067,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setProfile(result.value);
         setSyncPlan(undefined);
+        setSyncCleanupEnabled(false);
+        setSyncTargetVolumeConfirmed(false);
         setEditingSyncProfileId(undefined);
         setSyncAlbums([]);
         setSyncStage("review");
@@ -3014,9 +3143,12 @@ export function App(): React.JSX.Element {
         setSyncSetupSection("profiles");
         setProfile(saved);
         setSyncPlan(undefined);
+        setSyncProfileRemovalPreview(undefined);
         setSyncTargetPreview(result.value);
         setNotice(
-          `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+          result.value.identityRefresh
+            ? `Review the persistent volume identity refresh for “${saved.name}”. No files have been changed.`
+            : `Review the DAP target change for “${saved.name}”. No files have been changed.`,
         );
       } else if (!result.ok) setNotice(result.error.message, "error");
       else setNotice("DAP target selection cancelled.");
@@ -3036,6 +3168,8 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         setProfile(result.value);
         setSyncPlan(undefined);
+        setSyncCleanupEnabled(false);
+        setSyncTargetVolumeConfirmed(false);
         setSyncTargetPreview(undefined);
         setSyncStage("review");
         setSyncProfiles((current) =>
@@ -3045,7 +3179,68 @@ export function App(): React.JSX.Element {
         );
         await refreshSyncProfiles();
         setNotice(
-          `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          syncTargetPreview.identityRefresh
+            ? `Refreshed the persistent volume identity for “${result.value.name}”. Existing sync history was preserved; create a fresh preview before applying.`
+            : `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+          "success",
+        );
+      } else setNotice(result.error.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const previewSyncProfileRemoval = async (
+    saved: SyncProfileDto,
+  ): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.previewSyncProfileRemoval({
+        profileId: saved.id,
+      });
+      if (result.ok) {
+        setSyncSetupSection("profiles");
+        setSyncTargetPreview(undefined);
+        setSyncProfileRemovalPreview(result.value);
+        setNotice(
+          `Review removal of DAP profile “${saved.name}”. No source audio or target file has been changed.`,
+        );
+      } else setNotice(result.error.message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applySyncProfileRemoval = async (): Promise<void> => {
+    if (!syncProfileRemovalPreview) return;
+    setBusy(true);
+    try {
+      const result = await window.outgroove.applySyncProfileRemoval({
+        operationId: syncProfileRemovalPreview.operationId,
+        confirmationToken: syncProfileRemovalPreview.confirmationToken,
+      });
+      if (result.ok) {
+        const removedActiveProfile = profile?.id === result.value.profileId;
+        setSyncProfileRemovalPreview(undefined);
+        setSyncTargetPreview(undefined);
+        setRenamingSyncProfileId(undefined);
+        setSyncProfileNameDraft("");
+        if (editingSyncProfileId === result.value.profileId) {
+          setEditingSyncProfileId(undefined);
+          setSyncAlbums([]);
+        }
+        if (removedActiveProfile) {
+          setProfile(undefined);
+          setSyncPlan(undefined);
+          setSyncCleanupEnabled(false);
+          setSyncTargetVolumeConfirmed(false);
+          setSyncHistory([]);
+          setSyncHistoryProfileId(undefined);
+          setSyncStage("setup");
+        }
+        await refreshSyncProfiles();
+        setNotice(
+          `Removed DAP profile “${result.value.profileName}” and ${result.value.removedSuccessfulSyncs} saved ${result.value.removedSuccessfulSyncs === 1 ? "sync record" : "sync records"}. Target files were left unchanged and are now unknown to Outgroove.`,
           "success",
         );
       } else setNotice(result.error.message, "error");
@@ -3064,11 +3259,12 @@ export function App(): React.JSX.Element {
       const result = await window.outgroove.applySync({
         planId: applyingPlan.id,
         confirmationToken: applyingPlan.confirmationToken,
+        targetVolumeConfirmed: syncTargetVolumeConfirmed,
       });
       if (result.ok) {
         if (result.value.outcome === "completed")
           setNotice(
-            `Sync complete: ${result.value.copied} copied and ${result.value.unchanged} unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
             result.value.errors.length === 0 ? "success" : "error",
           );
         else if (result.value.outcome === "cancelled")
@@ -3084,7 +3280,9 @@ export function App(): React.JSX.Element {
             "error",
           );
         if (result.value.outcome === "completed") {
-          await planSync();
+          setSyncCleanupEnabled(false);
+          setSyncTargetVolumeConfirmed(false);
+          await planSync(false);
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
@@ -3126,6 +3324,7 @@ export function App(): React.JSX.Element {
       const result = await window.outgroove.applySyncRecovery({
         runId: recovery.runId,
         confirmationToken: recovery.confirmationToken,
+        targetVolumeConfirmed: syncRecoveryTargetVolumeConfirmed,
       });
       if (!result.ok) {
         setNotice(result.error.message, "error");
@@ -3177,6 +3376,7 @@ export function App(): React.JSX.Element {
   ): Promise<void> => {
     setSyncRecoveryFeedback(undefined);
     setSyncRecoveryPreview(undefined);
+    setSyncRecoveryTargetVolumeConfirmed(false);
     setBusy(true);
     try {
       const result = await window.outgroove.previewSyncRecovery({
@@ -3211,6 +3411,11 @@ export function App(): React.JSX.Element {
             !albumIdFilter))));
 
   const openLibraryAlbum = (album: CatalogAlbum): void => {
+    albumCollectionScrollPosition.current = {
+      left: window.scrollX,
+      top: window.scrollY,
+    };
+    albumPointerForwardId.current = undefined;
     albumDetailFocusPending.current = true;
     setSelectedAlbumId(album.id);
     setLibraryAlbumDetailOpen(true);
@@ -3500,7 +3705,7 @@ export function App(): React.JSX.Element {
 
   const closeLibraryAlbum = (): void => {
     if (albumIdentificationOpen) closeAlbumIdentification();
-    if (selectedAlbumId) albumReturnFocusId.current = selectedAlbumId;
+    if (selectedAlbumId) prepareAlbumCollectionReturn(selectedAlbumId);
     setLibraryAlbumDetailOpen(false);
   };
 
@@ -3672,6 +3877,7 @@ export function App(): React.JSX.Element {
   return (
     <ApplicationShell
       activeView={activeView}
+      {...(inspectionSessionId ? { inspectionSessionId } : {})}
       notice={notice}
       onDismissNotice={() => setNoticeState(undefined)}
       onNavigate={setActiveView}
@@ -4764,6 +4970,8 @@ export function App(): React.JSX.Element {
               renamingProfileId={renamingSyncProfileId}
               selectedAlbum={selectedAlbum}
               selectedAlbums={syncAlbums}
+              removalPreview={syncProfileRemovalPreview}
+              removalPreviewHeadingRef={syncProfileRemovalPreviewHeadingRef}
               targetPreview={syncTargetPreview}
               targetPreviewHeadingRef={syncTargetPreviewHeadingRef}
               onBrowseLibrary={() => setActiveView("library")}
@@ -4772,6 +4980,10 @@ export function App(): React.JSX.Element {
               onCancelTarget={() => {
                 setSyncTargetPreview(undefined);
                 setNotice("Discarded the DAP target change preview.");
+              }}
+              onCancelRemoval={() => {
+                setSyncProfileRemovalPreview(undefined);
+                setNotice("Kept the DAP profile.");
               }}
               onChooseProfileTarget={(saved) =>
                 void chooseSyncProfileTarget(saved)
@@ -4782,9 +4994,13 @@ export function App(): React.JSX.Element {
                 setNotice("Cleared the DAP album selection.");
               }}
               onConfirmTarget={() => void applySyncProfileTarget()}
+              onConfirmRemoval={() => void applySyncProfileRemoval()}
               onEditProfileAlbums={editSyncProfileAlbums}
               onOpenProfile={openSyncProfile}
               onProfileNameDraftChange={setSyncProfileNameDraft}
+              onPreviewRemoval={(saved) =>
+                void previewSyncProfileRemoval(saved)
+              }
               onRenameProfile={(saved) => void renameSyncProfile(saved)}
               onSaveAlbumSelection={() => void saveSyncProfileAlbums()}
               onSelectSection={setSyncSetupSection}
@@ -4797,6 +5013,8 @@ export function App(): React.JSX.Element {
               applyingPlanId={syncApplyingPlanId}
               busy={busy}
               cancellationRequested={syncCancellationRequested}
+              cleanupEnabled={syncCleanupEnabled}
+              targetVolumeConfirmed={syncTargetVolumeConfirmed}
               editingProfile={editingSyncProfile?.id === profile.id}
               history={syncHistory}
               historyLoading={syncHistoryLoading}
@@ -4806,10 +5024,21 @@ export function App(): React.JSX.Element {
               profile={profile}
               onApply={() => void applySync()}
               onCancel={() => void cancelSync()}
+              onCleanupEnabledChange={(enabled) => {
+                setSyncCleanupEnabled(enabled);
+                setSyncPlan(undefined);
+                setSyncTargetVolumeConfirmed(false);
+                setNotice(
+                  enabled
+                    ? "Cleanup is enabled only for the next sync preview. Review every proposed removal before confirming."
+                    : "Cleanup is disabled. The next preview will not propose removals.",
+                );
+              }}
               onManage={() => {
                 setSyncSetupSection("profiles");
                 setSyncStage("setup");
               }}
+              onTargetVolumeConfirmedChange={setSyncTargetVolumeConfirmed}
               onPreview={() => void planSync()}
             />
           )}
@@ -4821,14 +5050,19 @@ export function App(): React.JSX.Element {
               preview={syncRecoveryPreview}
               previewHeadingRef={syncRecoveryPreviewHeadingRef}
               recoveries={syncRecoveries}
+              targetVolumeConfirmed={syncRecoveryTargetVolumeConfirmed}
               onClosePreview={() => {
                 setSyncRecoveryPreview(undefined);
+                setSyncRecoveryTargetVolumeConfirmed(false);
                 setNotice("Closed the recovery review without changing files.");
               }}
               onConfirm={(recovery) => void applySyncRecovery(recovery)}
               onDismissFeedback={() => setSyncRecoveryFeedback(undefined)}
               onReturn={() => setSyncStage("setup")}
               onReview={(recovery) => void reviewSyncRecovery(recovery)}
+              onTargetVolumeConfirmedChange={
+                setSyncRecoveryTargetVolumeConfirmed
+              }
             />
           )}
         </main>
@@ -4849,6 +5083,7 @@ export function App(): React.JSX.Element {
           onConfirmRestore={() => void applyRestore()}
           onConfirmRootRemoval={() => void applyRootRemoval()}
           onCreateBackup={() => void createBackup()}
+          onExportDiagnosticReport={() => void exportDiagnosticReport()}
           onPreviewRootRemoval={(selectedRootId) =>
             void previewRootRemoval(selectedRootId)
           }

@@ -44,6 +44,8 @@ import {
   syncHistoryRequestSchema,
   syncProfileTargetApplyRequestSchema,
   syncProfileTargetPreviewRequestSchema,
+  syncProfileRemovalApplyRequestSchema,
+  syncProfileRemovalPreviewRequestSchema,
   syncRecoveryApplyRequestSchema,
   syncRecoveryPreviewRequestSchema,
   syncPlanRequestSchema,
@@ -57,7 +59,9 @@ import {
 import { channels } from "../../shared/contracts/channels";
 import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-library-quality-query";
+import { inspectTargetFilesystem } from "../adapters/filesystem/target-volume";
 import type { DatabaseBackupService } from "../application/database-backup";
+import type { ExportDiagnosticReport } from "../application/export-diagnostic-report";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import type { EditAlbumArtwork } from "../application/edit-album-artwork";
@@ -81,6 +85,7 @@ interface Dependencies {
   database: CatalogDatabase;
   qualityQuery: WorkerLibraryQualityQuery;
   backup: DatabaseBackupService;
+  diagnosticReporter: ExportDiagnosticReport;
   scanJobs: ScanJobCoordinator;
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
@@ -187,6 +192,20 @@ export function registerIpc(
       return selected.canceled || !selected.filePath
         ? null
         : dependencies.backup.exportTo(selected.filePath);
+    }),
+  );
+  ipcMain.handle(
+    channels.exportDiagnosticReport,
+    createValidatedHandler(emptyRequestSchema, async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const selected = await dialog.showSaveDialog(dependencies.window, {
+        title: "Export path-redacted Outgroove diagnostic report",
+        defaultPath: `outgroove-diagnostics-${date}.json`,
+        filters: [{ name: "JSON report", extensions: ["json"] }],
+      });
+      return selected.canceled || !selected.filePath
+        ? null
+        : dependencies.diagnosticReporter.exportTo(selected.filePath);
     }),
   );
   ipcMain.handle(
@@ -800,6 +819,21 @@ export function registerIpc(
     ),
   );
   ipcMain.handle(
+    channels.previewSyncProfileRemoval,
+    createValidatedHandler(
+      syncProfileRemovalPreviewRequestSchema,
+      ({ profileId }) => dependencies.sync.previewProfileRemoval(profileId),
+    ),
+  );
+  ipcMain.handle(
+    channels.applySyncProfileRemoval,
+    createValidatedHandler(
+      syncProfileRemovalApplyRequestSchema,
+      ({ operationId, confirmationToken }) =>
+        dependencies.sync.applyProfileRemoval(operationId, confirmationToken),
+    ),
+  );
+  ipcMain.handle(
     channels.listSyncHistory,
     createValidatedHandler(syncHistoryRequestSchema, ({ profileId }) =>
       dependencies.database.listSyncHistory(profileId),
@@ -815,28 +849,37 @@ export function registerIpc(
           properties: ["openDirectory", "createDirectory"],
         });
         const targetPath = selected.filePaths[0];
-        return selected.canceled || !targetPath
-          ? null
-          : dependencies.database.createSyncProfile(
-              name,
-              normalize(resolve(targetPath)),
-              albumIds,
-            );
+        if (selected.canceled || !targetPath) return null;
+        const normalizedTarget = normalize(resolve(targetPath));
+        const evidence = await inspectTargetFilesystem(normalizedTarget);
+        return dependencies.database.createSyncProfile(
+          name,
+          normalizedTarget,
+          albumIds,
+          evidence.volumeIdentity,
+        );
       },
     ),
   );
   ipcMain.handle(
     channels.planSync,
-    createValidatedHandler(syncPlanRequestSchema, ({ profileId }) =>
-      dependencies.sync.plan(profileId),
+    createValidatedHandler(
+      syncPlanRequestSchema,
+      ({ profileId, cleanupEnabled }) =>
+        dependencies.sync.plan(profileId, cleanupEnabled),
     ),
   );
   ipcMain.handle(
     channels.applySync,
     createValidatedHandler(
       syncApplyRequestSchema,
-      ({ planId, confirmationToken }) =>
-        dependencies.sync.apply(planId, confirmationToken, progress("sync")),
+      ({ planId, confirmationToken, targetVolumeConfirmed }) =>
+        dependencies.sync.apply(
+          planId,
+          confirmationToken,
+          progress("sync"),
+          targetVolumeConfirmed,
+        ),
     ),
   );
   ipcMain.handle(
@@ -861,8 +904,12 @@ export function registerIpc(
     channels.applySyncRecovery,
     createValidatedHandler(
       syncRecoveryApplyRequestSchema,
-      ({ runId, confirmationToken }) =>
-        dependencies.sync.recover(runId, confirmationToken),
+      ({ runId, confirmationToken, targetVolumeConfirmed }) =>
+        dependencies.sync.recover(
+          runId,
+          confirmationToken,
+          targetVolumeConfirmed,
+        ),
     ),
   );
 }

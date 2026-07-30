@@ -2,6 +2,24 @@
 
 Read `AGENTS.md` and the relevant parts of `PLAN.md` before changing product behavior. Outgroove uses Gitflow for branch integration and stable semantic versions for releases.
 
+## Contribution license and provenance
+
+Outgroove's original source code is licensed under GPL-3.0-or-later. By
+submitting a contribution, you agree that your contribution may be distributed
+under that license and confirm that you have the right to submit it.
+
+Do not submit copied code, generated assets, audio, artwork, fonts, or other
+material unless its provenance and license allow redistribution under the
+project's terms. Identify any incorporated third-party material in the pull
+request and update `THIRD_PARTY_NOTICES.md` when required. Tests must use the
+checked-in CC0 fixtures or newly generated redistributable fixtures in temporary
+directories, never a real music library.
+
+Never commit credentials, signing material, provider keys, personal databases,
+unredacted diagnostic exports, real user paths, or private metadata. If you find
+a security issue or exposed secret, follow [SECURITY.md](SECURITY.md) instead of
+opening a public issue.
+
 ## Branches
 
 - `main` contains release-ready history. Only `release/*` and `hotfix/*` pull requests merge into it.
@@ -80,13 +98,19 @@ The remaining version commit, main pull request, tag, and develop back-merge ste
 
 ## Repository settings
 
-On the private GitHub repository, protect both long-lived branches:
+Protect both long-lived branches:
 
-- require pull requests and the `verify-and-package` CI check;
+- require pull requests and the `Verify, package, and smoke (Linux)` CI check;
 - block force pushes and deletion;
 - require branches to be current before merging;
 - restrict `main` pull requests to the Gitflow policy enforced by CI;
 - use merge commits for release/hotfix PRs and the `main` back-merge.
+
+The ordinary CI workflow runs on `pull_request` with read-only repository
+permission and does not receive release secrets from fork pull requests. Never
+change it to `pull_request_target` or add secrets to that workflow merely to
+make an external contribution pass. Tagged releases remain the only workflow
+that uses signing or provider credentials.
 
 Tagged macOS builds require the Developer ID certificate and App Store Connect
 Team API-key secrets documented in

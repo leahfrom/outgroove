@@ -1,8 +1,9 @@
 {
   "name": "outgroove",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Local-first music library and safe DAP sync",
   "author": "Outgroove contributors",
+  "license": "GPL-3.0-or-later",
   "main": ".vite/build/main.js",
   "private": true,
   "packageManager": "npm@11.18.0",
@@ -17,6 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "tsx tests/e2e/packaged-smoke.ts",
+    "inspect:package": "node --import tsx scripts/packaged-inspection.ts",
     "test:exfat": "node --import tsx scripts/filesystem-conformance.ts",
     "benchmark:library": "node --import tsx scripts/library-benchmark.ts",
     "benchmark:library:100k": "npm run benchmark:library -- --files 100000",

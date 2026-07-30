@@ -97,9 +97,12 @@ jobs:
             Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64. macOS uses a signed, notarized drag-to-Applications DMG. Windows includes both a portable ZIP and a Squirrel Setup application; native Radar notifications require the installed application.
 
             The macOS application and DMG use Developer ID signing, and the final DMG has been notarized and stapled. Windows remains unsigned, so SmartScreen may warn or block a first launch. This prerelease is intended for controlled fixture testing; back up real music before authorizing any metadata write.
-        run: >-
-          gh release create "$GITHUB_REF_NAME" release-assets/*
-          --repo "$GITHUB_REPOSITORY"
-          --title "Outgroove $GITHUB_REF_NAME"
-          --prerelease
-          --notes "$RELEASE_NOTES"
+
+            Automated Sync validation uses isolated folder-backed targets on native APFS, NTFS, and Linux runner filesystems. Physical exFAT media, a real DAP, macOS Intel, and manual Windows or Linux desktop workflows were not tested for this release.
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Outgroove $release_version" \
+            --prerelease \
+            --notes "$RELEASE_NOTES"

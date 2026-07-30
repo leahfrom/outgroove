@@ -456,16 +456,32 @@ export const syncProfileTargetPreviewRequestSchema = z
 export const syncProfileTargetApplyRequestSchema = z
   .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
   .strict();
+export const syncProfileRemovalPreviewRequestSchema = z
+  .object({ profileId: z.uuid() })
+  .strict();
+export const syncProfileRemovalApplyRequestSchema = z
+  .object({ operationId: z.uuid(), confirmationToken: z.string().min(20) })
+  .strict();
 export const syncHistoryRequestSchema = z
   .object({ profileId: z.uuid() })
   .strict();
-export const syncPlanRequestSchema = z.object({ profileId: z.uuid() }).strict();
+export const syncPlanRequestSchema = z
+  .object({ profileId: z.uuid(), cleanupEnabled: z.boolean() })
+  .strict();
 export const syncApplyRequestSchema = z
-  .object({ planId: z.uuid(), confirmationToken: z.string().min(20) })
+  .object({
+    planId: z.uuid(),
+    confirmationToken: z.string().min(20),
+    targetVolumeConfirmed: z.boolean(),
+  })
   .strict();
 export const syncCancelRequestSchema = z.object({ planId: z.uuid() }).strict();
 export const syncRecoveryApplyRequestSchema = z
-  .object({ runId: z.uuid(), confirmationToken: z.string().min(20) })
+  .object({
+    runId: z.uuid(),
+    confirmationToken: z.string().min(20),
+    targetVolumeConfirmed: z.boolean(),
+  })
   .strict();
 export const syncRecoveryPreviewRequestSchema = z
   .object({ runId: z.uuid() })
@@ -593,6 +609,11 @@ export interface SavedLibraryFilterDto {
 }
 export interface DatabaseBackupResultDto {
   readonly path: string;
+}
+export interface DiagnosticReportExportResultDto {
+  readonly path: string;
+  readonly byteLength: number;
+  readonly sha256: string;
 }
 export interface DatabaseRestorePreviewDto {
   readonly operationId: string;
@@ -734,6 +755,12 @@ export interface SyncPlanItemDto {
   readonly relativeDestination: string;
   readonly size: number;
   readonly signature: string;
+  readonly expectedTargetHash?: string;
+}
+export interface SyncRemovalItemDto {
+  readonly relativeDestination: string;
+  readonly size: number;
+  readonly expectedTargetHash: string;
 }
 export interface SyncProfileDto {
   readonly id: string;
@@ -761,21 +788,54 @@ export interface SyncProfileTargetPreviewDto {
   readonly profileName: string;
   readonly currentTargetPath: string;
   readonly proposedTargetPath: string;
+  readonly proposedVolumeEvidenceAvailable: boolean;
+  readonly identityRefresh: boolean;
+}
+export interface SyncProfileRemovalPreviewDto {
+  readonly operationId: string;
+  readonly confirmationToken: string;
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly targetPath: string;
+  readonly albums: SyncProfileDto["albums"];
+  readonly successfulSyncs: number;
+  readonly manifestTargets: readonly {
+    readonly targetPath: string;
+    readonly ownedFileCount: number;
+  }[];
+}
+export interface SyncProfileRemovalResultDto {
+  readonly profileId: string;
+  readonly profileName: string;
+  readonly removedSuccessfulSyncs: number;
 }
 export interface SyncPlanDto {
   readonly id: string;
   readonly profileId: string;
   readonly targetPath: string;
   readonly confirmationToken: string;
+  readonly cleanupEnabled: boolean;
+  readonly previousManifestHash: string | null;
+  readonly targetIdentity: string;
+  readonly targetVolume: {
+    readonly status: "matched" | "unrecorded" | "changed" | "unavailable";
+    readonly confirmationRequired: boolean;
+  };
   readonly copies: readonly SyncPlanItemDto[];
+  readonly replacements: readonly SyncPlanItemDto[];
   readonly unchanged: readonly SyncPlanItemDto[];
+  readonly removals: readonly SyncRemovalItemDto[];
+  readonly absentOwned: readonly string[];
   readonly conflicts: readonly string[];
   readonly errors: readonly string[];
   readonly requiredBytes: number;
+  readonly hasChanges: boolean;
 }
 export interface SyncApplyResultDto {
   readonly outcome: "completed" | "cancelled" | "failed";
   readonly copied: number;
+  readonly replaced: number;
+  readonly removed: number;
   readonly rolledBack: number;
   readonly unchanged: number;
   readonly playlistPath: string;
@@ -802,6 +862,7 @@ export interface SyncRecoveryPreviewDto {
   }[];
   readonly warnings: readonly string[];
   readonly canRecover: boolean;
+  readonly targetVolume: SyncPlanDto["targetVolume"];
   readonly confirmationToken: string;
 }
 export interface SyncRecoverySummaryDto {
@@ -1033,6 +1094,9 @@ export interface OutgrooveApi {
   ): Promise<Result<ScanJobDto>>;
   getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
   createDatabaseBackup(): Promise<Result<DatabaseBackupResultDto | null>>;
+  exportDiagnosticReport(): Promise<
+    Result<DiagnosticReportExportResultDto | null>
+  >;
   chooseDatabaseRestore(): Promise<Result<DatabaseRestorePreviewDto | null>>;
   applyDatabaseRestore(
     request: z.infer<typeof databaseRestoreApplyRequestSchema>,
@@ -1219,6 +1283,12 @@ export interface OutgrooveApi {
   applySyncProfileTarget(
     request: z.infer<typeof syncProfileTargetApplyRequestSchema>,
   ): Promise<Result<SyncProfileDto>>;
+  previewSyncProfileRemoval(
+    request: z.infer<typeof syncProfileRemovalPreviewRequestSchema>,
+  ): Promise<Result<SyncProfileRemovalPreviewDto>>;
+  applySyncProfileRemoval(
+    request: z.infer<typeof syncProfileRemovalApplyRequestSchema>,
+  ): Promise<Result<SyncProfileRemovalResultDto>>;
   listSyncHistory(
     request: z.infer<typeof syncHistoryRequestSchema>,
   ): Promise<Result<readonly SyncHistoryItemDto[]>>;

@@ -54,9 +54,12 @@ describe("saved DAP profiles", () => {
     const alpha = addAlbum("alpha.flac", "Alpha", "First Artist");
     const zetaId = zeta.albumId;
     const alphaId = alpha.albumId;
-    const older = database.createSyncProfile("Older DAP", "/targets/older", [
-      zetaId,
-    ]);
+    const older = database.createSyncProfile(
+      "Older DAP",
+      "/targets/older",
+      [zetaId],
+      "filesystem-device:older",
+    );
     const newer = database.createSyncProfile("Road DAP", "/targets/road", [
       zetaId,
       alphaId,
@@ -123,7 +126,11 @@ describe("saved DAP profiles", () => {
       previousManifest,
     );
     expect(
-      database.updateSyncProfileTarget(older.id, "/targets/replacement"),
+      database.updateSyncProfileTarget(
+        older.id,
+        "/targets/replacement",
+        "filesystem-device:replacement",
+      ),
     ).toMatchObject({
       id: older.id,
       targetPath: "/targets/replacement",
@@ -132,6 +139,9 @@ describe("saved DAP profiles", () => {
     expect(
       database.getLatestManifest(older.id, "/targets/replacement"),
     ).toBeUndefined();
+    expect(database.getSyncProfile(older.id)?.target_volume_identity).toBe(
+      "filesystem-device:replacement",
+    );
     expect(database.getLatestManifest(older.id, "/targets/older")).toEqual(
       previousManifest,
     );

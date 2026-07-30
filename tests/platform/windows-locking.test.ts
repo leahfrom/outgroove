@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { CatalogDatabase } from "../../src/main/adapters/database/catalog-database";
+import { inspectTargetFilesystem } from "../../src/main/adapters/filesystem/target-volume";
 import { MusicMetadataReader } from "../../src/main/adapters/metadata/metadata-reader";
 import { SafeMetadataWriter } from "../../src/main/adapters/metadata/metadata-writer";
 import { DeviceSync } from "../../src/main/application/device-sync";
@@ -107,9 +108,12 @@ async function setupSync(): Promise<{
   ).execute(root.id);
   const album = database.listAlbums()[0];
   if (!album) throw new Error("Fixture album missing");
-  const profile = database.createSyncProfile("Windows lock DAP", target, [
-    album.id,
-  ]);
+  const profile = database.createSyncProfile(
+    "Windows lock DAP",
+    target,
+    [album.id],
+    (await inspectTargetFilesystem(target)).volumeIdentity,
+  );
   return { database, profileId: profile.id, target };
 }
 
@@ -152,7 +156,12 @@ describe.skipIf(process.platform !== "win32")(
       const sync = new DeviceSync(database);
       const initial = await sync.plan(profileId);
       expect(
-        await sync.apply(initial.id, initial.confirmationToken),
+        await sync.apply(
+          initial.id,
+          initial.confirmationToken,
+          undefined,
+          true,
+        ),
       ).toMatchObject({ errors: [] });
 
       const source = initial.copies[0]?.sourcePath;
@@ -164,25 +173,27 @@ describe.skipIf(process.platform !== "win32")(
         Buffer.concat([await readFile(source), Buffer.from("changed")]),
       );
       const replacement = await sync.plan(profileId);
-      expect(replacement.copies).toHaveLength(1);
+      expect(replacement.copies).toHaveLength(0);
+      expect(replacement.replacements).toHaveLength(1);
       const destination = join(target, relativeDestination);
       const manifestPath = join(target, ".outgroove", "manifest.json");
       const destinationBefore = await readFile(destination);
       const manifestBefore = await readFile(manifestPath);
 
       const release = await holdExclusiveLock(destination);
-      let result;
       try {
-        result = await sync.apply(
-          replacement.id,
-          replacement.confirmationToken,
-        );
+        await expect(
+          sync.apply(
+            replacement.id,
+            replacement.confirmationToken,
+            undefined,
+            true,
+          ),
+        ).rejects.toMatchObject({ code: "EBUSY" });
       } finally {
         await release();
       }
 
-      expect(result.errors).toHaveLength(1);
-      expect(result.copied).toBe(0);
       expect(await readFile(destination)).toEqual(destinationBefore);
       expect(await readFile(manifestPath)).toEqual(manifestBefore);
     });

@@ -18,6 +18,7 @@ export function SyncRecoveryWorkspace({
   preview,
   feedback,
   busy,
+  targetVolumeConfirmed,
   previewHeadingRef,
   feedbackHeadingRef,
   onReview,
@@ -25,11 +26,13 @@ export function SyncRecoveryWorkspace({
   onClosePreview,
   onDismissFeedback,
   onReturn,
+  onTargetVolumeConfirmedChange,
 }: {
   readonly recoveries: readonly SyncRecoverySummaryDto[];
   readonly preview: SyncRecoveryPreviewDto | undefined;
   readonly feedback: SyncRecoveryFeedback | undefined;
   readonly busy: boolean;
+  readonly targetVolumeConfirmed: boolean;
   readonly previewHeadingRef: Ref<HTMLHeadingElement>;
   readonly feedbackHeadingRef: Ref<HTMLHeadingElement>;
   readonly onReview: (recovery: SyncRecoverySummaryDto) => void;
@@ -37,6 +40,7 @@ export function SyncRecoveryWorkspace({
   readonly onClosePreview: () => void;
   readonly onDismissFeedback: () => void;
   readonly onReturn: () => void;
+  readonly onTargetVolumeConfirmedChange: (confirmed: boolean) => void;
 }): React.JSX.Element {
   const restoreActions =
     preview?.actions.filter((action) => action.action === "restore") ?? [];
@@ -222,6 +226,14 @@ export function SyncRecoveryWorkspace({
               <dt>Warnings</dt>
               <dd>{preview.warnings.length}</dd>
             </div>
+            <div>
+              <dt>Volume check</dt>
+              <dd>
+                {preview.targetVolume.status === "matched"
+                  ? "Persistent identity matches"
+                  : "Confirmation required"}
+              </dd>
+            </div>
           </dl>
 
           <div className="sync-recovery-action-groups">
@@ -249,6 +261,36 @@ export function SyncRecoveryWorkspace({
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
+            </section>
+          )}
+
+          {preview.targetVolume.confirmationRequired && (
+            <section
+              className="sync-volume-confirmation"
+              aria-label="Recovery volume identity confirmation"
+            >
+              <div>
+                <strong>
+                  Outgroove cannot verify this as the recorded recovery volume.
+                </strong>
+                <span>
+                  Check the path and device yourself before allowing any
+                  reviewed restore or removal.
+                </span>
+              </div>
+              <label>
+                <input
+                  checked={targetVolumeConfirmed}
+                  disabled={busy || !preview.canRecover}
+                  onChange={(event) =>
+                    onTargetVolumeConfirmedChange(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  I confirm this is the intended DAP volume for recovery
+                </span>
+              </label>
             </section>
           )}
 
@@ -285,7 +327,12 @@ export function SyncRecoveryWorkspace({
             <div className="actions">
               <button
                 className="primary"
-                disabled={busy || !preview.canRecover}
+                disabled={
+                  busy ||
+                  !preview.canRecover ||
+                  (preview.targetVolume.confirmationRequired &&
+                    !targetVolumeConfirmed)
+                }
                 onClick={() => onConfirm(preview)}
                 type="button"
               >

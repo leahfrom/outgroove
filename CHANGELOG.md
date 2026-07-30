@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.17.0 — 2026-07-30
+
+- Add safe removal of saved DAP profiles through an exact database-only
+  preview and a separate confirmation. Removing a profile never touches its
+  target, and adding that folder again does not reconstruct ownership over
+  files deliberately left behind.
+- Add explicitly opt-in cleanup of obsolete sync files. Plans show each exact
+  manifest-owned removal alongside copies, replacements, skips, and conflicts;
+  apply quarantines removals on the target volume, verifies the final state,
+  publishes the new manifest last, and retains restart-safe recovery evidence.
+  Unknown files and paths absent from the applicable manifest remain untouched.
+- Bind DAP profiles to persisted native volume evidence where the host can
+  provide it, distinguish confirmed targets from uncertain or mismatched
+  volumes, and require a separate user confirmation before an uncertain target
+  can be planned. Mount paths and manifests alone are not treated as physical
+  volume identity.
+- Add native Windows verification, packaging, and isolated packaged smoke
+  coverage to routine CI. Extend the disposable filesystem-conformance probe
+  for exFAT timestamp precision, case behavior, tag replacement, manifest-owned
+  cleanup, interruption recovery, and unknown-file preservation without
+  weakening the normal fail-closed filesystem check.
+- Add a deterministic packaged-app inspection harness for temporary fixture
+  libraries and targets, with isolated profile data and cleanup instructions,
+  so destructive workflows can be inspected without a real catalog or DAP.
+- Preserve Library album collection context across album detail, Sync, and
+  contextual editing, including filters, pagination, scroll position, and
+  keyboard focus.
+- Add user-exportable diagnostic reports with aggregate operational evidence
+  and redacted paths by default. Export uses an explicit native save dialog,
+  runtime-validated IPC, same-directory temporary output, flush and digest
+  verification, and rollback on failure; it never includes provider payloads,
+  audio bytes, raw fingerprints, secrets, or arbitrary renderer paths.
+- Publish the repository under GPL-3.0-or-later with public contribution and
+  security guidance, and standardize prerelease display titles as
+  `Outgroove <version>`.
+
 ## 0.16.0 — 2026-07-28
 
 - Add explicit single-track recording identification with locally generated
@@ -336,4 +372,4 @@
 - Expand metadata safety, filesystem conformance, and 100,000-file performance
   coverage.
 
-Earlier prerelease history is available on the private GitHub Releases page.
+Earlier prerelease history is available on the GitHub Releases page.

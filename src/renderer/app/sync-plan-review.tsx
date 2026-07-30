@@ -23,11 +23,15 @@ export function SyncPlanReview({
   editingProfile,
   applyingPlanId,
   cancellationRequested,
+  cleanupEnabled,
+  targetVolumeConfirmed,
   planHeadingRef,
   onPreview,
   onManage,
   onApply,
   onCancel,
+  onCleanupEnabledChange,
+  onTargetVolumeConfirmedChange,
 }: {
   readonly profile: ActiveSyncProfile;
   readonly plan: SyncPlanDto | undefined;
@@ -38,14 +42,19 @@ export function SyncPlanReview({
   readonly editingProfile: boolean;
   readonly applyingPlanId: string | undefined;
   readonly cancellationRequested: boolean;
+  readonly cleanupEnabled: boolean;
+  readonly targetVolumeConfirmed: boolean;
   readonly planHeadingRef: Ref<HTMLHeadingElement>;
   readonly onPreview: () => void;
   readonly onManage: () => void;
   readonly onApply: () => void;
   readonly onCancel: () => void;
+  readonly onCleanupEnabledChange: (enabled: boolean) => void;
+  readonly onTargetVolumeConfirmedChange: (confirmed: boolean) => void;
 }): React.JSX.Element {
   const issueCount = plan ? plan.conflicts.length + plan.errors.length : 0;
   const planBlocked = issueCount > 0;
+  const noChanges = plan ? !plan.hasChanges : false;
   const applying = plan ? applyingPlanId === plan.id : false;
 
   return (
@@ -88,6 +97,26 @@ export function SyncPlanReview({
             Manage {profile.name}
           </button>
         </div>
+        <label className="sync-cleanup-option">
+          <input
+            checked={cleanupEnabled}
+            disabled={busy || editingProfile}
+            onChange={(event) =>
+              onCleanupEnabledChange(event.currentTarget.checked)
+            }
+            type="checkbox"
+          />
+          <span>
+            <strong>
+              Include cleanup of obsolete Outgroove-owned files in this plan
+            </strong>
+            <small>
+              Off by default. Only exact paths in this profile’s latest manifest
+              can be proposed, and every removal will be shown before
+              confirmation.
+            </small>
+          </span>
+        </label>
         {editingProfile && (
           <p className="sync-unsaved-status" role="status">
             Album-selection changes are not saved yet. Save or discard them
@@ -101,7 +130,8 @@ export function SyncPlanReview({
           <h3>No copy plan yet</h3>
           <p>
             Previewing reads the selected source files, profile, and target
-            state. It does not copy, replace, or delete anything.
+            state. It does not copy, replace, or remove anything. Cleanup is{" "}
+            {cleanupEnabled ? "enabled for the next preview" : "disabled"}.
           </p>
         </div>
       ) : (
@@ -111,7 +141,9 @@ export function SyncPlanReview({
               <p className="eyebrow">
                 {planBlocked
                   ? "Plan needs attention"
-                  : "Ready for confirmation"}
+                  : noChanges
+                    ? "Target is up to date"
+                    : "Ready for confirmation"}
               </p>
               <h3 ref={planHeadingRef} tabIndex={-1}>
                 Current sync plan
@@ -130,7 +162,9 @@ export function SyncPlanReview({
             >
               {planBlocked
                 ? `${issueCount} ${issueCount === 1 ? "issue" : "issues"}`
-                : "Validated"}
+                : noChanges
+                  ? "No changes"
+                  : "Validated"}
             </span>
           </div>
 
@@ -140,8 +174,16 @@ export function SyncPlanReview({
               <dd>{plan.copies.length}</dd>
             </div>
             <div>
-              <dt>Unchanged</dt>
+              <dt>Replacements</dt>
+              <dd>{plan.replacements.length}</dd>
+            </div>
+            <div>
+              <dt>Skipped (unchanged)</dt>
               <dd>{plan.unchanged.length}</dd>
+            </div>
+            <div>
+              <dt>Removals</dt>
+              <dd>{plan.removals.length}</dd>
             </div>
             <div>
               <dt>Issues</dt>
@@ -151,6 +193,14 @@ export function SyncPlanReview({
               <dt>Required space</dt>
               <dd title={`${plan.requiredBytes} bytes`}>
                 {formatFileSize(plan.requiredBytes)}
+              </dd>
+            </div>
+            <div>
+              <dt>Volume check</dt>
+              <dd>
+                {plan.targetVolume.status === "matched"
+                  ? "Persistent identity matches"
+                  : "Confirmation required"}
               </dd>
             </div>
           </dl>
@@ -164,6 +214,52 @@ export function SyncPlanReview({
               </span>
             </div>
           )}
+          {plan.targetVolume.confirmationRequired && (
+            <section
+              className="sync-volume-confirmation"
+              aria-label="DAP volume identity confirmation"
+            >
+              <div>
+                <strong>
+                  Outgroove cannot verify this as the recorded volume.
+                </strong>
+                <span>
+                  {plan.targetVolume.status === "changed"
+                    ? "The current persistent volume identity differs from the evidence saved for this profile."
+                    : plan.targetVolume.status === "unrecorded"
+                      ? "This profile does not have a saved persistent volume identity."
+                      : "This operating system or target did not provide a persistent volume identity."}
+                </span>
+                <span>
+                  Check the target path and device yourself. A matching
+                  Outgroove manifest proves file ownership, not physical-volume
+                  identity.
+                </span>
+              </div>
+              <label>
+                <input
+                  checked={targetVolumeConfirmed}
+                  disabled={busy || planBlocked || noChanges}
+                  onChange={(event) =>
+                    onTargetVolumeConfirmedChange(event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  I confirm this is the intended DAP volume for this plan
+                </span>
+              </label>
+            </section>
+          )}
+          {noChanges && !planBlocked && (
+            <div className="sync-plan-noop" role="status">
+              <strong>No target changes are needed.</strong>
+              <span>
+                This plan cannot enter confirmation or apply. Source audio and
+                the target remain untouched.
+              </span>
+            </div>
+          )}
 
           <div className="sync-plan-details" aria-label="Exact sync plan">
             <PlanDisclosure
@@ -171,8 +267,21 @@ export function SyncPlanReview({
               label="Files to copy"
             />
             <PlanDisclosure
+              items={plan.replacements.map((item) => item.relativeDestination)}
+              label="Manifest-owned files to replace"
+            />
+            <PlanDisclosure
               items={plan.unchanged.map((item) => item.relativeDestination)}
-              label="Unchanged files"
+              label="Skipped unchanged files"
+            />
+            <PlanDisclosure
+              emphasize
+              items={plan.removals.map((item) => item.relativeDestination)}
+              label="Manifest-owned files to remove"
+            />
+            <PlanDisclosure
+              items={plan.absentOwned}
+              label="Already absent owned paths to forget"
             />
             <PlanDisclosure
               emphasize
@@ -182,50 +291,70 @@ export function SyncPlanReview({
             <PlanDisclosure emphasize items={plan.errors} label="Errors" />
           </div>
 
-          <section
-            className={
-              planBlocked
-                ? "sync-apply-confirmation is-blocked"
-                : "sync-apply-confirmation"
-            }
-            aria-labelledby="sync-apply-title"
-          >
-            <div>
-              <p className="eyebrow">Explicit confirmation</p>
-              <h4 id="sync-apply-title">
-                {planBlocked ? "Resolve plan issues first" : "Apply this plan?"}
-              </h4>
-              <p>
-                Source audio stays untouched. Outgroove copies through temporary
-                files, verifies each copy, and commits the new manifest last.
-              </p>
-            </div>
-            <button
-              className="primary"
-              disabled={busy || planBlocked}
-              onClick={onApply}
-              type="button"
+          {!noChanges && (
+            <section
+              className={
+                planBlocked
+                  ? "sync-apply-confirmation is-blocked"
+                  : "sync-apply-confirmation"
+              }
+              aria-labelledby="sync-apply-title"
             >
-              Confirm and apply copy plan
-            </button>
-            {applying && (
-              <div className="sync-apply-progress" aria-live="polite">
+              <div>
+                <p className="eyebrow">Explicit confirmation</p>
+                <h4 id="sync-apply-title">
+                  {planBlocked
+                    ? "Resolve plan issues first"
+                    : "Apply this plan?"}
+                </h4>
                 <p>
-                  Status:{" "}
-                  {cancellationRequested
-                    ? "Cancelling safely"
-                    : "Sync in progress"}
+                  Source audio stays untouched. Outgroove copies through
+                  temporary files, quarantines each reviewed removal on the
+                  target, verifies every change, and commits the new manifest
+                  last.
                 </p>
-                <button
-                  disabled={cancellationRequested}
-                  onClick={onCancel}
-                  type="button"
-                >
-                  Cancel active sync
-                </button>
+                {plan.removals.length > 0 && (
+                  <p>
+                    This confirmation includes all {plan.removals.length} exact{" "}
+                    {plan.removals.length === 1 ? "removal" : "removals"} listed
+                    above. Unknown target files are never removed.
+                  </p>
+                )}
               </div>
-            )}
-          </section>
+              <button
+                className="primary"
+                disabled={
+                  busy ||
+                  planBlocked ||
+                  (plan.targetVolume.confirmationRequired &&
+                    !targetVolumeConfirmed)
+                }
+                onClick={onApply}
+                type="button"
+              >
+                {plan.removals.length > 0
+                  ? `Confirm and apply plan with ${plan.removals.length} ${plan.removals.length === 1 ? "removal" : "removals"}`
+                  : "Confirm and apply sync plan"}
+              </button>
+              {applying && (
+                <div className="sync-apply-progress" aria-live="polite">
+                  <p>
+                    Status:{" "}
+                    {cancellationRequested
+                      ? "Cancelling safely"
+                      : "Sync in progress"}
+                  </p>
+                  <button
+                    disabled={cancellationRequested}
+                    onClick={onCancel}
+                    type="button"
+                  >
+                    Cancel active sync
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
         </section>
       )}
 

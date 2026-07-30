@@ -25,6 +25,7 @@ import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { createElectronRadarNotifier } from "./adapters/notifications/electron-radar-notifier";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
+import { ExportDiagnosticReport } from "./application/export-diagnostic-report";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { EditAlbumArtwork } from "./application/edit-album-artwork";
 import { CreateAlbumFolderArtwork } from "./application/create-album-folder-artwork";
@@ -41,6 +42,10 @@ import { RadarBackgroundRefresh } from "./application/radar-background-refresh";
 import { OpenRadarItem } from "./application/open-radar-item";
 import { pathComparisonKey, ScanLibrary } from "./application/scan-library";
 import { registerIpc } from "./ipc/register-ipc";
+import {
+  loadPackagedInspectionSession,
+  writePackagedInspectionReadyMarker,
+} from "./inspection/packaged-inspection";
 import { WorkerMetadataJobRunner } from "./jobs/metadata-runner";
 import { ScanJobCoordinator } from "./jobs/scan-job-coordinator";
 import { contentSecurityPolicy } from "./windows/security-policy";
@@ -49,14 +54,31 @@ import { channels } from "../shared/contracts/channels";
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 declare const OUTGROOVE_ACOUSTID_API_KEY: string | null;
+declare const OUTGROOVE_INSPECTION_BUILD: boolean;
 
 const smokeTest =
   process.argv.includes("--smoke-test") ||
   process.env.OUTGROOVE_SMOKE_TEST === "1";
+const packagedInspection = loadPackagedInspectionSession(
+  OUTGROOVE_INSPECTION_BUILD,
+  process.argv,
+);
+if (packagedInspection && smokeTest)
+  throw new Error(
+    "Packaged inspection and automated smoke modes cannot run together.",
+  );
+if (packagedInspection) {
+  app.setName("Outgroove Inspection");
+  app.setPath("userData", packagedInspection.userData);
+}
 if (smokeTest && process.env.OUTGROOVE_SMOKE_USER_DATA)
   app.setPath("userData", process.env.OUTGROOVE_SMOKE_USER_DATA);
 if (process.platform === "win32")
-  app.setAppUserModelId("com.squirrel.Outgroove.Outgroove");
+  app.setAppUserModelId(
+    packagedInspection
+      ? "com.squirrel.Outgroove.Inspection"
+      : "com.squirrel.Outgroove.Outgroove",
+  );
 
 let database: CatalogDatabase | undefined;
 let scanCatalog: WorkerScanCatalog | undefined;
@@ -65,6 +87,7 @@ let radarBackground: RadarBackgroundRefresh | undefined;
 
 async function createWindow(): Promise<void> {
   const window = new BrowserWindow({
+    title: packagedInspection ? "Outgroove Inspection" : "Outgroove",
     width: 1180,
     height: 780,
     minWidth: 860,
@@ -79,6 +102,11 @@ async function createWindow(): Promise<void> {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
+  if (packagedInspection)
+    window.on("page-title-updated", (event) => {
+      event.preventDefault();
+      window.setTitle("Outgroove Inspection");
+    });
   window.once("ready-to-show", () => window.show());
 
   const databasePath = join(app.getPath("userData"), "outgroove.sqlite3");
@@ -121,6 +149,17 @@ async function createWindow(): Promise<void> {
     scanCatalog,
   );
   const backup = new DatabaseBackupService(database, databasePath);
+  const diagnosticReporter = new ExportDiagnosticReport(database, {
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    platform: process.platform,
+    architecture: process.arch,
+    runtimeVersions: {
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+    },
+  });
   const radar = new RefreshRadar(database, musicBrainz);
   radarBackground = new RadarBackgroundRefresh(
     database,
@@ -151,6 +190,7 @@ async function createWindow(): Promise<void> {
     database,
     qualityQuery,
     backup,
+    diagnosticReporter,
     scanJobs: new ScanJobCoordinator(database, scanner),
     libraryRoots: new ManageLibraryRoots(database),
     artwork,
@@ -189,12 +229,40 @@ async function createWindow(): Promise<void> {
     },
   });
 
+  if (packagedInspection?.fixtureLibraryRoot) {
+    const fixtureRoot = packagedInspection.fixtureLibraryRoot;
+    const root = database.addLibraryRoot(
+      fixtureRoot,
+      pathComparisonKey(fixtureRoot),
+    );
+    const result = await scanner.execute(root.id);
+    if (result.parsed !== 2 || result.errors !== 0)
+      throw new Error(
+        "Packaged inspection could not seed its redistributable fixture Library.",
+      );
+  }
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL)
     await window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   else
     await window.loadFile(
       join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      packagedInspection
+        ? {
+            query: {
+              outgrooveInspection: packagedInspection.sessionId,
+            },
+          }
+        : undefined,
     );
+  if (packagedInspection) {
+    await writePackagedInspectionReadyMarker(packagedInspection, {
+      pid: process.pid,
+      appPath: app.getAppPath(),
+      executablePath: app.getPath("exe"),
+      databasePath,
+    });
+  }
   radarBackground.start();
   window.once("closed", () => {
     radarBackground?.stop();
@@ -210,16 +278,25 @@ async function createWindow(): Promise<void> {
       throw new Error(
         "Packaged discovery, metadata, and SQLite workers could not scan their fixtures.",
       );
-    const qualityPage = await qualityQuery.query({
-      query: "",
-      offset: 0,
-      limit: 20,
-      qualityFilter: "all",
-    });
-    if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
-      throw new Error(
-        "Packaged library data-quality worker returned an invalid page.",
-      );
+    // The loaded renderer owns the production query coordinator and may cancel
+    // its active query as the visible Library view changes. Keep this packaged
+    // worker check independent so renderer timing cannot supersede the smoke
+    // assertion itself.
+    const smokeQualityQuery = new WorkerLibraryQualityQuery(databasePath);
+    try {
+      const qualityPage = await smokeQualityQuery.query({
+        query: "",
+        offset: 0,
+        limit: 20,
+        qualityFilter: "all",
+      });
+      if (qualityPage.offset !== 0 || qualityPage.limit !== 20)
+        throw new Error(
+          "Packaged library data-quality worker returned an invalid page.",
+        );
+    } finally {
+      await smokeQualityQuery.close();
+    }
     const preservationRoot = database.addLibraryRoot(
       join(app.getAppPath(), "fixtures", "audio", "preservation"),
       pathComparisonKey(

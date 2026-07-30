@@ -14,6 +14,19 @@ import { api } from "./api";
 describe("preload saved-filter allowlist", () => {
   beforeEach(() => electron.invoke.mockReset());
 
+  it("exports diagnostics through one fixed path-free channel", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: null });
+
+    await api.exportDiagnosticReport();
+
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.exportDiagnosticReport,
+      {},
+    );
+    expect(api).not.toHaveProperty("writeFile");
+    expect(api).not.toHaveProperty("chooseDiagnosticPath");
+  });
+
   it("maps each saved-filter method to one fixed IPC channel", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: [] });
     await api.listSavedLibraryFilters();
@@ -349,12 +362,36 @@ describe("preload saved-filter allowlist", () => {
       targetChange,
     );
 
+    await api.previewSyncProfileRemoval({ profileId: update.id });
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewSyncProfileRemoval,
+      { profileId: update.id },
+    );
+    await api.applySyncProfileRemoval(targetChange);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.applySyncProfileRemoval,
+      targetChange,
+    );
+
     const history = { profileId: update.id };
     await api.listSyncHistory(history);
     expect(electron.invoke).toHaveBeenLastCalledWith(
       channels.listSyncHistory,
       history,
     );
+
+    const plan = { profileId: update.id, cleanupEnabled: true };
+    await api.planSync(plan);
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.planSync, plan);
+    const apply = {
+      planId: update.id,
+      confirmationToken: "sync-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
+    };
+    await api.applySync(apply);
+    expect(electron.invoke).toHaveBeenLastCalledWith(channels.applySync, apply);
+    expect(api).not.toHaveProperty("deleteFile");
+    expect(api).not.toHaveProperty("invoke");
 
     const cancellation = { planId: update.id };
     await api.cancelSync(cancellation);
@@ -377,6 +414,7 @@ describe("preload saved-filter allowlist", () => {
     const recovery = {
       runId: update.id,
       confirmationToken: "sync-recovery-confirmation-token-long-enough",
+      targetVolumeConfirmed: false,
     };
     await api.applySyncRecovery(recovery);
     expect(electron.invoke).toHaveBeenLastCalledWith(

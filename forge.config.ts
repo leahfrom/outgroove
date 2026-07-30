@@ -12,19 +12,25 @@ import {
 } from "./scripts/macos-release";
 import { bundledFpcalcTarget } from "./src/main/adapters/fingerprint/fpcalc-path";
 
-const macRelease = resolveMacReleaseConfig(process.env);
+const inspectionBuild = process.env.OUTGROOVE_INSPECTION_BUILD === "1";
+const applicationName = inspectionBuild ? "Outgroove Inspection" : "outgroove";
+const executableName = inspectionBuild ? "Outgroove Inspection" : "Outgroove";
+const macRelease = resolveMacReleaseConfig(inspectionBuild ? {} : process.env);
 const fpcalcTarget = bundledFpcalcTarget(process.platform, process.arch);
 
 const config: ForgeConfig = {
   packagerConfig: {
+    name: applicationName,
     // Keep LGPL-covered TagLib WebAssembly binaries physically replaceable in
     // app.asar.unpacked; Electron resolves the original module path through
     // the unpacked mirror without exposing it to the renderer.
     asar: {
       unpack: "**/node_modules/taglib-wasm/dist/*.wasm",
     },
-    executableName: "Outgroove",
-    appBundleId: "de.leahfrom.outgroove",
+    executableName,
+    appBundleId: inspectionBuild
+      ? "de.leahfrom.outgroove.inspection"
+      : "de.leahfrom.outgroove",
     appCategoryType: "public.app-category.music",
     ...(fpcalcTarget
       ? {
