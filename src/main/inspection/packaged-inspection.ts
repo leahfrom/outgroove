@@ -15,6 +15,13 @@ import { z } from "zod";
 const inspectionArgumentPrefix = "--outgroove-inspection-config=";
 const inspectionRootPrefix = "outgroove-inspection-";
 
+function hasInspectionRootPrefix(path: string): boolean {
+  const name = basename(path);
+  return (process.platform === "win32" ? name.toLowerCase() : name).startsWith(
+    inspectionRootPrefix,
+  );
+}
+
 const inspectionConfigSchema = z
   .object({
     protocolVersion: z.literal(1),
@@ -115,7 +122,7 @@ export function loadPackagedInspectionSession(
   const canonicalConfigPath = realpathSync(configPath);
   if (
     !isContained(canonicalTemporaryDirectory, canonicalConfigPath) ||
-    !basename(dirname(canonicalConfigPath)).startsWith(inspectionRootPrefix)
+    !hasInspectionRootPrefix(dirname(canonicalConfigPath))
   )
     throw new Error(
       "Packaged inspection configuration must be inside a generated Outgroove temporary directory.",
@@ -126,7 +133,7 @@ export function loadPackagedInspectionSession(
   const root = existingDirectory(parsed.root, "root");
   if (
     !isContained(canonicalTemporaryDirectory, root) ||
-    !basename(root).startsWith(inspectionRootPrefix)
+    !hasInspectionRootPrefix(root)
   )
     throw new Error(
       "Packaged inspection root must be a generated Outgroove directory inside the OS temporary directory.",

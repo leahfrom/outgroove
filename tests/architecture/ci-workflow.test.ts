@@ -29,7 +29,13 @@ describe("CI workflow triggers", () => {
     expect(workflow).toContain("Native Sync validation (Windows)");
     expect(workflow).toContain("runs-on: windows-2022");
     expect(workflow).toContain("timeout-minutes: 30");
-    expect(workflow.match(/npm run verify/gu)).toHaveLength(2);
+    expect(workflow).toContain(
+      "npm test -- --maxWorkers=2 --testTimeout=15000",
+    );
+    expect(workflow.match(/npm run format:check/gu)).toHaveLength(1);
+    expect(workflow.match(/npm run lint/gu)).toHaveLength(1);
+    expect(workflow.match(/npm run typecheck/gu)).toHaveLength(1);
+    expect(workflow.match(/npm run version:check/gu)).toHaveLength(1);
     expect(workflow.match(/npm run package/gu)).toHaveLength(2);
     expect(workflow.match(/npm run test:smoke/gu)).toHaveLength(2);
     expect(workflow).not.toContain("continue-on-error");
