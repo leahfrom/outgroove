@@ -8,6 +8,9 @@ export default defineConfig({
     OUTGROOVE_ACOUSTID_API_KEY: JSON.stringify(
       process.env.OUTGROOVE_ACOUSTID_API_KEY ?? null,
     ),
+    OUTGROOVE_INSPECTION_BUILD: JSON.stringify(
+      process.env.OUTGROOVE_INSPECTION_BUILD === "1",
+    ),
   },
   build: {
     rollupOptions: {

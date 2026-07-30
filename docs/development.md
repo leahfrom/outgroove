@@ -37,6 +37,7 @@ npm test
 npm run verify
 npm run package
 npm run test:smoke
+npm run inspect:package
 npm run make
 npm run fixtures:generate
 npm run benchmark:library
@@ -49,6 +50,37 @@ into operating-system temporary directories. They never scan or modify a real
 music library or mounted device. The Library benchmarks similarly create
 temporary generated data; their interpretation is documented in the
 [performance baseline](performance-baseline.md).
+
+## Packaged-app inspection
+
+Use the dedicated inspection harness for manual accessibility, responsive
+layout, and Computer Use checks:
+
+```sh
+npm run inspect:package
+```
+
+The command builds a production-equivalent package with an inspection-only
+compile-time gate and a distinct **Outgroove Inspection** application identity
+and package output. It creates one
+`outgroove-inspection-*` directory under the operating-system temporary
+directory, copies in the redistributable preservation fixture, launches
+the app, and prints one `OUTGROOVE_INSPECTION_READY` JSON record. That record
+contains the exact app path, Electron PID, user-data/database path, fixture
+target, session ID, and configuration path for automation to verify before
+interacting.
+
+The renderer displays an **Isolated inspection profile** banner for the same
+session. A normal package compiles this startup path out and cannot accept the
+inspection configuration argument. The inspection build also refuses paths
+outside its generated temporary root, symlink escapes, a reused ready marker,
+or combined smoke/inspection mode.
+
+Leave the command running during inspection. Press `Ctrl+C` when finished; the
+harness terminates the marker-recorded Electron process and removes the whole
+temporary inspection directory. Use `npm run inspect:package -- --empty` only
+when an empty disposable catalog is specifically needed. The command never
+uses a real catalog, music library, or mounted DAP.
 
 ## Platform-specific checks
 
