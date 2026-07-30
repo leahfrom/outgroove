@@ -42,7 +42,20 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: npm run flow:validate-release-tag
-      - run: npm run verify
+      - if: runner.os != 'Windows'
+        run: npm run verify
+      # Match the proven Windows PR gate: the complete suite needs bounded
+      # concurrency and a wider per-test timeout on the hosted x64 runner.
+      - if: runner.os == 'Windows'
+        run: npm run format:check
+      - if: runner.os == 'Windows'
+        run: npm run lint
+      - if: runner.os == 'Windows'
+        run: npm run typecheck
+      - if: runner.os == 'Windows'
+        run: npm run version:check
+      - if: runner.os == 'Windows'
+        run: npm test -- --maxWorkers=2 --testTimeout=15000
       - name: Prepare macOS signing and notarization
         if: runner.os == 'macOS'
         env:
@@ -88,8 +101,32 @@ jobs:
           pattern: outgroove-${{ github.ref_name }}-*
           path: release-assets
           merge-multiple: true
+      - name: Flatten and validate release packages
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          mkdir release-packages
+          expected=(
+            "outgroove-$release_version-arm64.dmg"
+            "outgroove-win32-x64-$release_version.zip"
+            "outgroove-$release_version Setup.exe"
+            "outgroove-linux-x64-$release_version.zip"
+          )
+          for name in "${expected[@]}"; do
+            match=""
+            count=0
+            while IFS= read -r -d '' candidate; do
+              match="$candidate"
+              count=$((count + 1))
+            done < <(find release-assets -type f -name "$name" -print0)
+            if [[ "$count" -ne 1 ]]; then
+              echo "Expected exactly one $name, found $count." >&2
+              exit 1
+            fi
+            cp "$match" "release-packages/$name"
+          done
       - name: Create checksums
-        run: sha256sum release-assets/*.dmg release-assets/*.zip release-assets/*.exe > release-assets/SHA256SUMS.txt
+        working-directory: release-packages
+        run: sha256sum *.dmg *.zip *.exe > SHA256SUMS.txt
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,9 +134,11 @@ jobs:
             Automated Outgroove test build for macOS arm64, Windows x64, and Linux x64. macOS uses a signed, notarized drag-to-Applications DMG. Windows includes both a portable ZIP and a Squirrel Setup application; native Radar notifications require the installed application.
 
             The macOS application and DMG use Developer ID signing, and the final DMG has been notarized and stapled. Windows remains unsigned, so SmartScreen may warn or block a first launch. This prerelease is intended for controlled fixture testing; back up real music before authorizing any metadata write.
+
+            Automated Sync validation uses isolated folder-backed targets on native APFS, NTFS, and Linux runner filesystems. Physical exFAT media, a real DAP, macOS Intel, and manual Windows or Linux desktop workflows were not tested for this release.
         run: |
           release_version="${GITHUB_REF_NAME#v}"
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+          gh release create "$GITHUB_REF_NAME" release-packages/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Outgroove $release_version" \
             --prerelease \

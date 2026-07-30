@@ -25,13 +25,38 @@ describe("release workflow", () => {
     expect(workflow).toContain("out/make/*.dmg");
     expect(workflow).not.toContain("out/make/zip/darwin/");
     expect(workflow).toContain("out/make/squirrel.windows/x64/*Setup.exe");
+    expect(workflow).toContain("Flatten and validate release packages");
+    expect(workflow).toContain('"outgroove-win32-x64-$release_version.zip"');
+    expect(workflow).toContain('"outgroove-$release_version Setup.exe"');
+    expect(workflow).toContain("sha256sum *.dmg *.zip *.exe");
     expect(workflow).toContain(
-      "sha256sum release-assets/*.dmg release-assets/*.zip release-assets/*.exe",
+      'gh release create "$GITHUB_REF_NAME" release-packages/*',
     );
     expect(workflow).toContain("path: ${{ matrix.package-path }}");
     expect(workflow).toContain('release_version="${GITHUB_REF_NAME#v}"');
     expect(workflow).toContain('--title "Outgroove $release_version"');
     expect(workflow).not.toContain("pull_request:");
+  });
+
+  it("runs the complete Windows suite with the proven hosted-runner bounds", () => {
+    expect(workflow).toContain(
+      "if: runner.os != 'Windows'\n        run: npm run verify",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run format:check",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run lint",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run typecheck",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm run version:check",
+    );
+    expect(workflow).toContain(
+      "if: runner.os == 'Windows'\n        run: npm test -- --maxWorkers=2 --testTimeout=15000",
+    );
   });
 
   it("limits write permission to the publishing job", () => {
