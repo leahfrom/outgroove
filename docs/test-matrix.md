@@ -11,6 +11,12 @@ Artifact checksums are recorded only after all release documentation is final
 and the macOS and Linux packages have been rebuilt from that exact source
 state.
 
+Routine pull-request CI also runs the complete verification suite, real NTFS
+exclusive-lock tests, native persistent-volume lookup, Forge packaging, and an
+isolated packaged smoke test on Windows x64. This is a required regression
+gate, but it does not replace the fresh release-candidate evidence or the
+manual removable-storage matrix below.
+
 | Area                                                              | macOS arm64                                                             | Windows x64                                          | Linux x64                                                       |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
 | Strict TypeScript / lint / unit + temp integration tests          | v0.13.0 passed: 403 tests, 2 intentional skips                          | Fresh native v0.13.0 evidence required on release PR | v0.13.0 passed in x86-64 Debian Docker: 403 tests, 2 skips      |
@@ -23,9 +29,11 @@ state.
 | Real DAP / SD card                                                | Not run                                                                 | Not run                                              | Not run                                                         |
 | Signed/notarized artifact                                         | Developer ID DMG workflow implemented; first credentialed build pending | Windows remains unsigned                             | Not applicable                                                  |
 
-No cross-platform support claim should be made from CI alone. The Windows lock
-test exercises real NTFS sharing rules but not a packaged UI workflow. macOS
-Intel, real exFAT behavior, Linux mounts, and actual DAP playlist behavior
-remain manual release checks. The exFAT row changes to passed only after the
-controlled procedure in `docs/filesystem-conformance.md` is run on that exact
-OS/filesystem combination.
+No cross-platform support claim should be made from CI alone. The Windows
+runner exercises real NTFS sharing rules, persistent identity, packaging, and
+an automated packaged launch, but not the complete packaged UI workflow or a
+removable target. macOS Intel, real exFAT behavior, Linux mounts, and actual
+DAP playlist behavior remain manual release checks. The exFAT row changes to
+passed only after the controlled procedure in
+`docs/filesystem-conformance.md` is run on that exact OS/filesystem
+combination.

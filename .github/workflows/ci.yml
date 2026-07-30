@@ -32,3 +32,27 @@ jobs:
       - run: npm run verify
       - run: npm run package
       - run: xvfb-run -a npm run test:smoke
+
+  windows-native-sync:
+    name: Native Sync validation (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Validate Gitflow pull request
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: npm run flow:validate-pr
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run version:check
+      - run: npm test -- --maxWorkers=2 --testTimeout=15000
+      - run: npm run package
+      - run: npm run test:smoke

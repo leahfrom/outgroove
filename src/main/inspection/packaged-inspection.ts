@@ -1,4 +1,10 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { link, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
@@ -14,6 +20,13 @@ import { z } from "zod";
 
 const inspectionArgumentPrefix = "--outgroove-inspection-config=";
 const inspectionRootPrefix = "outgroove-inspection-";
+
+function hasInspectionRootPrefix(path: string): boolean {
+  const name = basename(path);
+  return (process.platform === "win32" ? name.toLowerCase() : name).startsWith(
+    inspectionRootPrefix,
+  );
+}
 
 const inspectionConfigSchema = z
   .object({
@@ -65,6 +78,22 @@ function isContained(root: string, candidate: string): boolean {
   );
 }
 
+function sameFilesystemObject(first: string, second: string): boolean {
+  const firstInfo = statSync(first);
+  const secondInfo = statSync(second);
+  return firstInfo.dev === secondInfo.dev && firstInfo.ino === secondInfo.ino;
+}
+
+function isFilesystemContained(root: string, candidate: string): boolean {
+  let current = candidate;
+  for (;;) {
+    if (sameFilesystemObject(root, current)) return true;
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
 function existingDirectory(path: string, label: string): string {
   if (!isAbsolute(path))
     throw new Error(`Packaged inspection ${label} must be absolute.`);
@@ -80,7 +109,7 @@ function containedExistingDirectory(
   label: string,
 ): string {
   const canonical = existingDirectory(path, label);
-  if (!isContained(root, canonical))
+  if (!isFilesystemContained(root, canonical))
     throw new Error(
       `Packaged inspection ${label} must stay inside its temporary root.`,
     );
@@ -112,11 +141,16 @@ export function loadPackagedInspectionSession(
     temporaryDirectory,
     "temporary directory",
   );
-  const canonicalConfigPath = realpathSync(configPath);
+  const suppliedRoot = dirname(resolve(configPath));
   if (
-    !isContained(canonicalTemporaryDirectory, canonicalConfigPath) ||
-    !basename(dirname(canonicalConfigPath)).startsWith(inspectionRootPrefix)
+    !hasInspectionRootPrefix(suppliedRoot) ||
+    lstatSync(suppliedRoot).isSymbolicLink()
   )
+    throw new Error(
+      "Packaged inspection configuration must be inside a generated Outgroove temporary directory.",
+    );
+  const canonicalConfigPath = realpathSync(configPath);
+  if (!isFilesystemContained(canonicalTemporaryDirectory, canonicalConfigPath))
     throw new Error(
       "Packaged inspection configuration must be inside a generated Outgroove temporary directory.",
     );
@@ -124,17 +158,9 @@ export function loadPackagedInspectionSession(
     JSON.parse(readFileSync(canonicalConfigPath, "utf8")) as unknown,
   );
   const root = existingDirectory(parsed.root, "root");
-  if (
-    !isContained(canonicalTemporaryDirectory, root) ||
-    !basename(root).startsWith(inspectionRootPrefix)
-  )
+  if (!sameFilesystemObject(root, dirname(canonicalConfigPath)))
     throw new Error(
       "Packaged inspection root must be a generated Outgroove directory inside the OS temporary directory.",
-    );
-
-  if (!isContained(root, canonicalConfigPath))
-    throw new Error(
-      "Packaged inspection configuration must stay inside its temporary root.",
     );
 
   const userData = containedExistingDirectory(
@@ -161,11 +187,11 @@ export function loadPackagedInspectionSession(
     dirname(parsed.readyMarker),
     "ready-marker parent",
   );
-  const readyMarker = resolve(markerParent, basename(parsed.readyMarker));
-  if (!isContained(root, readyMarker))
+  if (!isFilesystemContained(root, markerParent))
     throw new Error(
       "Packaged inspection ready marker must stay inside its temporary root.",
     );
+  const readyMarker = resolve(markerParent, basename(parsed.readyMarker));
   if (existsSync(readyMarker))
     throw new Error(
       "Packaged inspection ready marker already exists; refusing to overwrite it.",
