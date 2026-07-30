@@ -16,6 +16,8 @@ export const api: OutgrooveApi = {
   getLatestScanJob: () => ipcRenderer.invoke(channels.getLatestScanJob, {}),
   createDatabaseBackup: () =>
     ipcRenderer.invoke(channels.createDatabaseBackup, {}),
+  exportDiagnosticReport: () =>
+    ipcRenderer.invoke(channels.exportDiagnosticReport, {}),
   chooseDatabaseRestore: () =>
     ipcRenderer.invoke(channels.chooseDatabaseRestore, {}),
   applyDatabaseRestore: (request) =>

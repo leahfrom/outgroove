@@ -610,6 +610,11 @@ export interface SavedLibraryFilterDto {
 export interface DatabaseBackupResultDto {
   readonly path: string;
 }
+export interface DiagnosticReportExportResultDto {
+  readonly path: string;
+  readonly byteLength: number;
+  readonly sha256: string;
+}
 export interface DatabaseRestorePreviewDto {
   readonly operationId: string;
   readonly confirmationToken: string;
@@ -1089,6 +1094,9 @@ export interface OutgrooveApi {
   ): Promise<Result<ScanJobDto>>;
   getLatestScanJob(): Promise<Result<ScanJobDto | null>>;
   createDatabaseBackup(): Promise<Result<DatabaseBackupResultDto | null>>;
+  exportDiagnosticReport(): Promise<
+    Result<DiagnosticReportExportResultDto | null>
+  >;
   chooseDatabaseRestore(): Promise<Result<DatabaseRestorePreviewDto | null>>;
   applyDatabaseRestore(
     request: z.infer<typeof databaseRestoreApplyRequestSchema>,

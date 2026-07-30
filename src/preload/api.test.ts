@@ -14,6 +14,19 @@ import { api } from "./api";
 describe("preload saved-filter allowlist", () => {
   beforeEach(() => electron.invoke.mockReset());
 
+  it("exports diagnostics through one fixed path-free channel", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: null });
+
+    await api.exportDiagnosticReport();
+
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.exportDiagnosticReport,
+      {},
+    );
+    expect(api).not.toHaveProperty("writeFile");
+    expect(api).not.toHaveProperty("chooseDiagnosticPath");
+  });
+
   it("maps each saved-filter method to one fixed IPC channel", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: [] });
     await api.listSavedLibraryFilters();

@@ -7,6 +7,7 @@ export const channels = {
   cancelScan: "library:cancel-scan",
   getLatestScanJob: "library:latest-scan-job",
   createDatabaseBackup: "database:create-backup",
+  exportDiagnosticReport: "diagnostics:export-report",
   chooseDatabaseRestore: "database:choose-restore",
   applyDatabaseRestore: "database:apply-restore",
   queryLibrary: "library:query",

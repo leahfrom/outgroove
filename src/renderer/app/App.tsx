@@ -1775,6 +1775,22 @@ export function App(): React.JSX.Element {
     }
   };
 
+  const exportDiagnosticReport = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.outgroove.exportDiagnosticReport();
+      if (!result.ok) setNotice(result.error.message, "error");
+      else if (!result.value) setNotice("Diagnostic report export cancelled.");
+      else
+        setNotice(
+          `Path-redacted diagnostic report verified and saved to ${result.value.path}`,
+          "success",
+        );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const chooseRestore = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -5067,6 +5083,7 @@ export function App(): React.JSX.Element {
           onConfirmRestore={() => void applyRestore()}
           onConfirmRootRemoval={() => void applyRootRemoval()}
           onCreateBackup={() => void createBackup()}
+          onExportDiagnosticReport={() => void exportDiagnosticReport()}
           onPreviewRootRemoval={(selectedRootId) =>
             void previewRootRemoval(selectedRootId)
           }
