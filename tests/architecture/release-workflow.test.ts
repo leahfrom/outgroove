@@ -25,8 +25,12 @@ describe("release workflow", () => {
     expect(workflow).toContain("out/make/*.dmg");
     expect(workflow).not.toContain("out/make/zip/darwin/");
     expect(workflow).toContain("out/make/squirrel.windows/x64/*Setup.exe");
+    expect(workflow).toContain("Flatten and validate release packages");
+    expect(workflow).toContain('"outgroove-win32-x64-$release_version.zip"');
+    expect(workflow).toContain('"outgroove-$release_version Setup.exe"');
+    expect(workflow).toContain("sha256sum *.dmg *.zip *.exe");
     expect(workflow).toContain(
-      "sha256sum release-assets/*.dmg release-assets/*.zip release-assets/*.exe",
+      'gh release create "$GITHUB_REF_NAME" release-packages/*',
     );
     expect(workflow).toContain("path: ${{ matrix.package-path }}");
     expect(workflow).toContain('release_version="${GITHUB_REF_NAME#v}"');

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.2 — 2026-07-30
+
+- Validate and flatten the four exact native release packages before checksum
+  generation and publication. Windows ZIP and Setup artifacts retain nested
+  directories when downloaded from a multi-path Actions artifact; publication
+  now finds each expected versioned basename exactly once and fails closed on
+  missing or duplicate packages.
+
 ## 0.17.1 — 2026-07-30
 
 - Run the exact same complete Windows release gate that passed routine
