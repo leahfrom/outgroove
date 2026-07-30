@@ -435,8 +435,14 @@ function api(applyVerified: boolean): OutgrooveApi {
 }
 
 describe("tag edit UI safety states", () => {
+  let scrollToMock = vi.fn();
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    scrollToMock = vi.fn();
+    vi.spyOn(window, "scrollTo").mockImplementation((...args) => {
+      scrollToMock(...args);
+    });
   });
 
   it("uses keyboard-operable primary navigation with one current view", async () => {
@@ -2514,6 +2520,8 @@ describe("tag edit UI safety states", () => {
   });
 
   it("opens an album with the keyboard and restores its Library focus", async () => {
+    vi.spyOn(window, "scrollX", "get").mockReturnValue(18);
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
     const mockApi = api(true);
     const loadArtwork = vi
       .spyOn(mockApi, "loadAlbumArtwork")
@@ -2589,6 +2597,141 @@ describe("tag edit UI safety states", () => {
         name: /^Second Album/u,
       }),
     ).toHaveFocus();
+    expect(scrollToMock).toHaveBeenLastCalledWith(18, 640);
+  });
+
+  it("preserves searched page context through pointer Back and Forward", async () => {
+    const firstPageAlbums = Array.from({ length: 20 }, (_, index) => ({
+      ...album,
+      id: `page-album-${index}`,
+      title: `Page Album ${String(index + 1).padStart(2, "0")}`,
+      tracks: album.tracks.map((track) => ({
+        ...track,
+        id: `page-track-${index}`,
+        path: `/fixture/page-${index}.mp3`,
+      })),
+    }));
+    const mockApi = api(true);
+    const queryLibrary = vi
+      .spyOn(mockApi, "queryLibrary")
+      .mockImplementation((request) =>
+        Promise.resolve({
+          ok: true,
+          value: {
+            albums: request.offset === 20 ? [secondAlbum] : firstPageAlbums,
+            artists: [],
+            formats: [],
+            folders: [],
+            tracks: [],
+            scanErrors: [],
+            totalItems: 21,
+            offset: request.offset,
+            limit: request.limit,
+          },
+        }),
+      );
+    vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(720);
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+
+    const search = await screen.findByRole("searchbox", {
+      name: "Search Library",
+    });
+    await user.type(search, "preserved context");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "preserved context",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "preserved context",
+        view: "albums",
+        offset: 20,
+        limit: 20,
+      }),
+    );
+
+    const second = within(
+      await screen.findByRole("list", { name: "Albums" }),
+    ).getByRole("button", { name: /^Second Album/u });
+    second.focus();
+    await user.keyboard("{Enter}");
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Second Album",
+      }),
+    ).toHaveFocus();
+
+    fireEvent.mouseUp(window, { button: 1 });
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Second Album",
+      }),
+    ).toBeVisible();
+
+    fireEvent.mouseUp(window, { button: 3 });
+    const restoredAlbums = await screen.findByRole("list", { name: "Albums" });
+    expect(
+      screen.getByRole("searchbox", { name: "Search Library" }),
+    ).toHaveValue("preserved context");
+    expect(screen.getByText(/21.*of 21/u)).toBeVisible();
+    expect(
+      within(restoredAlbums).getByRole("button", {
+        name: /^Second Album/u,
+      }),
+    ).toHaveFocus();
+    expect(scrollToMock).toHaveBeenLastCalledWith(12, 720);
+
+    fireEvent.mouseUp(window, { button: 4 });
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Second Album",
+      }),
+    ).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(
+      within(await screen.findByRole("list", { name: "Albums" })).getByRole(
+        "button",
+        { name: /^Second Album/u },
+      ),
+    ).toHaveFocus();
+    expect(scrollToMock).toHaveBeenLastCalledWith(12, 720);
+    const restoredSearch = await screen.findByRole("searchbox", {
+      name: "Search Library",
+    });
+    await user.clear(restoredSearch);
+    await user.type(restoredSearch, "changed context");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(queryLibrary).toHaveBeenLastCalledWith({
+        query: "changed context",
+        view: "albums",
+        offset: 0,
+        limit: 20,
+      }),
+    );
+    fireEvent.mouseUp(window, { button: 4 });
+    expect(
+      screen.queryByRole("heading", {
+        level: 2,
+        name: "Second Album",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows per-file before/after preview before exposing explicit confirmation", async () => {
