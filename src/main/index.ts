@@ -25,6 +25,7 @@ import { SafeMetadataWriter } from "./adapters/metadata/metadata-writer";
 import { createElectronRadarNotifier } from "./adapters/notifications/electron-radar-notifier";
 import { DeviceSync } from "./application/device-sync";
 import { DatabaseBackupService } from "./application/database-backup";
+import { ExportDiagnosticReport } from "./application/export-diagnostic-report";
 import { EditAlbumTitle } from "./application/edit-album-title";
 import { EditAlbumArtwork } from "./application/edit-album-artwork";
 import { CreateAlbumFolderArtwork } from "./application/create-album-folder-artwork";
@@ -148,6 +149,17 @@ async function createWindow(): Promise<void> {
     scanCatalog,
   );
   const backup = new DatabaseBackupService(database, databasePath);
+  const diagnosticReporter = new ExportDiagnosticReport(database, {
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    platform: process.platform,
+    architecture: process.arch,
+    runtimeVersions: {
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+    },
+  });
   const radar = new RefreshRadar(database, musicBrainz);
   radarBackground = new RadarBackgroundRefresh(
     database,
@@ -178,6 +190,7 @@ async function createWindow(): Promise<void> {
     database,
     qualityQuery,
     backup,
+    diagnosticReporter,
     scanJobs: new ScanJobCoordinator(database, scanner),
     libraryRoots: new ManageLibraryRoots(database),
     artwork,

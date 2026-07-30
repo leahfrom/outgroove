@@ -16,6 +16,7 @@ const callbacks = {
   onConfirmRestore: vi.fn(),
   onConfirmRootRemoval: vi.fn(),
   onCreateBackup: vi.fn(),
+  onExportDiagnosticReport: vi.fn(),
   onPreviewRootRemoval: vi.fn(),
   onRestoreBackup: vi.fn(),
   onScanRoot: vi.fn(),
@@ -149,5 +150,32 @@ describe("SettingsView", () => {
     keepCurrent.focus();
     await user.keyboard("{Enter}");
     expect(callbacks.onCancelRestore).toHaveBeenCalledOnce();
+  });
+
+  it("discloses diagnostic exclusions and provides a keyboard export action", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsView
+        {...callbacks}
+        activeSection="database"
+        busy={false}
+        libraryRoots={[]}
+        restorePreview={undefined}
+        rootId={undefined}
+        rootRemovalPreview={undefined}
+        scanActive={false}
+        scanJob={undefined}
+      />,
+    );
+
+    expect(screen.getByText(/paths, filenames, tags/iu)).toHaveTextContent(
+      "provider responses, stable identifiers, and error text are excluded",
+    );
+    const exportButton = screen.getByRole("button", {
+      name: "Export path-redacted report",
+    });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    expect(callbacks.onExportDiagnosticReport).toHaveBeenCalledOnce();
   });
 });

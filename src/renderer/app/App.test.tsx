@@ -188,6 +188,7 @@ function api(applyVerified: boolean): OutgrooveApi {
     cancelScan: vi.fn(),
     getLatestScanJob: vi.fn(() => Promise.resolve({ ok: true, value: null })),
     createDatabaseBackup: vi.fn(),
+    exportDiagnosticReport: vi.fn(),
     chooseDatabaseRestore: vi.fn(),
     applyDatabaseRestore: vi.fn(),
     listSavedLibraryFilters: vi.fn(() =>
@@ -6958,6 +6959,34 @@ describe("tag edit UI safety states", () => {
     expect(await screen.findByText("Backup disk is full")).toBeVisible();
     expect(
       screen.queryByText(/backup verified and saved/iu),
+    ).not.toBeInTheDocument();
+  });
+
+  it("exports diagnostics through the path-free API and reports cancellation honestly", async () => {
+    const mockApi = api(true);
+    const exportDiagnosticReport = vi.fn(() =>
+      Promise.resolve({ ok: true as const, value: null }),
+    );
+    Object.assign(mockApi, { exportDiagnosticReport });
+    Object.defineProperty(window, "outgroove", {
+      configurable: true,
+      value: mockApi,
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await openPrimaryView(user, "Settings");
+    await user.click(screen.getByRole("button", { name: "Database safety" }));
+    const exportButton = await screen.findByRole("button", {
+      name: "Export path-redacted report",
+    });
+    exportButton.focus();
+    await user.keyboard("{Enter}");
+    expect(exportDiagnosticReport).toHaveBeenCalledWith();
+    expect(
+      await screen.findByText("Diagnostic report export cancelled."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/diagnostic report verified and saved/iu),
     ).not.toBeInTheDocument();
   });
 });

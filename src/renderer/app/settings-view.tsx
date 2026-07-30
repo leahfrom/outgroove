@@ -26,6 +26,7 @@ export function SettingsView({
   onConfirmRestore,
   onConfirmRootRemoval,
   onCreateBackup,
+  onExportDiagnosticReport,
   onPreviewRootRemoval,
   onRestoreBackup,
   onScanRoot,
@@ -45,6 +46,7 @@ export function SettingsView({
   readonly onConfirmRestore: () => void;
   readonly onConfirmRootRemoval: () => void;
   readonly onCreateBackup: () => void;
+  readonly onExportDiagnosticReport: () => void;
   readonly onPreviewRootRemoval: (rootId: string) => void;
   readonly onRestoreBackup: () => void;
   readonly onScanRoot: (rootId: string) => void;
@@ -349,6 +351,23 @@ export function SettingsView({
                 type="button"
               >
                 Choose backup to restore
+              </button>
+            </article>
+            <article>
+              <p className="eyebrow">Privacy-safe support</p>
+              <h3>Export diagnostic report</h3>
+              <p>
+                Save runtime versions and aggregate catalog counts for
+                troubleshooting. Paths, filenames, tags, provider responses,
+                stable identifiers, and error text are excluded.
+              </p>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={onExportDiagnosticReport}
+                type="button"
+              >
+                Export path-redacted report
               </button>
             </article>
           </div>

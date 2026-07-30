@@ -61,6 +61,7 @@ import type { CatalogDatabase } from "../adapters/database/catalog-database";
 import type { WorkerLibraryQualityQuery } from "../adapters/database/worker-library-quality-query";
 import { inspectTargetFilesystem } from "../adapters/filesystem/target-volume";
 import type { DatabaseBackupService } from "../application/database-backup";
+import type { ExportDiagnosticReport } from "../application/export-diagnostic-report";
 import type { DeviceSync } from "../application/device-sync";
 import type { EditAlbumTitle } from "../application/edit-album-title";
 import type { EditAlbumArtwork } from "../application/edit-album-artwork";
@@ -84,6 +85,7 @@ interface Dependencies {
   database: CatalogDatabase;
   qualityQuery: WorkerLibraryQualityQuery;
   backup: DatabaseBackupService;
+  diagnosticReporter: ExportDiagnosticReport;
   scanJobs: ScanJobCoordinator;
   libraryRoots: ManageLibraryRoots;
   artwork: LoadAlbumArtwork;
@@ -190,6 +192,20 @@ export function registerIpc(
       return selected.canceled || !selected.filePath
         ? null
         : dependencies.backup.exportTo(selected.filePath);
+    }),
+  );
+  ipcMain.handle(
+    channels.exportDiagnosticReport,
+    createValidatedHandler(emptyRequestSchema, async () => {
+      const date = new Date().toISOString().slice(0, 10);
+      const selected = await dialog.showSaveDialog(dependencies.window, {
+        title: "Export path-redacted Outgroove diagnostic report",
+        defaultPath: `outgroove-diagnostics-${date}.json`,
+        filters: [{ name: "JSON report", extensions: ["json"] }],
+      });
+      return selected.canceled || !selected.filePath
+        ? null
+        : dependencies.diagnosticReporter.exportTo(selected.filePath);
     }),
   );
   ipcMain.handle(

@@ -38,7 +38,7 @@ const viewCopy: Record<
   },
   settings: {
     label: "Settings",
-    description: "Manage Library folders and database safety.",
+    description: "Manage Library folders, database safety, and diagnostics.",
   },
 };
 

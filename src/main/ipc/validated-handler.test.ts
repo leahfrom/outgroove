@@ -522,6 +522,26 @@ describe("validated IPC handlers", () => {
     expect(useCase).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps diagnostic destination selection out of renderer requests", async () => {
+    const exportReport = vi.fn(() => ({ pathRedacted: true }));
+    const handler = createValidatedHandler(emptyRequestSchema, exportReport);
+    await expect(handler({}, {})).resolves.toMatchObject({
+      ok: true,
+      value: { pathRedacted: true },
+    });
+    for (const request of [
+      { path: "/private/tmp/report.json" },
+      { destinationPath: "C:\\Users\\Fixture\\report.json" },
+      { includePaths: true },
+      { includeErrors: true },
+    ])
+      await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+    expect(exportReport).toHaveBeenCalledTimes(1);
+  });
+
   it("validates bounded, distinct multi-album DAP selections without accepting target paths", async () => {
     const useCase = vi.fn();
     const handler = createValidatedHandler(syncProfileRequestSchema, useCase);

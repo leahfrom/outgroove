@@ -13,7 +13,7 @@ const sections: readonly {
   {
     id: "database",
     label: "Database safety",
-    description: "Create backups or review a verified restore.",
+    description: "Back up, restore, or export support diagnostics.",
   },
 ];
 
