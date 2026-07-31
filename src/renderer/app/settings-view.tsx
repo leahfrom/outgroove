@@ -239,8 +239,9 @@ export function SettingsView({
               <p className="eyebrow">Protect your setup</p>
               <h2 id="database-safety">Backups and support</h2>
               <p>
-                Backups contain the local catalog, edit history, saved filters,
-                favorite artists, and DAP profiles—never audio or DAP files.
+                A backup saves your Outgroove catalog and setup, including edit
+                history, saved filters, favorite artists, and DAP profiles. It
+                does not include or change your music or player files.
               </p>
             </div>
           </div>
@@ -248,16 +249,16 @@ export function SettingsView({
           {restorePreview && (
             <section
               className="settings-confirmation settings-restore-confirmation"
-              aria-label="Database restore confirmation"
+              aria-label="Backup restore confirmation"
             >
               <div>
                 <p className="eyebrow">Backup checked · review required</p>
                 <h3 ref={restoreHeadingRef} tabIndex={-1}>
-                  Replace the current Outgroove database?
+                  Replace your current Outgroove data?
                 </h3>
                 <p>
-                  <strong>{restorePreview.sourceName}</strong> passed integrity
-                  and schema checks.
+                  Outgroove checked <strong>{restorePreview.sourceName}</strong>{" "}
+                  and can read it safely.
                 </p>
               </div>
               <dl className="settings-summary settings-database-summary">
@@ -290,14 +291,15 @@ export function SettingsView({
                   <dd>{restorePreview.summary.radarItems}</dd>
                 </div>
                 <div>
-                  <dt>Schema</dt>
+                  <dt>Backup format</dt>
                   <dd>v{restorePreview.schemaVersion}</dd>
                 </div>
               </dl>
               <p className="settings-safety-statement">
-                Restoring replaces the current database and restarts Outgroove.
-                An automatic rollback backup is created and verified first.
-                Source audio and DAP files remain untouched.
+                This replaces your current catalog and saved setup, then
+                restarts Outgroove. First, Outgroove saves and checks a safety
+                backup of what you have now. Your music and player files remain
+                untouched.
               </p>
               <div className="actions">
                 <button
@@ -306,7 +308,7 @@ export function SettingsView({
                   onClick={onConfirmRestore}
                   type="button"
                 >
-                  Confirm restore and restart
+                  Restore this backup and restart
                 </button>
                 <button
                   className="secondary"
@@ -314,7 +316,7 @@ export function SettingsView({
                   onClick={onCancelRestore}
                   type="button"
                 >
-                  Keep current database
+                  Keep current Outgroove data
                 </button>
               </div>
             </section>
@@ -323,43 +325,43 @@ export function SettingsView({
           <div className="settings-database-actions">
             <article>
               <p className="eyebrow">Keep a copy</p>
-              <h3>Create a backup</h3>
+              <h3>Save an Outgroove backup</h3>
               <p>
-                Choose a destination for a verified copy of Outgroove’s current
-                database.
+                Choose where to save a checked copy of your catalog, edit
+                history, filters, favorites, and DAP profiles.
               </p>
               <button
                 disabled={busy || scanActive}
                 onClick={onCreateBackup}
                 type="button"
               >
-                Create database backup
+                Save Outgroove backup
               </button>
             </article>
             <article className="settings-restore-action">
               <p className="eyebrow">Bring back a backup</p>
-              <h3>Restore from a backup</h3>
+              <h3>Use an earlier backup</h3>
               <p>
-                The selected file is verified first. Nothing is replaced until
-                you review its contents and confirm a restart.
+                Outgroove checks the backup and shows what it contains. Nothing
+                is replaced until you review it and confirm.
               </p>
               <button
-                aria-label="Restore from backup"
+                aria-label="Choose an Outgroove backup"
                 className="secondary"
                 disabled={busy || scanActive}
                 onClick={onRestoreBackup}
                 type="button"
               >
-                Choose backup to restore
+                Choose an Outgroove backup
               </button>
             </article>
             <article>
               <p className="eyebrow">Help with a problem</p>
-              <h3>Export a private support report</h3>
+              <h3>Save a privacy-safe support report</h3>
               <p>
-                Save runtime versions and aggregate catalog counts for
-                troubleshooting. Paths, filenames, tags, provider responses,
-                stable identifiers, and error text are excluded.
+                The report includes app and system versions plus overall Library
+                counts. It leaves out paths, filenames, tags, online results,
+                identifying IDs, and error details.
               </p>
               <button
                 className="secondary"
@@ -367,7 +369,7 @@ export function SettingsView({
                 onClick={onExportDiagnosticReport}
                 type="button"
               >
-                Export private support report
+                Save support report
               </button>
             </article>
           </div>

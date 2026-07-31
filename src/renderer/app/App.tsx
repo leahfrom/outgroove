@@ -1078,7 +1078,7 @@ export function App(): React.JSX.Element {
       setScanJob(job);
       if (job.state === "completed" && job.result) {
         setNotice(
-          `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+          `Scan finished: ${job.result.parsed} added or refreshed, ${job.result.unchanged} already up to date, ${job.result.errors} couldn’t be read.`,
           job.result.errors === 0 ? "success" : "error",
         );
         void refreshLibraryRoots();
@@ -1764,12 +1764,9 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.createDatabaseBackup();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Database backup cancelled.");
+      else if (!result.value) setNotice("Backup not created.");
       else
-        setNotice(
-          `Database backup verified and saved to ${result.value.path}`,
-          "success",
-        );
+        setNotice(`Backup saved and checked: ${result.value.path}`, "success");
     } finally {
       setBusy(false);
     }
@@ -1780,10 +1777,10 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.exportDiagnosticReport();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Diagnostic report export cancelled.");
+      else if (!result.value) setNotice("Support report not created.");
       else
         setNotice(
-          `Path-redacted diagnostic report verified and saved to ${result.value.path}`,
+          `Privacy-safe support report saved and checked: ${result.value.path}`,
           "success",
         );
     } finally {
@@ -1796,10 +1793,10 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.chooseDatabaseRestore();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Database restore cancelled.");
+      else if (!result.value) setNotice("No backup selected.");
       else {
         setRestorePreview(result.value);
-        setNotice("Backup verified. Review its contents before restoring.");
+        setNotice("Backup checked. Review what it contains before restoring.");
       }
     } finally {
       setBusy(false);
@@ -1815,7 +1812,7 @@ export function App(): React.JSX.Element {
     });
     if (result.ok)
       setNotice(
-        `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+        `Restore complete. Outgroove is restarting. A safety backup of your previous setup was saved to ${result.value.rollbackBackupPath}`,
         "success",
       );
     else {
@@ -4946,8 +4943,11 @@ export function App(): React.JSX.Element {
                   review
                 </strong>
                 <span>
-                  Database restore remains blocked until pending recovery is
-                  completed.
+                  Restoring a backup stays unavailable until{" "}
+                  {syncRecoveries.length === 1
+                    ? "this sync is"
+                    : "these syncs are"}{" "}
+                  back in a safe state.
                 </span>
               </div>
               <button

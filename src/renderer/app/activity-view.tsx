@@ -9,20 +9,20 @@ export interface ActivityProgress {
 
 const progressLabels: Record<ActivityProgress["job"], string> = {
   scan: "Library scan",
-  "tag-edit": "Metadata write",
-  sync: "DAP sync",
-  "library-quality": "Library quality review",
-  radar: "Radar refresh",
+  "tag-edit": "Saving metadata",
+  sync: "Syncing your player",
+  "library-quality": "Checking your Library",
+  radar: "Checking Radar",
 };
 
 const scanStateLabels: Record<ScanJobState, string> = {
   queued: "Preparing",
   running: "Scanning",
-  cancelling: "Cancelling safely",
-  completed: "Complete",
-  cancelled: "Cancelled safely",
-  failed: "Failed",
-  interrupted: "Interrupted",
+  cancelling: "Stopping safely",
+  completed: "Scan complete",
+  cancelled: "Scan cancelled",
+  failed: "Scan couldn’t finish",
+  interrupted: "Scan stopped unexpectedly",
 };
 
 function needsScanAttention(scanJob: ScanJobDto | undefined): boolean {
@@ -32,6 +32,16 @@ function needsScanAttention(scanJob: ScanJobDto | undefined): boolean {
     scanJob.state === "interrupted" ||
     (scanJob.result?.errors ?? 0) > 0
   );
+}
+
+function scanResultGuidance(scanJob: ScanJobDto): string {
+  if (scanJob.state === "failed" || scanJob.state === "interrupted")
+    return "Your existing Library is still available. Reconnect the folder if needed, then try the scan again.";
+  if ((scanJob.result?.errors ?? 0) > 0)
+    return "The scan kept every readable file. Review the files or folders it could not read.";
+  if (scanJob.state === "cancelled")
+    return "The scan stopped safely. You can scan this folder again whenever you’re ready.";
+  return "Your Library is ready to browse.";
 }
 
 export function ActivityView({
@@ -74,8 +84,8 @@ export function ActivityView({
           <p className="eyebrow">What’s happening</p>
           <h2 id="activity-center-title">Outgroove activity</h2>
           <p>
-            See what is running and what may need your attention. You can leave
-            this page without stopping the work.
+            See what is running, what finished, and what you can do next. You
+            can leave this page without stopping the work.
           </p>
         </div>
         <dl className="activity-overview" aria-label="Activity overview">
@@ -104,8 +114,8 @@ export function ActivityView({
               <p className="eyebrow">Active work</p>
               <h2 id="active-work-title">
                 {activeWorkCount === 1
-                  ? "One operation is running"
-                  : `${activeWorkCount} operations are running`}
+                  ? "One task is running"
+                  : `${activeWorkCount} tasks are running`}
               </h2>
             </div>
             <p aria-live="polite">
@@ -198,11 +208,7 @@ export function ActivityView({
               </p>
               <h2 id="latest-scan-title">{scanStateLabels[scanJob.state]}</h2>
             </div>
-            <p>
-              {attentionRequired
-                ? "Your existing catalog remains available while you review the result."
-                : "Your Library is ready to browse."}
-            </p>
+            <p>{scanResultGuidance(scanJob)}</p>
           </div>
           <ScanActivity
             scanJob={scanJob}
@@ -281,7 +287,7 @@ function ScanActivity({
       {scanJob.result && (
         <dl className="activity-results">
           <div>
-            <dt>Parsed</dt>
+            <dt>Added or refreshed</dt>
             <dd>{scanJob.result.parsed}</dd>
           </div>
           <div>
@@ -293,7 +299,7 @@ function ScanActivity({
               scanJob.result.errors > 0 ? "activity-status-attention" : ""
             }
           >
-            <dt>Problems</dt>
+            <dt>Couldn’t read</dt>
             <dd>{scanJob.result.errors}</dd>
           </div>
         </dl>
