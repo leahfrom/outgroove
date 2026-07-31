@@ -98,8 +98,8 @@ export function TrackAcoustIdIdentification({
             </dl>
             <details className="metadata-more-fields">
               <summary>
-                <span>Technical fingerprint details</span>
-                <small>Algorithm, size, and verification hash</small>
+                <span>Fingerprint check details</span>
+                <small>Method, size, and fingerprint check</small>
               </summary>
               <dl className="track-identification-payload">
                 <div>
@@ -111,7 +111,7 @@ export function TrackAcoustIdIdentification({
                   <dd>{preview.sent.fingerprintCharacters} characters</dd>
                 </div>
                 <div>
-                  <dt>Fingerprint SHA-256</dt>
+                  <dt>Fingerprint check (SHA-256)</dt>
                   <dd className="identifier">
                     {preview.sent.fingerprintSha256}
                   </dd>

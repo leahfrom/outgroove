@@ -1286,7 +1286,7 @@ export function App(): React.JSX.Element {
     if (started.ok) {
       setScanJob(started.value);
       setNotice(
-        "Scan started. You can cancel it without losing the previous catalog.",
+        "Scan started. You can cancel it without losing your previous Library view.",
       );
       return true;
     }
@@ -2919,7 +2919,10 @@ export function App(): React.JSX.Element {
           (candidate) => candidate.id === result.value?.id,
         );
         if (saved) setProfile(saved);
-        setNotice(`DAP target selected: ${result.value.targetPath}`, "success");
+        setNotice(
+          `Player folder selected: ${result.value.targetPath}`,
+          "success",
+        );
       }
     } else if (!result.ok) setNotice(result.error.message, "error");
   };
@@ -3219,10 +3222,10 @@ export function App(): React.JSX.Element {
         setNotice(
           result.value.identityRefresh
             ? `Review the updated storage details for “${saved.name}”. No files have been changed.`
-            : `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+            : `Review the player folder change for “${saved.name}”. No files have been changed.`,
         );
       } else if (!result.ok) setNotice(result.error.message, "error");
-      else setNotice("DAP target selection cancelled.");
+      else setNotice("Player folder selection cancelled.");
     } finally {
       setBusy(false);
     }
@@ -4533,7 +4536,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No album artists match this search."
-                    : "The current catalog has no album artists."}
+                    : "No album artists appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4572,7 +4575,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No genres match this search."
-                    : "The current catalog has no genre entries."}
+                    : "No genres appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4600,8 +4603,8 @@ export function App(): React.JSX.Element {
                             setPageOffset(0);
                             setNotice(
                               genre.missing
-                                ? "Showing tracks with no genre tag from the local catalog."
-                                : `Showing tracks tagged ${genre.name} from the local catalog.`,
+                                ? "Showing Library tracks with no genre tag."
+                                : `Showing Library tracks tagged ${genre.name}.`,
                             );
                           }}
                         >
@@ -4622,7 +4625,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No formats match this search."
-                    : "The current catalog has no formats."}
+                    : "No audio formats appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4644,7 +4647,7 @@ export function App(): React.JSX.Element {
                             setQuery("");
                             setPageOffset(0);
                             setNotice(
-                              `Showing tracks in ${format.name} format from the local catalog.`,
+                              `Showing Library tracks in ${format.name} format.`,
                             );
                           }}
                         >
@@ -4663,7 +4666,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No folders match this search."
-                    : "The current catalog has no folders."}
+                    : "No music folders appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4690,7 +4693,7 @@ export function App(): React.JSX.Element {
                             setQuery("");
                             setPageOffset(0);
                             setNotice(
-                              `Showing tracks in ${folder.path} from the local catalog.`,
+                              `Showing Library tracks in ${folder.path}.`,
                             );
                           }}
                         >
@@ -4717,7 +4720,7 @@ export function App(): React.JSX.Element {
                           : `No tracks use the ${trackGenreFilter.name} genre.`
                         : trackFormatFilter
                           ? `No tracks use ${trackFormatFilter} format.`
-                          : "The current catalog has no tracks."}
+                          : "No tracks appear in your Library."}
                 </p>
               ) : (
                 <div className="track-table-scroll">
@@ -4809,7 +4812,7 @@ export function App(): React.JSX.Element {
                       ? "The track may have been removed or rescanned. Show all albums to continue browsing."
                       : libraryView === "data-quality"
                         ? qualityFilter === "all"
-                          ? "The current catalog has no album data-quality findings."
+                          ? "No albums in your Library need this kind of review."
                           : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
                         : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
               </p>
@@ -5087,7 +5090,7 @@ export function App(): React.JSX.Element {
               onCancelRename={cancelSyncProfileRename}
               onCancelTarget={() => {
                 setSyncTargetPreview(undefined);
-                setNotice("Discarded the DAP target change preview.");
+                setNotice("Discarded the player folder change preview.");
               }}
               onCancelRemoval={() => {
                 setSyncProfileRemovalPreview(undefined);

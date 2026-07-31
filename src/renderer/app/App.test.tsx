@@ -2555,14 +2555,14 @@ describe("tag edit UI safety states", () => {
       within(dialog).queryByRole("button", { name: /edit|review|confirm/u }),
     ).not.toBeInTheDocument();
 
-    const nativeLabel = within(dialog).getByText("Native tags");
+    const nativeLabel = within(dialog).getByText("Original file tag details");
     const native = nativeLabel.closest("details");
     if (!native) throw new Error("Native metadata disclosure missing");
     expect(native).not.toHaveAttribute("open");
     await user.click(nativeLabel);
     expect(native).toHaveAttribute("open");
     expect(
-      within(native).getByRole("region", { name: "Native track tags" }),
+      within(native).getByRole("region", { name: "Original file tags" }),
     ).toHaveTextContent("ID3v2:TALB");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -6025,7 +6025,7 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("Second Album");
 
     const chooseTarget = screen.getByRole("button", {
-      name: "Choose DAP target",
+      name: "Choose player folder",
     });
     chooseTarget.focus();
     await user.keyboard("{Enter}");
@@ -6668,12 +6668,12 @@ describe("tag edit UI safety states", () => {
     await openSyncProfileManagement(user, "Road DAP");
 
     const change = await screen.findByRole("button", {
-      name: "Change DAP target for Road DAP",
+      name: "Change player folder for Road DAP",
     });
     change.focus();
     await user.keyboard("{Enter}");
     expect(chooseTarget).toHaveBeenCalledWith({ profileId });
-    const preview = await screen.findByLabelText("DAP target confirmation");
+    const preview = await screen.findByLabelText("Player folder confirmation");
     expect(
       within(preview).getByRole("heading", {
         name: "Review the new destination for Road DAP",
@@ -6687,7 +6687,7 @@ describe("tag edit UI safety states", () => {
     expect(applyTarget).not.toHaveBeenCalled();
 
     const confirm = within(preview).getByRole("button", {
-      name: "Confirm DAP target change",
+      name: "Confirm player folder change",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -6705,7 +6705,7 @@ describe("tag edit UI safety states", () => {
     confirm.focus();
     await user.keyboard("{Enter}");
     await waitFor(() => expect(applyTarget).toHaveBeenCalledTimes(2));
-    expect(screen.queryByLabelText("DAP target confirmation")).toBeNull();
+    expect(screen.queryByLabelText("Player folder confirmation")).toBeNull();
     expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
       "/fixture/new-dap",
     );

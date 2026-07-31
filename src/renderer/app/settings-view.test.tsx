@@ -145,7 +145,20 @@ describe("SettingsView", () => {
       "Outgroove saves and checks a safety backup of what you have now",
     );
     expect(preview).toHaveTextContent("Library folders2");
-    expect(preview).toHaveTextContent("Backup version18");
+    const compatibilitySummary = within(preview).getByText(
+      "Backup compatibility details",
+    );
+    const compatibilityDetails = compatibilitySummary.closest("details");
+    if (!compatibilityDetails)
+      throw new Error("Backup compatibility details missing");
+    expect(compatibilityDetails).not.toHaveAttribute("open");
+    const compatibilityCopy = within(compatibilityDetails).getByText(
+      /Outgroove backup format 18/u,
+    );
+    expect(compatibilityCopy).not.toBeVisible();
+    await user.click(compatibilitySummary);
+    expect(compatibilityDetails).toHaveAttribute("open");
+    expect(compatibilityCopy).toBeVisible();
     const keepCurrent = within(preview).getByRole("button", {
       name: "Keep current Outgroove data",
     });

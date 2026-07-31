@@ -141,7 +141,7 @@ export function SyncPlanReview({
                 {planBlocked
                   ? "Plan needs attention"
                   : noChanges
-                    ? "Target is up to date"
+                    ? "Player folder is up to date"
                     : "Ready for confirmation"}
               </p>
               <h3 ref={planHeadingRef} tabIndex={-1}>
@@ -253,10 +253,10 @@ export function SyncPlanReview({
           )}
           {noChanges && !planBlocked && (
             <div className="sync-plan-noop" role="status">
-              <strong>No target changes are needed.</strong>
+              <strong>No player-folder changes are needed.</strong>
               <span>
                 This plan cannot enter confirmation or apply. Source audio and
-                the target remain untouched.
+                the player folder remain untouched.
               </span>
             </div>
           )}

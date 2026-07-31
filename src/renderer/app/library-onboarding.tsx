@@ -35,7 +35,7 @@ export function LibraryOnboarding({
       >
         <p className="eyebrow">Your local collection</p>
         <h2 id="library-onboarding-loading">Opening your Library…</h2>
-        <p>Checking your local catalog and watched folders.</p>
+        <p>Checking your saved Library and watched folders.</p>
       </main>
     );
 
@@ -89,7 +89,8 @@ export function LibraryOnboarding({
           <li>
             <strong>You stay in control</strong>
             <span>
-              Metadata writes and DAP copies remain separate reviewed workflows.
+              Metadata writes and copies to a DAP (digital audio player) remain
+              separate reviewed workflows.
             </span>
           </li>
         </ul>
@@ -179,9 +180,9 @@ export function LibraryOnboarding({
           </>
         ) : needsRetry ? (
           <p>
-            The previous catalog remains intact. Retrying uses the same
-            incremental, read-only scan and reports individual file problems
-            without stopping unrelated work.
+            Your previous Library remains intact. Retrying uses the same
+            read-only scan, refreshes only what changed, and reports individual
+            file problems without stopping unrelated work.
           </p>
         ) : completedWithoutMusic ? (
           <p>
