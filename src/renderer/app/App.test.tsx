@@ -76,7 +76,7 @@ async function openLibraryTools(
 
 async function openSyncSetupSection(
   user: ReturnType<typeof userEvent.setup>,
-  name: "Selection draft" | "Saved profiles",
+  name: "Current selection" | "Saved profiles",
 ): Promise<void> {
   const navigation = screen.getByRole("navigation", {
     name: "Albums and profiles setup",
@@ -774,7 +774,7 @@ describe("tag edit UI safety states", () => {
     await waitFor(() => expect(refreshAll).toHaveBeenCalledWith());
     expect(
       await screen.findByText(
-        "Completed 1 of 1 favorites: 1 successful and 0 failed.",
+        "Checked 1 of 1 artists: 1 refreshed and 0 could not be refreshed.",
       ),
     ).toBeVisible();
 
@@ -899,7 +899,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByText(
-        "Stopped after 0 of 1 favorites: 0 successful and 0 failed.",
+        "Stopped after checking 0 of 1 artists: 0 refreshed and 0 could not be refreshed.",
       ),
     ).toBeVisible();
   });
@@ -4474,7 +4474,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Settings");
 
     const roots = await screen.findByRole("region", {
-      name: "Watched Library folders",
+      name: "Library folders",
     });
     expect(within(roots).getByText("/fixture/never-scanned")).toBeVisible();
     expect(within(roots).getByText("Never scanned")).toBeVisible();
@@ -5827,7 +5827,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
 
     expect(
-      await screen.findByText("No data-quality findings on this page."),
+      await screen.findByText("No albums on this page need attention."),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(
@@ -5948,7 +5948,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Sync");
     expect(
       screen.getByRole("button", {
-        name: "Selection draft, 2 of 100 albums",
+        name: "Current selection, 2 of 100 albums",
       }),
     ).toHaveAttribute("aria-current", "page");
     expect(
@@ -5967,8 +5967,8 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Preview & apply" }),
     ).toHaveAttribute("aria-current", "step");
-    expect(screen.getByText("Successful sync history")).toBeVisible();
-    await user.click(screen.getByText("Successful sync history"));
+    expect(screen.getByText("Completed syncs")).toBeVisible();
+    await user.click(screen.getByText("Completed syncs"));
     expect(
       screen.getByText("No successful sync runs have been recorded yet."),
     ).toBeVisible();
@@ -6315,7 +6315,7 @@ describe("tag edit UI safety states", () => {
     );
     expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
     const historySummary = screen
-      .getByText("Successful sync history")
+      .getByText("Completed syncs")
       .closest("summary");
     if (!historySummary) throw new Error("Sync history disclosure missing");
     historySummary.focus();
@@ -6556,7 +6556,7 @@ describe("tag edit UI safety states", () => {
     const preview = await screen.findByLabelText("DAP target confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Review target for Road DAP",
+        name: "Review the new destination for Road DAP",
       }),
     ).toHaveFocus();
     expect(within(preview).getByText("/fixture/old-dap")).toBeVisible();
@@ -6673,10 +6673,10 @@ describe("tag edit UI safety states", () => {
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent(
-      "No source audio or target file is read, changed, or deleted.",
+      "No audio or destination file is read, changed, or deleted.",
     );
     expect(preview).toHaveTextContent(
-      "Files left on these targets become unknown to Outgroove.",
+      "Outgroove will no longer recognize files left at these destinations.",
     );
     expect(applyRemoval).not.toHaveBeenCalled();
 
@@ -6892,7 +6892,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Settings");
     const databaseSection = screen.getByRole("button", {
-      name: "Database safety",
+      name: "Backups & support",
     });
     databaseSection.focus();
     await user.keyboard("{Enter}");
@@ -6920,7 +6920,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Activity");
     await openPrimaryView(user, "Settings");
     const pendingDatabaseSection = screen.getByRole("button", {
-      name: "Database safety, confirmation pending",
+      name: "Backups & support, confirmation pending",
     });
     pendingDatabaseSection.focus();
     await user.keyboard("{Enter}");
@@ -6952,7 +6952,7 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
-    await user.click(screen.getByRole("button", { name: "Database safety" }));
+    await user.click(screen.getByRole("button", { name: "Backups & support" }));
     await user.click(
       await screen.findByRole("button", { name: "Create database backup" }),
     );
@@ -6975,9 +6975,9 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
-    await user.click(screen.getByRole("button", { name: "Database safety" }));
+    await user.click(screen.getByRole("button", { name: "Backups & support" }));
     const exportButton = await screen.findByRole("button", {
-      name: "Export path-redacted report",
+      name: "Export private support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");

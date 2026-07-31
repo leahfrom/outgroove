@@ -54,11 +54,11 @@ export function SyncRecoveryWorkspace({
     >
       <div className="workflow-heading">
         <div>
-          <p className="eyebrow">Restart safety</p>
-          <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
+          <p className="eyebrow">Pick up safely</p>
+          <h2 id="sync-recovery-title">Finish an interrupted sync</h2>
           <p>
-            Inspect the target first, review every proposed action, then
-            explicitly confirm. Source audio is never changed.
+            Outgroove checks the destination and shows every proposed action
+            before asking you to confirm. Source audio is never changed.
           </p>
         </div>
       </div>
@@ -155,8 +155,8 @@ export function SyncRecoveryWorkspace({
                   </div>
                   <p>
                     {recovery.mode === "committed-cleanup"
-                      ? "The manifest committed successfully; only interrupted Outgroove cleanup remains."
-                      : `The run stopped during ${recovery.phase}. Review how Outgroove can return the target to its pre-sync state.`}
+                      ? "The sync finished successfully, but some temporary Outgroove files still need cleanup."
+                      : `The sync stopped during ${recovery.phase}. Review how Outgroove can return the destination to its previous state.`}
                   </p>
                   <p>
                     Interrupted{" "}
@@ -227,10 +227,10 @@ export function SyncRecoveryWorkspace({
               <dd>{preview.warnings.length}</dd>
             </div>
             <div>
-              <dt>Volume check</dt>
+              <dt>Storage check</dt>
               <dd>
                 {preview.targetVolume.status === "matched"
-                  ? "Persistent identity matches"
+                  ? "Saved storage matches"
                   : "Confirmation required"}
               </dd>
             </div>
@@ -271,7 +271,8 @@ export function SyncRecoveryWorkspace({
             >
               <div>
                 <strong>
-                  Outgroove cannot verify this as the recorded recovery volume.
+                  Outgroove cannot confirm this is the storage used by the
+                  interrupted sync.
                 </strong>
                 <span>
                   Check the path and device yourself before allowing any
@@ -298,8 +299,8 @@ export function SyncRecoveryWorkspace({
             <div className="workflow-empty">
               <h4>No target-file changes are needed</h4>
               <p>
-                Confirming clears the completed recovery journal after a fresh
-                target inspection.
+                Confirming marks this recovery complete after Outgroove checks
+                the destination again.
               </p>
             </div>
           )}
@@ -313,7 +314,7 @@ export function SyncRecoveryWorkspace({
             aria-labelledby="sync-recovery-confirm-title"
           >
             <div>
-              <p className="eyebrow">Explicit confirmation</p>
+              <p className="eyebrow">Your confirmation</p>
               <h4 id="sync-recovery-confirm-title">
                 {preview.canRecover
                   ? "Apply this reviewed recovery?"

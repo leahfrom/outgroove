@@ -98,12 +98,12 @@ export function RadarReleases({
     <section className="radar-releases" aria-labelledby="radar-releases">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Last successful snapshots</p>
+          <p className="eyebrow">From your latest checks</p>
           <h2 id="radar-releases">Releases</h2>
           <p>
-            Upcoming dates are certainly in the future. Recent means the
-            complete known date falls within the last 90 days. Partial dates
-            stay partial and are classified conservatively.
+            Upcoming releases have a known future date. Recent releases are from
+            the last 90 days. When MusicBrainz has only a year or month, Radar
+            keeps that date incomplete instead of guessing.
           </p>
         </div>
         <div className="radar-filters">
@@ -203,7 +203,7 @@ export function RadarReleases({
           new, {refreshResult.updated} changed, {refreshResult.unchanged}{" "}
           unchanged.
           {refreshResult.truncated &&
-            " MusicBrainz reported more than the bounded 500-release review window."}
+            " MusicBrainz returned more than 500 releases, so Radar showed the first 500."}
         </p>
       )}
       {loading && <p aria-live="polite">Loading saved Radar releases…</p>}
@@ -217,8 +217,8 @@ export function RadarReleases({
         <div className="empty compact">
           <h3>No {emptyViewLabels[view]} releases</h3>
           <p>
-            Refresh a favorite artist explicitly. Failed or cancelled refreshes
-            keep the last successful view unchanged.
+            Refresh a favorite artist to check again. If a refresh fails or is
+            cancelled, your previous results stay here.
           </p>
         </div>
       ) : (
@@ -264,7 +264,7 @@ export function RadarReleases({
                     </dd>
                   </div>
                   <div>
-                    <dt>Stable release-group ID</dt>
+                    <dt>MusicBrainz release group ID</dt>
                     <dd>
                       <code>{item.musicBrainzReleaseGroupId}</code>
                     </dd>

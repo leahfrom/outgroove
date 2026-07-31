@@ -7,6 +7,35 @@ import { describe, expect, it, vi } from "vitest";
 import { ApplicationShell } from "./application-shell";
 
 describe("ApplicationShell packaged inspection marker", () => {
+  it("describes each destination in plain, task-focused language", () => {
+    render(
+      <ApplicationShell
+        activeView="radar"
+        notice={undefined}
+        onDismissNotice={vi.fn()}
+        onNavigate={vi.fn()}
+      >
+        <p>Radar workspace</p>
+      </ApplicationShell>,
+    );
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    expect(navigation).toHaveTextContent(
+      "Browse, search, and explore your music collection.",
+    );
+    expect(navigation).toHaveTextContent(
+      "Keep up with new releases from artists you follow.",
+    );
+    expect(navigation).toHaveTextContent(
+      "Choose music, preview changes, and copy it to your player.",
+    );
+    expect(navigation).not.toHaveTextContent(
+      /exact artist identities|folder-backed|long-running work/iu,
+    );
+  });
+
   it("prominently identifies disposable inspection state", () => {
     render(
       <ApplicationShell

@@ -68,11 +68,11 @@ export function SettingsView({
     <main className="settings-view">
       <section className="settings-workflow-header">
         <div>
-          <p className="eyebrow">Local application settings</p>
-          <h2>Library and database</h2>
+          <p className="eyebrow">Your Outgroove setup</p>
+          <h2>Folders, backups, and support</h2>
           <p>
-            These safety workflows manage Outgroove state. They never include,
-            move, or change audio and DAP files.
+            These tools change only information saved by Outgroove. They never
+            move or change your audio or files on your player.
           </p>
         </div>
         <SettingsNavigation
@@ -89,11 +89,11 @@ export function SettingsView({
         >
           <div className="settings-section-heading">
             <div>
-              <p className="eyebrow">Local collection sources</p>
-              <h2 id="watched-library-folders">Watched Library folders</h2>
+              <p className="eyebrow">Where your music lives</p>
+              <h2 id="watched-library-folders">Library folders</h2>
               <p>
-                Scans are explicit and read-only. Adding a folder does not scan
-                it until you choose its Scan action.
+                Outgroove scans only when you ask, and scanning does not change
+                your music.
               </p>
             </div>
             <div className="settings-heading-actions">
@@ -236,8 +236,8 @@ export function SettingsView({
         >
           <div className="settings-section-heading">
             <div>
-              <p className="eyebrow">Outgroove application data</p>
-              <h2 id="database-safety">Database safety</h2>
+              <p className="eyebrow">Protect your setup</p>
+              <h2 id="database-safety">Backups and support</h2>
               <p>
                 Backups contain the local catalog, edit history, saved filters,
                 favorite artists, and DAP profiles—never audio or DAP files.
@@ -251,7 +251,7 @@ export function SettingsView({
               aria-label="Database restore confirmation"
             >
               <div>
-                <p className="eyebrow">Verified backup · review required</p>
+                <p className="eyebrow">Backup checked · review required</p>
                 <h3 ref={restoreHeadingRef} tabIndex={-1}>
                   Replace the current Outgroove database?
                 </h3>
@@ -322,7 +322,7 @@ export function SettingsView({
 
           <div className="settings-database-actions">
             <article>
-              <p className="eyebrow">Safe export</p>
+              <p className="eyebrow">Keep a copy</p>
               <h3>Create a backup</h3>
               <p>
                 Choose a destination for a verified copy of Outgroove’s current
@@ -337,7 +337,7 @@ export function SettingsView({
               </button>
             </article>
             <article className="settings-restore-action">
-              <p className="eyebrow">Database replacement</p>
+              <p className="eyebrow">Bring back a backup</p>
               <h3>Restore from a backup</h3>
               <p>
                 The selected file is verified first. Nothing is replaced until
@@ -354,8 +354,8 @@ export function SettingsView({
               </button>
             </article>
             <article>
-              <p className="eyebrow">Privacy-safe support</p>
-              <h3>Export diagnostic report</h3>
+              <p className="eyebrow">Help with a problem</p>
+              <h3>Export a private support report</h3>
               <p>
                 Save runtime versions and aggregate catalog counts for
                 troubleshooting. Paths, filenames, tags, provider responses,
@@ -367,7 +367,7 @@ export function SettingsView({
                 onClick={onExportDiagnosticReport}
                 type="button"
               >
-                Export path-redacted report
+                Export private support report
               </button>
             </article>
           </div>

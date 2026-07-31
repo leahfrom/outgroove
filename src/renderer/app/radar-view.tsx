@@ -140,18 +140,18 @@ export function RadarView({
     <main className="radar-view">
       <section className="radar-introduction">
         <div>
-          <p className="eyebrow">Radar foundation</p>
-          <h2>Favorite artists</h2>
+          <p className="eyebrow">Follow new music</p>
+          <h2>Artists you care about</h2>
           <p>
-            Save exact MusicBrainz artist identities, then explicitly refresh
-            one favorite or sweep all saved favorites when you want to check
-            their releases.
+            Follow your favorite artists and see what they have released. Check
+            one artist or refresh everyone whenever you like.
           </p>
         </div>
         <div className="radar-introduction-actions">
           <strong>
-            {favorites.length} matching{" "}
-            {favorites.length === 1 ? "favorite" : "favorites"}
+            {favorites.length === 0
+              ? "No artists yet"
+              : `${favorites.length} ${favorites.length === 1 ? "artist" : "artists"} shown`}
           </strong>
           {radarRefreshAllActive ? (
             <button
@@ -181,10 +181,10 @@ export function RadarView({
         <summary>Automatic refresh</summary>
         <div>
           <p>
-            Optional checks run at a randomized daily interval while Outgroove
-            is open. Each check sends only your saved MusicBrainz artist IDs; it
-            never reads or changes audio files. Native notifications are
-            separately opt-in and report only counts.
+            When enabled, Outgroove checks once a day at a varied time while the
+            app is open. It sends only the saved MusicBrainz IDs for your
+            favorite artists. It never reads or changes audio files.
+            Notifications are optional and show counts only.
           </p>
           {radarBackgroundSettings ? (
             <>
@@ -303,18 +303,20 @@ export function RadarView({
           aria-labelledby="radar-refresh-all-result"
           className="radar-refresh-all-result"
         >
-          <h2 id="radar-refresh-all-result">Refresh all result</h2>
+          <h2 id="radar-refresh-all-result">Refresh summary</h2>
           <p role="status">
-            {radarRefreshAllResult.cancelled ? "Stopped after " : "Completed "}
+            {radarRefreshAllResult.cancelled
+              ? "Stopped after checking "
+              : "Checked "}
             {radarRefreshAllResult.completed} of{" "}
-            {radarRefreshAllResult.totalFavorites} favorites:{" "}
-            {radarRefreshAllResult.successful} successful and{" "}
-            {radarRefreshAllResult.failed} failed.
+            {radarRefreshAllResult.totalFavorites} artists:{" "}
+            {radarRefreshAllResult.successful} refreshed and{" "}
+            {radarRefreshAllResult.failed} could not be refreshed.
           </p>
           {radarRefreshAllResult.results.length > 0 && (
             <details>
               <summary>
-                Successful favorites ({radarRefreshAllResult.results.length})
+                Refreshed artists ({radarRefreshAllResult.results.length})
               </summary>
               <ul aria-label="Favorites refreshed successfully">
                 {radarRefreshAllResult.results.map((result) => (
@@ -375,15 +377,12 @@ export function RadarView({
       <section className="favorite-artists" aria-labelledby="saved-favorites">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Durable local state</p>
-            <h2 id="saved-favorites">Saved favorites</h2>
+            <p className="eyebrow">Artists you follow</p>
+            <h2 id="saved-favorites">Your favorite artists</h2>
             <p>
-              This list is stored in Outgroove’s database and stays available
-              offline, through catalog rebuilds, and in verified backups.
-              Refreshing one favorite sends only that saved MusicBrainz artist
-              ID. Refresh all sends each saved ID sequentially through the same
-              bounded provider path. Automatic checks run only when explicitly
-              enabled above.
+              Your favorites are saved on this device and remain available
+              offline. When you refresh, Outgroove sends MusicBrainz only the
+              saved artist IDs needed to check for releases.
             </p>
           </div>
           <form
@@ -423,7 +422,7 @@ export function RadarView({
             <p>
               {favoriteFilter
                 ? `Nothing matches “${favoriteFilter}”. Your other favorites remain unchanged.`
-                : "Search MusicBrainz below, review the identities, then choose one explicitly."}
+                : "Find an artist below, review the matches, then choose the right one."}
             </p>
           </div>
         ) : (
@@ -501,13 +500,13 @@ export function RadarView({
       >
         <div className="artist-search-heading">
           <div>
-            <p className="eyebrow">Explicit network action</p>
+            <p className="eyebrow">MusicBrainz search</p>
             <h2 id="musicbrainz-artist-search">Find an artist</h2>
           </div>
           <p>
             Searching sends only the artist name typed below to MusicBrainz.
-            Audio, paths, tags, artwork, fingerprints, and your saved favorites
-            stay local.
+            Your audio, file locations, tags, artwork, fingerprints, and saved
+            favorites are not sent.
           </p>
         </div>
         <form
@@ -541,7 +540,7 @@ export function RadarView({
           )}
         </form>
         {artistSearchLoading && (
-          <p aria-live="polite">Searching MusicBrainz for artist candidates…</p>
+          <p aria-live="polite">Searching MusicBrainz for artists…</p>
         )}
         {artistSearchError && (
           <p className="field-error" role="alert">
@@ -560,7 +559,7 @@ export function RadarView({
             </p>
             {artistSearchResult.candidates.length === 0 ? (
               <div className="empty compact">
-                <h3>No artist candidates found</h3>
+                <h3>No artists found</h3>
                 <p>Try a more specific or alternate artist name.</p>
               </div>
             ) : (
@@ -577,7 +576,7 @@ export function RadarView({
                               <p>{candidate.disambiguation}</p>
                             )}
                           </div>
-                          <span>{candidate.score}% MusicBrainz score</span>
+                          <span>{candidate.score}% match</span>
                         </header>
                         <dl>
                           <div>
@@ -593,7 +592,7 @@ export function RadarView({
                             </dd>
                           </div>
                           <div>
-                            <dt>Stable artist ID</dt>
+                            <dt>MusicBrainz artist ID</dt>
                             <dd>{candidate.artistId}</dd>
                           </div>
                         </dl>

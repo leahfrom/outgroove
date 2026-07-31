@@ -64,10 +64,11 @@ export function SyncPlanReview({
     >
       <div className="workflow-heading">
         <div>
-          <p className="eyebrow">Preview and apply</p>
-          <h2 id="sync-review-title">Review the active DAP profile</h2>
+          <p className="eyebrow">Before anything is copied</p>
+          <h2 id="sync-review-title">Preview your sync</h2>
           <p>
-            Generate a fresh, read-only plan before any target files can change.
+            Check every copy, replacement, and removal before anything on your
+            player changes.
           </p>
         </div>
       </div>
@@ -107,13 +108,11 @@ export function SyncPlanReview({
             type="checkbox"
           />
           <span>
-            <strong>
-              Include cleanup of obsolete Outgroove-owned files in this plan
-            </strong>
+            <strong>Remove obsolete files from earlier Outgroove syncs</strong>
             <small>
-              Off by default. Only exact paths in this profile’s latest manifest
-              can be proposed, and every removal will be shown before
-              confirmation.
+              Off by default. Outgroove can remove only files recorded by this
+              profile’s latest completed sync, and it will show every file
+              before you confirm.
             </small>
           </span>
         </label>
@@ -127,10 +126,10 @@ export function SyncPlanReview({
 
       {!plan ? (
         <div className="workflow-empty" aria-label="No sync plan">
-          <h3>No copy plan yet</h3>
+          <h3>No preview yet</h3>
           <p>
-            Previewing reads the selected source files, profile, and target
-            state. It does not copy, replace, or remove anything. Cleanup is{" "}
+            Previewing checks your selected music and destination. It does not
+            copy, replace, or remove anything. Cleanup is{" "}
             {cleanupEnabled ? "enabled for the next preview" : "disabled"}.
           </p>
         </div>
@@ -196,10 +195,10 @@ export function SyncPlanReview({
               </dd>
             </div>
             <div>
-              <dt>Volume check</dt>
+              <dt>Storage check</dt>
               <dd>
                 {plan.targetVolume.status === "matched"
-                  ? "Persistent identity matches"
+                  ? "Saved storage matches"
                   : "Confirmation required"}
               </dd>
             </div>
@@ -221,19 +220,20 @@ export function SyncPlanReview({
             >
               <div>
                 <strong>
-                  Outgroove cannot verify this as the recorded volume.
+                  Outgroove cannot confirm this is the storage saved with this
+                  profile.
                 </strong>
                 <span>
                   {plan.targetVolume.status === "changed"
-                    ? "The current persistent volume identity differs from the evidence saved for this profile."
+                    ? "This storage does not match the identity saved for this profile."
                     : plan.targetVolume.status === "unrecorded"
-                      ? "This profile does not have a saved persistent volume identity."
-                      : "This operating system or target did not provide a persistent volume identity."}
+                      ? "This profile does not have a saved storage identity."
+                      : "Outgroove could not get a reliable identity for this storage."}
                 </span>
                 <span>
-                  Check the target path and device yourself. A matching
-                  Outgroove manifest proves file ownership, not physical-volume
-                  identity.
+                  Check the destination and player yourself. Recognizing files
+                  from an earlier sync does not prove this is the same physical
+                  storage.
                 </span>
               </div>
               <label>
@@ -268,7 +268,7 @@ export function SyncPlanReview({
             />
             <PlanDisclosure
               items={plan.replacements.map((item) => item.relativeDestination)}
-              label="Manifest-owned files to replace"
+              label="Previously synced files to replace"
             />
             <PlanDisclosure
               items={plan.unchanged.map((item) => item.relativeDestination)}
@@ -277,11 +277,11 @@ export function SyncPlanReview({
             <PlanDisclosure
               emphasize
               items={plan.removals.map((item) => item.relativeDestination)}
-              label="Manifest-owned files to remove"
+              label="Previously synced files to remove"
             />
             <PlanDisclosure
               items={plan.absentOwned}
-              label="Already absent owned paths to forget"
+              label="Previously synced files already missing"
             />
             <PlanDisclosure
               emphasize
@@ -301,17 +301,16 @@ export function SyncPlanReview({
               aria-labelledby="sync-apply-title"
             >
               <div>
-                <p className="eyebrow">Explicit confirmation</p>
+                <p className="eyebrow">Your confirmation</p>
                 <h4 id="sync-apply-title">
                   {planBlocked
                     ? "Resolve plan issues first"
                     : "Apply this plan?"}
                 </h4>
                 <p>
-                  Source audio stays untouched. Outgroove copies through
-                  temporary files, quarantines each reviewed removal on the
-                  target, verifies every change, and commits the new manifest
-                  last.
+                  Source audio stays untouched. Outgroove makes the reviewed
+                  changes safely, checks the result, and saves its new
+                  synced-file record only after everything succeeds.
                 </p>
                 {plan.removals.length > 0 && (
                   <p>
@@ -360,7 +359,7 @@ export function SyncPlanReview({
 
       <details className="sync-history-disclosure">
         <summary>
-          <span>Successful sync history</span>
+          <span>Completed syncs</span>
           <span>Up to 20 recent runs</span>
         </summary>
         <p>Only runs whose manifest was committed successfully appear here.</p>

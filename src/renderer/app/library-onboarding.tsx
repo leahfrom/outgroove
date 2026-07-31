@@ -214,12 +214,12 @@ export function LibraryOnboarding({
       <aside className="onboarding-safety-note" aria-label="Scan safety">
         <strong>What happens next</strong>
         <ol>
-          <li>Discover supported audio without following folder loops.</li>
-          <li>Read tags and technical properties in background workers.</li>
-          <li>Keep per-file problems local so other files can finish.</li>
-          <li>Open the resulting albums in Library for inspection.</li>
+          <li>Find supported music in this folder.</li>
+          <li>Read its tags and audio details without changing the files.</li>
+          <li>Skip problem files so the rest of the scan can finish.</li>
+          <li>Show the albums in your Library.</li>
         </ol>
-        <p>No metadata write or DAP sync starts from this scan.</p>
+        <p>This scan does not edit tags or start a sync.</p>
       </aside>
     </main>
   );

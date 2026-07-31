@@ -172,7 +172,7 @@ describe("SettingsView", () => {
       "provider responses, stable identifiers, and error text are excluded",
     );
     const exportButton = screen.getByRole("button", {
-      name: "Export path-redacted report",
+      name: "Export private support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");

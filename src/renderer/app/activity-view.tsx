@@ -71,11 +71,11 @@ export function ActivityView({
     <main className="activity-center" aria-labelledby="activity-center-title">
       <section className="activity-introduction">
         <div>
-          <p className="eyebrow">Activity center</p>
-          <h2 id="activity-center-title">Work, results, and recovery</h2>
+          <p className="eyebrow">What’s happening</p>
+          <h2 id="activity-center-title">Outgroove activity</h2>
           <p>
-            Follow work in Outgroove without keeping the originating view open.
-            Leaving Activity never cancels a running operation.
+            See what is running and what may need your attention. You can leave
+            this page without stopping the work.
           </p>
         </div>
         <dl className="activity-overview" aria-label="Activity overview">
@@ -161,8 +161,8 @@ export function ActivityView({
             <p className="eyebrow">All quiet</p>
             <h2 id="quiet-activity-title">No work is running</h2>
             <p>
-              Start with your local collection or prepare a reviewed DAP copy.
-              New progress will appear here automatically.
+              Browse your Library or prepare a sync. New progress will appear
+              here automatically.
             </p>
           </div>
           <div className="actions">
