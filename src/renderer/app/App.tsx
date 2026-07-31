@@ -1427,7 +1427,6 @@ export function App(): React.JSX.Element {
     if (!query) return;
     const requestId = ++artistSearchRequestId.current;
     setArtistSearchLoading(true);
-    setArtistSearchResult(undefined);
     setArtistSearchError(undefined);
     const result = await window.outgroove.searchMusicBrainzArtists({ query });
     if (requestId !== artistSearchRequestId.current) return;
@@ -1533,7 +1532,7 @@ export function App(): React.JSX.Element {
       }
       if (!result.value.cancelled) {
         setRadarRefreshAllCancelling(false);
-        setRadarError("No Refresh all operation is currently running.");
+        setNotice("No Refresh all operation is currently running.");
       }
     });
   };
@@ -1565,8 +1564,9 @@ export function App(): React.JSX.Element {
         }
         if (result.value.cancelled) {
           setRefreshingFavoriteId(undefined);
-          setRadarError(
-            "Radar refresh cancelled. The last successful view is unchanged.",
+          setRadarError(undefined);
+          setNotice(
+            `Cancelled the Radar refresh for ${favorite.name}. Saved releases are unchanged.`,
           );
         }
       });
@@ -3585,7 +3585,10 @@ export function App(): React.JSX.Element {
     if (!selectedAlbum) return;
     albumIdentificationRequestId.current += 1;
     setAlbumIdentificationLoading(false);
-    setAlbumIdentificationError("Search cancelled. Your Library is unchanged.");
+    setAlbumIdentificationError(undefined);
+    setNotice(
+      "Cancelled the MusicBrainz album search. Your Library is unchanged.",
+    );
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
     });
@@ -3598,7 +3601,9 @@ export function App(): React.JSX.Element {
     const requestId = ++albumIdentificationRequestId.current;
     setReleaseTracksReleaseId(candidate.releaseId);
     setReleaseTracksLoading(true);
-    setReleaseTracksResult(undefined);
+    setReleaseTracksResult((current) =>
+      current?.release.releaseId === candidate.releaseId ? current : undefined,
+    );
     setReleaseTracksError(undefined);
     setMusicBrainzMappingPreview(undefined);
     setMusicBrainzMappingResult(undefined);
@@ -3617,8 +3622,9 @@ export function App(): React.JSX.Element {
     if (!selectedAlbum) return;
     albumIdentificationRequestId.current += 1;
     setReleaseTracksLoading(false);
-    setReleaseTracksError(
-      "Track loading cancelled. Your Library is unchanged.",
+    setReleaseTracksError(undefined);
+    setNotice(
+      "Cancelled the MusicBrainz track-list request. Your Library is unchanged.",
     );
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
@@ -3632,7 +3638,9 @@ export function App(): React.JSX.Element {
     const requestId = ++coverArtRequestId.current;
     setCoverArtReleaseId(candidate.releaseId);
     setCoverArtLoading(true);
-    setCoverArtResult(undefined);
+    setCoverArtResult((current) =>
+      current?.sent.releaseId === candidate.releaseId ? current : undefined,
+    );
     setCoverArtError(undefined);
     setCoverArtPrepareError(undefined);
     const result = await window.outgroove.loadCoverArtArchiveArtwork({
@@ -3685,12 +3693,13 @@ export function App(): React.JSX.Element {
     coverArtRequestId.current += 1;
     setCoverArtLoading(false);
     setCoverArtPreparing(false);
-    if (preparing)
-      setCoverArtPrepareError(
-        "Artwork preparation cancelled. Your Library is unchanged.",
-      );
-    else
-      setCoverArtError("Cover request cancelled. Your Library is unchanged.");
+    if (preparing) setCoverArtPrepareError(undefined);
+    else setCoverArtError(undefined);
+    setNotice(
+      preparing
+        ? "Cancelled the full-size artwork request. Your Library is unchanged."
+        : "Cancelled the cover preview request. Your Library is unchanged.",
+    );
     void window.outgroove.cancelCoverArtArchiveArtwork({
       albumId: selectedAlbum.id,
     });

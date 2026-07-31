@@ -1,5 +1,6 @@
 import type { CoverArtArchiveResultDto } from "../../shared/contracts/api";
 import type { ComparedAlbumCandidate } from "../../shared/domain/album-identification";
+import { ProviderRequestError } from "./provider-request-error";
 
 function formatBytes(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -78,9 +79,13 @@ export function CoverArtArchivePreview({
         {loading && "Loading the release front cover…"}
         {preparing && "Preparing the full-size image for review…"}
         {!loading && error && (
-          <p className="workflow-error" role="alert">
-            Cover request failed: {error}
-          </p>
+          <ProviderRequestError
+            details={[error]}
+            detailsSummary="Cover request technical details"
+            guidance="Your current artwork and audio files are unchanged. Check your connection, then request the cover again."
+            label={`Cover Art Archive request error for ${candidate.title}`}
+            title="The front cover couldn’t be loaded."
+          />
         )}
         {!loading && result && !result.artwork && (
           <p>
@@ -89,9 +94,13 @@ export function CoverArtArchivePreview({
           </p>
         )}
         {!preparing && prepareError && (
-          <p className="workflow-error" role="alert">
-            Artwork preparation failed: {prepareError}
-          </p>
+          <ProviderRequestError
+            details={[prepareError]}
+            detailsSummary="Artwork preparation technical details"
+            guidance="Your current artwork and audio files are unchanged. Request the cover again before starting a new review."
+            label={`Cover artwork preparation error for ${candidate.title}`}
+            title="The full-size cover couldn’t be prepared for review."
+          />
         )}
       </div>
 

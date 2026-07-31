@@ -174,8 +174,33 @@ describe("TrackAcoustIdIdentification", () => {
     );
     expect(
       screen.getByRole("alert", { name: "AcoustID identification error" }),
+    ).toHaveTextContent("Outgroove couldn’t create this fingerprint.");
+    expect(
+      screen.getByText("This build has no registered application key."),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(
+      screen.getByText("This build has no registered application key."),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear" }));
     expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a confirmed fingerprint ready when the online lookup fails", () => {
+    render(
+      view({
+        error: "AcoustID returned HTTP 503 after retries.",
+        preview,
+      }),
+    );
+
+    const alert = screen.getByRole("alert", {
+      name: "AcoustID identification error",
+    });
+    expect(alert).toHaveTextContent("AcoustID couldn’t finish this lookup.");
+    expect(alert).toHaveTextContent("Your fingerprint is still ready");
+    expect(
+      screen.getByRole("button", { name: "Send and find matches" }),
+    ).toBeEnabled();
   });
 });

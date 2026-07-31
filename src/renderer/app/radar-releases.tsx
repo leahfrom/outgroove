@@ -9,6 +9,7 @@ import {
   radarPrimaryTypeFilters,
   type RadarPrimaryTypeFilter,
 } from "../../shared/domain/radar";
+import { ProviderRequestError } from "./provider-request-error";
 
 type RadarViewName = (typeof radarViews)[number];
 
@@ -208,9 +209,12 @@ export function RadarReleases({
       )}
       {loading && <p aria-live="polite">Loading saved Radar releases…</p>}
       {error && (
-        <p className="field-error" role="alert">
-          {error}
-        </p>
+        <ProviderRequestError
+          details={[error]}
+          guidance="Your saved Radar releases are still available. Review the details, then retry the action. If it needs MusicBrainz, check your connection first."
+          label="Radar request error"
+          title="Radar couldn’t complete this action."
+        />
       )}
 
       {!loading && items.length === 0 ? (

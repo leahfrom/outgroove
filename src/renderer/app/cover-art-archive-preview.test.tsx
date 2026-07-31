@@ -155,15 +155,29 @@ describe("CoverArtArchivePreview", () => {
         loading={false}
         prepareError={undefined}
         preparing={false}
-        result={undefined}
+        result={result}
         onCancel={onCancel}
         onLoad={vi.fn()}
         onPrepare={vi.fn()}
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Cover request failed: Cover Art Archive is unavailable.",
+    const error = screen.getByRole("alert", {
+      name: `Cover Art Archive request error for ${candidate.title}`,
+    });
+    expect(error).toHaveTextContent("The front cover couldn’t be loaded.");
+    expect(error).toHaveTextContent(
+      "Your current artwork and audio files are unchanged",
     );
+    expect(
+      screen.getByText("Cover Art Archive is unavailable."),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Cover request technical details"));
+    expect(screen.getByText("Cover Art Archive is unavailable.")).toBeVisible();
+    expect(
+      screen.getByRole("img", {
+        name: `Cover Art Archive front cover for ${candidate.title}`,
+      }),
+    ).toBeVisible();
 
     rerender(
       <CoverArtArchivePreview

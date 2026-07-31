@@ -17,6 +17,7 @@ import {
   MusicBrainzTrackMapper,
   type MusicBrainzTrackMappingEdit,
 } from "./musicbrainz-track-mapper";
+import { ProviderRequestError } from "./provider-request-error";
 
 export function AlbumIdentification({
   album,
@@ -141,19 +142,31 @@ export function AlbumIdentification({
 
       <div aria-live="polite" className="identification-status" role="status">
         {loading && "Searching MusicBrainz…"}
-        {!loading && error && `Search failed: ${error}`}
         {!loading &&
           result &&
-          `${result.candidates.length} possible ${
-            result.candidates.length === 1 ? "match" : "matches"
-          } found using ${
-            result.source === "network"
-              ? "MusicBrainz"
-              : result.source === "cache"
-                ? "a saved result"
-                : "an older saved result because MusicBrainz was unavailable"
-          }. Your Library is unchanged.`}
+          (error
+            ? `Showing ${result.candidates.length} possible ${
+                result.candidates.length === 1 ? "match" : "matches"
+              } from the last successful search. Your Library is unchanged.`
+            : `${result.candidates.length} possible ${
+                result.candidates.length === 1 ? "match" : "matches"
+              } found using ${
+                result.source === "network"
+                  ? "MusicBrainz"
+                  : result.source === "cache"
+                    ? "a saved result"
+                    : "an older saved result because MusicBrainz was unavailable"
+              }. Your Library is unchanged.`)}
       </div>
+
+      {!loading && error && (
+        <ProviderRequestError
+          details={[error]}
+          guidance="Your album and any earlier matches are unchanged. Check your connection, then search again when you’re ready."
+          label="MusicBrainz album search error"
+          title="MusicBrainz couldn’t finish this album search."
+        />
+      )}
 
       {result && !loading && (
         <section aria-label="MusicBrainz release candidates">
@@ -340,9 +353,13 @@ export function AlbumIdentification({
                         {releaseTracksReleaseId === candidate.releaseId &&
                           !releaseTracksLoading &&
                           releaseTracksError && (
-                            <p className="workflow-error" role="alert">
-                              Could not load the tracks: {releaseTracksError}
-                            </p>
+                            <ProviderRequestError
+                              details={[releaseTracksError]}
+                              detailsSummary="Track-list technical details"
+                              guidance="The album match and your Library are unchanged. Check your connection, then load this track list again."
+                              label={`MusicBrainz track-list error for ${candidate.title}`}
+                              title="MusicBrainz couldn’t load this edition’s tracks."
+                            />
                           )}
                       </div>
                       {releaseTracksResult?.release.releaseId ===

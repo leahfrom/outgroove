@@ -261,11 +261,78 @@ describe("AlbumIdentification", () => {
         onSearch={vi.fn()}
       />,
     );
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Search failed: MusicBrainz is unavailable.",
+    const error = screen.getByRole("alert", {
+      name: "MusicBrainz album search error",
+    });
+    expect(error).toHaveTextContent(
+      "MusicBrainz couldn’t finish this album search.",
     );
+    expect(error).toHaveTextContent(
+      "Your album and any earlier matches are unchanged",
+    );
+    expect(screen.getByText("MusicBrainz is unavailable.")).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText("MusicBrainz is unavailable.")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Search MusicBrainz" }),
     ).toBeEnabled();
+  });
+
+  it("keeps an earlier match visible when a later search fails", () => {
+    render(
+      <AlbumIdentification
+        {...mappingProps}
+        album={album}
+        error="MusicBrainz timed out after retries."
+        loading={false}
+        result={result}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
+        onSearch={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("article")).toHaveTextContent(
+      result.candidates[0]?.title ?? "",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "from the last successful search",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "earlier matches are unchanged",
+    );
+  });
+
+  it("keeps the selected album match when its remote track list fails", async () => {
+    const user = userEvent.setup();
+    const candidate = result.candidates[0];
+    if (!candidate) throw new Error("Fixture candidate missing");
+    render(
+      <AlbumIdentification
+        {...mappingProps}
+        album={album}
+        error={undefined}
+        loading={false}
+        releaseTracksError="MusicBrainz returned HTTP 503 after retries."
+        releaseTracksReleaseId={candidate.releaseId}
+        result={result}
+        onCancel={vi.fn()}
+        onClose={vi.fn()}
+        onCreateDraft={vi.fn()}
+        onSearch={vi.fn()}
+      />,
+    );
+
+    const error = screen.getByRole("alert", {
+      name: `MusicBrainz track-list error for ${candidate.title}`,
+    });
+    expect(error).toHaveTextContent(
+      "The album match and your Library are unchanged",
+    );
+    expect(screen.getByRole("article")).toHaveTextContent(candidate.title);
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
+    await user.click(screen.getByText("Track-list technical details"));
+    expect(screen.getByText(/HTTP 503/u)).toBeVisible();
   });
 });

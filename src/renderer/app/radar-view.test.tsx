@@ -141,6 +141,25 @@ function renderView(
 }
 
 describe("Radar favorite artists", () => {
+  it("keeps earlier artist results while explaining a failed retry", async () => {
+    const user = userEvent.setup();
+    renderView({
+      artistSearchError: "MusicBrainz returned HTTP 503 after retries.",
+    });
+
+    const alert = screen.getByRole("alert", {
+      name: "Favorite artist request error",
+    });
+    expect(alert).toHaveTextContent("No favorites changed");
+    expect(screen.getByText(/Earlier artist results for/u)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Add Fixture Artist to favorites/u }),
+    ).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText(/HTTP 503/u)).toBeVisible();
+  });
+
   it("keeps automatic refresh opt-in, collapsed, and keyboard accessible", async () => {
     const onRadarBackgroundChange = vi.fn();
     renderView({
@@ -378,7 +397,12 @@ describe("Radar favorite artists", () => {
     const failures = screen.getByRole("list", {
       name: "Favorites that failed to refresh",
     });
-    expect(failures).toHaveTextContent("Fixture ArtistMusicBrainz unavailable");
+    expect(failures).toHaveTextContent(
+      "Fixture ArtistNot refreshed. Saved releases for this artist remain unchanged.",
+    );
+    expect(screen.getByText("MusicBrainz unavailable")).not.toBeVisible();
+    await user.click(screen.getByText("Why this artist wasn’t refreshed"));
+    expect(screen.getByText("MusicBrainz unavailable")).toBeVisible();
     expect(
       screen.getByRole("button", {
         name: `Refresh releases for ${favorite.name}`,
