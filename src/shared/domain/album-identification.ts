@@ -149,11 +149,11 @@ export function createMusicBrainzMappedTrackDraft(
       Object.assign(proposed, { isrcs: [isrcs[0]] });
     else if (isrcs.length > 1)
       omissions.push(
-        "ISRC is omitted because the recording has multiple values.",
+        "MusicBrainz lists more than one ISRC, so Outgroove won’t choose one.",
       );
     else if (isrcs.length === 1)
       omissions.push(
-        "ISRC is omitted because its value is too long or the local track has multiple current values.",
+        "Outgroove can’t safely replace this track’s current ISRC values with the MusicBrainz value.",
       );
     else omissions.push("MusicBrainz did not provide an ISRC.");
   }
@@ -178,11 +178,11 @@ export function createMusicBrainzMappedTrackDraft(
       Object.assign(proposed, { musicBrainzArtistIds: [artistIds[0]] });
     else if (artistIds.length > 1)
       omissions.push(
-        "Track artist ID is omitted because this track has multiple credited artists.",
+        "This track credits more than one artist, so Outgroove won’t choose one artist ID.",
       );
     else if (artistIds.length === 1)
       omissions.push(
-        "Track artist ID is omitted because the local track has multiple current values.",
+        "This track already has more than one artist ID, so Outgroove won’t replace them automatically.",
       );
     else omissions.push("MusicBrainz did not provide a track artist ID.");
   }
@@ -250,7 +250,7 @@ export function compareAlbumCandidate(
     matches.push(`Track count matches (${candidate.trackCount})`);
   } else if (candidate.trackCount !== null) {
     conflicts.push(
-      `Track count differs (Library ${album.tracks.length}, MusicBrainz ${candidate.trackCount})`,
+      `Track count differs (your Library: ${album.tracks.length}; MusicBrainz: ${candidate.trackCount})`,
     );
   }
 
@@ -262,10 +262,12 @@ export function compareAlbumCandidate(
       candidate.date.slice(0, sharedPrecision)
     ) {
       score += 10;
-      matches.push(`Release date agrees at known precision (${localDate})`);
+      matches.push(
+        `Release date matches as far as the saved dates show (${localDate})`,
+      );
     } else {
       conflicts.push(
-        `Release date differs (Library ${localDate}, MusicBrainz ${candidate.date})`,
+        `Release date differs (your Library: ${localDate}; MusicBrainz: ${candidate.date})`,
       );
     }
   }
@@ -302,8 +304,8 @@ export function createAlbumCandidateTagDraft(
     readonly current: (track: CatalogAlbum["tracks"][number]) => string;
   }[] = [];
   const omissions = [
-    "Album title is not included because title editing is a separate album operation.",
-    "Track and disc totals are not inferred from MusicBrainz media counts.",
+    "Album title stays unchanged because it has its own editing step.",
+    "Track and disc totals stay unchanged because a MusicBrainz release can contain several discs.",
   ];
   const albumArtist = formatArtistCredits(candidate.artistCredits);
   if (albumArtist && albumArtist.length <= 400)
@@ -316,7 +318,7 @@ export function createAlbumCandidateTagDraft(
   else
     omissions.push(
       albumArtist
-        ? "Album artist is too long for Outgroove's safe writer."
+        ? "Album artist is too long for Outgroove to write safely."
         : "MusicBrainz did not provide an album artist.",
     );
 
@@ -327,8 +329,7 @@ export function createAlbumCandidateTagDraft(
       value: candidate.date,
       current: (track) => track.tags.year ?? "",
     });
-  else
-    omissions.push("MusicBrainz did not provide a valid partial release date.");
+  else omissions.push("MusicBrainz did not provide a usable release date.");
 
   const catalogNumbers = [
     ...new Map(
@@ -352,11 +353,11 @@ export function createAlbumCandidateTagDraft(
     });
   else if (catalogNumbers.length > 1)
     omissions.push(
-      "Catalog number is not included because this release has multiple values.",
+      "MusicBrainz lists more than one catalog number, so Outgroove won’t choose one.",
     );
   else if (catalogNumbers.length === 1)
     omissions.push(
-      "Catalog number is not included because at least one selected track has multiple current values or the proposed value is too long.",
+      "Outgroove can’t safely replace the selected tracks’ current catalog numbers with this value.",
     );
   else omissions.push("MusicBrainz did not provide a catalog number.");
 
@@ -398,11 +399,11 @@ export function createAlbumCandidateTagDraft(
     });
   else if (releaseArtistIds.length > 1)
     omissions.push(
-      "Release artist ID is not included because this release has multiple credited artists.",
+      "This release credits more than one artist, so Outgroove won’t choose one artist ID.",
     );
   else if (releaseArtistIds.length === 1)
     omissions.push(
-      "Release artist ID is not included because at least one selected track has multiple current values.",
+      "At least one selected track already has more than one release artist ID, so Outgroove won’t replace them automatically.",
     );
   else omissions.push("MusicBrainz did not provide a release artist ID.");
 

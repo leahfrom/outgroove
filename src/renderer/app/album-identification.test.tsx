@@ -44,7 +44,7 @@ const result: AlbumIdentificationResultDto = {
       score: 85,
       confidence: "strong",
       matches: ["Album title matches", "Album artist matches"],
-      conflicts: ["Track count differs (Library 0, MusicBrainz 2)"],
+      conflicts: ["Track count differs (your Library: 0; MusicBrainz: 2)"],
     },
   ],
 };
@@ -92,16 +92,16 @@ describe("AlbumIdentification", () => {
       />,
     );
     const dialog = screen.getByRole("dialog", {
-      name: `Find MusicBrainz matches for ${album.title}`,
+      name: `Find album details for ${album.title}`,
     });
     expect(dialog).toHaveTextContent(
       `sends only the album title “${album.title}” and album artist “Fixture Artist”`,
     );
     expect(dialog).toHaveTextContent(
-      "never sends audio, artwork, file paths, native tags, or fingerprints",
+      "Your audio, artwork, file paths, tags, and fingerprints stay on this device",
     );
     expect(dialog).toHaveTextContent(
-      "cannot preview, apply, or write metadata",
+      "review and confirm every change before Outgroove writes anything",
     );
     expect(onSearch).not.toHaveBeenCalled();
     await user.click(
@@ -110,7 +110,8 @@ describe("AlbumIdentification", () => {
     expect(onSearch).toHaveBeenCalledOnce();
   });
 
-  it("shows confidence, evidence, conflicts, IDs, source, and unchanged state", () => {
+  it("shows plain-language confidence and progressively discloses provider IDs", async () => {
+    const user = userEvent.setup();
     render(
       <AlbumIdentification
         {...mappingProps}
@@ -125,15 +126,27 @@ describe("AlbumIdentification", () => {
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "1 candidate loaded from MusicBrainz. No Library metadata changed.",
+      "1 possible match found using MusicBrainz. Your Library is unchanged.",
     );
     const candidate = screen.getByRole("article");
-    expect(candidate).toHaveTextContent("strong · 85/100");
+    expect(candidate).toHaveTextContent("Strong match · 85%");
     expect(candidate).toHaveTextContent("Album title matches");
     expect(candidate).toHaveTextContent(
-      "Track count differs (Library 0, MusicBrainz 2)",
+      "Track count differs (your Library: 0; MusicBrainz: 2)",
     );
-    expect(candidate).toHaveTextContent("2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef");
+    const providerDetails = within(candidate)
+      .getByText("MusicBrainz details")
+      .closest("details");
+    if (!providerDetails) throw new Error("Provider details missing");
+    expect(providerDetails).not.toHaveAttribute("open");
+    expect(
+      within(providerDetails).getByText("2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef"),
+    ).not.toBeVisible();
+    await user.click(within(providerDetails).getByText("MusicBrainz details"));
+    expect(providerDetails).toHaveAttribute("open");
+    expect(
+      within(providerDetails).getByText("2f3ad7a7-7d18-4f21-84ec-c5c3eac2deef"),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /apply|write|accept/u }),
     ).not.toBeInTheDocument();
@@ -181,7 +194,7 @@ describe("AlbumIdentification", () => {
     );
     expect(onCreateDraft).not.toHaveBeenCalled();
     const button = screen.getByRole("button", {
-      name: `Draft supported tags from ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
+      name: `Use album details from ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
     });
     button.focus();
     await user.keyboard("{Enter}");
@@ -207,7 +220,7 @@ describe("AlbumIdentification", () => {
     );
     expect(onLoadReleaseTracks).not.toHaveBeenCalled();
     const button = screen.getByRole("button", {
-      name: `Map Library tracks to ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
+      name: `Match Library tracks with ${result.candidates[0]?.title}, ${result.candidates[0]?.date}`,
     });
     button.focus();
     await user.keyboard("{Enter}");

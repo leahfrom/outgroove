@@ -60,7 +60,7 @@ export function AlbumActionsMenu({
           className="album-action-menu"
           items={[
             {
-              label: "Find MusicBrainz matches",
+              label: "Find album details",
               onSelect: onFindMatches,
             },
             { label: "Edit album metadata", onSelect: onEditMetadata },

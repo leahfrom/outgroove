@@ -88,18 +88,18 @@ export function AlbumIdentification({
 }): React.JSX.Element {
   return (
     <ModalSheet
-      ariaLabel={`Find MusicBrainz matches for ${album.title}`}
+      ariaLabel={`Find album details for ${album.title}`}
       className="album-identification-sheet"
-      closeLabel="Close match finder"
+      closeLabel="Close album search"
       onClose={onClose}
     >
       <header className="identification-heading">
-        <p className="eyebrow">Album identification</p>
-        <h2>Find MusicBrainz matches</h2>
+        <p className="eyebrow">Find album details</p>
+        <h2>Find this album on MusicBrainz</h2>
         <p>
-          Compare this Library album with release editions in MusicBrainz, then
-          explicitly choose one to prepare a limited metadata draft. Searching
-          and choosing a candidate cannot preview, apply, or write metadata.
+          Search for possible editions, compare the details, and choose the one
+          that fits. Your choice only fills in a draft—you still review and
+          confirm every change before Outgroove writes anything.
         </p>
       </header>
 
@@ -110,12 +110,12 @@ export function AlbumIdentification({
         <h3 id="musicbrainz-privacy-heading">Before connecting</h3>
         <p>
           Searching sends only the album title “{album.title}” and album artist
-          “{album.albumArtist}” to MusicBrainz. Outgroove never sends audio,
-          artwork, file paths, native tags, or fingerprints in this search.
+          “{album.albumArtist}” to MusicBrainz. Your audio, artwork, file paths,
+          tags, and fingerprints stay on this device.
         </p>
         <p>
-          Track count, release date, and catalog number comparisons happen
-          locally after results return.
+          Outgroove compares track count, release date, and catalog number on
+          this device after the results arrive.
         </p>
         <div className="actions">
           <button
@@ -144,25 +144,25 @@ export function AlbumIdentification({
         {!loading && error && `Search failed: ${error}`}
         {!loading &&
           result &&
-          `${result.candidates.length} candidate${
-            result.candidates.length === 1 ? "" : "s"
-          } loaded from ${
+          `${result.candidates.length} possible ${
+            result.candidates.length === 1 ? "match" : "matches"
+          } found using ${
             result.source === "network"
               ? "MusicBrainz"
               : result.source === "cache"
-                ? "the local cache"
-                : "an expired local cache because MusicBrainz was unavailable"
-          }. No Library metadata changed.`}
+                ? "a saved result"
+                : "an older saved result because MusicBrainz was unavailable"
+          }. Your Library is unchanged.`}
       </div>
 
       {result && !loading && (
         <section aria-label="MusicBrainz release candidates">
           {result.candidates.length === 0 ? (
             <div className="card identification-empty">
-              <h3>No candidates found</h3>
+              <h3>No matches found</h3>
               <p>
-                MusicBrainz returned no release editions for this title and
-                artist. The Library album remains unchanged.
+                MusicBrainz did not find an edition with this title and artist.
+                You can try again later or keep the album as it is.
               </p>
             </div>
           ) : (
@@ -183,7 +183,12 @@ export function AlbumIdentification({
                         <span
                           className={`candidate-confidence ${candidate.confidence}`}
                         >
-                          {candidate.confidence} · {candidate.score}/100
+                          {candidate.confidence === "strong"
+                            ? "Strong match"
+                            : candidate.confidence === "possible"
+                              ? "Possible match"
+                              : "Weak match"}{" "}
+                          · {candidate.score}%
                         </span>
                       </header>
                       <dl>
@@ -201,14 +206,10 @@ export function AlbumIdentification({
                             {candidate.trackCount ?? "Unknown"} tracks
                           </dd>
                         </div>
-                        <div>
-                          <dt>MusicBrainz release ID</dt>
-                          <dd className="identifier">{candidate.releaseId}</dd>
-                        </div>
                       </dl>
                       <div className="candidate-evidence">
                         <div>
-                          <h4>Matches</h4>
+                          <h4>Why it may match</h4>
                           {candidate.matches.length > 0 ? (
                             <ul>
                               {candidate.matches.map((match) => (
@@ -216,11 +217,11 @@ export function AlbumIdentification({
                               ))}
                             </ul>
                           ) : (
-                            <p>None of the compared fields match.</p>
+                            <p>No compared details match.</p>
                           )}
                         </div>
                         <div>
-                          <h4>Conflicts</h4>
+                          <h4>Things to check</h4>
                           {candidate.conflicts.length > 0 ? (
                             <ul>
                               {candidate.conflicts.map((conflict) => (
@@ -228,10 +229,27 @@ export function AlbumIdentification({
                               ))}
                             </ul>
                           ) : (
-                            <p>No compared-field conflicts.</p>
+                            <p>No differences found in the compared details.</p>
                           )}
                         </div>
                       </div>
+                      <details className="candidate-technical-details">
+                        <summary>MusicBrainz details</summary>
+                        <dl>
+                          <div>
+                            <dt>Release ID</dt>
+                            <dd className="identifier">
+                              {candidate.releaseId}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Release group ID</dt>
+                            <dd className="identifier">
+                              {candidate.releaseGroupId ?? "Not provided"}
+                            </dd>
+                          </div>
+                        </dl>
+                      </details>
                       <CoverArtArchivePreview
                         candidate={candidate}
                         error={
@@ -264,14 +282,13 @@ export function AlbumIdentification({
                         }
                       />
                       <div className="candidate-draft">
-                        <h4>Supported tag draft</h4>
+                        <h4>Details Outgroove can fill in</h4>
                         {tagDraft.fields.length > 0 ? (
                           <p>
                             {tagDraft.fields
                               .map(({ label }) => label)
                               .join(", ")}
-                            . You will review current and proposed values before
-                            previewing.
+                            . These become a draft for you to review.
                           </p>
                         ) : (
                           <p>
@@ -280,7 +297,7 @@ export function AlbumIdentification({
                           </p>
                         )}
                         <details>
-                          <summary>Values not included</summary>
+                          <summary>Details Outgroove won’t change</summary>
                           <ul>
                             {tagDraft.omissions.map((omission) => (
                               <li key={omission}>{omission}</li>
@@ -288,21 +305,21 @@ export function AlbumIdentification({
                           </ul>
                         </details>
                         <button
-                          aria-label={`Draft supported tags from ${candidate.title}, ${candidate.date ?? "unknown date"}`}
+                          aria-label={`Use album details from ${candidate.title}, ${candidate.date ?? "unknown date"}`}
                           className="primary"
                           disabled={tagDraft.fields.length === 0}
                           onClick={() => onCreateDraft(candidate)}
                           type="button"
                         >
-                          Draft supported tags from this release
+                          Use these album details
                         </button>
                         <button
-                          aria-label={`Map Library tracks to ${candidate.title}, ${candidate.date ?? "unknown date"}`}
+                          aria-label={`Match Library tracks with ${candidate.title}, ${candidate.date ?? "unknown date"}`}
                           disabled={releaseTracksLoading}
                           onClick={() => onLoadReleaseTracks(candidate)}
                           type="button"
                         >
-                          Map tracks from this release
+                          Match tracks one by one
                         </button>
                         {releaseTracksReleaseId === candidate.releaseId &&
                           releaseTracksLoading && (
@@ -311,12 +328,12 @@ export function AlbumIdentification({
                               className="identification-status"
                               role="status"
                             >
-                              Loading the selected release tracklist…
+                              Loading tracks from this release…
                               <button
                                 onClick={onCancelReleaseTracks}
                                 type="button"
                               >
-                                Cancel tracklist request
+                                Cancel
                               </button>
                             </div>
                           )}
@@ -324,7 +341,7 @@ export function AlbumIdentification({
                           !releaseTracksLoading &&
                           releaseTracksError && (
                             <p className="workflow-error" role="alert">
-                              Tracklist request failed: {releaseTracksError}
+                              Could not load the tracks: {releaseTracksError}
                             </p>
                           )}
                       </div>

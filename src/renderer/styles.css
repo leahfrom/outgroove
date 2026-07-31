@@ -2311,6 +2311,20 @@ h1 {
 .candidate-evidence p {
   margin: 0;
 }
+.candidate-technical-details {
+  margin-top: 0.85rem;
+}
+.candidate-technical-details > summary {
+  cursor: pointer;
+  color: #526159;
+  font-weight: 700;
+}
+.candidate-technical-details dl {
+  margin-bottom: 0;
+}
+.candidate-artwork .candidate-technical-details p {
+  margin-top: 0.65rem;
+}
 .candidate-artwork {
   display: grid;
   gap: 0.65rem;
@@ -2864,7 +2878,8 @@ pre {
   padding: 0;
   list-style: none;
 }
-.track-identification-results article > dl {
+.track-identification-results article > dl,
+.track-identification-results details dl {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;

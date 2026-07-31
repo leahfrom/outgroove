@@ -37,7 +37,7 @@ describe("AlbumActionsMenu", () => {
       }),
     ).toBeVisible();
     const findMatches = screen.getByRole("menuitem", {
-      name: "Find MusicBrainz matches",
+      name: "Find album details",
     });
     expect(findMatches).toHaveFocus();
     await user.keyboard("{Enter}");
