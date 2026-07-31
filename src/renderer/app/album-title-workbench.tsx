@@ -35,6 +35,12 @@ function historyLabel(item: TagEditHistoryItemDto): string {
   }
 }
 
+function historyOutcome(item: TagEditHistoryItemDto): string {
+  const confirmed = `${item.verifiedFiles} ${item.verifiedFiles === 1 ? "file" : "files"} confirmed`;
+  if (item.failedFiles === 0) return confirmed;
+  return `${confirmed}; ${item.failedFiles} ${item.failedFiles === 1 ? "file" : "files"} couldn’t be confirmed`;
+}
+
 function PreviewWarnings({
   warnings,
 }: {
@@ -164,10 +170,8 @@ function AlbumTitleWorkbenchComponent(
             onClick={() => onSectionChange("history")}
             type="button"
           >
-            <span>History & undo</span>
-            <small>
-              Review verified operations before proposing a restore.
-            </small>
+            <span>Change history & undo</span>
+            <small>Review a past change before restoring earlier values.</small>
           </button>
         </nav>
       )}
@@ -255,19 +259,21 @@ function AlbumTitleWorkbenchComponent(
         <div className="album-title-section">
           <div className="workflow-heading">
             <div>
-              <p className="eyebrow">Verified operations</p>
-              <h3>History & undo</h3>
+              <p className="eyebrow">Past changes</p>
+              <h3>Change history & undo</h3>
               <p>
-                Undo is a new reviewed metadata write. It restores only recorded
-                fields and refuses conflicting external changes.
+                Review a past change and restore its earlier values. Outgroove
+                won’t overwrite a file that has changed since.
               </p>
             </div>
-            <span className="safety-badge">Undo requires preview</span>
+            <span className="safety-badge">Preview before restoring</span>
           </div>
 
           {historyError && (
             <div className="workflow-error" role="alert">
-              <strong>The history request could not be completed.</strong>
+              <strong>
+                Outgroove couldn’t load this album’s change history.
+              </strong>
               <span>{historyError}</span>
             </div>
           )}
@@ -275,10 +281,10 @@ function AlbumTitleWorkbenchComponent(
           <div className="history" aria-label="Metadata edit history">
             {editHistory.length === 0 ? (
               <div className="workflow-empty">
-                <h4>No confirmed edits yet</h4>
+                <h4>No changes to undo</h4>
                 <p>
-                  Verified album, track, batch, and sequencing operations for
-                  this album will appear here.
+                  Changes you confirm for this album will appear here after
+                  Outgroove checks the updated files.
                 </p>
               </div>
             ) : (
@@ -288,11 +294,7 @@ function AlbumTitleWorkbenchComponent(
                     <div>
                       <strong>{historyLabel(item)}</strong>
                       <span>
-                        {item.state}; {item.verifiedFiles} verified
-                        {item.failedFiles > 0
-                          ? `, ${item.failedFiles} failed`
-                          : ""}{" "}
-                        ·{" "}
+                        {historyOutcome(item)} ·{" "}
                         <time dateTime={item.completedAt ?? item.createdAt}>
                           {new Date(
                             item.completedAt ?? item.createdAt,
@@ -307,7 +309,7 @@ function AlbumTitleWorkbenchComponent(
                           onClick={() => onPreviewUndo(item.operationId)}
                           type="button"
                         >
-                          Preview undo
+                          Review title restore
                         </button>
                       )}
                     {item.kind === "track-tags-edit" &&
@@ -317,7 +319,7 @@ function AlbumTitleWorkbenchComponent(
                           onClick={() => onPreviewTrackUndo(item.operationId)}
                           type="button"
                         >
-                          Preview track undo
+                          Review field restore
                         </button>
                       )}
                     {item.kind === "track-tags-batch-edit" &&
@@ -339,8 +341,8 @@ function AlbumTitleWorkbenchComponent(
                           {item.proposedTitle.startsWith(
                             "MusicBrainz track mapping:",
                           )
-                            ? "Preview mapping undo"
-                            : "Preview batch undo"}
+                            ? "Review mapping restore"
+                            : "Review shared-field restore"}
                         </button>
                       )}
                     {item.kind === "track-number-sequence-edit" &&
@@ -352,7 +354,7 @@ function AlbumTitleWorkbenchComponent(
                           }
                           type="button"
                         >
-                          Preview sequence undo
+                          Review track-number restore
                         </button>
                       )}
                     {item.kind === "album-artwork-edit" &&
@@ -362,7 +364,7 @@ function AlbumTitleWorkbenchComponent(
                           onClick={() => onPreviewArtworkUndo(item.operationId)}
                           type="button"
                         >
-                          Preview artwork undo
+                          Review artwork restore
                         </button>
                       )}
                   </li>
@@ -378,10 +380,10 @@ function AlbumTitleWorkbenchComponent(
               )}
               busy={busy}
               cancelLabel="Keep current titles"
-              confirmLabel={`Confirm and undo ${undoPreview.files.length} ${undoPreview.files.length === 1 ? "file" : "files"}`}
-              description="Undo proceeds only when each current album title still matches the verified edit. Every accepted file is snapshotted, safely written, re-read, and verified again."
+              confirmLabel={`Restore titles in ${undoPreview.files.length} ${undoPreview.files.length === 1 ? "file" : "files"}`}
+              description="Outgroove will restore a title only if it still matches the past change. It saves the current tags first, writes the earlier title, then checks the file again."
               label="Tag undo confirmation"
-              title="Review album-title restore"
+              title="Restore earlier album titles?"
               onCancel={onCancelUndo}
               onConfirm={onConfirmUndo}
             >
@@ -419,10 +421,10 @@ function AlbumTitleWorkbenchComponent(
               blocked={trackUndoPreview.warnings.length > 0}
               busy={busy}
               cancelLabel="Keep current track fields"
-              confirmLabel="Confirm and undo track fields"
-              description="Only fields recorded by the original edit will be restored. A field changed afterward is refused rather than overwritten."
+              confirmLabel="Restore earlier track fields"
+              description="Only fields from the past change will be restored. If a field has changed since then, Outgroove leaves it alone."
               label="Track metadata undo confirmation"
-              title="Review track-field restore"
+              title="Restore earlier track details?"
               onCancel={onCancelTrackUndo}
               onConfirm={onConfirmTrackUndo}
             >
@@ -472,8 +474,8 @@ function AlbumTitleWorkbenchComponent(
               }
               busy={busy}
               cancelLabel="Keep current track fields"
-              confirmLabel="Confirm safe batch undo writes"
-              description="Only verified fields from the original operation are proposed. Conflicted files are refused without stopping safe restores on other files."
+              confirmLabel="Restore the available earlier values"
+              description="Only values confirmed after the past change are included. Outgroove leaves conflicting files alone while restoring the files that are still safe to change."
               label="Batch metadata undo confirmation"
               title={`Review ${batchUndoSubject.toLowerCase()}`}
               onCancel={onCancelBatchUndo}
@@ -525,10 +527,10 @@ function AlbumTitleWorkbenchComponent(
               }
               busy={busy}
               cancelLabel="Keep current artwork"
-              confirmLabel={`Confirm and restore ${artworkUndoPreview.files.filter((file) => file.willWrite).length} files`}
-              description="Undo restores the complete embedded picture set recorded for each verified file. Files whose artwork changed afterward are refused."
+              confirmLabel={`Restore artwork in ${artworkUndoPreview.files.filter((file) => file.willWrite).length} files`}
+              description="Outgroove will restore all embedded pictures saved with the past change. It leaves a file alone if its artwork has changed since."
               label="Artwork undo confirmation"
-              title="Review embedded artwork restore"
+              title="Restore the earlier artwork?"
               onCancel={onCancelArtworkUndo}
               onConfirm={onConfirmArtworkUndo}
             >

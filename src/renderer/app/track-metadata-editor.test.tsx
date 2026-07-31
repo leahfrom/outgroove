@@ -294,7 +294,9 @@ describe("TrackMetadataEditor", () => {
     expect(confirmation).toHaveTextContent(
       "The current tag no longer matches this draft.",
     );
-    expect(confirmation).toHaveTextContent("Confirmation is blocked.");
+    expect(confirmation).toHaveTextContent(
+      "These changes can’t be confirmed yet.",
+    );
   });
 
   it("focuses a recoverable request error inside the editor", () => {

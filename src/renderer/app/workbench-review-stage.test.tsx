@@ -74,7 +74,9 @@ it("focuses and explains a blocked confirmation without enabling writes", () => 
     screen.getByRole("button", { name: "Confirm safe writes" }),
   ).toBeDisabled();
   expect(screen.getAllByRole("alert")).toHaveLength(2);
-  expect(screen.getByText("Confirmation is blocked.")).toBeVisible();
+  expect(
+    screen.getByText("These changes can’t be confirmed yet."),
+  ).toBeVisible();
 });
 
 it("focuses a recoverable request error and keeps the next action in keyboard order", async () => {
@@ -129,7 +131,7 @@ it("moves focus to results and distinguishes verified and failed files", () => {
 
   const result = screen.getByRole("alert", { name: "Batch result" });
   expect(result).toHaveFocus();
-  expect(result).toHaveTextContent("1 verified; 1 need attention");
+  expect(result).toHaveTextContent("1 confirmed; 1 couldn’t be confirmed");
   expect(result).toHaveTextContent("C:\\Music\\First.mp3");
   expect(result).toHaveTextContent("The file changed after preview.");
 });
