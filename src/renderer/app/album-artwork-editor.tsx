@@ -6,6 +6,7 @@ import type {
   AlbumFolderArtworkResultDto,
   TagEditResultDto,
 } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
@@ -119,7 +120,11 @@ export function AlbumArtworkEditor({
       {error && (
         <div className="workflow-error" role="alert">
           <strong>The artwork request could not be completed.</strong>
-          <span>{error}</span>
+          <span>
+            Review the current album or choose the artwork again. No audio file
+            is treated as changed until Outgroove verifies it.
+          </span>
+          <TechnicalDetails messages={[error]} />
         </div>
       )}
 
@@ -287,7 +292,10 @@ export function AlbumArtworkEditor({
           {folderError && (
             <div className="workflow-error" role="alert">
               <strong>Folder artwork could not be prepared.</strong>
-              <span>{folderError}</span>
+              <span>
+                Review the album folder and try again. No file was created.
+              </span>
+              <TechnicalDetails messages={[folderError]} />
             </div>
           )}
 
@@ -420,7 +428,11 @@ export function AlbumArtworkEditor({
           {exportError && (
             <div className="workflow-error" role="alert">
               <strong>The artwork could not be exported.</strong>
-              <span>{exportError}</span>
+              <span>
+                Choose a destination or prepare the export again. Audio files
+                remain unchanged.
+              </span>
+              <TechnicalDetails messages={[exportError]} />
             </div>
           )}
 

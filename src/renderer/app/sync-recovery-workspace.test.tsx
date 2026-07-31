@@ -257,6 +257,12 @@ describe("SyncRecoveryWorkspace", () => {
       rerender(workspace({ feedback, recoveries: [] }));
       const result = screen.getByLabelText("Recovery result for Road DAP");
       expect(result).toHaveTextContent(feedback.messages[0] ?? "");
+      expect(
+        within(result).getByText(feedback.messages[0] ?? ""),
+      ).not.toBeVisible();
+      expect(
+        within(result).getByText("Recovery technical details"),
+      ).toBeVisible();
       expect(result).toHaveAttribute(
         "role",
         feedback.status === "complete" ? "status" : "alert",

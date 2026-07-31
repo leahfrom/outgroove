@@ -1,4 +1,5 @@
 import type { ScanJobDto, ScanJobState } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 
 export interface ActivityProgress {
   readonly job: "scan" | "tag-edit" | "sync" | "library-quality" | "radar";
@@ -271,7 +272,16 @@ function ScanActivity({
       {(showDetail || scanActive) && (
         <div className="activity-progress">
           {showDetail && <p>{scanJob.detail || "Waiting to start…"}</p>}
-          {scanJob.error && <p role="alert">{scanJob.error}</p>}
+          {scanJob.error && (
+            <div role="alert">
+              <strong>The scan stopped before it finished.</strong>
+              <p>
+                Your existing Library is still available. Reconnect the folder
+                if needed, then retry the scan.
+              </p>
+              <TechnicalDetails messages={[scanJob.error]} />
+            </div>
+          )}
           {scanJob.state === "running" && scanJob.total === 0 ? (
             <progress aria-label="Discovering audio files" />
           ) : scanJob.total > 0 && scanActive ? (

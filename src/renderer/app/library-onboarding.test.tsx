@@ -78,8 +78,12 @@ it("presents interrupted scans as recoverable keyboard actions", async () => {
 
   expect(screen.getByText(root.path)).toBeVisible();
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Outgroove closed before this scan finished.",
+    "The scan stopped before it finished.",
   );
+  expect(
+    screen.getByText("Outgroove closed before this scan finished."),
+  ).not.toBeVisible();
+  expect(screen.getByText("Technical details")).toBeVisible();
   const retry = screen.getByRole("button", { name: "Retry first scan" });
   retry.focus();
   await user.keyboard("{Enter}");

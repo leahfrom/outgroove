@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { TechnicalDetails } from "./technical-details";
+
 interface WriteResultItem {
   readonly fileId: string;
   readonly path: string;
@@ -61,8 +63,8 @@ export function WorkbenchRequestError({
       tabIndex={-1}
     >
       <strong>Outgroove couldn’t complete this step.</strong>
-      <span>{message}</span>
       <span>{recovery}</span>
+      <TechnicalDetails messages={[message]} />
     </div>
   );
 }
@@ -184,7 +186,12 @@ export function WorkbenchWriteResult({
             <span>
               {result.verified ? "Change confirmed" : "Check this file"}
             </span>
-            {result.error && <span>{result.error}</span>}
+            {result.error && (
+              <TechnicalDetails
+                messages={[result.error]}
+                summary="Why Outgroove couldn’t confirm this file"
+              />
+            )}
           </li>
         ))}
       </ul>

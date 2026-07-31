@@ -1,4 +1,5 @@
 import type { LibraryRootDto, ScanJobDto } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 
 export function LibraryOnboarding({
   busy,
@@ -55,9 +56,11 @@ export function LibraryOnboarding({
             You will review the folder before the first scan starts.
           </p>
           {setupError && (
-            <p className="workflow-error" role="alert">
-              {setupError}
-            </p>
+            <div className="workflow-error" role="alert">
+              <strong>The folder could not be selected.</strong>
+              <span>Try choosing your first Library folder again.</span>
+              <TechnicalDetails messages={[setupError]} />
+            </div>
           )}
           <button
             className="primary"
@@ -139,14 +142,24 @@ export function LibraryOnboarding({
           <strong>{selectedRoot.path}</strong>
         </p>
         {setupError && (
-          <p className="workflow-error" role="alert">
-            {setupError}
-          </p>
+          <div className="workflow-error" role="alert">
+            <strong>The scan could not start.</strong>
+            <span>
+              Check that the folder is still connected and available, then try
+              again.
+            </span>
+            <TechnicalDetails messages={[setupError]} />
+          </div>
         )}
         {selectedScan?.error && (
-          <p className="workflow-error" role="alert">
-            {selectedScan.error}
-          </p>
+          <div className="workflow-error" role="alert">
+            <strong>The scan stopped before it finished.</strong>
+            <span>
+              Your existing Library is still available. Reconnect the folder if
+              needed, then retry the scan.
+            </span>
+            <TechnicalDetails messages={[selectedScan.error]} />
+          </div>
         )}
         {scanActive ? (
           <>

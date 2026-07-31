@@ -1231,8 +1231,13 @@ describe("tag edit UI safety states", () => {
       "The selected folder is no longer available.",
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Needs attentionThe selected folder is no longer available.",
+      "Needs attentionThe Library scan could not start.",
     );
+    expect(
+      within(screen.getByRole("status")).getByText(
+        "The selected folder is no longer available.",
+      ),
+    ).not.toBeVisible();
     expect(screen.getByRole("status")).toHaveAttribute(
       "aria-live",
       "assertive",
@@ -6069,6 +6074,46 @@ describe("tag edit UI safety states", () => {
     );
     expect(listSyncHistory).toHaveBeenCalledTimes(2);
     expect(retryConfirm).toBeEnabled();
+
+    applySync.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        outcome: "failed",
+        copied: 1,
+        replaced: 0,
+        removed: 0,
+        rolledBack: 1,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: ["EIO while restoring /fixture/dap/Artist/Album/01 Track.flac"],
+      },
+    });
+    retryConfirm.focus();
+    await user.keyboard("{Enter}");
+
+    const failedNotice = await screen.findByRole("status");
+    expect(failedNotice).toHaveTextContent(
+      "The sync stopped. Outgroove restored 1 completed change",
+    );
+    expect(failedNotice).toHaveTextContent(
+      "Review Sync recovery and the technical details",
+    );
+    expect(
+      within(failedNotice).getByText(
+        "EIO while restoring /fixture/dap/Artist/Album/01 Track.flac",
+      ),
+    ).not.toBeVisible();
+    const technicalDetails =
+      within(failedNotice).getByText("Technical details");
+    technicalDetails.focus();
+    expect(technicalDetails).toHaveFocus();
+    await user.click(technicalDetails);
+    expect(
+      within(failedNotice).getByText(
+        "EIO while restoring /fixture/dap/Artist/Album/01 Track.flac",
+      ),
+    ).toBeVisible();
   });
 
   it("shows restart-safe sync recovery actions and confirms them with the keyboard", async () => {
@@ -6199,9 +6244,15 @@ describe("tag edit UI safety states", () => {
     const failure = await screen.findByLabelText(
       "Recovery result for Road DAP",
     );
-    expect(failure).toHaveTextContent(
-      "The recovery preview changed. Review it again.",
-    );
+    expect(failure).toHaveTextContent("No recovery changes were made");
+    expect(
+      within(failure).getByText(
+        "The recovery preview changed. Review it again.",
+      ),
+    ).not.toBeVisible();
+    expect(
+      within(failure).getByText("Recovery technical details"),
+    ).toBeVisible();
     expect(
       within(failure).getByRole("heading", {
         name: "No recovery changes were made",
