@@ -188,12 +188,12 @@ export function LibraryTrackDetail({
         <details className="advanced-metadata">
           <summary>Advanced metadata</summary>
           <div className="advanced-metadata-grid">
-            <section aria-label="Normalized track tags">
-              <h4>Normalized tags</h4>
+            <section aria-label="How Outgroove reads the track tags">
+              <h4>Outgroove’s tag view</h4>
               <pre>{JSON.stringify(track.tags, null, 2)}</pre>
             </section>
-            <section aria-label="Native track tags">
-              <h4>Native tags</h4>
+            <section aria-label="Original file tags">
+              <h4>Original file tags</h4>
               <pre>{JSON.stringify(track.nativeTags, null, 2)}</pre>
             </section>
           </div>

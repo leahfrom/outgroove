@@ -239,7 +239,7 @@ describe("SyncSetupWorkspace", () => {
     expect(onEditProfileAlbums).toHaveBeenCalledWith(profile);
     await user.click(
       within(profiles).getByRole("button", {
-        name: "Change DAP target for Road DAP",
+        name: "Change player folder for Road DAP",
       }),
     );
     expect(onChooseProfileTarget).toHaveBeenCalledWith(profile);
@@ -250,7 +250,7 @@ describe("SyncSetupWorkspace", () => {
     );
     expect(onStartRename).toHaveBeenCalledWith(profile);
 
-    const preview = screen.getByLabelText("DAP target confirmation");
+    const preview = screen.getByLabelText("Player folder confirmation");
     expect(preview).toHaveTextContent(targetPreview.currentTargetPath);
     expect(preview).toHaveTextContent(targetPreview.proposedTargetPath);
     expect(preview).toHaveTextContent(
@@ -259,14 +259,14 @@ describe("SyncSetupWorkspace", () => {
     expect(onConfirmTarget).not.toHaveBeenCalled();
 
     const confirm = within(preview).getByRole("button", {
-      name: "Confirm DAP target change",
+      name: "Confirm player folder change",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
     expect(onConfirmTarget).toHaveBeenCalledTimes(1);
 
     const cancel = within(preview).getByRole("button", {
-      name: "Cancel DAP target change",
+      name: "Cancel player folder change",
     });
     cancel.focus();
     await user.keyboard("{Enter}");
@@ -290,7 +290,7 @@ describe("SyncSetupWorkspace", () => {
       }),
     );
 
-    const preview = screen.getByLabelText("DAP target confirmation");
+    const preview = screen.getByLabelText("Player folder confirmation");
     expect(preview).toHaveTextContent("Recheck saved storage");
     expect(preview).toHaveTextContent(
       "Completed syncs and Outgroove’s record of files it synced stay with this profile and destination",

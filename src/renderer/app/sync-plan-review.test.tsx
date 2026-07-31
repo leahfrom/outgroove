@@ -344,7 +344,7 @@ describe("SyncPlanReview", () => {
       }),
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "No target changes are needed.",
+      "No player-folder changes are needed.",
     );
     expect(
       screen.queryByRole("heading", { name: "Apply this plan?" }),

@@ -162,7 +162,7 @@ export function SyncSetupWorkspace({
               <div>
                 <strong>Unsaved selection for {editingProfile.name}</strong>
                 <span className="sync-target-path">
-                  Target stays {editingProfile.targetPath}
+                  Player folder stays {editingProfile.targetPath}
                 </span>
               </div>
               <span>Preview required again after saving</span>
@@ -261,7 +261,7 @@ export function SyncSetupWorkspace({
                   onClick={onChooseTarget}
                   type="button"
                 >
-                  Choose DAP target
+                  Choose player folder
                 </button>
                 <button
                   disabled={busy || selectedAlbums.length === 0}
@@ -284,8 +284,9 @@ export function SyncSetupWorkspace({
               <p className="eyebrow">Saved syncs</p>
               <h3 id="sync-profiles-title">DAP profiles</h3>
               <p>
-                A profile remembers your albums and destination. Opening one
-                does not change anything until you preview and confirm a sync.
+                A DAP (digital audio player) profile remembers your albums and
+                the folder on your player. Opening one does not change anything
+                until you preview and confirm a sync.
               </p>
             </div>
           </div>
@@ -294,8 +295,8 @@ export function SyncSetupWorkspace({
             <div className="workflow-empty">
               <h4>No profiles saved yet</h4>
               <p>
-                Create one from a selection of up to 100 Library albums and a
-                folder-backed target.
+                Choose up to 100 Library albums, then choose a folder on your
+                player.
               </p>
               <button
                 onClick={() => onSelectSection("selection")}
@@ -367,7 +368,7 @@ export function SyncSetupWorkspace({
                         Edit albums
                       </button>
                       <button
-                        aria-label={`Change DAP target for ${saved.name}`}
+                        aria-label={`Change player folder for ${saved.name}`}
                         disabled={
                           busy ||
                           Boolean(editingProfile) ||
@@ -456,7 +457,7 @@ export function SyncSetupWorkspace({
           {targetPreview && (
             <section
               className="sync-target-preview"
-              aria-label="DAP target confirmation"
+              aria-label="Player folder confirmation"
             >
               <div>
                 <p className="eyebrow">
@@ -479,14 +480,14 @@ export function SyncSetupWorkspace({
               </div>
               <dl>
                 <div>
-                  <dt>Current target</dt>
+                  <dt>Current player folder</dt>
                   <dd>{targetPreview.currentTargetPath}</dd>
                 </div>
                 <div>
                   <dt>
                     {targetPreview.identityRefresh
-                      ? "Rechecked target"
-                      : "New target"}
+                      ? "Rechecked player folder"
+                      : "New player folder"}
                   </dt>
                   <dd>{targetPreview.proposedTargetPath}</dd>
                 </div>
@@ -510,12 +511,12 @@ export function SyncSetupWorkspace({
                 >
                   {targetPreview.identityRefresh
                     ? "Confirm saved storage update"
-                    : "Confirm DAP target change"}
+                    : "Confirm player folder change"}
                 </button>
                 <button disabled={busy} onClick={onCancelTarget} type="button">
                   {targetPreview.identityRefresh
                     ? "Cancel saved storage update"
-                    : "Cancel DAP target change"}
+                    : "Cancel player folder change"}
                 </button>
               </div>
             </section>

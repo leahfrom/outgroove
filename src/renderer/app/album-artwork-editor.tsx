@@ -28,14 +28,14 @@ function ArtworkVerificationDetails({
 }): React.JSX.Element {
   return (
     <details>
-      <summary>Verification details</summary>
+      <summary>File verification details</summary>
       <dl>
         <div>
           <dt>File size</dt>
           <dd>{formatBytes(byteLength)}</dd>
         </div>
         <div>
-          <dt>Verification code (SHA-256)</dt>
+          <dt>File fingerprint (SHA-256)</dt>
           <dd className="identifier">{sha256}</dd>
         </div>
       </dl>

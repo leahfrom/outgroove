@@ -189,7 +189,7 @@ describe("album data-quality diagnostics", () => {
     );
   });
 
-  it("handles exact normalized placeholders without guessing values", () => {
+  it("explains visible placeholders without guessing missing values", () => {
     const findings = diagnoseAlbum(
       album([
         track("unknown", {
@@ -215,7 +215,7 @@ describe("album data-quality diagnostics", () => {
       findings.filter((finding) => finding.kind === "placeholder-tags"),
     ).toHaveLength(2);
     expect(findings[1]?.explanation).toContain(
-      "exact “Unknown album” fallback",
+      "Outgroove shows “Unknown album” so they remain visible",
     );
   });
 

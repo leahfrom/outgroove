@@ -146,9 +146,7 @@ describe("WorkbenchTrackContext", () => {
     await user.keyboard("{Enter}");
     expect(onEditTrack).toHaveBeenCalledWith(firstTrack);
 
-    const technicalSummary = screen.getByText(
-      "Inspect technical details and raw metadata",
-    );
+    const technicalSummary = screen.getByText("Inspect file and tag details");
     const technical = technicalSummary.closest("details");
     if (!technical) throw new Error("Technical disclosure missing");
     expect(technical).not.toHaveAttribute("open");

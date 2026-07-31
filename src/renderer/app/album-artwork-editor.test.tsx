@@ -465,7 +465,7 @@ describe("AlbumArtworkEditor", () => {
 
     await user.click(screen.getByText("Export current artwork"));
     expect(screen.getByText("Artwork exported and verified.")).toBeVisible();
-    const summary = screen.getByText("Verification details");
+    const summary = screen.getByText("File verification details");
     const details = summary.closest("details");
     if (!details) throw new Error("Artwork verification details missing");
     expect(details).not.toHaveAttribute("open");
@@ -474,7 +474,7 @@ describe("AlbumArtworkEditor", () => {
     expect(summary).toHaveFocus();
     await user.click(summary);
     expect(details).toHaveAttribute("open");
-    expect(screen.getByText("Verification code (SHA-256)")).toBeVisible();
+    expect(screen.getByText("File fingerprint (SHA-256)")).toBeVisible();
     expect(screen.getByText(/1234567890abcdef/u)).toBeVisible();
   });
 });

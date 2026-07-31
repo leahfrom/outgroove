@@ -138,9 +138,10 @@ export function SettingsView({
                 </div>
               </dl>
               <p className="settings-safety-statement">
-                <strong>No audio or DAP files will be deleted.</strong> Catalog
-                identities, edit history, DAP profiles, records of synced files,
-                and scan history remain available if this folder is added again.
+                <strong>No audio or DAP files will be deleted.</strong>{" "}
+                Recognized albums and tracks, edit history, DAP profiles,
+                records of synced files, and scan history remain available if
+                this folder is added again.
               </p>
               <div className="actions">
                 <button
@@ -239,7 +240,7 @@ export function SettingsView({
               <p className="eyebrow">Protect your setup</p>
               <h2 id="database-safety">Backups and support</h2>
               <p>
-                A backup saves your Outgroove catalog and setup, including edit
+                A backup saves your Outgroove Library and setup, including edit
                 history, saved filters, favorite artists, and DAP profiles. It
                 does not include or change your music or player files.
               </p>
@@ -290,16 +291,19 @@ export function SettingsView({
                   <dt>Radar items</dt>
                   <dd>{restorePreview.summary.radarItems}</dd>
                 </div>
-                <div>
-                  <dt>Backup version</dt>
-                  <dd>{restorePreview.schemaVersion}</dd>
-                </div>
               </dl>
+              <details className="technical-details">
+                <summary>Backup compatibility details</summary>
+                <p>
+                  Outgroove backup format {restorePreview.schemaVersion}. This
+                  number helps identify whether a backup is compatible.
+                </p>
+              </details>
               <p className="settings-safety-statement">
-                This replaces your current catalog and saved setup, then
-                restarts Outgroove. First, Outgroove saves and checks a safety
-                backup of what you have now. Your music and player files remain
-                untouched.
+                This replaces your current Library information and saved setup,
+                then restarts Outgroove. First, Outgroove saves and checks a
+                safety backup of what you have now. Your music and player files
+                remain untouched.
               </p>
               <div className="actions">
                 <button
@@ -327,7 +331,7 @@ export function SettingsView({
               <p className="eyebrow">Keep a copy</p>
               <h3>Save an Outgroove backup</h3>
               <p>
-                Choose where to save a checked copy of your catalog, edit
+                Choose where to save a checked copy of your Library, edit
                 history, filters, favorites, and DAP profiles.
               </p>
               <button

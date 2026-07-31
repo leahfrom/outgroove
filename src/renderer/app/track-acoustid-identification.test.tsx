@@ -116,12 +116,12 @@ describe("TrackAcoustIdIdentification", () => {
       }),
     ).toHaveTextContent("Review what will be sent");
     const technicalDetails = screen
-      .getByText("Technical fingerprint details")
+      .getByText("Fingerprint check details")
       .closest("details");
     if (!technicalDetails) throw new Error("Fingerprint details missing");
     expect(technicalDetails).not.toHaveAttribute("open");
     expect(screen.getByText(preview.sent.fingerprintSha256)).not.toBeVisible();
-    await user.click(screen.getByText("Technical fingerprint details"));
+    await user.click(screen.getByText("Fingerprint check details"));
     expect(screen.getByText(preview.sent.fingerprintSha256)).toBeVisible();
     expect(screen.queryByText(/AQAAS8kSSUmi/u)).not.toBeInTheDocument();
     await user.click(

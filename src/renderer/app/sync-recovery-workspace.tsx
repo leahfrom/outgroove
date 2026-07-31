@@ -233,7 +233,7 @@ export function SyncRecoveryWorkspace({
               <dd>{preview.warnings.length}</dd>
             </div>
             <div>
-              <dt>Target check</dt>
+              <dt>Player check</dt>
               <dd>
                 {preview.targetVolume.status === "matched"
                   ? "Saved storage matches"
@@ -303,7 +303,7 @@ export function SyncRecoveryWorkspace({
 
           {preview.actions.length === 0 && preview.warnings.length === 0 && (
             <div className="workflow-empty">
-              <h4>No target-file changes are needed</h4>
+              <h4>No player-file changes are needed</h4>
               <p>
                 Confirming marks this recovery complete after Outgroove checks
                 the destination again.
