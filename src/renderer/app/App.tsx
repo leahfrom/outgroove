@@ -3119,7 +3119,7 @@ export function App(): React.JSX.Element {
         setSyncProfileNameDraft("");
         if (await refreshSyncProfiles())
           setNotice(
-            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, saved records of synced files, and current sync preview are unchanged.`,
             "success",
           );
       } else setNotice(result.error.message, "error");
@@ -3261,19 +3261,19 @@ export function App(): React.JSX.Element {
       if (result.ok) {
         if (result.value.outcome === "completed")
           setNotice(
-            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
+            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Outgroove saved its new record of synced files after all other work finished.${result.value.errors.length > 0 ? ` Some temporary Outgroove files still need recovery: ${result.value.errors.join(" ")}` : ""}`,
             result.value.errors.length === 0 ? "success" : "error",
           );
         else if (result.value.outcome === "cancelled")
           setNotice(
             result.value.errors.length === 0
-              ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
-              : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
+              ? `Sync cancelled safely after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. You can review and try this plan again.`
+              : `Sync cancelled after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished, but restoring the player needs attention. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. ${result.value.errors.join(" ")}`,
             result.value.errors.length === 0 ? "info" : "error",
           );
         else
           setNotice(
-            `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
+            `Sync stopped. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. Review the reported problem, then try this preview again. ${result.value.errors.join(" ")}`,
             "error",
           );
         if (result.value.outcome === "completed") {
@@ -3304,11 +3304,11 @@ export function App(): React.JSX.Element {
     if (result.value.accepted) {
       setSyncCancellationRequested(true);
       setNotice(
-        "Sync cancellation requested. Outgroove will finish or discard the current temporary copy, then restore files completed by this run.",
+        "Cancelling safely. Outgroove will finish or discard the file it is currently preparing, then restore changes already completed by this sync.",
       );
     } else if (result.value.state === "finalizing")
       setNotice(
-        "The sync is committing its playlist and manifest and can no longer be cancelled safely.",
+        "The sync is saving the playlist and its final record of synced files. This last step cannot be cancelled safely.",
       );
     else setNotice("The sync is no longer running.");
   };
@@ -3354,13 +3354,13 @@ export function App(): React.JSX.Element {
         await refreshSyncHistory(recovery.profileId);
         setNotice(
           result.value.errors.length === 0
-            ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
-            : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
+            ? `The interrupted sync is now in a safe state: ${result.value.recovered} ${result.value.recovered === 1 ? "change was" : "changes were"} restored or removed. You can preview this profile again.`
+            : `The interrupted sync is safe, with notes: ${result.value.errors.join(" ")}`,
           result.value.errors.length === 0 ? "success" : "error",
         );
       } else
         setNotice(
-          `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
+          `Outgroove could not finish making this interrupted sync safe. Reconnect the player or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
           "error",
         );
     } finally {

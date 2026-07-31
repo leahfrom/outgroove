@@ -572,7 +572,7 @@ export function SyncSetupWorkspace({
                   <section>
                     <h5>Saved destinations</h5>
                     {removalPreview.manifestTargets.length === 0 ? (
-                      <p>No successful sync manifest is stored.</p>
+                      <p>No completed sync record is stored.</p>
                     ) : (
                       <ul>
                         {removalPreview.manifestTargets.map((target) => (

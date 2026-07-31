@@ -139,8 +139,8 @@ export function SettingsView({
               </dl>
               <p className="settings-safety-statement">
                 <strong>No audio or DAP files will be deleted.</strong> Catalog
-                identities, edit history, DAP profiles, manifests, and scan
-                history remain available if this folder is added again.
+                identities, edit history, DAP profiles, records of synced files,
+                and scan history remain available if this folder is added again.
               </p>
               <div className="actions">
                 <button
