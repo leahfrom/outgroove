@@ -135,17 +135,17 @@ describe("SettingsView", () => {
       />,
     );
 
-    const preview = screen.getByLabelText("Database restore confirmation");
+    const preview = screen.getByLabelText("Backup restore confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Replace the current Outgroove database?",
+        name: "Replace your current Outgroove data?",
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent(
-      "An automatic rollback backup is created and verified first",
+      "Outgroove saves and checks a safety backup of what you have now",
     );
     const keepCurrent = within(preview).getByRole("button", {
-      name: "Keep current database",
+      name: "Keep current Outgroove data",
     });
     keepCurrent.focus();
     await user.keyboard("{Enter}");
@@ -169,10 +169,10 @@ describe("SettingsView", () => {
     );
 
     expect(screen.getByText(/paths, filenames, tags/iu)).toHaveTextContent(
-      "provider responses, stable identifiers, and error text are excluded",
+      "online results, identifying IDs, and error details",
     );
     const exportButton = screen.getByRole("button", {
-      name: "Export private support report",
+      name: "Save support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");

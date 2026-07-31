@@ -1323,10 +1323,12 @@ describe("tag edit UI safety states", () => {
 
     await openPrimaryView(user, "Activity");
     expect(screen.queryByLabelText("sync progress")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "DAP sync" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Syncing your player" }),
+    ).toBeVisible();
     expect(screen.getByText("Verifying Fixture Album")).toBeVisible();
     expect(
-      screen.getByRole("progressbar", { name: "DAP sync progress" }),
+      screen.getByRole("progressbar", { name: "Syncing your player progress" }),
     ).toHaveAttribute("value", "1");
 
     await openPrimaryView(user, "Settings");
@@ -4381,7 +4383,10 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Activity");
     expect(
-      await screen.findByRole("heading", { level: 2, name: "Interrupted" }),
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Scan stopped unexpectedly",
+      }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
@@ -4416,8 +4421,12 @@ describe("tag edit UI safety states", () => {
     const review = await screen.findByRole("button", {
       name: "Review 1 scan problem",
     });
-    expect(screen.getByText("Parsed").nextSibling).toHaveTextContent("2");
-    expect(screen.getByText("Problems").nextSibling).toHaveTextContent("1");
+    expect(
+      screen.getByText("Added or refreshed").nextSibling,
+    ).toHaveTextContent("2");
+    expect(screen.getByText("Couldn’t read").nextSibling).toHaveTextContent(
+      "1",
+    );
     review.focus();
     await user.keyboard("{Enter}");
 
@@ -4545,6 +4554,11 @@ describe("tag edit UI safety states", () => {
     });
 
     expect(await screen.findByText("Scanned")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Scan finished: 1 added or refreshed, 0 already up to date, 0 couldn’t be read.",
+      ),
+    ).toBeVisible();
     expect(screen.getByText(/Last completed/)).toHaveTextContent(
       new Date(scannedAt).toLocaleString(),
     );
@@ -6127,7 +6141,7 @@ describe("tag edit UI safety states", () => {
 
     const recoveryAlert = screen.getByRole("alert");
     expect(recoveryAlert).toHaveTextContent(
-      "Database restore remains blocked until pending recovery is completed.",
+      "Restoring a backup stays unavailable until this sync is back in a safe state.",
     );
     const openRecovery = within(recoveryAlert).getByRole("button", {
       name: "Review recovery",
@@ -6896,14 +6910,14 @@ describe("tag edit UI safety states", () => {
     await user.keyboard("{Enter}");
     expect(databaseSection).toHaveAttribute("aria-current", "page");
     await user.click(
-      await screen.findByRole("button", { name: "Restore from backup" }),
+      await screen.findByRole("button", {
+        name: "Choose an Outgroove backup",
+      }),
     );
-    const preview = await screen.findByLabelText(
-      "Database restore confirmation",
-    );
+    const preview = await screen.findByLabelText("Backup restore confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Replace the current Outgroove database?",
+        name: "Replace your current Outgroove data?",
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
@@ -6913,7 +6927,7 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("2");
     await user.click(screen.getByRole("button", { name: "Library folders" }));
     expect(
-      screen.queryByLabelText("Database restore confirmation"),
+      screen.queryByLabelText("Backup restore confirmation"),
     ).not.toBeInTheDocument();
     await openPrimaryView(user, "Activity");
     await openPrimaryView(user, "Settings");
@@ -6922,11 +6936,11 @@ describe("tag edit UI safety states", () => {
     });
     pendingDatabaseSection.focus();
     await user.keyboard("{Enter}");
-    expect(
-      screen.getByLabelText("Database restore confirmation"),
-    ).toBeVisible();
+    expect(screen.getByLabelText("Backup restore confirmation")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Confirm restore and restart" }),
+      screen.getByRole("button", {
+        name: "Restore this backup and restart",
+      }),
     );
     expect(applyDatabaseRestore).toHaveBeenCalledWith({
       operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -6952,11 +6966,11 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Settings");
     await user.click(screen.getByRole("button", { name: "Backups & support" }));
     await user.click(
-      await screen.findByRole("button", { name: "Create database backup" }),
+      await screen.findByRole("button", { name: "Save Outgroove backup" }),
     );
     expect(await screen.findByText("Backup disk is full")).toBeVisible();
     expect(
-      screen.queryByText(/backup verified and saved/iu),
+      screen.queryByText(/backup saved and checked/iu),
     ).not.toBeInTheDocument();
   });
 
@@ -6975,16 +6989,16 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Settings");
     await user.click(screen.getByRole("button", { name: "Backups & support" }));
     const exportButton = await screen.findByRole("button", {
-      name: "Export private support report",
+      name: "Save support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");
     expect(exportDiagnosticReport).toHaveBeenCalledWith();
     expect(
-      await screen.findByText("Diagnostic report export cancelled."),
+      await screen.findByText("Support report not created."),
     ).toBeVisible();
     expect(
-      screen.queryByText(/diagnostic report verified and saved/iu),
+      screen.queryByText(/support report saved and checked/iu),
     ).not.toBeInTheDocument();
   });
 });

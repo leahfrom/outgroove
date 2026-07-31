@@ -104,10 +104,10 @@ describe("ActivityView", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Radar refresh" }),
+      screen.getByRole("heading", { name: "Checking Radar" }),
     ).toBeVisible();
     expect(
-      screen.getByRole("progressbar", { name: "Radar refresh progress" }),
+      screen.getByRole("progressbar", { name: "Checking Radar progress" }),
     ).toHaveAttribute("value", "2");
     expect(screen.getByLabelText("Activity overview")).toHaveTextContent(
       "Active1",
@@ -135,6 +135,43 @@ describe("ActivityView", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "The selected folder is no longer available.",
     );
+    expect(
+      screen.getByRole("heading", { name: "Scan couldn’t finish" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/existing Library is still available/iu),
+    ).toHaveTextContent(
+      "Reconnect the folder if needed, then try the scan again",
+    );
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
+  });
+
+  it("explains partial scan results without implying the whole scan failed", () => {
+    render(
+      <ActivityView
+        {...callbacks}
+        busy={false}
+        progress={undefined}
+        scanActive={false}
+        scanJob={scanJob("completed", {
+          completed: 4,
+          total: 4,
+          detail: "Scan complete",
+          result: { parsed: 2, unchanged: 1, errors: 1 },
+          finishedAt: "2026-07-24T00:01:00.000Z",
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Scan complete" }),
+    ).toBeVisible();
+    expect(screen.getByText(/kept every readable file/iu)).toBeVisible();
+    expect(
+      screen.getByText("Added or refreshed").nextSibling,
+    ).toHaveTextContent("2");
+    expect(screen.getByText("Couldn’t read").nextSibling).toHaveTextContent(
+      "1",
+    );
   });
 });
