@@ -66,7 +66,7 @@ export function AlbumActionsMenu({
             { label: "Edit album metadata", onSelect: onEditMetadata },
             { label: "Change album artwork", onSelect: onEditArtwork },
             { label: "Edit track order", onSelect: onEditTrackOrder },
-            { label: "History & undo", onSelect: onOpenHistory },
+            { label: "Change history & undo", onSelect: onOpenHistory },
             {
               label: `Add ${albumTitle} to Sync`,
               disabled: syncDisabled,

@@ -105,8 +105,8 @@ describe("SyncRecoveryWorkspace", () => {
     expect(
       screen.getByRole("heading", { name: "2 interrupted syncs" }),
     ).toBeVisible();
-    expect(recoveries).toHaveTextContent("Rollback required");
-    expect(recoveries).toHaveTextContent("Cleanup only");
+    expect(recoveries).toHaveTextContent("Restore previous state");
+    expect(recoveries).toHaveTextContent("Remove temporary files");
     expect(recoveries).toHaveTextContent(
       "The sync finished successfully, but some temporary Outgroove files still need cleanup.",
     );
@@ -147,7 +147,7 @@ describe("SyncRecoveryWorkspace", () => {
     });
     expect(
       screen.getByRole("button", {
-        name: "Confirm recovery for Road DAP",
+        name: "Apply recovery for Road DAP",
       }),
     ).toBeDisabled();
     acknowledgement.focus();
@@ -162,7 +162,7 @@ describe("SyncRecoveryWorkspace", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Confirm recovery for Road DAP",
+        name: "Apply recovery for Road DAP",
       }),
     ).not.toBeDisabled();
   });
@@ -176,17 +176,17 @@ describe("SyncRecoveryWorkspace", () => {
     const confirmation = screen.getByLabelText(
       "Recovery confirmation for Road DAP",
     );
-    expect(confirmation).toHaveTextContent("Restore1");
-    expect(confirmation).toHaveTextContent("Remove1");
-    expect(confirmation).toHaveTextContent("Warnings1");
+    expect(confirmation).toHaveTextContent("Files to restore1");
+    expect(confirmation).toHaveTextContent("Files to remove1");
+    expect(confirmation).toHaveTextContent("Things to review1");
     expect(
       within(confirmation).getByRole("heading", {
-        name: "Restore previous target files",
+        name: "Restore earlier files",
       }),
     ).toBeVisible();
     expect(
       within(confirmation).getByRole("heading", {
-        name: "Remove reviewed Outgroove state",
+        name: "Remove unfinished files",
       }),
     ).toBeVisible();
     const warning = within(confirmation).getByRole("alert");
@@ -202,7 +202,7 @@ describe("SyncRecoveryWorkspace", () => {
     expect(onConfirm).not.toHaveBeenCalled();
 
     const confirm = within(confirmation).getByRole("button", {
-      name: "Confirm recovery for Road DAP",
+      name: "Apply recovery for Road DAP",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -219,10 +219,10 @@ describe("SyncRecoveryWorkspace", () => {
       ],
     };
     const { rerender } = render(workspace({ currentPreview: blockedPreview }));
-    expect(screen.getByText("Recovery blocked")).toBeVisible();
+    expect(screen.getByText("Can’t continue yet")).toBeVisible();
     expect(
       screen.getByRole("button", {
-        name: "Confirm recovery for Road DAP",
+        name: "Apply recovery for Road DAP",
       }),
     ).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(

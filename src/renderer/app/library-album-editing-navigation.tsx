@@ -28,8 +28,8 @@ const tools: readonly {
   },
   {
     id: "history",
-    label: "History & undo",
-    description: "Review verified writes before proposing a restore.",
+    label: "Change history & undo",
+    description: "Review a past change before restoring earlier values.",
   },
 ];
 

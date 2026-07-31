@@ -55,7 +55,7 @@ async function chooseAlbumAction(
     | "Edit album metadata"
     | "Change album artwork"
     | "Edit track order"
-    | "History & undo"
+    | "Change history & undo"
     | `Add ${string} to Sync`,
 ): Promise<HTMLElement> {
   const trigger = screen.getByRole("button", { name: "Album actions" });
@@ -115,7 +115,7 @@ async function openAlbumHistory(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
   const historyButton = screen.getByRole("button", {
-    name: /^History & undo/u,
+    name: /^Change history & undo/u,
   });
   historyButton.focus();
   await user.keyboard("{Enter}");
@@ -2461,10 +2461,10 @@ describe("tag edit UI safety states", () => {
     await user.keyboard("{Escape}");
     expect(albumActions).toHaveFocus();
 
-    await chooseAlbumAction(user, "History & undo");
+    await chooseAlbumAction(user, "Change history & undo");
     dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
     expect(
-      within(dialog).getByRole("button", { name: /^History & undo/u }),
+      within(dialog).getByRole("button", { name: /^Change history & undo/u }),
     ).toHaveAttribute("aria-current", "page");
     expect(
       within(dialog).getByLabelText("Metadata edit history"),
@@ -2974,9 +2974,7 @@ describe("tag edit UI safety states", () => {
     expect(confirmButton).toHaveFocus();
     await user.keyboard("{Enter}");
     const outcome = await screen.findByLabelText("Track metadata result");
-    expect(outcome).toHaveTextContent(
-      "Track metadata write re-read and verified",
-    );
+    expect(outcome).toHaveTextContent("Track metadata write complete");
     expect(outcome).toHaveFocus();
     expect(screen.getByLabelText("Track metadata editor")).toBeInTheDocument();
     expect(
@@ -3046,7 +3044,7 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Track metadata confirmation"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
-      "0 verified; 1 need attention",
+      "0 confirmed; 1 couldn’t be confirmed",
     );
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
       "stale preview",
@@ -3516,9 +3514,11 @@ describe("tag edit UI safety states", () => {
       name: "Batch metadata result",
     });
     expect(batchResult).toHaveFocus();
-    expect(batchResult).toHaveTextContent("1 verified; 1 need attention");
     expect(batchResult).toHaveTextContent(
-      "A failed item is never reported as verified",
+      "1 confirmed; 1 couldn’t be confirmed",
+    );
+    expect(batchResult).toHaveTextContent(
+      "Review any file it couldn’t confirm before trying again",
     );
     await user.click(
       screen.getByRole("button", {
@@ -3527,7 +3527,7 @@ describe("tag edit UI safety states", () => {
     );
     await openAlbumHistory(user);
     await user.click(
-      screen.getByRole("button", { name: "Preview batch undo" }),
+      screen.getByRole("button", { name: "Review shared-field restore" }),
     );
     const undoConfirmation = await screen.findByLabelText(
       "Batch metadata undo confirmation",
@@ -3536,7 +3536,7 @@ describe("tag edit UI safety states", () => {
       "changed after this batch edit",
     );
     const confirmUndo = within(undoConfirmation).getByRole("button", {
-      name: "Confirm safe batch undo writes",
+      name: "Restore the available earlier values",
     });
     expect(confirmUndo).toBeEnabled();
     await user.click(confirmUndo);
@@ -3762,9 +3762,7 @@ describe("tag edit UI safety states", () => {
       name: "Track number sequence result",
     });
     expect(sequenceResult).toHaveFocus();
-    expect(sequenceResult).toHaveTextContent(
-      "Track-number sequence re-read and verified",
-    );
+    expect(sequenceResult).toHaveTextContent("Track-number sequence complete");
   });
 
   it("shows affected files and routes a keyboard action into sequencing without previewing", async () => {
@@ -4087,14 +4085,14 @@ describe("tag edit UI safety states", () => {
       await within(history).findByText("Changed title to “Renamed Album”"),
     ).toBeVisible();
     await user.click(
-      within(history).getByRole("button", { name: "Preview undo" }),
+      within(history).getByRole("button", { name: "Review title restore" }),
     );
     const preview = await screen.findByLabelText("Tag undo confirmation");
     expect(preview).toHaveTextContent("Renamed Album");
     expect(preview).toHaveTextContent("Fixture Album");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     ).toBeEnabled();
     expect(previewAlbumTitleUndo).toHaveBeenCalledWith({
@@ -4102,7 +4100,7 @@ describe("tag edit UI safety states", () => {
     });
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     );
     expect(applyAlbumTitleUndo).toHaveBeenCalledWith({
@@ -4111,7 +4109,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByLabelText("Album title undo result"),
-    ).toHaveTextContent("Album-title undo re-read and verified");
+    ).toHaveTextContent("Album-title undo complete");
   });
 
   it("previews and confirms field-scoped track metadata undo from history", async () => {
@@ -4186,7 +4184,7 @@ describe("tag edit UI safety states", () => {
     const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
-        name: "Preview track undo",
+        name: "Review field restore",
       }),
     );
     const preview = await screen.findByLabelText(
@@ -4198,7 +4196,7 @@ describe("tag edit UI safety states", () => {
     expect(preview).toHaveTextContent("2026");
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm and undo track fields",
+        name: "Restore earlier track fields",
       }),
     );
     expect(previewTrackTagUndo).toHaveBeenCalledWith({
@@ -4210,7 +4208,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByLabelText("Track metadata undo result"),
-    ).toHaveTextContent("Track metadata undo re-read and verified");
+    ).toHaveTextContent("Track metadata undo complete");
   });
 
   it("disables track undo confirmation when the preview reports a conflict", async () => {
@@ -4267,7 +4265,7 @@ describe("tag edit UI safety states", () => {
     const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
-        name: "Preview track undo",
+        name: "Review field restore",
       }),
     );
     const preview = await screen.findByLabelText(
@@ -4278,7 +4276,7 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo track fields",
+        name: "Restore earlier track fields",
       }),
     ).toBeDisabled();
   });
@@ -4335,13 +4333,13 @@ describe("tag edit UI safety states", () => {
     await openLibraryAlbumTool(user, "Album title");
     await openAlbumHistory(user);
     await user.click(
-      await screen.findByRole("button", { name: "Preview undo" }),
+      await screen.findByRole("button", { name: "Review title restore" }),
     );
     const preview = await screen.findByLabelText("Tag undo confirmation");
     expect(preview).toHaveTextContent("will not overwrite it");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     ).toBeDisabled();
   });
@@ -6153,14 +6151,14 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       within(recoveryPreview).getByRole("heading", {
-        name: "Recovery plan for Road DAP",
+        name: "Review recovery for Road DAP",
       }),
     ).toHaveFocus();
     expect(recoveryPreview).toHaveTextContent(
       "/fixture/dap/Artist/Album/01 Track.flac",
     );
     const confirm = within(recoveryPreview).getByRole("button", {
-      name: "Confirm recovery for Road DAP",
+      name: "Apply recovery for Road DAP",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -6177,7 +6175,7 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       within(failure).getByRole("heading", {
-        name: "Recovery could not be applied",
+        name: "No recovery changes were made",
       }),
     ).toHaveFocus();
     expect(
@@ -6191,17 +6189,17 @@ describe("tag edit UI safety states", () => {
       "Recovery confirmation for Road DAP",
     );
     const retryConfirm = within(retryPreview).getByRole("button", {
-      name: "Confirm recovery for Road DAP",
+      name: "Apply recovery for Road DAP",
     });
     retryConfirm.focus();
     await user.keyboard("{Enter}");
     expect(applySyncRecovery).toHaveBeenCalledTimes(2);
     expect(
-      await screen.findByRole("heading", { name: "Recovery complete" }),
+      await screen.findByRole("heading", { name: "Your sync is safe again" }),
     ).toHaveFocus();
     expect(
       screen.getByLabelText("Recovery result for Road DAP"),
-    ).toHaveTextContent("1 reviewed change was restored or removed");
+    ).toHaveTextContent("Outgroove completed 1 reviewed change");
     await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(3));
   });
 

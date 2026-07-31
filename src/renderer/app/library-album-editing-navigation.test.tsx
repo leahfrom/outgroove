@@ -21,7 +21,7 @@ describe("LibraryAlbumEditingNavigation", () => {
       screen.getByText("Review explicit track and disc numbering."),
     ).toBeVisible();
     expect(
-      screen.getByText("Review verified writes before proposing a restore."),
+      screen.getByText("Review a past change before restoring earlier values."),
     ).toBeVisible();
 
     const trackOrder = screen.getByRole("button", {
