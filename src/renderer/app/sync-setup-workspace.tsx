@@ -499,7 +499,7 @@ export function SyncSetupWorkspace({
               <p>
                 {targetPreview.proposedVolumeEvidenceAvailable
                   ? "Outgroove can remember this storage and check it again before future syncs."
-                  : "Outgroove could not get a reliable identity for this storage. You will be asked to confirm it before future syncs."}
+                  : "Outgroove could not reliably recognize this storage. You will be asked to confirm it before future syncs."}
               </p>
               <div className="actions">
                 <button
@@ -509,12 +509,12 @@ export function SyncSetupWorkspace({
                   type="button"
                 >
                   {targetPreview.identityRefresh
-                    ? "Confirm volume identity refresh"
+                    ? "Confirm saved storage update"
                     : "Confirm DAP target change"}
                 </button>
                 <button disabled={busy} onClick={onCancelTarget} type="button">
                   {targetPreview.identityRefresh
-                    ? "Cancel identity refresh"
+                    ? "Cancel saved storage update"
                     : "Cancel DAP target change"}
                 </button>
               </div>

@@ -144,6 +144,8 @@ describe("SettingsView", () => {
     expect(preview).toHaveTextContent(
       "Outgroove saves and checks a safety backup of what you have now",
     );
+    expect(preview).toHaveTextContent("Library folders2");
+    expect(preview).toHaveTextContent("Backup version18");
     const keepCurrent = within(preview).getByRole("button", {
       name: "Keep current Outgroove data",
     });

@@ -3144,7 +3144,7 @@ export function App(): React.JSX.Element {
         setSyncTargetPreview(result.value);
         setNotice(
           result.value.identityRefresh
-            ? `Review the persistent volume identity refresh for “${saved.name}”. No files have been changed.`
+            ? `Review the updated storage details for “${saved.name}”. No files have been changed.`
             : `Review the DAP target change for “${saved.name}”. No files have been changed.`,
         );
       } else if (!result.ok) setNotice(result.error.message, "error");
@@ -3177,8 +3177,8 @@ export function App(): React.JSX.Element {
         await refreshSyncProfiles();
         setNotice(
           syncTargetPreview.identityRefresh
-            ? `Refreshed the persistent volume identity for “${result.value.name}”. Existing sync history was preserved; create a fresh preview before applying.`
-            : `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+            ? `Updated the saved storage details for “${result.value.name}”. Completed syncs were kept; create a fresh preview before applying.`
+            : `Changed “${result.value.name}” to ${result.value.targetPath}. Completed syncs were kept; create a fresh preview before applying.`,
           "success",
         );
       } else setNotice(result.error.message, "error");
@@ -4034,7 +4034,7 @@ export function App(): React.JSX.Element {
                     setPageOffset(0);
                     if (view === "data-quality")
                       setNotice(
-                        "Checking album data quality in a background worker…",
+                        "Checking album quality. You can keep browsing while Outgroove works.",
                       );
                   }}
                 >
@@ -4059,7 +4059,7 @@ export function App(): React.JSX.Element {
                         setQualityFilter(filter);
                         setPageOffset(0);
                         setNotice(
-                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()}. You can keep browsing while Outgroove works.`,
                         );
                       }}
                     >

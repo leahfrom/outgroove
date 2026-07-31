@@ -243,13 +243,13 @@ describe("SyncPlanReview", () => {
       }),
     );
     const volumeConfirmation = screen.getByLabelText(
-      "DAP volume identity confirmation",
+      "Player storage confirmation",
     );
     expect(volumeConfirmation).toHaveTextContent(
-      "does not match the identity saved for this profile",
+      "does not match the details saved for this profile",
     );
     const acknowledgement = within(volumeConfirmation).getByRole("checkbox", {
-      name: "I confirm this is the intended DAP volume for this plan",
+      name: "I confirm this is the intended player storage for this sync",
     });
     const apply = screen.getByRole("button", {
       name: "Confirm and apply sync plan",

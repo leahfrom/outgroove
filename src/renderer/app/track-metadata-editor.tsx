@@ -437,7 +437,7 @@ function TrackMetadataEditorComponent(
             Editing <strong>{track.tags.title}</strong>
             {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Change the
             fields you want while keeping the current values beside them.
-            Credits, catalog details, notes, and provider IDs are under More
+            Credits, catalog details, notes, and MusicBrainz IDs are under More
             fields.
           </>
         }

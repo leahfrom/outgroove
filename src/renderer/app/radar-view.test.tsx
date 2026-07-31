@@ -238,6 +238,9 @@ describe("Radar favorite artists", () => {
         /Your audio, file locations, tags, artwork, fingerprints/iu,
       ),
     ).toBeVisible();
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent("checked with MusicBrainz");
     expect(onAdd).not.toHaveBeenCalled();
 
     const candidates = screen.getByRole("list", {
@@ -255,6 +258,26 @@ describe("Radar favorite artists", () => {
     add.focus();
     await userEvent.setup().keyboard("{Enter}");
     expect(onAdd).toHaveBeenCalledWith("16ffe2a4-14e9-4d25-a4db-c3a6370afacc");
+  });
+
+  it("explains recent and older saved MusicBrainz results without cache jargon", () => {
+    const { unmount } = renderView({
+      artistSearchResult: { ...result, source: "cache" },
+    });
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent("using a recent result saved on this device");
+    unmount();
+
+    renderView({
+      artistSearchResult: { ...result, source: "stale-cache" },
+    });
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent(
+      "using an older saved result because MusicBrainz could not be reached",
+    );
+    expect(screen.queryByText(/cache/iu)).not.toBeInTheDocument();
   });
 
   it("keeps local filtering separate and presents a keyboard-dismissable removal confirmation", async () => {
@@ -283,6 +306,8 @@ describe("Radar favorite artists", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Remove Fixture Artist from favorites",
     });
+    expect(dialog).toHaveTextContent("saved online search results");
+    expect(dialog).not.toHaveTextContent("provider caches");
     const confirm = within(dialog).getByRole("button", {
       name: "Confirm remove favorite",
     });

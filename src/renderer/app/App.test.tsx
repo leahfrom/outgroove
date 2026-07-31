@@ -5631,6 +5631,11 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(screen.getByText("5/10: Checked 5 of 10 albums.")).toBeVisible();
     await user.selectOptions(screen.getByLabelText("View"), "data-quality");
+    expect(
+      screen.getByText(
+        "Checking album quality. You can keep browsing while Outgroove works.",
+      ),
+    ).toBeVisible();
     const issueType = screen.getByLabelText("Issue type");
     expect(issueType).toBeVisible();
     expect(issueType).toHaveValue("all");
@@ -5649,6 +5654,11 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
 
     await user.selectOptions(issueType, "missing-tags");
+    expect(
+      screen.getByText(
+        "Checking missing/placeholder tags. You can keep browsing while Outgroove works.",
+      ),
+    ).toBeVisible();
     await waitFor(() =>
       expect(queryLibrary).toHaveBeenLastCalledWith({
         query: "",

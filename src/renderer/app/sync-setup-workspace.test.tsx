@@ -300,13 +300,13 @@ describe("SyncSetupWorkspace", () => {
     );
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm volume identity refresh",
+        name: "Confirm saved storage update",
       }),
     );
     expect(onConfirmTarget).toHaveBeenCalledTimes(1);
     await user.click(
       within(preview).getByRole("button", {
-        name: "Cancel identity refresh",
+        name: "Cancel saved storage update",
       }),
     );
     expect(onCancelTarget).toHaveBeenCalledTimes(1);

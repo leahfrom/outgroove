@@ -194,7 +194,7 @@ export function TrackAcoustIdIdentification({
                       )}
                       <details className="metadata-more-fields">
                         <summary>
-                          <span>Provider IDs</span>
+                          <span>MusicBrainz and AcoustID IDs</span>
                           <small>AcoustID and MusicBrainz references</small>
                         </summary>
                         <dl>

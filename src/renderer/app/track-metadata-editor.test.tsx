@@ -118,6 +118,8 @@ describe("TrackMetadataEditor", () => {
     expect(editorRegion).toHaveTextContent(
       "Change the fields you want while keeping the current values beside them",
     );
+    expect(editorRegion).toHaveTextContent("MusicBrainz IDs");
+    expect(editorRegion).not.toHaveTextContent("provider IDs");
     expect(editorRegion).not.toHaveTextContent("exact restoration");
     const comparison = screen.getByLabelText("Basic track tag comparison");
     expect(within(comparison).getAllByText("Unchanged")).toHaveLength(7);
