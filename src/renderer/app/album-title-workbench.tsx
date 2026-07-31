@@ -8,6 +8,7 @@ import type {
   TrackBatchEditPreviewDto,
   TrackTagEditPreviewDto,
 } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
@@ -208,7 +209,11 @@ function AlbumTitleWorkbenchComponent(
           {editError && (
             <div className="workflow-error" role="alert">
               <strong>The album-title request could not be completed.</strong>
-              <span>{editError}</span>
+              <span>
+                Review the proposed title or create a fresh preview before
+                trying again.
+              </span>
+              <TechnicalDetails messages={[editError]} />
             </div>
           )}
 
@@ -274,7 +279,8 @@ function AlbumTitleWorkbenchComponent(
               <strong>
                 Outgroove couldn’t load this album’s change history.
               </strong>
-              <span>{historyError}</span>
+              <span>Try opening the history again.</span>
+              <TechnicalDetails messages={[historyError]} />
             </div>
           )}
 

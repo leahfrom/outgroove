@@ -579,6 +579,12 @@ export function App(): React.JSX.Element {
     },
     [],
   );
+  const setErrorNotice = useCallback(
+    (message: string, guidance: string, details: readonly string[]): void => {
+      setNoticeState({ message, tone: "error", guidance, details });
+    },
+    [],
+  );
   const [busy, setBusy] = useState(false);
   const [diagnosticDestination, setDiagnosticDestination] = useState<{
     target: "track" | "batch" | "sequence" | "album-title";
@@ -1085,7 +1091,11 @@ export function App(): React.JSX.Element {
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
-        setNotice(job.error ?? job.detail, "error");
+        setErrorNotice(
+          "The Library scan stopped before it finished.",
+          "Your existing Library is still available. Reconnect the folder if needed, then retry the scan.",
+          [job.error ?? job.detail],
+        );
     });
     void Promise.all([
       window.outgroove.listLibraryRoots(),
@@ -1108,11 +1118,15 @@ export function App(): React.JSX.Element {
           latest.value.state === "failed" ||
           latest.value.state === "interrupted"
         )
-          setNotice(latest.value.error ?? latest.value.detail, "error");
+          setErrorNotice(
+            "The previous Library scan stopped before it finished.",
+            "Your existing Library is still available. Reconnect the folder if needed, then retry the scan.",
+            [latest.value.error ?? latest.value.detail],
+          );
       }
     });
     return unsubscribe;
-  }, [refreshCatalog, refreshLibraryRoots]);
+  }, [refreshCatalog, refreshLibraryRoots, setErrorNotice]);
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
@@ -1277,7 +1291,11 @@ export function App(): React.JSX.Element {
       return true;
     }
     setLibrarySetupError(started.error.message);
-    setNotice(started.error.message, "error");
+    setErrorNotice(
+      "The Library scan could not start.",
+      "Check that the folder is still connected and available, then try again.",
+      [started.error.message],
+    );
     return false;
   };
 
@@ -1286,7 +1304,11 @@ export function App(): React.JSX.Element {
     const selected = await window.outgroove.chooseLibraryFolder();
     if (!selected.ok) {
       setLibrarySetupError(selected.error.message);
-      setNotice(selected.error.message, "error");
+      setErrorNotice(
+        "Outgroove could not open the folder chooser.",
+        "Try choosing the Library folder again.",
+        [selected.error.message],
+      );
       return undefined;
     }
     if (!selected.value) {
@@ -1834,7 +1856,11 @@ export function App(): React.JSX.Element {
       setEditPreview(result.value);
     } else {
       setEditError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The album-title preview could not be created.",
+        "Review the proposed title and try again. No file was changed.",
+        [result.error.message],
+      );
     }
   };
 
@@ -1862,7 +1888,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The album-title change was not applied.",
+          "Review the current preview or create a fresh one before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1884,7 +1914,11 @@ export function App(): React.JSX.Element {
       setUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The album-title restore preview could not be created.",
+        "Reload the history or review the current file before trying again.",
+        [result.error.message],
+      );
     }
   };
 
@@ -1911,7 +1945,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The earlier album title was not restored.",
+          "Review the current file and create a fresh restore preview before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1930,7 +1968,11 @@ export function App(): React.JSX.Element {
       });
       if (!result.ok) {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "Artwork could not be selected.",
+          "Choose the artwork again. No audio file was changed.",
+          [result.error.message],
+        );
       } else if (result.value) {
         setArtworkEditPreview(result.value);
       }
@@ -1953,7 +1995,11 @@ export function App(): React.JSX.Element {
         setArtworkEditPreview(result.value);
       } else {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork-removal preview could not be created.",
+          "Review the album and try again. No audio file was changed.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1991,7 +2037,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork change was not applied.",
+          "Review the current preview or choose the artwork again before retrying.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2011,7 +2061,11 @@ export function App(): React.JSX.Element {
         setArtworkExportPreview(result.value);
       } else {
         setArtworkExportError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork export could not be prepared.",
+          "Review the album artwork and try again. Audio files remain unchanged.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2029,7 +2083,11 @@ export function App(): React.JSX.Element {
       });
       if (!result.ok) {
         setArtworkExportError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork was not exported.",
+          "Choose a destination and try again. Audio files remain unchanged.",
+          [result.error.message],
+        );
       } else if (result.value === null) {
         setNotice("Artwork export cancelled.");
       } else {
@@ -2055,7 +2113,11 @@ export function App(): React.JSX.Element {
         setFolderArtworkPreview(result.value);
       } else {
         setFolderArtworkError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The folder-artwork preview could not be created.",
+          "Review the album folder and try again. No file was created.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2078,7 +2140,11 @@ export function App(): React.JSX.Element {
         await refreshCatalog();
       } else {
         setFolderArtworkError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The folder artwork was not created.",
+          "Review the current preview or create a fresh one before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2098,7 +2164,11 @@ export function App(): React.JSX.Element {
       setArtworkUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The artwork restore preview could not be created.",
+        "Reload the history or review the current files before trying again.",
+        [result.error.message],
+      );
     }
   };
 
@@ -2126,7 +2196,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The earlier artwork was not restored.",
+          "Review the current files and create a fresh restore preview before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -3259,22 +3333,32 @@ export function App(): React.JSX.Element {
         targetVolumeConfirmed: syncTargetVolumeConfirmed,
       });
       if (result.ok) {
-        if (result.value.outcome === "completed")
-          setNotice(
-            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Outgroove saved its new record of synced files after all other work finished.${result.value.errors.length > 0 ? ` Some temporary Outgroove files still need recovery: ${result.value.errors.join(" ")}` : ""}`,
-            result.value.errors.length === 0 ? "success" : "error",
-          );
-        else if (result.value.outcome === "cancelled")
-          setNotice(
-            result.value.errors.length === 0
-              ? `Sync cancelled safely after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. You can review and try this plan again.`
-              : `Sync cancelled after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished, but restoring the player needs attention. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. ${result.value.errors.join(" ")}`,
-            result.value.errors.length === 0 ? "info" : "error",
-          );
-        else
-          setNotice(
-            `Sync stopped. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. Review the reported problem, then try this preview again. ${result.value.errors.join(" ")}`,
-            "error",
+        if (result.value.outcome === "completed") {
+          const summary = `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Outgroove saved its new record of synced files after all other work finished.`;
+          if (result.value.errors.length === 0) setNotice(summary, "success");
+          else
+            setErrorNotice(
+              "The sync finished, but temporary Outgroove files still need attention.",
+              "Open Sync recovery to review the remaining temporary files.",
+              result.value.errors,
+            );
+        } else if (result.value.outcome === "cancelled") {
+          const summary = `Sync cancelled after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files.`;
+          if (result.value.errors.length === 0)
+            setNotice(
+              `Sync cancelled safely after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. You can review and try this plan again.`,
+            );
+          else
+            setErrorNotice(
+              `${summary} Restoring the player still needs attention.`,
+              "Open Sync recovery before creating another plan for this profile.",
+              result.value.errors,
+            );
+        } else
+          setErrorNotice(
+            `The sync stopped. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files.`,
+            "Review Sync recovery and the technical details before creating a fresh preview.",
+            result.value.errors,
           );
         if (result.value.outcome === "completed") {
           setSyncCleanupEnabled(false);
@@ -3283,7 +3367,12 @@ export function App(): React.JSX.Element {
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
-      } else setNotice(result.error.message, "error");
+      } else
+        setErrorNotice(
+          "The sync could not be applied.",
+          "Check the player connection and create a fresh preview before trying again.",
+          [result.error.message],
+        );
     } finally {
       setProgress((current) => (current?.job === "sync" ? undefined : current));
       setSyncApplyingPlanId(undefined);
@@ -3298,7 +3387,11 @@ export function App(): React.JSX.Element {
       planId: syncApplyingPlanId,
     });
     if (!result.ok) {
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "Outgroove could not request a safe cancellation.",
+        "The sync may still be running. Check Activity before trying again.",
+        [result.error.message],
+      );
       return;
     }
     if (result.value.accepted) {
@@ -3324,7 +3417,11 @@ export function App(): React.JSX.Element {
         targetVolumeConfirmed: syncRecoveryTargetVolumeConfirmed,
       });
       if (!result.ok) {
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "No recovery changes were made.",
+          "Review this interrupted sync again before trying recovery.",
+          [result.error.message],
+        );
         await refreshSyncRecoveries();
         setSyncRecoveryFeedback({
           runId: recovery.runId,
@@ -3341,27 +3438,26 @@ export function App(): React.JSX.Element {
         profileName: recovery.profileName,
         status: result.value.complete ? "complete" : "incomplete",
         recovered: result.value.recovered,
-        messages:
-          result.value.errors.length > 0
-            ? result.value.errors
-            : result.value.complete
-              ? ["You can generate a fresh sync plan for this profile."]
-              : [
-                  "Reconnect the target or resolve the reported files, then review recovery again.",
-                ],
+        messages: result.value.errors.length > 0 ? result.value.errors : [],
       });
       if (result.value.complete) {
         await refreshSyncHistory(recovery.profileId);
-        setNotice(
-          result.value.errors.length === 0
-            ? `The interrupted sync is now in a safe state: ${result.value.recovered} ${result.value.recovered === 1 ? "change was" : "changes were"} restored or removed. You can preview this profile again.`
-            : `The interrupted sync is safe, with notes: ${result.value.errors.join(" ")}`,
-          result.value.errors.length === 0 ? "success" : "error",
-        );
+        if (result.value.errors.length === 0)
+          setNotice(
+            `The interrupted sync is now in a safe state: ${result.value.recovered} ${result.value.recovered === 1 ? "change was" : "changes were"} restored or removed. You can preview this profile again.`,
+            "success",
+          );
+        else
+          setErrorNotice(
+            "The interrupted sync is safe, but some cleanup notes remain.",
+            "Review the technical details before the next sync.",
+            result.value.errors,
+          );
       } else
-        setNotice(
-          `Outgroove could not finish making this interrupted sync safe. Reconnect the player or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
-          "error",
+        setErrorNotice(
+          "Outgroove could not finish making this interrupted sync safe.",
+          "Reconnect the player or resolve the reported files, then review recovery again.",
+          result.value.errors,
         );
     } finally {
       setBusy(false);
@@ -3381,7 +3477,11 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) setSyncRecoveryPreview(result.value);
       else {
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The recovery review could not be opened.",
+          "Reconnect the player if needed, then review the interrupted sync again.",
+          [result.error.message],
+        );
         setSyncRecoveryFeedback({
           runId: recovery.runId,
           profileName: recovery.profileName,

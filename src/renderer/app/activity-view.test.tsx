@@ -133,16 +133,20 @@ describe("ActivityView", () => {
       "Needs attentionYes",
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "The selected folder is no longer available.",
+      "The scan stopped before it finished.",
     );
+    expect(
+      screen.getByText("The selected folder is no longer available."),
+    ).not.toBeVisible();
+    expect(screen.getByText("Technical details")).toBeVisible();
     expect(
       screen.getByRole("heading", { name: "Scan couldn’t finish" }),
     ).toBeVisible();
     expect(
-      screen.getByText(/existing Library is still available/iu),
-    ).toHaveTextContent(
-      "Reconnect the folder if needed, then try the scan again",
-    );
+      screen.getByText(
+        "Your existing Library is still available. Reconnect the folder if needed, then try the scan again.",
+      ),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
 

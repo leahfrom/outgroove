@@ -4,6 +4,7 @@ import type {
   SyncRecoveryPreviewDto,
   SyncRecoverySummaryDto,
 } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 
 export interface SyncRecoveryFeedback {
   readonly runId: string;
@@ -90,14 +91,16 @@ export function SyncRecoveryWorkspace({
                 : `: Outgroove completed ${feedback.recovered} ${feedback.recovered === 1 ? "reviewed change" : "reviewed changes"}.`}
             </p>
           </div>
+          <p>
+            {feedback.status === "complete"
+              ? "You can preview this profile again."
+              : "Reconnect the player or resolve the files shown in the technical details, then review recovery again."}
+          </p>
           {feedback.messages.length > 0 && (
-            <ul
-              aria-label={`Recovery result notes for ${feedback.profileName}`}
-            >
-              {feedback.messages.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
+            <TechnicalDetails
+              messages={feedback.messages}
+              summary="Recovery technical details"
+            />
           )}
           <button disabled={busy} onClick={onDismissFeedback} type="button">
             Dismiss recovery result

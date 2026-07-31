@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { TechnicalDetails } from "./technical-details";
+
 export const appViews = [
   "library",
   "radar",
@@ -14,6 +16,8 @@ export type NoticeTone = "info" | "success" | "error";
 export interface AppNotice {
   readonly message: string;
   readonly tone: NoticeTone;
+  readonly guidance?: string;
+  readonly details?: readonly string[];
 }
 
 const viewCopy: Record<
@@ -118,16 +122,20 @@ export function ApplicationShell({
             className={`notice ${notice.tone}`}
             role="status"
           >
-            <p>
-              <strong className="notice-label">
-                {notice.tone === "error"
-                  ? "Needs attention"
-                  : notice.tone === "success"
-                    ? "Completed"
-                    : "Update"}
-              </strong>
-              <span>{notice.message}</span>
-            </p>
+            <div className="notice-content">
+              <p>
+                <strong className="notice-label">
+                  {notice.tone === "error"
+                    ? "Needs attention"
+                    : notice.tone === "success"
+                      ? "Completed"
+                      : "Update"}
+                </strong>
+                <span>{notice.message}</span>
+                {notice.guidance && <span>{notice.guidance}</span>}
+              </p>
+              {notice.details && <TechnicalDetails messages={notice.details} />}
+            </div>
             <button
               aria-label="Dismiss notification"
               onClick={onDismissNotice}

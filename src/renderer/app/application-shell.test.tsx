@@ -7,6 +7,41 @@ import { describe, expect, it, vi } from "vitest";
 import { ApplicationShell } from "./application-shell";
 
 describe("ApplicationShell packaged inspection marker", () => {
+  it("leads with recovery guidance and progressively discloses exact errors", async () => {
+    const user = userEvent.setup();
+    render(
+      <ApplicationShell
+        activeView="sync"
+        notice={{
+          tone: "error",
+          message: "The sync could not be applied.",
+          guidance:
+            "Check the player connection and create a fresh preview before trying again.",
+          details: ["ENOENT: /Volumes/Player/Music/Track.flac"],
+        }}
+        onDismissNotice={vi.fn()}
+        onNavigate={vi.fn()}
+      >
+        <p>Sync workspace</p>
+      </ApplicationShell>,
+    );
+
+    const notice = screen.getByRole("status");
+    expect(notice).toHaveTextContent("The sync could not be applied.");
+    expect(notice).toHaveTextContent("Check the player connection");
+    expect(
+      screen.getByText("ENOENT: /Volumes/Player/Music/Track.flac"),
+    ).not.toBeVisible();
+
+    const summary = within(notice).getByText("Technical details");
+    summary.focus();
+    expect(summary).toHaveFocus();
+    await user.click(summary);
+    expect(
+      screen.getByText("ENOENT: /Volumes/Player/Music/Track.flac"),
+    ).toBeVisible();
+  });
+
   it("describes each destination in plain, task-focused language", () => {
     render(
       <ApplicationShell
