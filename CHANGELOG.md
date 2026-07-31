@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.18.0 — 2026-07-31
+
+- Rewrite the application shell and primary Library, Workbench, Radar, Sync,
+  Activity, and Settings guidance around the task a person is trying to
+  complete. Navigation now explains outcomes in everyday language, and dense
+  workflow copy is shorter without weakening previews, confirmations, or file
+  safety promises.
+- Make recoverable failures lead with what happened, what stayed safe, and what
+  to try next. Provider interruptions preserve earlier results, scan and edit
+  failures retain useful context, and Sync recovery distinguishes unfinished
+  player changes from successful work without exposing internal error jargon as
+  the main explanation.
+- Clarify Sync terminology across selection, profiles, previews, no-op plans,
+  results, and recovery. DAP is expanded as “digital audio player” on first use,
+  visible storage choices are described as player folders, and destructive or
+  interrupted states continue to require the same explicit review and
+  confirmation.
+- Keep exact technical evidence available through accessible detail
+  disclosures while giving it human-first labels. Original file tags,
+  cryptographic fingerprints, backup format numbers, provider diagnostics, and
+  long paths remain inspectable without dominating ordinary workflows.
+- Extend component and packaged-app coverage for keyboard focus, disclosure
+  behavior, preserved results, long paths, responsive layouts, and isolated
+  macOS visual inspection. No database migration, IPC expansion, provider
+  behavior, or audio/target write behavior changes in this release.
+
 ## 0.17.2 — 2026-07-30
 
 - Validate and flatten the four exact native release packages before checksum
