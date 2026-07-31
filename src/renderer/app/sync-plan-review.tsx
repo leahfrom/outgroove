@@ -362,13 +362,16 @@ export function SyncPlanReview({
           <span>Completed syncs</span>
           <span>Up to 20 recent runs</span>
         </summary>
-        <p>Only runs whose manifest was committed successfully appear here.</p>
+        <p>
+          Only syncs whose final record of synced files was saved successfully
+          appear here.
+        </p>
         {historyProfileId !== profile.id || historyLoading ? (
-          <p aria-live="polite">Loading successful sync history…</p>
+          <p aria-live="polite">Loading completed syncs…</p>
         ) : history.length === 0 ? (
-          <p>No successful sync runs have been recorded yet.</p>
+          <p>No completed syncs are recorded yet.</p>
         ) : (
-          <ul aria-label={`Successful sync history for ${profile.name}`}>
+          <ul aria-label={`Completed sync history for ${profile.name}`}>
             {history.map((item) => (
               <li key={item.id}>
                 <time dateTime={item.completedAt}>

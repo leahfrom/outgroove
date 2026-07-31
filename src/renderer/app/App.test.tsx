@@ -5982,7 +5982,7 @@ describe("tag edit UI safety states", () => {
     expect(screen.getByText("Completed syncs")).toBeVisible();
     await user.click(screen.getByText("Completed syncs"));
     expect(
-      screen.getByText("No successful sync runs have been recorded yet."),
+      screen.getByText("No completed syncs are recorded yet."),
     ).toBeVisible();
     expect(applySync).not.toHaveBeenCalled();
 
@@ -6009,6 +6009,9 @@ describe("tag edit UI safety states", () => {
       targetVolumeConfirmed: false,
     });
     await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByText(/Outgroove saved its new record of synced files/u),
+    ).toHaveTextContent("after all other work finished");
     expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
     expect(listSyncHistory).toHaveBeenNthCalledWith(2, { profileId });
 
@@ -6050,8 +6053,10 @@ describe("tag edit UI safety states", () => {
       },
     });
     expect(
-      await screen.findByText(/Sync cancelled safely after 1 completed copy/u),
-    ).toHaveTextContent("No new manifest was committed");
+      await screen.findByText(/Sync cancelled safely after 1 copy finished/u),
+    ).toHaveTextContent(
+      "restored 1 completed change and did not save a new record of synced files",
+    );
     expect(listSyncHistory).toHaveBeenCalledTimes(2);
     expect(retryConfirm).toBeEnabled();
   });
@@ -6334,7 +6339,7 @@ describe("tag edit UI safety states", () => {
     expect(historySummary).toHaveFocus();
     await user.click(historySummary);
     const history = await screen.findByRole("list", {
-      name: "Successful sync history for Road DAP",
+      name: "Completed sync history for Road DAP",
     });
     expect(history).toHaveTextContent("2 files");
     expect(history).toHaveTextContent("1 file");

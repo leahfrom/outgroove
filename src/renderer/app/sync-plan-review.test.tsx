@@ -138,9 +138,12 @@ describe("SyncPlanReview", () => {
     expect(historyDetails).toHaveAttribute("open");
     expect(
       screen.getByRole("list", {
-        name: "Successful sync history for Road DAP",
+        name: "Completed sync history for Road DAP",
       }),
     ).toHaveTextContent("/fixture/a/previous/target");
+    expect(historyDetails).toHaveTextContent(
+      "final record of synced files was saved successfully",
+    );
   });
 
   it("summarizes a valid plan before disclosing exact paths and confirming", async () => {
