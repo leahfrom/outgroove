@@ -263,7 +263,7 @@ export function SettingsView({
               </div>
               <dl className="settings-summary settings-database-summary">
                 <div>
-                  <dt>Library roots</dt>
+                  <dt>Library folders</dt>
                   <dd>{restorePreview.summary.libraryRoots}</dd>
                 </div>
                 <div>
@@ -291,8 +291,8 @@ export function SettingsView({
                   <dd>{restorePreview.summary.radarItems}</dd>
                 </div>
                 <div>
-                  <dt>Backup format</dt>
-                  <dd>v{restorePreview.schemaVersion}</dd>
+                  <dt>Backup version</dt>
+                  <dd>{restorePreview.schemaVersion}</dd>
                 </div>
               </dl>
               <p className="settings-safety-statement">

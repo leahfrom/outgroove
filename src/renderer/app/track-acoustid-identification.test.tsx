@@ -140,13 +140,15 @@ describe("TrackAcoustIdIdentification", () => {
     });
     expect(candidates).toHaveTextContent("98% fingerprint match");
     expect(candidates).toHaveTextContent("Fixture Album (Album)");
-    const providerIds = screen.getByText("Provider IDs").closest("details");
-    if (!providerIds) throw new Error("Provider IDs missing");
-    expect(providerIds).not.toHaveAttribute("open");
+    const serviceIds = screen
+      .getByText("MusicBrainz and AcoustID IDs")
+      .closest("details");
+    if (!serviceIds) throw new Error("Music service IDs missing");
+    expect(serviceIds).not.toHaveAttribute("open");
     expect(
       screen.getByText("33333333-3333-4333-8333-333333333333"),
     ).not.toBeVisible();
-    await user.click(screen.getByText("Provider IDs"));
+    await user.click(screen.getByText("MusicBrainz and AcoustID IDs"));
     expect(
       screen.getByText("33333333-3333-4333-8333-333333333333"),
     ).toBeVisible();

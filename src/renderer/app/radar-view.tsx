@@ -550,12 +550,12 @@ export function RadarView({
         {artistSearchResult && !artistSearchLoading && (
           <div className="artist-search-results">
             <p className="identification-status">
-              Reviewed results for “{artistSearchResult.sent.artistName}” ·{" "}
+              Artist results for “{artistSearchResult.sent.artistName}” ·{" "}
               {artistSearchResult.source === "network"
-                ? "loaded from MusicBrainz"
+                ? "checked with MusicBrainz"
                 : artistSearchResult.source === "cache"
-                  ? "loaded from local cache"
-                  : "showing an expired local cache because MusicBrainz was unavailable"}
+                  ? "using a recent result saved on this device"
+                  : "using an older saved result because MusicBrainz could not be reached"}
             </p>
             {artistSearchResult.candidates.length === 0 ? (
               <div className="empty compact">
@@ -625,9 +625,9 @@ export function RadarView({
             <p className="eyebrow">Confirmation required</p>
             <h2>Remove {removal.name}?</h2>
             <p>
-              This removes Outgroove’s saved favorite identity and its Radar
-              history. It does not change audio, Library tags, provider caches,
-              or DAP files.
+              This removes the saved favorite and its Radar history. It does not
+              change audio, Library tags, saved online search results, or DAP
+              files.
             </p>
             <div className="actions">
               <button
@@ -686,11 +686,11 @@ function formatNotificationUnavailableReason(
     case "development":
       return "Notifications are available only in an installed release build.";
     case "unsigned-macos-build":
-      return "This macOS build is unsigned, so reliable native notifications are unavailable.";
+      return "This macOS build is unsigned, so reliable system notifications are unavailable.";
     case "portable-windows-build":
-      return "Install Outgroove with the Windows Setup application to enable native notifications; the portable ZIP has no stable notification identity.";
+      return "Install Outgroove with Windows Setup to enable system notifications; the portable ZIP cannot keep the app registration they need.";
     case "unsupported":
     case null:
-      return "Native notifications are unavailable on this system.";
+      return "System notifications are unavailable on this device.";
   }
 }

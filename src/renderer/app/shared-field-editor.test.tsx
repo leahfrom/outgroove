@@ -155,6 +155,8 @@ describe("SharedFieldEditor", () => {
     expect(editorRegion).toHaveTextContent(
       "Outgroove shows them instead of choosing one for you",
     );
+    expect(editorRegion).toHaveTextContent("MusicBrainz IDs");
+    expect(editorRegion).not.toHaveTextContent("provider IDs");
     expect(editorRegion).not.toHaveTextContent("exact restoration");
     const comparison = screen.getByLabelText("Basic shared tag comparison");
     expect(within(comparison).getAllByText("Mixed values")).toHaveLength(4);

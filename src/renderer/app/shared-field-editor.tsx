@@ -373,7 +373,7 @@ function SharedFieldEditorComponent(
             {tracks.length} tracks selected. Choose only the fields you want to
             change. When tracks have different current values, Outgroove shows
             them instead of choosing one for you. More fields contains
-            additional credits, release details, and provider IDs.
+            additional credits, release details, and MusicBrainz IDs.
           </>
         }
       />

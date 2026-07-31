@@ -140,10 +140,10 @@ describe("SyncRecoveryWorkspace", () => {
       }),
     );
     const confirmation = screen.getByLabelText(
-      "Recovery volume identity confirmation",
+      "Interrupted sync storage confirmation",
     );
     const acknowledgement = within(confirmation).getByRole("checkbox", {
-      name: "I confirm this is the intended DAP volume for recovery",
+      name: "I confirm this is the storage used by the interrupted sync",
     });
     expect(
       screen.getByRole("button", {

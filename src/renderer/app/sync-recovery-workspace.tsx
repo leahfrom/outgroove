@@ -270,7 +270,7 @@ export function SyncRecoveryWorkspace({
           {preview.targetVolume.confirmationRequired && (
             <section
               className="sync-volume-confirmation"
-              aria-label="Recovery volume identity confirmation"
+              aria-label="Interrupted sync storage confirmation"
             >
               <div>
                 <strong>
@@ -292,7 +292,7 @@ export function SyncRecoveryWorkspace({
                   type="checkbox"
                 />
                 <span>
-                  I confirm this is the intended DAP volume for recovery
+                  I confirm this is the storage used by the interrupted sync
                 </span>
               </label>
             </section>

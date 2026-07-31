@@ -216,7 +216,7 @@ export function SyncPlanReview({
           {plan.targetVolume.confirmationRequired && (
             <section
               className="sync-volume-confirmation"
-              aria-label="DAP volume identity confirmation"
+              aria-label="Player storage confirmation"
             >
               <div>
                 <strong>
@@ -225,10 +225,10 @@ export function SyncPlanReview({
                 </strong>
                 <span>
                   {plan.targetVolume.status === "changed"
-                    ? "This storage does not match the identity saved for this profile."
+                    ? "This storage does not match the details saved for this profile."
                     : plan.targetVolume.status === "unrecorded"
-                      ? "This profile does not have a saved storage identity."
-                      : "Outgroove could not get a reliable identity for this storage."}
+                      ? "This profile does not have saved details for this storage."
+                      : "Outgroove could not reliably recognize this storage."}
                 </span>
                 <span>
                   Check the destination and player yourself. Recognizing files
@@ -246,7 +246,7 @@ export function SyncPlanReview({
                   type="checkbox"
                 />
                 <span>
-                  I confirm this is the intended DAP volume for this plan
+                  I confirm this is the intended player storage for this sync
                 </span>
               </label>
             </section>

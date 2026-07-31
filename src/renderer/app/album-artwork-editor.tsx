@@ -18,6 +18,30 @@ function formatBytes(bytes: number): string {
     : `${Math.ceil(bytes / 1024)} KiB`;
 }
 
+function ArtworkVerificationDetails({
+  byteLength,
+  sha256,
+}: {
+  readonly byteLength: number;
+  readonly sha256: string;
+}): React.JSX.Element {
+  return (
+    <details>
+      <summary>Verification details</summary>
+      <dl>
+        <div>
+          <dt>File size</dt>
+          <dd>{formatBytes(byteLength)}</dd>
+        </div>
+        <div>
+          <dt>Verification code (SHA-256)</dt>
+          <dd className="identifier">{sha256}</dd>
+        </div>
+      </dl>
+    </details>
+  );
+}
+
 export function AlbumArtworkEditor({
   busy,
   error,
@@ -117,8 +141,8 @@ export function AlbumArtworkEditor({
           }
           description={
             removing
-              ? "Outgroove will re-check each file, snapshot its complete embedded picture set, remove only front-cover pictures through a same-folder temporary file, then re-read and verify both the remaining artwork and audio payload."
-              : "Outgroove will re-check each file, snapshot its complete embedded picture set, write through a same-folder temporary file, then re-read and verify both artwork and audio payload."
+              ? "Outgroove will check each file again, save its current embedded pictures for recovery, remove only front-cover pictures using a temporary file beside the original, then check that the remaining pictures and music are unchanged."
+              : "Outgroove will check each file again, save its current embedded pictures for recovery, write the new cover using a temporary file beside the original, then check both the artwork and music."
           }
           label={
             removing
@@ -322,10 +346,10 @@ export function AlbumArtworkEditor({
               <span className="artwork-export-path">
                 {folderResult.destinationPath}
               </span>
-              <span>
-                {formatBytes(folderResult.byteLength)} · SHA-256{" "}
-                {folderResult.sha256}
-              </span>
+              <ArtworkVerificationDetails
+                byteLength={folderResult.byteLength}
+                sha256={folderResult.sha256}
+              />
             </div>
           )}
 
@@ -460,10 +484,10 @@ export function AlbumArtworkEditor({
               <span className="artwork-export-path">
                 {exportResult.destinationPath}
               </span>
-              <span>
-                {formatBytes(exportResult.byteLength)} · SHA-256{" "}
-                {exportResult.sha256}
-              </span>
+              <ArtworkVerificationDetails
+                byteLength={exportResult.byteLength}
+                sha256={exportResult.sha256}
+              />
             </div>
           )}
 
