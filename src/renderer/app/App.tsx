@@ -2222,7 +2222,7 @@ export function App(): React.JSX.Element {
       musicBrainzRecordingId: recordingId,
     }));
     setMetadataDraftSource(
-      "MusicBrainz recording ID drafted from an explicitly selected AcoustID candidate. Review the ordinary tag preview before writing.",
+      "Added the MusicBrainz recording ID from the AcoustID match you selected. Review it with the other changes before writing.",
     );
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
@@ -3488,9 +3488,7 @@ export function App(): React.JSX.Element {
     if (!selectedAlbum) return;
     albumIdentificationRequestId.current += 1;
     setAlbumIdentificationLoading(false);
-    setAlbumIdentificationError(
-      "Search cancelled. No Library metadata changed.",
-    );
+    setAlbumIdentificationError("Search cancelled. Your Library is unchanged.");
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
     });
@@ -3523,7 +3521,7 @@ export function App(): React.JSX.Element {
     albumIdentificationRequestId.current += 1;
     setReleaseTracksLoading(false);
     setReleaseTracksError(
-      "Tracklist request cancelled. No Library metadata changed.",
+      "Track loading cancelled. Your Library is unchanged.",
     );
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
@@ -3592,10 +3590,10 @@ export function App(): React.JSX.Element {
     setCoverArtPreparing(false);
     if (preparing)
       setCoverArtPrepareError(
-        "Artwork preparation cancelled. No Library artwork changed.",
+        "Artwork preparation cancelled. Your Library is unchanged.",
       );
     else
-      setCoverArtError("Cover request cancelled. No Library artwork changed.");
+      setCoverArtError("Cover request cancelled. Your Library is unchanged.");
     void window.outgroove.cancelCoverArtArchiveArtwork({
       albumId: selectedAlbum.id,
     });
@@ -3661,13 +3659,13 @@ export function App(): React.JSX.Element {
     );
     if (candidateDraft.fields.length === 0) {
       setNotice(
-        "All safely supported MusicBrainz values are already current or unavailable. No draft was created.",
+        "All album details Outgroove can use already match or are unavailable. No draft was created.",
       );
       return;
     }
-    const source = `Drafted ${candidateDraft.fields.length} supported ${
+    const source = `Added ${candidateDraft.fields.length} ${
       candidateDraft.fields.length === 1 ? "field" : "fields"
-    } from MusicBrainz release ${candidate.releaseId}. Review every selected value; no preview or write has started.`;
+    } from the selected MusicBrainz release. Review every value before continuing; no file has changed.`;
     setMetadataDraftSource(source);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);

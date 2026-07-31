@@ -51,7 +51,7 @@ async function openLibraryAlbum(
 async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
-    | "Find MusicBrainz matches"
+    | "Find album details"
     | "Edit album metadata"
     | "Change album artwork"
     | "Edit track order"
@@ -1471,7 +1471,7 @@ describe("tag edit UI safety states", () => {
                 "Album title matches",
                 "Album artist matches",
                 "Track count matches (1)",
-                "Release date agrees at known precision (2026)",
+                "Release date matches as far as the saved dates show (2026)",
               ],
               conflicts: [],
             },
@@ -1489,9 +1489,9 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const dialog = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     expect(dialog).toHaveFocus();
     expect(findCandidates).not.toHaveBeenCalled();
@@ -1500,7 +1500,7 @@ describe("tag edit UI safety states", () => {
     );
     expect(findCandidates).toHaveBeenCalledWith({ albumId: album.id });
     expect(await within(dialog).findByRole("article")).toHaveTextContent(
-      "strong · 95/100",
+      "Strong match · 95%",
     );
     expect(applyTrack).not.toHaveBeenCalled();
     expect(applyAlbum).not.toHaveBeenCalled();
@@ -1508,7 +1508,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       within(dialog).getByRole("button", {
-        name: "Draft supported tags from Fixture Album, 2026",
+        name: "Use album details from Fixture Album, 2026",
       }),
     );
     expect(dialog).not.toBeInTheDocument();
@@ -1516,7 +1516,7 @@ describe("tag edit UI safety states", () => {
       name: "Edit metadata for Track",
     });
     expect(editor).toHaveTextContent(
-      "Drafted 2 supported fields from MusicBrainz release",
+      "Added 2 fields from the selected MusicBrainz release",
     );
     expect(
       within(editor).getByLabelText("MusicBrainz release ID proposed value"),
@@ -1655,15 +1655,15 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const dialog = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Search MusicBrainz" }),
     );
     const loadButton = await within(dialog).findByRole("button", {
-      name: "Load Cover Art Archive front cover for Fixture Album, 2026",
+      name: "Show front cover for Fixture Album, 2026",
     });
     expect(loadCover).not.toHaveBeenCalled();
     loadButton.focus();
@@ -1677,14 +1677,14 @@ describe("tag edit UI safety states", () => {
         name: "Cover Art Archive front cover for Fixture Album",
       }),
     ).toHaveAttribute("src", "data:image/png;base64,fixture");
-    expect(dialog).toHaveTextContent("No Library artwork changed");
+    expect(dialog).toHaveTextContent("Your Library is unchanged");
     expect(prepareArtwork).not.toHaveBeenCalled();
     expect(chooseArtwork).not.toHaveBeenCalled();
     expect(previewRemoval).not.toHaveBeenCalled();
     expect(applyArtwork).not.toHaveBeenCalled();
 
     const prepare = within(dialog).getByRole("button", {
-      name: "Prepare Cover Art Archive artwork from Fixture Album, 2026, for replacement review",
+      name: "Use front cover from Fixture Album, 2026",
     });
     prepare.focus();
     await user.keyboard("{Enter}");
@@ -1695,7 +1695,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       screen.queryByRole("dialog", {
-        name: "Find MusicBrainz matches for Fixture Album",
+        name: "Find album details for Fixture Album",
       }),
     ).not.toBeInTheDocument();
 
@@ -1829,16 +1829,16 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const finder = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(finder).getByRole("button", { name: "Search MusicBrainz" }),
     );
     await user.click(
       await within(finder).findByRole("button", {
-        name: "Map Library tracks to Fixture Album, 2026",
+        name: "Match Library tracks with Fixture Album, 2026",
       }),
     );
     expect(loadRelease).toHaveBeenCalledWith({
@@ -1849,7 +1849,7 @@ describe("tag edit UI safety states", () => {
 
     await user.selectOptions(
       await within(finder).findByRole("combobox", {
-        name: "MusicBrainz track for Track",
+        name: "Release track for Track",
       }),
       "11111111-1111-4111-8111-111111111111",
     );
@@ -1858,7 +1858,7 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(
       within(finder).getByRole("button", {
-        name: "Preview mapped tracks",
+        name: "Review track changes",
       }),
     );
     expect(previewMapping).toHaveBeenCalledWith({
@@ -1875,7 +1875,7 @@ describe("tag edit UI safety states", () => {
     expect(applyMapping).not.toHaveBeenCalled();
     await user.click(
       within(finder).getByRole("button", {
-        name: "Confirm and write mapped tracks",
+        name: "Confirm and update tracks",
       }),
     );
     expect(applyMapping).toHaveBeenCalledWith({
@@ -1972,16 +1972,16 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const finder = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(finder).getByRole("button", { name: "Search MusicBrainz" }),
     );
     await user.click(
       await within(finder).findByRole("button", {
-        name: "Draft supported tags from Fixture Album, 2027-04",
+        name: "Use album details from Fixture Album, 2027-04",
       }),
     );
 
@@ -2818,13 +2818,13 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Edit metadata for Track" }),
     );
     const identificationSummary = screen
-      .getByText("Identify recording with AcoustID")
+      .getByText("Try identifying this recording")
       .closest("summary");
     if (!identificationSummary)
       throw new Error("AcoustID identification summary missing");
     await user.click(identificationSummary);
     await user.click(
-      screen.getByRole("button", { name: "Create local fingerprint" }),
+      screen.getByRole("button", { name: "Create fingerprint" }),
     );
     expect(previewLookup).toHaveBeenCalledWith({ fileId: trackId });
     expect(confirmLookup).not.toHaveBeenCalled();
@@ -2832,7 +2832,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Send fingerprint to AcoustID",
+        name: "Send and find matches",
       }),
     );
     expect(confirmLookup).toHaveBeenCalledWith({
@@ -2843,7 +2843,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Use recording ID in tag draft",
+        name: "Use this match in the draft",
       }),
     );
     expect(

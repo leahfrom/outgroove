@@ -11,8 +11,8 @@ function sourceLabel(source: CoverArtArchiveResultDto["source"]): string {
   return source === "network"
     ? "Cover Art Archive"
     : source === "cache"
-      ? "the local metadata and in-memory thumbnail cache"
-      : "an expired local metadata cache";
+      ? "a saved copy on this device"
+      : "an older saved copy";
 }
 
 export function CoverArtArchivePreview({
@@ -42,37 +42,41 @@ export function CoverArtArchivePreview({
       aria-label={`Cover Art Archive preview for ${candidate.title}`}
       className="candidate-artwork"
     >
-      <h4>Cover Art Archive</h4>
+      <h4>Artwork for this release</h4>
       <p>
-        Loading this edition’s front cover sends only MusicBrainz release ID{" "}
-        <span className="identifier">{candidate.releaseId}</span> to the Cover
-        Art Archive. It never sends audio, current artwork, tags, or file paths.
+        Outgroove can ask the Cover Art Archive for this edition’s front cover.
+        Your audio, current artwork, tags, and file paths stay on this device.
       </p>
       <p>
-        The thumbnail is read-only evidence for this exact release. It cannot
-        start an artwork write; preparing the original opens a separate,
-        confirmable per-file preview.
+        Viewing the cover cannot change your Library. If you decide to use it,
+        Outgroove opens a separate review before changing any file.
       </p>
+      <details className="candidate-technical-details">
+        <summary>Request details</summary>
+        <p>
+          Outgroove sends only MusicBrainz release ID{" "}
+          <span className="identifier">{candidate.releaseId}</span>.
+        </p>
+      </details>
       <div className="workflow-actions">
         <button
-          aria-label={`Load Cover Art Archive front cover for ${candidate.title}, ${candidate.date ?? "unknown date"}`}
+          aria-label={`Show front cover for ${candidate.title}, ${candidate.date ?? "unknown date"}`}
           disabled={loading || preparing}
           onClick={onLoad}
           type="button"
         >
-          {result ? "Reload release front cover" : "Load release front cover"}
+          {result ? "Reload front cover" : "Show front cover"}
         </button>
         {(loading || preparing) && (
           <button onClick={onCancel} type="button">
-            {preparing ? "Cancel artwork preparation" : "Cancel cover request"}
+            {preparing ? "Cancel preparation" : "Cancel"}
           </button>
         )}
       </div>
 
       <div aria-live="polite">
         {loading && "Loading the release front cover…"}
-        {preparing &&
-          "Loading and validating the original image for per-file review…"}
+        {preparing && "Preparing the full-size image for review…"}
         {!loading && error && (
           <p className="workflow-error" role="alert">
             Cover request failed: {error}
@@ -80,7 +84,7 @@ export function CoverArtArchivePreview({
         )}
         {!loading && result && !result.artwork && (
           <p>
-            No front cover is indexed for this release. Library artwork remains
+            No front cover is available for this release. Your Library is
             unchanged.
           </p>
         )}
@@ -98,7 +102,7 @@ export function CoverArtArchivePreview({
             src={artwork.previewDataUrl}
           />
           <figcaption>
-            <strong>Read-only release front cover</strong>
+            <strong>Front cover from this release</strong>
             <span>
               {artwork.types.length > 0
                 ? artwork.types.join(", ")
@@ -114,23 +118,23 @@ export function CoverArtArchivePreview({
             </span>
             {artwork.comment && <span>{artwork.comment}</span>}
             <span>
-              Loaded from {sourceLabel(result?.source ?? "network")}. No Library
-              artwork changed.
+              Loaded from {sourceLabel(result?.source ?? "network")}. Your
+              Library is unchanged.
             </span>
             <span>
-              If you continue, Outgroove fetches this exact image’s original
-              file and opens the existing per-file artwork review. It still will
-              not write until that separate preview is confirmed. Use artwork
-              only when you have the right to do so.
+              If you continue, Outgroove downloads the full-size image and lets
+              you review every affected file. Nothing is written until you
+              confirm that review. Use artwork only when you have the right to
+              do so.
             </span>
             <button
-              aria-label={`Prepare Cover Art Archive artwork from ${candidate.title}, ${candidate.date ?? "unknown date"}, for replacement review`}
+              aria-label={`Use front cover from ${candidate.title}, ${candidate.date ?? "unknown date"}`}
               className="primary"
               disabled={preparing}
               onClick={() => onPrepare(artwork.id)}
               type="button"
             >
-              Prepare original for replacement review
+              Use this cover…
             </button>
           </figcaption>
         </figure>

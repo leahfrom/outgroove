@@ -99,12 +99,12 @@ describe("TrackAcoustIdIdentification", () => {
     const { rerender } = render(view({ onPreview, onConfirm }));
 
     const summary = screen
-      .getByText("Identify recording with AcoustID")
+      .getByText("Try identifying this recording")
       .closest("summary");
     if (!summary) throw new Error("Identification summary missing");
     await user.click(summary);
     await user.click(
-      screen.getByRole("button", { name: "Create local fingerprint" }),
+      screen.getByRole("button", { name: "Create fingerprint" }),
     );
     expect(onPreview).toHaveBeenCalledOnce();
     expect(onConfirm).not.toHaveBeenCalled();
@@ -114,11 +114,18 @@ describe("TrackAcoustIdIdentification", () => {
       screen.getByRole("region", {
         name: "Confirm AcoustID fingerprint lookup",
       }),
-    ).toHaveTextContent("Review the exact outgoing data");
+    ).toHaveTextContent("Review what will be sent");
+    const technicalDetails = screen
+      .getByText("Technical fingerprint details")
+      .closest("details");
+    if (!technicalDetails) throw new Error("Fingerprint details missing");
+    expect(technicalDetails).not.toHaveAttribute("open");
+    expect(screen.getByText(preview.sent.fingerprintSha256)).not.toBeVisible();
+    await user.click(screen.getByText("Technical fingerprint details"));
     expect(screen.getByText(preview.sent.fingerprintSha256)).toBeVisible();
     expect(screen.queryByText(/AQAAS8kSSUmi/u)).not.toBeInTheDocument();
     await user.click(
-      screen.getByRole("button", { name: "Send fingerprint to AcoustID" }),
+      screen.getByRole("button", { name: "Send and find matches" }),
     );
     expect(onConfirm).toHaveBeenCalledOnce();
   });
@@ -131,12 +138,22 @@ describe("TrackAcoustIdIdentification", () => {
     const candidates = screen.getByRole("region", {
       name: "AcoustID recording candidates",
     });
-    expect(candidates).toHaveTextContent("98% fingerprint similarity");
+    expect(candidates).toHaveTextContent("98% fingerprint match");
     expect(candidates).toHaveTextContent("Fixture Album (Album)");
+    const providerIds = screen.getByText("Provider IDs").closest("details");
+    if (!providerIds) throw new Error("Provider IDs missing");
+    expect(providerIds).not.toHaveAttribute("open");
+    expect(
+      screen.getByText("33333333-3333-4333-8333-333333333333"),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Provider IDs"));
+    expect(
+      screen.getByText("33333333-3333-4333-8333-333333333333"),
+    ).toBeVisible();
     expect(onUseRecordingId).not.toHaveBeenCalled();
     await user.click(
       screen.getByRole("button", {
-        name: "Use recording ID in tag draft",
+        name: "Use this match in the draft",
       }),
     );
     expect(onUseRecordingId).toHaveBeenCalledWith(
