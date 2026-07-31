@@ -4167,11 +4167,13 @@ export function App(): React.JSX.Element {
                     aria-labelledby="library-scan-tools-title"
                   >
                     <div>
-                      <p className="eyebrow">Local collection</p>
-                      <h2 id="library-scan-tools-title">Folders & scanning</h2>
+                      <p className="eyebrow">Keep your Library current</p>
+                      <h2 id="library-scan-tools-title">
+                        Folders and scanning
+                      </h2>
                       <p>
-                        Add and scan a folder explicitly. Scanning remains local
-                        and read-only.
+                        Add a folder when you’re ready. Scanning stays on this
+                        device and never changes your music.
                       </p>
                     </div>
                     <div className="actions">
@@ -4195,7 +4197,7 @@ export function App(): React.JSX.Element {
                   >
                     <div className="section-heading">
                       <div>
-                        <p className="eyebrow">Local shortcuts</p>
+                        <p className="eyebrow">Get back here quickly</p>
                         <h2 id="saved-filters-title">Saved Library filters</h2>
                       </div>
                       <form
@@ -4229,8 +4231,8 @@ export function App(): React.JSX.Element {
                       </form>
                     </div>
                     <p>
-                      Saves the active search and view. Page position and exact
-                      album-detail routes remain temporary.
+                      Saves the current search and view. Your page position and
+                      open album are not included.
                     </p>
                     {albumIdFilter && (
                       <p>
@@ -4805,9 +4807,8 @@ export function App(): React.JSX.Element {
                   >
                     <h3>Album data quality</h3>
                     <p>
-                      Findings come from the current local catalog. They select
-                      a review workflow but never infer, preview, or write a
-                      correction.
+                      These checks use only your current Library. They point out
+                      possible problems but never guess or apply a correction.
                     </p>
                     {albumDiagnostics.length === 0 ? (
                       <p>Status: No data-quality findings for this album.</p>
@@ -4924,11 +4925,11 @@ export function App(): React.JSX.Element {
         <main className="sync-view">
           <section className="sync-workflow-header">
             <div>
-              <p className="eyebrow">Folder-backed DAP sync</p>
-              <h2>Prepare, review, then copy</h2>
+              <p className="eyebrow">Copy music to your player</p>
+              <h2>Choose, preview, then sync</h2>
               <p>
-                Source audio is never modified. Every target plan remains
-                preview-only until you explicitly confirm it.
+                Your Library files are never changed. Outgroove shows every
+                change to your player before asking you to confirm.
               </p>
             </div>
             <SyncNavigation
@@ -5151,7 +5152,7 @@ export function App(): React.JSX.Element {
             onClose={() => setLibraryAlbumEditingTool(undefined)}
           >
             <header className="album-editing-heading">
-              <p className="eyebrow">Album editing</p>
+              <p className="eyebrow">Make album changes</p>
               <h2>{selectedAlbum.title}</h2>
               <p>
                 Drafts and selections stay local until a fresh preview is

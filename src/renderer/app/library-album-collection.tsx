@@ -92,11 +92,11 @@ export function LibraryAlbumCollection({
         <div>
           <p className="eyebrow">Your collection</p>
           <h2 id="album-collection-title">Albums</h2>
-          <p>Ordered by album artist, release date, then album title.</p>
+          <p>Sorted by album artist, release date, and album title.</p>
         </div>
         <p className="album-quality-summary" aria-live="polite">
           {albumsWithDiagnostics === 0
-            ? "No data-quality findings on this page."
+            ? "No albums on this page need attention."
             : `${albumsWithDiagnostics} of ${albums.length} albums on this page need review.`}
         </p>
       </div>

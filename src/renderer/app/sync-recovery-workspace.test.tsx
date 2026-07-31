@@ -108,7 +108,7 @@ describe("SyncRecoveryWorkspace", () => {
     expect(recoveries).toHaveTextContent("Rollback required");
     expect(recoveries).toHaveTextContent("Cleanup only");
     expect(recoveries).toHaveTextContent(
-      "The manifest committed successfully; only interrupted Outgroove cleanup remains.",
+      "The sync finished successfully, but some temporary Outgroove files still need cleanup.",
     );
     expect(
       within(recoveries).getAllByText(

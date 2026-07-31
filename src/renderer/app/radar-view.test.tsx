@@ -234,7 +234,9 @@ describe("Radar favorite artists", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByText(/Audio, paths, tags, artwork, fingerprints/iu),
+      screen.getByText(
+        /Your audio, file locations, tags, artwork, fingerprints/iu,
+      ),
     ).toBeVisible();
     expect(onAdd).not.toHaveBeenCalled();
 
@@ -346,7 +348,7 @@ describe("Radar favorite artists", () => {
     await user.keyboard("{Enter}");
     expect(onCancelRefreshAll).toHaveBeenCalledOnce();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Completed 2 of 2 favorites: 1 successful and 1 failed.",
+      "Checked 2 of 2 artists: 1 refreshed and 1 could not be refreshed.",
     );
     const failures = screen.getByRole("list", {
       name: "Favorites that failed to refresh",
@@ -357,7 +359,7 @@ describe("Radar favorite artists", () => {
         name: `Refresh releases for ${favorite.name}`,
       }),
     ).toBeDisabled();
-    const successful = screen.getByText("Successful favorites (1)");
+    const successful = screen.getByText("Refreshed artists (1)");
     successful.focus();
     await user.keyboard("{Enter}");
     expect(

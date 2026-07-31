@@ -8,12 +8,12 @@ const sections: readonly {
   {
     id: "library-folders",
     label: "Library folders",
-    description: "Manage watched roots and their scan state.",
+    description: "Choose which music folders Outgroove watches.",
   },
   {
     id: "database",
-    label: "Database safety",
-    description: "Back up, restore, or export support diagnostics.",
+    label: "Backups & support",
+    description: "Protect your Outgroove data or create a support report.",
   },
 ];
 

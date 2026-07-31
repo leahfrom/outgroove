@@ -22,23 +22,23 @@ const viewCopy: Record<
 > = {
   library: {
     label: "Library",
-    description: "Browse, search, and inspect your local collection.",
+    description: "Browse, search, and explore your music collection.",
   },
   radar: {
     label: "Radar",
-    description: "Save exact artist identities for release discovery.",
+    description: "Keep up with new releases from artists you follow.",
   },
   sync: {
     label: "Sync",
-    description: "Prepare and review folder-backed DAP copies.",
+    description: "Choose music, preview changes, and copy it to your player.",
   },
   activity: {
     label: "Activity",
-    description: "Follow long-running work, failures, and recovery.",
+    description: "See what Outgroove is doing and what needs your attention.",
   },
   settings: {
     label: "Settings",
-    description: "Manage Library folders, database safety, and diagnostics.",
+    description: "Manage music folders, backups, and support reports.",
   },
 };
 
@@ -62,7 +62,7 @@ export function ApplicationShell({
     <div className="application-shell">
       <aside className="primary-sidebar">
         <div className="brand">
-          <p className="eyebrow">Local-first music library</p>
+          <p className="eyebrow">Your music, on your terms</p>
           <p className="brand-name">Outgroove</p>
         </div>
         <nav aria-label="Primary navigation" className="primary-navigation">
@@ -81,7 +81,8 @@ export function ApplicationShell({
           ))}
         </nav>
         <p className="privacy-note">
-          Audio stays local. Every write and sync requires a review.
+          Your audio stays yours. You review every file change before it
+          happens.
         </p>
       </aside>
       <div className="application-surface">
@@ -105,7 +106,7 @@ export function ApplicationShell({
         )}
         <header className="view-header">
           <div>
-            <p className="eyebrow">Outgroove workspace</p>
+            <p className="eyebrow">Now viewing</p>
             <h1>{current.label}</h1>
             <p>{current.description}</p>
           </div>

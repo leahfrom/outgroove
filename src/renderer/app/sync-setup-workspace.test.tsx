@@ -142,7 +142,7 @@ describe("SyncSetupWorkspace", () => {
 
     render(<Harness />);
     const selectionTab = screen.getByRole("button", {
-      name: "Selection draft, 1 of 100 album",
+      name: "Current selection, 1 of 100 album",
     });
     expect(selectionTab).toHaveAttribute("aria-current", "page");
     expect(
@@ -291,11 +291,13 @@ describe("SyncSetupWorkspace", () => {
     );
 
     const preview = screen.getByLabelText("DAP target confirmation");
-    expect(preview).toHaveTextContent("Volume identity refresh");
+    expect(preview).toHaveTextContent("Recheck saved storage");
     expect(preview).toHaveTextContent(
-      "Existing sync history and manifest ownership stay attached",
+      "Completed syncs and Outgroove’s record of files it synced stay with this profile and destination",
     );
-    expect(preview).toHaveTextContent("one-way digest");
+    expect(preview).toHaveTextContent(
+      "remember this storage and check it again before future syncs",
+    );
     await user.click(
       within(preview).getByRole("button", {
         name: "Confirm volume identity refresh",
@@ -340,19 +342,21 @@ describe("SyncSetupWorkspace", () => {
     expect(preview).toHaveTextContent(profile.targetPath);
     expect(preview).toHaveTextContent("2");
     expect(preview).toHaveTextContent(
-      "No source audio or target file is read, changed, or deleted.",
+      "No audio or destination file is read, changed, or deleted.",
     );
     expect(preview).toHaveTextContent(
-      "Re-adding the folder later will not adopt, replace, or delete them automatically.",
+      "Adding the folder again will not claim, replace, or remove those files automatically.",
     );
     expect(onConfirmRemoval).not.toHaveBeenCalled();
 
     const disclosure = within(preview).getByText(
-      "Review albums and ownership records before removal",
+      "Review saved albums and destinations",
     );
     await user.click(disclosure);
     expect(preview).toHaveTextContent("Fixture Album");
-    expect(preview).toHaveTextContent("12 files in its latest manifest");
+    expect(preview).toHaveTextContent(
+      "12 files recorded from its latest completed sync",
+    );
 
     const confirm = within(preview).getByRole("button", {
       name: "Remove profile from Outgroove",

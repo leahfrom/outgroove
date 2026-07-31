@@ -126,7 +126,7 @@ describe("SyncPlanReview", () => {
     await user.keyboard("{Enter}");
     expect(onPreview).toHaveBeenCalledTimes(1);
 
-    const historyLabel = screen.getByText("Successful sync history");
+    const historyLabel = screen.getByText("Completed syncs");
     const historySummary = historyLabel.closest("summary");
     const historyDetails = historyLabel.closest("details");
     if (!historySummary || !historyDetails)
@@ -160,7 +160,9 @@ describe("SyncPlanReview", () => {
     expect(summary).toHaveTextContent("Issues0");
     expect(summary).toHaveTextContent("2.00 KiB");
     expect(confirmation).toHaveTextContent("Source audio stays untouched");
-    expect(confirmation).toHaveTextContent("commits the new manifest last");
+    expect(confirmation).toHaveTextContent(
+      "saves its new synced-file record only after everything succeeds",
+    );
 
     const copyLabel = within(confirmation).getByText("Files to copy");
     const copySummary = copyLabel.closest("summary");
@@ -241,7 +243,7 @@ describe("SyncPlanReview", () => {
       "DAP volume identity confirmation",
     );
     expect(volumeConfirmation).toHaveTextContent(
-      "differs from the evidence saved for this profile",
+      "does not match the identity saved for this profile",
     );
     const acknowledgement = within(volumeConfirmation).getByRole("checkbox", {
       name: "I confirm this is the intended DAP volume for this plan",
@@ -295,7 +297,7 @@ describe("SyncPlanReview", () => {
     };
     const { rerender } = render(review({ onCleanupEnabledChange }));
     const cleanup = screen.getByRole("checkbox", {
-      name: /Include cleanup of obsolete Outgroove-owned files in this plan/u,
+      name: /Remove obsolete files from earlier Outgroove syncs/u,
     });
     expect(cleanup).not.toBeChecked();
     cleanup.focus();
@@ -309,7 +311,7 @@ describe("SyncPlanReview", () => {
     expect(confirmation).toHaveTextContent("Skipped (unchanged)1");
     expect(confirmation).toHaveTextContent("Removals1");
     const removalDisclosure = within(confirmation)
-      .getByText("Manifest-owned files to remove")
+      .getByText("Previously synced files to remove")
       .closest("details");
     expect(removalDisclosure).toHaveAttribute("open");
     expect(removalDisclosure).toHaveTextContent(

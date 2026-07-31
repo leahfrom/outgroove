@@ -105,7 +105,7 @@ it("explains an empty completed scan without implying that audio changed", () =>
     screen.getByRole("heading", { name: "No supported music was found" }),
   ).toBeVisible();
   expect(
-    screen.getByText("No metadata write or DAP sync starts from this scan."),
+    screen.getByText("This scan does not edit tags or start a sync."),
   ).toBeVisible();
   expect(
     screen.getByRole("button", { name: "View scan activity" }),
