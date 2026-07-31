@@ -11,7 +11,9 @@ import type {
 } from "../../shared/contracts/api";
 import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 import { ModalSheet } from "./modal-sheet";
+import { ProviderRequestError } from "./provider-request-error";
 import { RadarReleases } from "./radar-releases";
+import { TechnicalDetails } from "./technical-details";
 
 type RadarReleaseView = (typeof radarViews)[number];
 
@@ -291,9 +293,16 @@ export function RadarView({
             <p role="status">Loading automatic refresh settings…</p>
           )}
           {radarBackgroundError && (
-            <p className="error" role="alert">
-              {radarBackgroundError}
-            </p>
+            <ProviderRequestError
+              details={[radarBackgroundError]}
+              guidance={
+                radarBackgroundSettings
+                  ? "Your previous automatic-refresh settings are still in place. Close and reopen these settings, then try again."
+                  : "No automatic-refresh setting changed. Close and reopen these settings, then try again."
+              }
+              label="Automatic Radar refresh error"
+              title="Automatic refresh couldn’t be loaded or updated."
+            />
           )}
         </div>
       </details>
@@ -339,7 +348,14 @@ export function RadarView({
               {radarRefreshAllResult.failures.map((failure) => (
                 <li key={failure.favoriteArtistId}>
                   <strong>{failure.favoriteArtistName}</strong>
-                  <span>{failure.message}</span>
+                  <span>
+                    Not refreshed. Saved releases for this artist remain
+                    unchanged.
+                  </span>
+                  <TechnicalDetails
+                    messages={[failure.message]}
+                    summary="Why this artist wasn’t refreshed"
+                  />
                 </li>
               ))}
             </ul>
@@ -543,14 +559,18 @@ export function RadarView({
           <p aria-live="polite">Searching MusicBrainz for artists…</p>
         )}
         {artistSearchError && (
-          <p className="field-error" role="alert">
-            {artistSearchError}
-          </p>
+          <ProviderRequestError
+            details={[artistSearchError]}
+            guidance="No favorites changed. Review the details, then try again. If you were searching MusicBrainz, check your connection first."
+            label="Favorite artist request error"
+            title="This favorite-artist action couldn’t be completed."
+          />
         )}
         {artistSearchResult && !artistSearchLoading && (
           <div className="artist-search-results">
             <p className="identification-status">
-              Artist results for “{artistSearchResult.sent.artistName}” ·{" "}
+              {artistSearchError ? "Earlier artist results" : "Artist results"}{" "}
+              for “{artistSearchResult.sent.artistName}” ·{" "}
               {artistSearchResult.source === "network"
                 ? "checked with MusicBrainz"
                 : artistSearchResult.source === "cache"

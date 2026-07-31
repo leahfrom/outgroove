@@ -169,14 +169,20 @@ describe("Radar releases", () => {
     expect(screen.getByRole("button", { name: "Restore item" })).toBeVisible();
   });
 
-  it("keeps the last successful view visible beside a refresh failure", () => {
+  it("keeps the last successful view visible and progressively discloses a refresh failure", async () => {
+    const user = userEvent.setup();
     renderReleases({
       error:
         "MusicBrainz is unavailable. Outgroove kept the last successful Radar view unchanged.",
     });
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "last successful Radar view unchanged",
+    const alert = screen.getByRole("alert", { name: "Radar request error" });
+    expect(alert).toHaveTextContent("Radar couldn’t complete this action.");
+    expect(alert).toHaveTextContent(
+      "Your saved Radar releases are still available",
     );
     expect(screen.getByText(item.title)).toBeVisible();
+    expect(screen.getByText(/last successful Radar view/u)).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText(/last successful Radar view/u)).toBeVisible();
   });
 });

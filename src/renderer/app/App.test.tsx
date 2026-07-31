@@ -582,9 +582,31 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Search MusicBrainz" }),
     );
     expect(search).toHaveBeenCalledWith({ query: "Fixture Artist" });
-    const addButton = await screen.findByRole("button", {
+    let addButton = await screen.findByRole("button", {
       name: "Add Fixture Artist to favorites",
     });
+    search.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "MusicBrainz returned HTTP 503 after retries.",
+        recoverable: true,
+      },
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(
+      await screen.findByRole("alert", {
+        name: "Favorite artist request error",
+      }),
+    ).toHaveTextContent("No favorites changed");
+    expect(screen.getByText(/Earlier artist results for/u)).toBeVisible();
+    addButton = screen.getByRole("button", {
+      name: "Add Fixture Artist to favorites",
+    });
+    expect(addButton).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
     addButton.focus();
     await user.keyboard("{Enter}");
     expect(add).toHaveBeenCalledWith({
@@ -792,6 +814,26 @@ describe("tag edit UI safety states", () => {
       "musicBrainzArtistId",
     );
     expect(await screen.findByText(/Refreshed Fixture Artist:/u)).toBeVisible();
+
+    refresh.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "MusicBrainz returned HTTP 503 after retries.",
+        recoverable: true,
+      },
+    });
+    await user.click(refreshButton);
+    const refreshError = await screen.findByRole("alert", {
+      name: "Radar request error",
+    });
+    expect(refreshError).toHaveTextContent(
+      "Your saved Radar releases are still available",
+    );
+    expect(screen.getByText(radarItem.title)).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText(/HTTP 503/u)).toBeVisible();
 
     const markSeen = screen.getByRole("button", { name: "Mark seen" });
     const favoriteListCallsBeforeSeen = favoriteLists.mock.calls.length;

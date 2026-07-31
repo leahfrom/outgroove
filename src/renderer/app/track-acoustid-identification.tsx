@@ -4,6 +4,7 @@ import type {
 } from "../../shared/contracts/api";
 import type { CatalogTrack } from "../../shared/domain/catalog";
 import { formatDuration } from "../../shared/domain/audio-technical";
+import { ProviderRequestError } from "./provider-request-error";
 
 function artistLabel(
   candidate: AcoustIdTrackLookupResultDto["candidates"][number],
@@ -62,17 +63,25 @@ export function TrackAcoustIdIdentification({
         )}
 
         {error && (
-          <div
-            aria-label="AcoustID identification error"
-            className="workflow-error"
-            role="alert"
-          >
-            <strong>Identification stopped</strong>
-            <p>{error}</p>
+          <>
+            <ProviderRequestError
+              details={[error]}
+              guidance={
+                preview
+                  ? "Your fingerprint is still ready and no metadata changed. Check your connection, then send it again when you’re ready."
+                  : "No metadata changed and nothing was sent. If the file changed, rescan it before creating a new fingerprint."
+              }
+              label="AcoustID identification error"
+              title={
+                preview
+                  ? "AcoustID couldn’t finish this lookup."
+                  : "Outgroove couldn’t create this fingerprint."
+              }
+            />
             <button onClick={onCancel} type="button">
               Clear
             </button>
-          </div>
+          </>
         )}
 
         {preview && (
