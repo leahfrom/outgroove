@@ -144,10 +144,10 @@ export function WorkbenchTrackContext({
         </ul>
 
         <details className="workbench-technical-tracks">
-          <summary>Inspect technical details and raw metadata</summary>
+          <summary>Inspect file and tag details</summary>
           <p>
-            Technical values, source paths, normalized tags, and native tags
-            remain read-only here.
+            Audio properties, source paths, Outgroove’s tag view, and the
+            original file tags remain read-only here.
           </p>
           <div className="track-list">
             {tracks.map((track) => (

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 
@@ -74,7 +74,9 @@ it("focuses and explains a blocked confirmation without enabling writes", () => 
     screen.getByRole("button", { name: "Confirm safe writes" }),
   ).toBeDisabled();
   expect(screen.getAllByRole("alert")).toHaveLength(2);
-  expect(screen.getByText("Confirmation is blocked.")).toBeVisible();
+  expect(
+    screen.getByText("These changes can’t be confirmed yet."),
+  ).toBeVisible();
 });
 
 it("focuses a recoverable request error and keeps the next action in keyboard order", async () => {
@@ -94,10 +96,20 @@ it("focuses a recoverable request error and keeps the next action in keyboard or
     name: "Shared metadata request error",
   });
   expect(error).toHaveFocus();
-  expect(error).toHaveTextContent("The selected file changed after preview.");
   expect(error).toHaveTextContent(
     "Review the draft or retry this confirmation.",
   );
+  expect(
+    within(error).getByText("The selected file changed after preview."),
+  ).not.toBeVisible();
+
+  const details = within(error).getByText("Technical details");
+  details.focus();
+  expect(details).toHaveFocus();
+  await user.click(details);
+  expect(
+    within(error).getByText("The selected file changed after preview."),
+  ).toBeVisible();
 
   await user.tab();
   expect(
@@ -129,7 +141,12 @@ it("moves focus to results and distinguishes verified and failed files", () => {
 
   const result = screen.getByRole("alert", { name: "Batch result" });
   expect(result).toHaveFocus();
-  expect(result).toHaveTextContent("1 verified; 1 need attention");
+  expect(result).toHaveTextContent("1 confirmed; 1 couldn’t be confirmed");
   expect(result).toHaveTextContent("C:\\Music\\First.mp3");
-  expect(result).toHaveTextContent("The file changed after preview.");
+  expect(
+    within(result).getByText("The file changed after preview."),
+  ).not.toBeVisible();
+  expect(
+    within(result).getByText("Why Outgroove couldn’t confirm this file"),
+  ).toBeVisible();
 });

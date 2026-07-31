@@ -8,17 +8,17 @@ const stages: readonly {
   {
     id: "setup",
     label: "Albums & profiles",
-    description: "Choose albums and manage saved DAP profiles.",
+    description: "Choose what to copy and where it should go.",
   },
   {
     id: "review",
     label: "Preview & apply",
-    description: "Review the deterministic copy plan before applying it.",
+    description: "See every change before starting the sync.",
   },
   {
     id: "recovery",
     label: "Recovery",
-    description: "Review interrupted target changes before recovery.",
+    description: "Safely finish or undo an interrupted sync.",
   },
 ];
 

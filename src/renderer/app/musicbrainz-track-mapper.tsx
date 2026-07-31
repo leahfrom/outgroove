@@ -35,25 +35,24 @@ const fieldOptions: readonly {
   {
     field: "artist",
     label: "Track artist",
-    description: "Preserve the ordered credited names and join phrases.",
+    description: "Use the artist credit shown for this release track.",
   },
   {
     field: "numbering",
     label: "Track and disc numbering",
-    description:
-      "Set track/disc numbers and their totals together from the selected medium.",
+    description: "Use the track and disc numbers from the selected release.",
   },
   {
     field: "isrc",
     label: "ISRC",
-    description: "Propose one unambiguous recording ISRC.",
+    description: "Use the recording code when MusicBrainz provides one.",
     advanced: true,
   },
   {
     field: "musicBrainzIds",
     label: "MusicBrainz track IDs",
     description:
-      "Set recording, release-track, and one unambiguous track-artist ID.",
+      "Save MusicBrainz references for the recording, release track, and artist.",
     advanced: true,
   },
 ];
@@ -186,16 +185,15 @@ export function MusicBrainzTrackMapper({
     >
       <header>
         <div>
-          <p className="eyebrow">Manual track mapping</p>
-          <h3>Map Library tracks to {release.title}</h3>
+          <p className="eyebrow">Match tracks one by one</p>
+          <h3>Match your tracks with {release.title}</h3>
           <p>
-            Choose every relationship yourself, then select the fields to
-            propose. Outgroove does not align by position, title, or duration
-            automatically.
+            Choose the matching release track for each Library track, then
+            choose which details to use. Outgroove never guesses these matches.
           </p>
         </div>
         <span className="candidate-confidence possible">
-          {release.tracks.length} MusicBrainz tracks
+          {release.tracks.length} tracks on release
         </span>
       </header>
 
@@ -204,9 +202,9 @@ export function MusicBrainzTrackMapper({
         {releaseResult.source === "network"
           ? "MusicBrainz"
           : releaseResult.source === "cache"
-            ? "the local cache"
-            : "an expired local cache because MusicBrainz was unavailable"}
-        . Loading changed no Library metadata.
+            ? "a saved result"
+            : "an older saved result because MusicBrainz was unavailable"}
+        . This only loaded suggestions; your Library is unchanged.
       </p>
 
       <fieldset className="mapping-field-selection">
@@ -235,8 +233,8 @@ export function MusicBrainzTrackMapper({
           ))}
         <details className="metadata-more-fields">
           <summary>
-            <span>More fields</span>
-            <small>ISRC and MusicBrainz identifiers</small>
+            <span>Details and IDs</span>
+            <small>Recording codes and MusicBrainz references</small>
           </summary>
           {fieldOptions
             .filter((option) => option.advanced)
@@ -271,7 +269,7 @@ export function MusicBrainzTrackMapper({
           return (
             <article className="mapping-row" key={track.id}>
               <div className="mapping-local-track">
-                <span>Library track</span>
+                <span>Your track</span>
                 <strong>
                   {track.tags.discNumber ?? "?"}.{track.tags.trackNumber ?? "?"}{" "}
                   {track.tags.title}
@@ -284,9 +282,9 @@ export function MusicBrainzTrackMapper({
                 </small>
               </div>
               <label>
-                <span>MusicBrainz track</span>
+                <span>Release track</span>
                 <select
-                  aria-label={`MusicBrainz track for ${track.tags.title}`}
+                  aria-label={`Release track for ${track.tags.title}`}
                   disabled={busy}
                   value={mappings[track.id] ?? ""}
                   onChange={(event) => {
@@ -297,7 +295,7 @@ export function MusicBrainzTrackMapper({
                     }));
                   }}
                 >
-                  <option value="">Not mapped</option>
+                  <option value="">Not matched</option>
                   {release.tracks.map((remote) => (
                     <option
                       disabled={
@@ -321,13 +319,13 @@ export function MusicBrainzTrackMapper({
                   <span>
                     {Object.keys(mapped.draft.changes).length === 0
                       ? enabledCount === 0
-                        ? "Mapped; select fields to create a proposal."
-                        : "Mapped; selected fields already match or are unavailable."
-                      : `${Object.keys(mapped.draft.changes).length} effective tag changes`}
+                        ? "Matched; choose details to create a draft."
+                        : "Matched; the chosen details already match or are unavailable."
+                      : `${Object.keys(mapped.draft.changes).length} ${Object.keys(mapped.draft.changes).length === 1 ? "change" : "changes"} available`}
                   </span>
                   {Object.keys(mapped.draft.changes).length > 0 && (
                     <details>
-                      <summary>Compare proposed values</summary>
+                      <summary>See changes</summary>
                       <dl>
                         {mappedChangeEntries(mapped.draft.changes).map(
                           ([field, after]) => (
@@ -357,9 +355,9 @@ export function MusicBrainzTrackMapper({
 
       <div className="track-comparison-summary">
         <p aria-live="polite">
-          {mappedDrafts.length} of {album.tracks.length} Library tracks mapped;{" "}
+          {mappedDrafts.length} of {album.tracks.length} Library tracks matched;{" "}
           {enabledCount} field {enabledCount === 1 ? "group" : "groups"}{" "}
-          selected; {edits.length} tracks have effective changes.
+          selected; {edits.length} tracks would change.
         </p>
         <button
           className="primary"
@@ -367,7 +365,7 @@ export function MusicBrainzTrackMapper({
           onClick={() => onPreview(edits)}
           type="button"
         >
-          Preview mapped tracks
+          Review track changes
         </button>
       </div>
 
@@ -375,7 +373,7 @@ export function MusicBrainzTrackMapper({
         <WorkbenchRequestError
           label="MusicBrainz track mapping request error"
           message={error}
-          recovery="Review the explicit mappings and field selections, then request a fresh preview. No unverified change is reported as complete."
+          recovery="Check the track matches and selected details, then create a new review. Nothing is treated as complete until Outgroove verifies it."
         />
       )}
 
@@ -385,11 +383,11 @@ export function MusicBrainzTrackMapper({
             (file) => file.willWrite && file.warnings.length > 0,
           )}
           busy={busy}
-          cancelLabel="Return to track mappings"
-          confirmLabel="Confirm and write mapped tracks"
-          description="Outgroove will validate every mapped proposal again, snapshot each current tag set, safely replace each file, then re-read and verify the targeted fields and audio payload."
+          cancelLabel="Return to track matches"
+          confirmLabel="Confirm and update tracks"
+          description="Outgroove will check every file again, save its current tags for recovery, write each change safely, then reopen the file and verify both the selected details and audio."
           label="MusicBrainz track mapping confirmation"
-          title="Review every mapped file"
+          title="Review every track change"
           onCancel={onCancelPreview}
           onConfirm={onConfirm}
         >
@@ -439,7 +437,7 @@ export function MusicBrainzTrackMapper({
         <WorkbenchWriteResult
           label="MusicBrainz track mapping result"
           results={result.results}
-          subject="Mapped metadata write"
+          subject="Track update"
         />
       )}
     </section>

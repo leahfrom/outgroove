@@ -105,7 +105,7 @@ describe("AlbumTitleWorkbench", () => {
       editHistory: [mapping],
     });
     const button = screen.getByRole("button", {
-      name: "Preview mapping undo",
+      name: "Review mapping restore",
     });
     button.focus();
     await user.keyboard("{Enter}");
@@ -128,7 +128,7 @@ describe("AlbumTitleWorkbench", () => {
     });
 
     const button = screen.getByRole("button", {
-      name: "Preview artwork undo",
+      name: "Review artwork restore",
     });
     button.focus();
     await user.keyboard("{Enter}");
@@ -162,7 +162,7 @@ describe("AlbumTitleWorkbench", () => {
     ).not.toBeInTheDocument();
 
     const historyButton = screen.getByRole("button", {
-      name: /^History & undo/u,
+      name: /^Change history & undo/u,
     });
     historyButton.focus();
     await user.keyboard("{Enter}");
@@ -174,7 +174,7 @@ describe("AlbumTitleWorkbench", () => {
     renderWorkbench({ section: "history", editHistory: [] });
 
     const history = screen.getByLabelText("Metadata edit history");
-    expect(within(history).getByText("No confirmed edits yet")).toBeVisible();
+    expect(within(history).getByText("No changes to undo")).toBeVisible();
     expect(
       within(history).queryByRole("button", { name: /undo/u }),
     ).not.toBeInTheDocument();
@@ -216,7 +216,7 @@ describe("AlbumTitleWorkbench", () => {
       "Batch metadata undo confirmation",
     );
     const confirm = within(confirmation).getByRole("button", {
-      name: "Confirm safe batch undo writes",
+      name: "Restore the available earlier values",
     });
     expect(confirm).toBeEnabled();
     expect(confirm).toHaveFocus();

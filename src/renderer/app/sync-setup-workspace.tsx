@@ -92,23 +92,23 @@ export function SyncSetupWorkspace({
     >
       <div className="workflow-heading">
         <div>
-          <p className="eyebrow">Albums and profiles</p>
-          <h2 id="sync-setup-title">Prepare a DAP profile</h2>
+          <p className="eyebrow">Choose your music</p>
+          <h2 id="sync-setup-title">Set up a sync</h2>
           <p>
-            Build a selection or reopen a saved profile. No target is inspected
-            until you request a preview.
+            Choose albums or open a saved profile. Nothing on your player is
+            read or changed until you preview the sync.
           </p>
         </div>
       </div>
 
       <nav aria-label="Albums and profiles setup" className="sync-setup-nav">
         <button
-          aria-label={`Selection draft, ${selectedAlbums.length} of 100 ${selectedAlbums.length === 1 ? "album" : "albums"}`}
+          aria-label={`Current selection, ${selectedAlbums.length} of 100 ${selectedAlbums.length === 1 ? "album" : "albums"}`}
           aria-current={activeSection === "selection" ? "page" : undefined}
           onClick={() => onSelectSection("selection")}
           type="button"
         >
-          <span>Selection draft</span>
+          <span>Current selection</span>
           <small>
             {selectedAlbums.length} of 100{" "}
             {selectedAlbums.length === 1 ? "album" : "albums"}
@@ -136,16 +136,16 @@ export function SyncSetupWorkspace({
           <div className="sync-setup-section-heading">
             <div>
               <p className="eyebrow">
-                {editingProfile ? "Profile revision" : "New profile"}
+                {editingProfile ? "Editing saved albums" : "New sync"}
               </p>
               <h3 id="sync-selection-title">
                 {editingProfile
                   ? `Edit albums in ${editingProfile.name}`
-                  : "Albums for the next DAP plan"}
+                  : "Albums for your next sync"}
               </h3>
               <p>
-                Selecting albums never modifies source audio or reads a DAP
-                target.
+                Choosing albums does not change your Library or read anything
+                from your player.
               </p>
             </div>
             <p className="sync-selection-count" aria-live="polite">
@@ -162,7 +162,7 @@ export function SyncSetupWorkspace({
               <div>
                 <strong>Unsaved selection for {editingProfile.name}</strong>
                 <span className="sync-target-path">
-                  Target stays {editingProfile.targetPath}
+                  Player folder stays {editingProfile.targetPath}
                 </span>
               </div>
               <span>Preview required again after saving</span>
@@ -261,7 +261,7 @@ export function SyncSetupWorkspace({
                   onClick={onChooseTarget}
                   type="button"
                 >
-                  Choose DAP target
+                  Choose player folder
                 </button>
                 <button
                   disabled={busy || selectedAlbums.length === 0}
@@ -281,11 +281,12 @@ export function SyncSetupWorkspace({
         >
           <div className="sync-setup-section-heading">
             <div>
-              <p className="eyebrow">Saved destinations</p>
+              <p className="eyebrow">Saved syncs</p>
               <h3 id="sync-profiles-title">DAP profiles</h3>
               <p>
-                Opening a profile restores its saved context. The target stays
-                untouched until a copy plan is previewed and confirmed.
+                A DAP (digital audio player) profile remembers your albums and
+                the folder on your player. Opening one does not change anything
+                until you preview and confirm a sync.
               </p>
             </div>
           </div>
@@ -294,8 +295,8 @@ export function SyncSetupWorkspace({
             <div className="workflow-empty">
               <h4>No profiles saved yet</h4>
               <p>
-                Create one from a selection of up to 100 Library albums and a
-                folder-backed target.
+                Choose up to 100 Library albums, then choose a folder on your
+                player.
               </p>
               <button
                 onClick={() => onSelectSection("selection")}
@@ -367,7 +368,7 @@ export function SyncSetupWorkspace({
                         Edit albums
                       </button>
                       <button
-                        aria-label={`Change DAP target for ${saved.name}`}
+                        aria-label={`Change player folder for ${saved.name}`}
                         disabled={
                           busy ||
                           Boolean(editingProfile) ||
@@ -456,50 +457,50 @@ export function SyncSetupWorkspace({
           {targetPreview && (
             <section
               className="sync-target-preview"
-              aria-label="DAP target confirmation"
+              aria-label="Player folder confirmation"
             >
               <div>
                 <p className="eyebrow">
                   {targetPreview.identityRefresh
-                    ? "Volume identity refresh"
-                    : "Target change preview"}
+                    ? "Recheck saved storage"
+                    : "New destination"}
                 </p>
                 <h4 ref={targetPreviewHeadingRef} tabIndex={-1}>
                   {targetPreview.identityRefresh
-                    ? `Refresh identity for ${targetPreview.profileName}`
-                    : `Review target for ${targetPreview.profileName}`}
+                    ? `Recheck the destination for ${targetPreview.profileName}`
+                    : `Review the new destination for ${targetPreview.profileName}`}
                 </h4>
                 <p>
                   {targetPreview.identityRefresh
-                    ? "This replaces only the saved volume evidence after rechecking the selected target."
-                    : "This updates only the saved destination and its volume evidence."}{" "}
+                    ? "This updates only the saved information Outgroove uses to recognize this storage."
+                    : "This updates only the saved destination and the information Outgroove uses to recognize it."}{" "}
                   No source audio or target files are copied, replaced, or
                   deleted.
                 </p>
               </div>
               <dl>
                 <div>
-                  <dt>Current target</dt>
+                  <dt>Current player folder</dt>
                   <dd>{targetPreview.currentTargetPath}</dd>
                 </div>
                 <div>
                   <dt>
                     {targetPreview.identityRefresh
-                      ? "Rechecked target"
-                      : "New target"}
+                      ? "Rechecked player folder"
+                      : "New player folder"}
                   </dt>
                   <dd>{targetPreview.proposedTargetPath}</dd>
                 </div>
               </dl>
               <p>
                 {targetPreview.identityRefresh
-                  ? "Existing sync history and manifest ownership stay attached to this exact profile and target."
-                  : "Existing sync history stays attached to the profile. A fresh sync preview treats ownership separately for the new target."}
+                  ? "Completed syncs and Outgroove’s record of files it synced stay with this profile and destination."
+                  : "Completed syncs stay with this profile. Outgroove will build a separate record of synced files for the new destination."}
               </p>
               <p>
                 {targetPreview.proposedVolumeEvidenceAvailable
-                  ? "Outgroove will save a one-way digest of the operating system’s persistent volume identity for comparison on future plans."
-                  : "This target did not provide a persistent volume identity. Future plans will require a separate volume confirmation."}
+                  ? "Outgroove can remember this storage and check it again before future syncs."
+                  : "Outgroove could not reliably recognize this storage. You will be asked to confirm it before future syncs."}
               </p>
               <div className="actions">
                 <button
@@ -509,13 +510,13 @@ export function SyncSetupWorkspace({
                   type="button"
                 >
                   {targetPreview.identityRefresh
-                    ? "Confirm volume identity refresh"
-                    : "Confirm DAP target change"}
+                    ? "Confirm saved storage update"
+                    : "Confirm player folder change"}
                 </button>
                 <button disabled={busy} onClick={onCancelTarget} type="button">
                   {targetPreview.identityRefresh
-                    ? "Cancel identity refresh"
-                    : "Cancel DAP target change"}
+                    ? "Cancel saved storage update"
+                    : "Cancel player folder change"}
                 </button>
               </div>
             </section>
@@ -527,14 +528,14 @@ export function SyncSetupWorkspace({
               aria-label="DAP profile removal confirmation"
             >
               <div>
-                <p className="eyebrow">Profile removal preview</p>
+                <p className="eyebrow">Before you remove this profile</p>
                 <h4 ref={removalPreviewHeadingRef} tabIndex={-1}>
                   Remove {removalPreview.profileName} from Outgroove?
                 </h4>
                 <p>
-                  This removes only Outgroove’s saved profile, sync history, and
-                  ownership records. No source audio or target file is read,
-                  changed, or deleted.
+                  This removes only the saved profile, its sync history, and
+                  Outgroove’s record of files it synced. No audio or destination
+                  file is read, changed, or deleted.
                 </p>
               </div>
               <dl>
@@ -551,14 +552,12 @@ export function SyncSetupWorkspace({
                   <dd>{removalPreview.successfulSyncs}</dd>
                 </div>
                 <div>
-                  <dt>Targets with ownership records</dt>
+                  <dt>Destinations with synced-file records</dt>
                   <dd>{removalPreview.manifestTargets.length}</dd>
                 </div>
               </dl>
               <details>
-                <summary>
-                  Review albums and ownership records before removal
-                </summary>
+                <summary>Review saved albums and destinations</summary>
                 <div className="sync-profile-removal-details">
                   <section>
                     <h5>Albums</h5>
@@ -572,9 +571,9 @@ export function SyncSetupWorkspace({
                     </ul>
                   </section>
                   <section>
-                    <h5>Recorded targets</h5>
+                    <h5>Saved destinations</h5>
                     {removalPreview.manifestTargets.length === 0 ? (
-                      <p>No successful sync manifest is stored.</p>
+                      <p>No completed sync record is stored.</p>
                     ) : (
                       <ul>
                         {removalPreview.manifestTargets.map((target) => (
@@ -583,7 +582,7 @@ export function SyncSetupWorkspace({
                             <span>
                               {target.ownedFileCount}{" "}
                               {target.ownedFileCount === 1 ? "file" : "files"}{" "}
-                              in its latest manifest
+                              recorded from its latest completed sync
                             </span>
                           </li>
                         ))}
@@ -593,9 +592,9 @@ export function SyncSetupWorkspace({
                 </div>
               </details>
               <p>
-                Files left on these targets become unknown to Outgroove.
-                Re-adding the folder later will not adopt, replace, or delete
-                them automatically.
+                Outgroove will no longer recognize files left at these
+                destinations. Adding the folder again will not claim, replace,
+                or remove those files automatically.
               </p>
               <div className="actions">
                 <button

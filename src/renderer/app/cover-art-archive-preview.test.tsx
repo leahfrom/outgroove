@@ -69,12 +69,20 @@ describe("CoverArtArchivePreview", () => {
       `sends only MusicBrainz release ID ${candidate.releaseId}`,
     );
     expect(section).toHaveTextContent(
-      "never sends audio, current artwork, tags, or file paths",
+      "Your audio, current artwork, tags, and file paths stay on this device",
     );
-    expect(section).toHaveTextContent("cannot start an artwork write");
+    expect(section).toHaveTextContent("Viewing the cover cannot change");
+    const requestDetails = screen
+      .getByText("Request details")
+      .closest("details");
+    if (!requestDetails) throw new Error("Request details missing");
+    expect(requestDetails).not.toHaveAttribute("open");
+    expect(screen.getByText(candidate.releaseId)).not.toBeVisible();
+    await user.click(screen.getByText("Request details"));
+    expect(screen.getByText(candidate.releaseId)).toBeVisible();
     expect(onLoad).not.toHaveBeenCalled();
     const button = screen.getByRole("button", {
-      name: `Load Cover Art Archive front cover for ${candidate.title}, ${candidate.date}`,
+      name: `Show front cover for ${candidate.title}, ${candidate.date}`,
     });
     button.focus();
     await user.keyboard("{Enter}");
@@ -101,13 +109,13 @@ describe("CoverArtArchivePreview", () => {
       name: `Cover Art Archive front cover for ${candidate.title}`,
     });
     expect(image).toHaveAttribute("src", result.artwork?.previewDataUrl);
-    expect(screen.getByText("Read-only release front cover")).toBeVisible();
+    expect(screen.getByText("Front cover from this release")).toBeVisible();
     expect(screen.getByText(/Approved in MusicBrainz/u)).toBeVisible();
     expect(screen.getByText(/500 × 500 · 1 KiB/u)).toBeVisible();
-    expect(screen.getByText(/No Library artwork changed/u)).toBeVisible();
+    expect(screen.getByText(/Your Library is unchanged/u)).toBeVisible();
     expect(onPrepare).not.toHaveBeenCalled();
     const prepare = screen.getByRole("button", {
-      name: `Prepare Cover Art Archive artwork from ${candidate.title}, ${candidate.date}, for replacement review`,
+      name: `Use front cover from ${candidate.title}, ${candidate.date}`,
     });
     prepare.focus();
     await user.keyboard("{Enter}");
@@ -134,7 +142,7 @@ describe("CoverArtArchivePreview", () => {
       />,
     );
     const cancel = screen.getByRole("button", {
-      name: "Cancel cover request",
+      name: "Cancel",
     });
     cancel.focus();
     await user.keyboard("{Enter}");
@@ -147,15 +155,29 @@ describe("CoverArtArchivePreview", () => {
         loading={false}
         prepareError={undefined}
         preparing={false}
-        result={undefined}
+        result={result}
         onCancel={onCancel}
         onLoad={vi.fn()}
         onPrepare={vi.fn()}
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Cover request failed: Cover Art Archive is unavailable.",
+    const error = screen.getByRole("alert", {
+      name: `Cover Art Archive request error for ${candidate.title}`,
+    });
+    expect(error).toHaveTextContent("The front cover couldn’t be loaded.");
+    expect(error).toHaveTextContent(
+      "Your current artwork and audio files are unchanged",
     );
+    expect(
+      screen.getByText("Cover Art Archive is unavailable."),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Cover request technical details"));
+    expect(screen.getByText("Cover Art Archive is unavailable.")).toBeVisible();
+    expect(
+      screen.getByRole("img", {
+        name: `Cover Art Archive front cover for ${candidate.title}`,
+      }),
+    ).toBeVisible();
 
     rerender(
       <CoverArtArchivePreview
@@ -170,8 +192,8 @@ describe("CoverArtArchivePreview", () => {
         onPrepare={vi.fn()}
       />,
     );
-    expect(screen.getByText(/No front cover is indexed/u)).toHaveTextContent(
-      "Library artwork remains unchanged",
+    expect(screen.getByText(/No front cover is available/u)).toHaveTextContent(
+      "Your Library is unchanged",
     );
   });
 });

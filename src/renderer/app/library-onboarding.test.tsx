@@ -78,8 +78,12 @@ it("presents interrupted scans as recoverable keyboard actions", async () => {
 
   expect(screen.getByText(root.path)).toBeVisible();
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Outgroove closed before this scan finished.",
+    "The scan stopped before it finished.",
   );
+  expect(
+    screen.getByText("Outgroove closed before this scan finished."),
+  ).not.toBeVisible();
+  expect(screen.getByText("Technical details")).toBeVisible();
   const retry = screen.getByRole("button", { name: "Retry first scan" });
   retry.focus();
   await user.keyboard("{Enter}");
@@ -105,7 +109,7 @@ it("explains an empty completed scan without implying that audio changed", () =>
     screen.getByRole("heading", { name: "No supported music was found" }),
   ).toBeVisible();
   expect(
-    screen.getByText("No metadata write or DAP sync starts from this scan."),
+    screen.getByText("This scan does not edit tags or start a sync."),
   ).toBeVisible();
   expect(
     screen.getByRole("button", { name: "View scan activity" }),

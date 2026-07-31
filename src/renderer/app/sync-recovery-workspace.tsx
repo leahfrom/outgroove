@@ -4,6 +4,7 @@ import type {
   SyncRecoveryPreviewDto,
   SyncRecoverySummaryDto,
 } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 
 export interface SyncRecoveryFeedback {
   readonly runId: string;
@@ -11,6 +12,10 @@ export interface SyncRecoveryFeedback {
   readonly status: "complete" | "incomplete" | "failed";
   readonly recovered: number;
   readonly messages: readonly string[];
+}
+
+function interruptedPhase(phase: SyncRecoverySummaryDto["phase"]): string {
+  return phase === "copying" ? "while copying files" : "while finishing";
 }
 
 export function SyncRecoveryWorkspace({
@@ -54,11 +59,12 @@ export function SyncRecoveryWorkspace({
     >
       <div className="workflow-heading">
         <div>
-          <p className="eyebrow">Restart safety</p>
-          <h2 id="sync-recovery-title">Interrupted sync recovery</h2>
+          <p className="eyebrow">Interrupted sync</p>
+          <h2 id="sync-recovery-title">Get your sync back to a safe state</h2>
           <p>
-            Inspect the target first, review every proposed action, then
-            explicitly confirm. Source audio is never changed.
+            Review what remains from an interrupted sync. Outgroove checks the
+            destination and shows every change before asking you to continue.
+            Your source music is never changed.
           </p>
         </div>
       </div>
@@ -73,26 +79,28 @@ export function SyncRecoveryWorkspace({
             <p className="eyebrow">Recovery result</p>
             <h3 ref={feedbackHeadingRef} tabIndex={-1}>
               {feedback.status === "complete"
-                ? "Recovery complete"
+                ? "Your sync is safe again"
                 : feedback.status === "incomplete"
-                  ? "Recovery still needs attention"
-                  : "Recovery could not be applied"}
+                  ? "Some recovery steps still need attention"
+                  : "No recovery changes were made"}
             </h3>
             <p>
               <strong>{feedback.profileName}</strong>
               {feedback.status === "failed"
-                ? " was not changed."
-                : `: ${feedback.recovered} ${feedback.recovered === 1 ? "reviewed change was" : "reviewed changes were"} restored or removed.`}
+                ? " was left as it was."
+                : `: Outgroove completed ${feedback.recovered} ${feedback.recovered === 1 ? "reviewed change" : "reviewed changes"}.`}
             </p>
           </div>
+          <p>
+            {feedback.status === "complete"
+              ? "You can preview this profile again."
+              : "Reconnect the player or resolve the files shown in the technical details, then review recovery again."}
+          </p>
           {feedback.messages.length > 0 && (
-            <ul
-              aria-label={`Recovery result notes for ${feedback.profileName}`}
-            >
-              {feedback.messages.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
+            <TechnicalDetails
+              messages={feedback.messages}
+              summary="Recovery technical details"
+            />
           )}
           <button disabled={busy} onClick={onDismissFeedback} type="button">
             Dismiss recovery result
@@ -102,8 +110,8 @@ export function SyncRecoveryWorkspace({
 
       {recoveries.length === 0 ? (
         <div className="empty compact">
-          <h3>No recovery is pending</h3>
-          <p>Outgroove has no interrupted target changes requiring review.</p>
+          <h3>No interrupted sync needs attention</h3>
+          <p>There are no unfinished destination changes to review.</p>
           <button onClick={onReturn} type="button">
             Return to albums and profiles
           </button>
@@ -119,8 +127,8 @@ export function SyncRecoveryWorkspace({
               </h3>
             </div>
             <p>
-              Database restore remains blocked until every pending recovery is
-              complete.
+              Restoring an Outgroove backup stays unavailable until every
+              interrupted sync is resolved.
             </p>
           </div>
           <ul
@@ -149,14 +157,14 @@ export function SyncRecoveryWorkspace({
                       }
                     >
                       {recovery.mode === "rollback"
-                        ? "Rollback required"
-                        : "Cleanup only"}
+                        ? "Restore previous state"
+                        : "Remove temporary files"}
                     </span>
                   </div>
                   <p>
                     {recovery.mode === "committed-cleanup"
-                      ? "The manifest committed successfully; only interrupted Outgroove cleanup remains."
-                      : `The run stopped during ${recovery.phase}. Review how Outgroove can return the target to its pre-sync state.`}
+                      ? "The sync finished successfully, but some temporary Outgroove files still need cleanup."
+                      : `The sync stopped ${interruptedPhase(recovery.phase)}. Review how Outgroove can return the destination to its previous state.`}
                   </p>
                   <p>
                     Interrupted{" "}
@@ -190,12 +198,10 @@ export function SyncRecoveryWorkspace({
           <div className="sync-recovery-preview-heading">
             <div>
               <p className="eyebrow">
-                {preview.canRecover
-                  ? "Ready for confirmation"
-                  : "Recovery blocked"}
+                {preview.canRecover ? "Ready to review" : "Can’t continue yet"}
               </p>
               <h3 ref={previewHeadingRef} tabIndex={-1}>
-                Recovery plan for {preview.profileName}
+                Review recovery for {preview.profileName}
               </h3>
               <p className="sync-target-path">{preview.targetPath}</p>
             </div>
@@ -206,7 +212,7 @@ export function SyncRecoveryWorkspace({
                   : "sync-plan-status is-blocked"
               }
             >
-              {preview.canRecover ? "Inspected" : "Needs attention"}
+              {preview.canRecover ? "Ready" : "Needs attention"}
             </span>
           </div>
 
@@ -215,22 +221,22 @@ export function SyncRecoveryWorkspace({
             aria-label={`Recovery action summary for ${preview.profileName}`}
           >
             <div>
-              <dt>Restore</dt>
+              <dt>Files to restore</dt>
               <dd>{restoreActions.length}</dd>
             </div>
             <div>
-              <dt>Remove</dt>
+              <dt>Files to remove</dt>
               <dd>{removeActions.length}</dd>
             </div>
             <div>
-              <dt>Warnings</dt>
+              <dt>Things to review</dt>
               <dd>{preview.warnings.length}</dd>
             </div>
             <div>
-              <dt>Volume check</dt>
+              <dt>Player check</dt>
               <dd>
                 {preview.targetVolume.status === "matched"
-                  ? "Persistent identity matches"
+                  ? "Saved storage matches"
                   : "Confirmation required"}
               </dd>
             </div>
@@ -239,13 +245,13 @@ export function SyncRecoveryWorkspace({
           <div className="sync-recovery-action-groups">
             <RecoveryActionGroup
               actions={restoreActions}
-              description="Put an available pre-sync copy back at its reviewed destination."
-              title="Restore previous target files"
+              description="Put each saved earlier file back in the location shown below."
+              title="Restore earlier files"
             />
             <RecoveryActionGroup
               actions={removeActions}
-              description="Remove only reviewed temporary, rollback, or uncommitted files recorded by this interrupted Outgroove run."
-              title="Remove reviewed Outgroove state"
+              description="Remove only the unfinished Outgroove files listed below."
+              title="Remove unfinished files"
             />
           </div>
 
@@ -267,11 +273,12 @@ export function SyncRecoveryWorkspace({
           {preview.targetVolume.confirmationRequired && (
             <section
               className="sync-volume-confirmation"
-              aria-label="Recovery volume identity confirmation"
+              aria-label="Interrupted sync storage confirmation"
             >
               <div>
                 <strong>
-                  Outgroove cannot verify this as the recorded recovery volume.
+                  Outgroove cannot confirm this is the storage used by the
+                  interrupted sync.
                 </strong>
                 <span>
                   Check the path and device yourself before allowing any
@@ -288,7 +295,7 @@ export function SyncRecoveryWorkspace({
                   type="checkbox"
                 />
                 <span>
-                  I confirm this is the intended DAP volume for recovery
+                  I confirm this is the storage used by the interrupted sync
                 </span>
               </label>
             </section>
@@ -296,10 +303,10 @@ export function SyncRecoveryWorkspace({
 
           {preview.actions.length === 0 && preview.warnings.length === 0 && (
             <div className="workflow-empty">
-              <h4>No target-file changes are needed</h4>
+              <h4>No player-file changes are needed</h4>
               <p>
-                Confirming clears the completed recovery journal after a fresh
-                target inspection.
+                Confirming marks this recovery complete after Outgroove checks
+                the destination again.
               </p>
             </div>
           )}
@@ -313,10 +320,10 @@ export function SyncRecoveryWorkspace({
             aria-labelledby="sync-recovery-confirm-title"
           >
             <div>
-              <p className="eyebrow">Explicit confirmation</p>
+              <p className="eyebrow">Your confirmation</p>
               <h4 id="sync-recovery-confirm-title">
                 {preview.canRecover
-                  ? "Apply this reviewed recovery?"
+                  ? "Make these recovery changes?"
                   : "Reconnect or resolve the target first"}
               </h4>
               <p>
@@ -336,7 +343,7 @@ export function SyncRecoveryWorkspace({
                 onClick={() => onConfirm(preview)}
                 type="button"
               >
-                Confirm recovery for {preview.profileName}
+                Apply recovery for {preview.profileName}
               </button>
               <button disabled={busy} onClick={onClosePreview} type="button">
                 Close recovery review

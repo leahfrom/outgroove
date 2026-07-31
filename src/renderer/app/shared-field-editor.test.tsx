@@ -151,6 +151,13 @@ describe("SharedFieldEditor", () => {
     const user = userEvent.setup();
     render(editor());
 
+    const editorRegion = screen.getByLabelText("Batch metadata editor");
+    expect(editorRegion).toHaveTextContent(
+      "Outgroove shows them instead of choosing one for you",
+    );
+    expect(editorRegion).toHaveTextContent("MusicBrainz IDs");
+    expect(editorRegion).not.toHaveTextContent("provider IDs");
+    expect(editorRegion).not.toHaveTextContent("exact restoration");
     const comparison = screen.getByLabelText("Basic shared tag comparison");
     expect(within(comparison).getAllByText("Mixed values")).toHaveLength(4);
     expect(within(comparison).getByText("Shared Album Artist")).toBeVisible();
@@ -323,6 +330,6 @@ describe("SharedFieldEditor", () => {
     });
     expect(error).toHaveFocus();
     expect(error).toHaveTextContent("The batch preview is stale.");
-    expect(error).toHaveTextContent("The per-file preview remains available");
+    expect(error).toHaveTextContent("The file-by-file review stays available");
   });
 });

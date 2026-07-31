@@ -11,7 +11,9 @@ import type {
 } from "../../shared/contracts/api";
 import type { RadarPrimaryTypeFilter } from "../../shared/domain/radar";
 import { ModalSheet } from "./modal-sheet";
+import { ProviderRequestError } from "./provider-request-error";
 import { RadarReleases } from "./radar-releases";
+import { TechnicalDetails } from "./technical-details";
 
 type RadarReleaseView = (typeof radarViews)[number];
 
@@ -140,18 +142,18 @@ export function RadarView({
     <main className="radar-view">
       <section className="radar-introduction">
         <div>
-          <p className="eyebrow">Radar foundation</p>
-          <h2>Favorite artists</h2>
+          <p className="eyebrow">Follow new music</p>
+          <h2>Artists you care about</h2>
           <p>
-            Save exact MusicBrainz artist identities, then explicitly refresh
-            one favorite or sweep all saved favorites when you want to check
-            their releases.
+            Follow your favorite artists and see what they have released. Check
+            one artist or refresh everyone whenever you like.
           </p>
         </div>
         <div className="radar-introduction-actions">
           <strong>
-            {favorites.length} matching{" "}
-            {favorites.length === 1 ? "favorite" : "favorites"}
+            {favorites.length === 0
+              ? "No artists yet"
+              : `${favorites.length} ${favorites.length === 1 ? "artist" : "artists"} shown`}
           </strong>
           {radarRefreshAllActive ? (
             <button
@@ -181,10 +183,10 @@ export function RadarView({
         <summary>Automatic refresh</summary>
         <div>
           <p>
-            Optional checks run at a randomized daily interval while Outgroove
-            is open. Each check sends only your saved MusicBrainz artist IDs; it
-            never reads or changes audio files. Native notifications are
-            separately opt-in and report only counts.
+            When enabled, Outgroove checks once a day at a varied time while the
+            app is open. It sends only the saved MusicBrainz IDs for your
+            favorite artists. It never reads or changes audio files.
+            Notifications are optional and show counts only.
           </p>
           {radarBackgroundSettings ? (
             <>
@@ -291,9 +293,16 @@ export function RadarView({
             <p role="status">Loading automatic refresh settings…</p>
           )}
           {radarBackgroundError && (
-            <p className="error" role="alert">
-              {radarBackgroundError}
-            </p>
+            <ProviderRequestError
+              details={[radarBackgroundError]}
+              guidance={
+                radarBackgroundSettings
+                  ? "Your previous automatic-refresh settings are still in place. Close and reopen these settings, then try again."
+                  : "No automatic-refresh setting changed. Close and reopen these settings, then try again."
+              }
+              label="Automatic Radar refresh error"
+              title="Automatic refresh couldn’t be loaded or updated."
+            />
           )}
         </div>
       </details>
@@ -303,18 +312,20 @@ export function RadarView({
           aria-labelledby="radar-refresh-all-result"
           className="radar-refresh-all-result"
         >
-          <h2 id="radar-refresh-all-result">Refresh all result</h2>
+          <h2 id="radar-refresh-all-result">Refresh summary</h2>
           <p role="status">
-            {radarRefreshAllResult.cancelled ? "Stopped after " : "Completed "}
+            {radarRefreshAllResult.cancelled
+              ? "Stopped after checking "
+              : "Checked "}
             {radarRefreshAllResult.completed} of{" "}
-            {radarRefreshAllResult.totalFavorites} favorites:{" "}
-            {radarRefreshAllResult.successful} successful and{" "}
-            {radarRefreshAllResult.failed} failed.
+            {radarRefreshAllResult.totalFavorites} artists:{" "}
+            {radarRefreshAllResult.successful} refreshed and{" "}
+            {radarRefreshAllResult.failed} could not be refreshed.
           </p>
           {radarRefreshAllResult.results.length > 0 && (
             <details>
               <summary>
-                Successful favorites ({radarRefreshAllResult.results.length})
+                Refreshed artists ({radarRefreshAllResult.results.length})
               </summary>
               <ul aria-label="Favorites refreshed successfully">
                 {radarRefreshAllResult.results.map((result) => (
@@ -337,7 +348,14 @@ export function RadarView({
               {radarRefreshAllResult.failures.map((failure) => (
                 <li key={failure.favoriteArtistId}>
                   <strong>{failure.favoriteArtistName}</strong>
-                  <span>{failure.message}</span>
+                  <span>
+                    Not refreshed. Saved releases for this artist remain
+                    unchanged.
+                  </span>
+                  <TechnicalDetails
+                    messages={[failure.message]}
+                    summary="Why this artist wasn’t refreshed"
+                  />
                 </li>
               ))}
             </ul>
@@ -375,15 +393,12 @@ export function RadarView({
       <section className="favorite-artists" aria-labelledby="saved-favorites">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Durable local state</p>
-            <h2 id="saved-favorites">Saved favorites</h2>
+            <p className="eyebrow">Artists you follow</p>
+            <h2 id="saved-favorites">Your favorite artists</h2>
             <p>
-              This list is stored in Outgroove’s database and stays available
-              offline, through catalog rebuilds, and in verified backups.
-              Refreshing one favorite sends only that saved MusicBrainz artist
-              ID. Refresh all sends each saved ID sequentially through the same
-              bounded provider path. Automatic checks run only when explicitly
-              enabled above.
+              Your favorites are saved on this device and remain available
+              offline. When you refresh, Outgroove sends MusicBrainz only the
+              saved artist IDs needed to check for releases.
             </p>
           </div>
           <form
@@ -423,7 +438,7 @@ export function RadarView({
             <p>
               {favoriteFilter
                 ? `Nothing matches “${favoriteFilter}”. Your other favorites remain unchanged.`
-                : "Search MusicBrainz below, review the identities, then choose one explicitly."}
+                : "Find an artist below, review the matches, then choose the right one."}
             </p>
           </div>
         ) : (
@@ -501,13 +516,13 @@ export function RadarView({
       >
         <div className="artist-search-heading">
           <div>
-            <p className="eyebrow">Explicit network action</p>
+            <p className="eyebrow">MusicBrainz search</p>
             <h2 id="musicbrainz-artist-search">Find an artist</h2>
           </div>
           <p>
             Searching sends only the artist name typed below to MusicBrainz.
-            Audio, paths, tags, artwork, fingerprints, and your saved favorites
-            stay local.
+            Your audio, file locations, tags, artwork, fingerprints, and saved
+            favorites are not sent.
           </p>
         </div>
         <form
@@ -541,26 +556,30 @@ export function RadarView({
           )}
         </form>
         {artistSearchLoading && (
-          <p aria-live="polite">Searching MusicBrainz for artist candidates…</p>
+          <p aria-live="polite">Searching MusicBrainz for artists…</p>
         )}
         {artistSearchError && (
-          <p className="field-error" role="alert">
-            {artistSearchError}
-          </p>
+          <ProviderRequestError
+            details={[artistSearchError]}
+            guidance="No favorites changed. Review the details, then try again. If you were searching MusicBrainz, check your connection first."
+            label="Favorite artist request error"
+            title="This favorite-artist action couldn’t be completed."
+          />
         )}
         {artistSearchResult && !artistSearchLoading && (
           <div className="artist-search-results">
             <p className="identification-status">
-              Reviewed results for “{artistSearchResult.sent.artistName}” ·{" "}
+              {artistSearchError ? "Earlier artist results" : "Artist results"}{" "}
+              for “{artistSearchResult.sent.artistName}” ·{" "}
               {artistSearchResult.source === "network"
-                ? "loaded from MusicBrainz"
+                ? "checked with MusicBrainz"
                 : artistSearchResult.source === "cache"
-                  ? "loaded from local cache"
-                  : "showing an expired local cache because MusicBrainz was unavailable"}
+                  ? "using a recent result saved on this device"
+                  : "using an older saved result because MusicBrainz could not be reached"}
             </p>
             {artistSearchResult.candidates.length === 0 ? (
               <div className="empty compact">
-                <h3>No artist candidates found</h3>
+                <h3>No artists found</h3>
                 <p>Try a more specific or alternate artist name.</p>
               </div>
             ) : (
@@ -577,7 +596,7 @@ export function RadarView({
                               <p>{candidate.disambiguation}</p>
                             )}
                           </div>
-                          <span>{candidate.score}% MusicBrainz score</span>
+                          <span>{candidate.score}% match</span>
                         </header>
                         <dl>
                           <div>
@@ -593,7 +612,7 @@ export function RadarView({
                             </dd>
                           </div>
                           <div>
-                            <dt>Stable artist ID</dt>
+                            <dt>MusicBrainz artist ID</dt>
                             <dd>{candidate.artistId}</dd>
                           </div>
                         </dl>
@@ -626,9 +645,9 @@ export function RadarView({
             <p className="eyebrow">Confirmation required</p>
             <h2>Remove {removal.name}?</h2>
             <p>
-              This removes Outgroove’s saved favorite identity and its Radar
-              history. It does not change audio, Library tags, provider caches,
-              or DAP files.
+              This removes the saved favorite and its Radar history. It does not
+              change audio, Library tags, saved online search results, or DAP
+              files.
             </p>
             <div className="actions">
               <button
@@ -687,11 +706,11 @@ function formatNotificationUnavailableReason(
     case "development":
       return "Notifications are available only in an installed release build.";
     case "unsigned-macos-build":
-      return "This macOS build is unsigned, so reliable native notifications are unavailable.";
+      return "This macOS build is unsigned, so reliable system notifications are unavailable.";
     case "portable-windows-build":
-      return "Install Outgroove with the Windows Setup application to enable native notifications; the portable ZIP has no stable notification identity.";
+      return "Install Outgroove with Windows Setup to enable system notifications; the portable ZIP cannot keep the app registration they need.";
     case "unsupported":
     case null:
-      return "Native notifications are unavailable on this system.";
+      return "System notifications are unavailable on this device.";
   }
 }

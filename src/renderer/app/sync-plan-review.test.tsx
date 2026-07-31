@@ -126,7 +126,7 @@ describe("SyncPlanReview", () => {
     await user.keyboard("{Enter}");
     expect(onPreview).toHaveBeenCalledTimes(1);
 
-    const historyLabel = screen.getByText("Successful sync history");
+    const historyLabel = screen.getByText("Completed syncs");
     const historySummary = historyLabel.closest("summary");
     const historyDetails = historyLabel.closest("details");
     if (!historySummary || !historyDetails)
@@ -138,9 +138,12 @@ describe("SyncPlanReview", () => {
     expect(historyDetails).toHaveAttribute("open");
     expect(
       screen.getByRole("list", {
-        name: "Successful sync history for Road DAP",
+        name: "Completed sync history for Road DAP",
       }),
     ).toHaveTextContent("/fixture/a/previous/target");
+    expect(historyDetails).toHaveTextContent(
+      "final record of synced files was saved successfully",
+    );
   });
 
   it("summarizes a valid plan before disclosing exact paths and confirming", async () => {
@@ -160,7 +163,9 @@ describe("SyncPlanReview", () => {
     expect(summary).toHaveTextContent("Issues0");
     expect(summary).toHaveTextContent("2.00 KiB");
     expect(confirmation).toHaveTextContent("Source audio stays untouched");
-    expect(confirmation).toHaveTextContent("commits the new manifest last");
+    expect(confirmation).toHaveTextContent(
+      "saves its new synced-file record only after everything succeeds",
+    );
 
     const copyLabel = within(confirmation).getByText("Files to copy");
     const copySummary = copyLabel.closest("summary");
@@ -238,13 +243,13 @@ describe("SyncPlanReview", () => {
       }),
     );
     const volumeConfirmation = screen.getByLabelText(
-      "DAP volume identity confirmation",
+      "Player storage confirmation",
     );
     expect(volumeConfirmation).toHaveTextContent(
-      "differs from the evidence saved for this profile",
+      "does not match the details saved for this profile",
     );
     const acknowledgement = within(volumeConfirmation).getByRole("checkbox", {
-      name: "I confirm this is the intended DAP volume for this plan",
+      name: "I confirm this is the intended player storage for this sync",
     });
     const apply = screen.getByRole("button", {
       name: "Confirm and apply sync plan",
@@ -295,7 +300,7 @@ describe("SyncPlanReview", () => {
     };
     const { rerender } = render(review({ onCleanupEnabledChange }));
     const cleanup = screen.getByRole("checkbox", {
-      name: /Include cleanup of obsolete Outgroove-owned files in this plan/u,
+      name: /Remove obsolete files from earlier Outgroove syncs/u,
     });
     expect(cleanup).not.toBeChecked();
     cleanup.focus();
@@ -309,7 +314,7 @@ describe("SyncPlanReview", () => {
     expect(confirmation).toHaveTextContent("Skipped (unchanged)1");
     expect(confirmation).toHaveTextContent("Removals1");
     const removalDisclosure = within(confirmation)
-      .getByText("Manifest-owned files to remove")
+      .getByText("Previously synced files to remove")
       .closest("details");
     expect(removalDisclosure).toHaveAttribute("open");
     expect(removalDisclosure).toHaveTextContent(
@@ -339,7 +344,7 @@ describe("SyncPlanReview", () => {
       }),
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "No target changes are needed.",
+      "No player-folder changes are needed.",
     );
     expect(
       screen.queryByRole("heading", { name: "Apply this plan?" }),

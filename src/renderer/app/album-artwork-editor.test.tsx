@@ -149,6 +149,13 @@ describe("AlbumArtworkEditor", () => {
     expect(
       within(confirmation).getByText(".m4a is read-only in this slice."),
     ).toBeVisible();
+    expect(confirmation).toHaveTextContent(
+      "save its current embedded pictures for recovery",
+    );
+    expect(confirmation).toHaveTextContent(
+      "temporary file beside the original",
+    );
+    expect(confirmation).not.toHaveTextContent("audio payload");
     const confirm = within(confirmation).getByRole("button", {
       name: "Confirm and write 1 file",
     });
@@ -340,6 +347,9 @@ describe("AlbumArtworkEditor", () => {
     expect(confirmation).toHaveTextContent(
       "No embedded front cover; this file stays unchanged.",
     );
+    expect(confirmation).toHaveTextContent(
+      "check that the remaining pictures and music are unchanged",
+    );
     const confirm = within(confirmation).getByRole("button", {
       name: "Confirm removal from 1 file",
     });
@@ -425,5 +435,46 @@ describe("AlbumArtworkEditor", () => {
     });
     await user.click(cancel);
     expect(onCancelFolderArtwork).toHaveBeenCalledOnce();
+  });
+
+  it("keeps exported artwork verification codes behind keyboard-accessible details", async () => {
+    const user = userEvent.setup();
+    render(
+      <AlbumArtworkEditor
+        busy={false}
+        error={undefined}
+        exportError={undefined}
+        exportPreview={undefined}
+        exportResult={{
+          destinationPath: "/fixture/export/cover.png",
+          byteLength: 1024,
+          sha256:
+            "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        }}
+        preview={undefined}
+        result={undefined}
+        resultAction={undefined}
+        onCancelPreview={vi.fn()}
+        onChoose={vi.fn()}
+        onConfirm={vi.fn()}
+        onExport={vi.fn()}
+        onPrepareExport={vi.fn()}
+        onPrepareRemoval={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Export current artwork"));
+    expect(screen.getByText("Artwork exported and verified.")).toBeVisible();
+    const summary = screen.getByText("File verification details");
+    const details = summary.closest("details");
+    if (!details) throw new Error("Artwork verification details missing");
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText(/1234567890abcdef/u)).not.toBeVisible();
+    summary.focus();
+    expect(summary).toHaveFocus();
+    await user.click(summary);
+    expect(details).toHaveAttribute("open");
+    expect(screen.getByText("File fingerprint (SHA-256)")).toBeVisible();
+    expect(screen.getByText(/1234567890abcdef/u)).toBeVisible();
   });
 });

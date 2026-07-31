@@ -59,17 +59,22 @@ export function TrackTechnicalInfo({
         </p>
       </section>
 
-      <section aria-labelledby="normalized-tags-title">
-        <h3 id="normalized-tags-title">Normalized tags</h3>
+      <section aria-labelledby="outgroove-tags-title">
+        <h3 id="outgroove-tags-title">How Outgroove reads the tags</h3>
+        <p>
+          Outgroove combines equivalent tag formats into this consistent view.
+          This read-only information can help explain what appears in your
+          Library.
+        </p>
         <pre>{JSON.stringify(track.tags, null, 2)}</pre>
       </section>
 
       <details className="advanced-metadata">
-        <summary>Native tags</summary>
-        <section aria-label="Native track tags">
+        <summary>Original file tag details</summary>
+        <section aria-label="Original file tags">
           <p>
-            Native fields are scanner evidence. This information dialog cannot
-            modify them.
+            These are the tag names and values found in the audio file. This
+            information dialog cannot modify them.
           </p>
           <pre>{JSON.stringify(track.nativeTags, null, 2)}</pre>
         </section>

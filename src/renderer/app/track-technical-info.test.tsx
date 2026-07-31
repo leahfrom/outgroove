@@ -45,7 +45,7 @@ function Harness(): React.JSX.Element {
 }
 
 describe("TrackTechnicalInfo", () => {
-  it("keeps technical facts read-only and progressively discloses native tags", async () => {
+  it("explains Outgroove's tag view and progressively discloses original file tags", async () => {
     const user = userEvent.setup();
     render(<Harness />);
     const opener = screen.getByRole("button", {
@@ -69,15 +69,16 @@ describe("TrackTechnicalInfo", () => {
     expect(dialog).toHaveTextContent("MPEG 1 Layer 3");
     expect(dialog).toHaveTextContent("128 kbps");
     expect(dialog).toHaveTextContent(track.path);
-    const nativeTags = screen.getByLabelText("Native track tags");
-    expect(nativeTags).not.toBeVisible();
+    expect(dialog).toHaveTextContent("How Outgroove reads the tags");
+    const originalTags = screen.getByLabelText("Original file tags");
+    expect(originalTags).not.toBeVisible();
     expect(
       screen.queryByRole("button", { name: /write|confirm|review/u }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByText("Native tags"));
-    expect(nativeTags).toBeVisible();
-    expect(nativeTags).toHaveTextContent("ID3v2:TALB");
+    await user.click(screen.getByText("Original file tag details"));
+    expect(originalTags).toBeVisible();
+    expect(originalTags).toHaveTextContent("ID3v2:TALB");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();

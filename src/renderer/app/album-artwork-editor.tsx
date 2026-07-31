@@ -6,6 +6,7 @@ import type {
   AlbumFolderArtworkResultDto,
   TagEditResultDto,
 } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 import {
   WorkbenchConfirmation,
   WorkbenchDraftHeading,
@@ -16,6 +17,30 @@ function formatBytes(bytes: number): string {
   return bytes >= 1024 * 1024
     ? `${(bytes / 1024 / 1024).toFixed(1)} MiB`
     : `${Math.ceil(bytes / 1024)} KiB`;
+}
+
+function ArtworkVerificationDetails({
+  byteLength,
+  sha256,
+}: {
+  readonly byteLength: number;
+  readonly sha256: string;
+}): React.JSX.Element {
+  return (
+    <details>
+      <summary>File verification details</summary>
+      <dl>
+        <div>
+          <dt>File size</dt>
+          <dd>{formatBytes(byteLength)}</dd>
+        </div>
+        <div>
+          <dt>File fingerprint (SHA-256)</dt>
+          <dd className="identifier">{sha256}</dd>
+        </div>
+      </dl>
+    </details>
+  );
 }
 
 export function AlbumArtworkEditor({
@@ -95,7 +120,11 @@ export function AlbumArtworkEditor({
       {error && (
         <div className="workflow-error" role="alert">
           <strong>The artwork request could not be completed.</strong>
-          <span>{error}</span>
+          <span>
+            Review the current album or choose the artwork again. No audio file
+            is treated as changed until Outgroove verifies it.
+          </span>
+          <TechnicalDetails messages={[error]} />
         </div>
       )}
 
@@ -117,8 +146,8 @@ export function AlbumArtworkEditor({
           }
           description={
             removing
-              ? "Outgroove will re-check each file, snapshot its complete embedded picture set, remove only front-cover pictures through a same-folder temporary file, then re-read and verify both the remaining artwork and audio payload."
-              : "Outgroove will re-check each file, snapshot its complete embedded picture set, write through a same-folder temporary file, then re-read and verify both artwork and audio payload."
+              ? "Outgroove will check each file again, save its current embedded pictures for recovery, remove only front-cover pictures using a temporary file beside the original, then check that the remaining pictures and music are unchanged."
+              : "Outgroove will check each file again, save its current embedded pictures for recovery, write the new cover using a temporary file beside the original, then check both the artwork and music."
           }
           label={
             removing
@@ -263,7 +292,10 @@ export function AlbumArtworkEditor({
           {folderError && (
             <div className="workflow-error" role="alert">
               <strong>Folder artwork could not be prepared.</strong>
-              <span>{folderError}</span>
+              <span>
+                Review the album folder and try again. No file was created.
+              </span>
+              <TechnicalDetails messages={[folderError]} />
             </div>
           )}
 
@@ -322,10 +354,10 @@ export function AlbumArtworkEditor({
               <span className="artwork-export-path">
                 {folderResult.destinationPath}
               </span>
-              <span>
-                {formatBytes(folderResult.byteLength)} · SHA-256{" "}
-                {folderResult.sha256}
-              </span>
+              <ArtworkVerificationDetails
+                byteLength={folderResult.byteLength}
+                sha256={folderResult.sha256}
+              />
             </div>
           )}
 
@@ -396,7 +428,11 @@ export function AlbumArtworkEditor({
           {exportError && (
             <div className="workflow-error" role="alert">
               <strong>The artwork could not be exported.</strong>
-              <span>{exportError}</span>
+              <span>
+                Choose a destination or prepare the export again. Audio files
+                remain unchanged.
+              </span>
+              <TechnicalDetails messages={[exportError]} />
             </div>
           )}
 
@@ -460,10 +496,10 @@ export function AlbumArtworkEditor({
               <span className="artwork-export-path">
                 {exportResult.destinationPath}
               </span>
-              <span>
-                {formatBytes(exportResult.byteLength)} · SHA-256{" "}
-                {exportResult.sha256}
-              </span>
+              <ArtworkVerificationDetails
+                byteLength={exportResult.byteLength}
+                sha256={exportResult.sha256}
+              />
             </div>
           )}
 

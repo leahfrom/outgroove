@@ -51,11 +51,11 @@ async function openLibraryAlbum(
 async function chooseAlbumAction(
   user: ReturnType<typeof userEvent.setup>,
   name:
-    | "Find MusicBrainz matches"
+    | "Find album details"
     | "Edit album metadata"
     | "Change album artwork"
     | "Edit track order"
-    | "History & undo"
+    | "Change history & undo"
     | `Add ${string} to Sync`,
 ): Promise<HTMLElement> {
   const trigger = screen.getByRole("button", { name: "Album actions" });
@@ -76,7 +76,7 @@ async function openLibraryTools(
 
 async function openSyncSetupSection(
   user: ReturnType<typeof userEvent.setup>,
-  name: "Selection draft" | "Saved profiles",
+  name: "Current selection" | "Saved profiles",
 ): Promise<void> {
   const navigation = screen.getByRole("navigation", {
     name: "Albums and profiles setup",
@@ -115,7 +115,7 @@ async function openAlbumHistory(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
   const historyButton = screen.getByRole("button", {
-    name: /^History & undo/u,
+    name: /^Change history & undo/u,
   });
   historyButton.focus();
   await user.keyboard("{Enter}");
@@ -582,9 +582,31 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Search MusicBrainz" }),
     );
     expect(search).toHaveBeenCalledWith({ query: "Fixture Artist" });
-    const addButton = await screen.findByRole("button", {
+    let addButton = await screen.findByRole("button", {
       name: "Add Fixture Artist to favorites",
     });
+    search.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "MusicBrainz returned HTTP 503 after retries.",
+        recoverable: true,
+      },
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Search MusicBrainz" }),
+    );
+    expect(
+      await screen.findByRole("alert", {
+        name: "Favorite artist request error",
+      }),
+    ).toHaveTextContent("No favorites changed");
+    expect(screen.getByText(/Earlier artist results for/u)).toBeVisible();
+    addButton = screen.getByRole("button", {
+      name: "Add Fixture Artist to favorites",
+    });
+    expect(addButton).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
     addButton.focus();
     await user.keyboard("{Enter}");
     expect(add).toHaveBeenCalledWith({
@@ -774,7 +796,7 @@ describe("tag edit UI safety states", () => {
     await waitFor(() => expect(refreshAll).toHaveBeenCalledWith());
     expect(
       await screen.findByText(
-        "Completed 1 of 1 favorites: 1 successful and 0 failed.",
+        "Checked 1 of 1 artists: 1 refreshed and 0 could not be refreshed.",
       ),
     ).toBeVisible();
 
@@ -792,6 +814,26 @@ describe("tag edit UI safety states", () => {
       "musicBrainzArtistId",
     );
     expect(await screen.findByText(/Refreshed Fixture Artist:/u)).toBeVisible();
+
+    refresh.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: "OPERATION_FAILED",
+        message: "MusicBrainz returned HTTP 503 after retries.",
+        recoverable: true,
+      },
+    });
+    await user.click(refreshButton);
+    const refreshError = await screen.findByRole("alert", {
+      name: "Radar request error",
+    });
+    expect(refreshError).toHaveTextContent(
+      "Your saved Radar releases are still available",
+    );
+    expect(screen.getByText(radarItem.title)).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText(/HTTP 503/u)).toBeVisible();
 
     const markSeen = screen.getByRole("button", { name: "Mark seen" });
     const favoriteListCallsBeforeSeen = favoriteLists.mock.calls.length;
@@ -899,7 +941,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByText(
-        "Stopped after 0 of 1 favorites: 0 successful and 0 failed.",
+        "Stopped after checking 0 of 1 artists: 0 refreshed and 0 could not be refreshed.",
       ),
     ).toBeVisible();
   });
@@ -1231,8 +1273,13 @@ describe("tag edit UI safety states", () => {
       "The selected folder is no longer available.",
     );
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Needs attentionThe selected folder is no longer available.",
+      "Needs attentionThe Library scan could not start.",
     );
+    expect(
+      within(screen.getByRole("status")).getByText(
+        "The selected folder is no longer available.",
+      ),
+    ).not.toBeVisible();
     expect(screen.getByRole("status")).toHaveAttribute(
       "aria-live",
       "assertive",
@@ -1323,10 +1370,12 @@ describe("tag edit UI safety states", () => {
 
     await openPrimaryView(user, "Activity");
     expect(screen.queryByLabelText("sync progress")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "DAP sync" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Syncing your player" }),
+    ).toBeVisible();
     expect(screen.getByText("Verifying Fixture Album")).toBeVisible();
     expect(
-      screen.getByRole("progressbar", { name: "DAP sync progress" }),
+      screen.getByRole("progressbar", { name: "Syncing your player progress" }),
     ).toHaveAttribute("value", "1");
 
     await openPrimaryView(user, "Settings");
@@ -1471,7 +1520,7 @@ describe("tag edit UI safety states", () => {
                 "Album title matches",
                 "Album artist matches",
                 "Track count matches (1)",
-                "Release date agrees at known precision (2026)",
+                "Release date matches as far as the saved dates show (2026)",
               ],
               conflicts: [],
             },
@@ -1489,9 +1538,9 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const dialog = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     expect(dialog).toHaveFocus();
     expect(findCandidates).not.toHaveBeenCalled();
@@ -1500,7 +1549,7 @@ describe("tag edit UI safety states", () => {
     );
     expect(findCandidates).toHaveBeenCalledWith({ albumId: album.id });
     expect(await within(dialog).findByRole("article")).toHaveTextContent(
-      "strong · 95/100",
+      "Strong match · 95%",
     );
     expect(applyTrack).not.toHaveBeenCalled();
     expect(applyAlbum).not.toHaveBeenCalled();
@@ -1508,7 +1557,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       within(dialog).getByRole("button", {
-        name: "Draft supported tags from Fixture Album, 2026",
+        name: "Use album details from Fixture Album, 2026",
       }),
     );
     expect(dialog).not.toBeInTheDocument();
@@ -1516,7 +1565,7 @@ describe("tag edit UI safety states", () => {
       name: "Edit metadata for Track",
     });
     expect(editor).toHaveTextContent(
-      "Drafted 2 supported fields from MusicBrainz release",
+      "Added 2 fields from the selected MusicBrainz release",
     );
     expect(
       within(editor).getByLabelText("MusicBrainz release ID proposed value"),
@@ -1655,15 +1704,15 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openLibraryAlbum(user);
 
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const dialog = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(dialog).getByRole("button", { name: "Search MusicBrainz" }),
     );
     const loadButton = await within(dialog).findByRole("button", {
-      name: "Load Cover Art Archive front cover for Fixture Album, 2026",
+      name: "Show front cover for Fixture Album, 2026",
     });
     expect(loadCover).not.toHaveBeenCalled();
     loadButton.focus();
@@ -1677,14 +1726,14 @@ describe("tag edit UI safety states", () => {
         name: "Cover Art Archive front cover for Fixture Album",
       }),
     ).toHaveAttribute("src", "data:image/png;base64,fixture");
-    expect(dialog).toHaveTextContent("No Library artwork changed");
+    expect(dialog).toHaveTextContent("Your Library is unchanged");
     expect(prepareArtwork).not.toHaveBeenCalled();
     expect(chooseArtwork).not.toHaveBeenCalled();
     expect(previewRemoval).not.toHaveBeenCalled();
     expect(applyArtwork).not.toHaveBeenCalled();
 
     const prepare = within(dialog).getByRole("button", {
-      name: "Prepare Cover Art Archive artwork from Fixture Album, 2026, for replacement review",
+      name: "Use front cover from Fixture Album, 2026",
     });
     prepare.focus();
     await user.keyboard("{Enter}");
@@ -1695,7 +1744,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       screen.queryByRole("dialog", {
-        name: "Find MusicBrainz matches for Fixture Album",
+        name: "Find album details for Fixture Album",
       }),
     ).not.toBeInTheDocument();
 
@@ -1829,16 +1878,16 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const finder = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(finder).getByRole("button", { name: "Search MusicBrainz" }),
     );
     await user.click(
       await within(finder).findByRole("button", {
-        name: "Map Library tracks to Fixture Album, 2026",
+        name: "Match Library tracks with Fixture Album, 2026",
       }),
     );
     expect(loadRelease).toHaveBeenCalledWith({
@@ -1849,7 +1898,7 @@ describe("tag edit UI safety states", () => {
 
     await user.selectOptions(
       await within(finder).findByRole("combobox", {
-        name: "MusicBrainz track for Track",
+        name: "Release track for Track",
       }),
       "11111111-1111-4111-8111-111111111111",
     );
@@ -1858,7 +1907,7 @@ describe("tag edit UI safety states", () => {
     );
     await user.click(
       within(finder).getByRole("button", {
-        name: "Preview mapped tracks",
+        name: "Review track changes",
       }),
     );
     expect(previewMapping).toHaveBeenCalledWith({
@@ -1875,7 +1924,7 @@ describe("tag edit UI safety states", () => {
     expect(applyMapping).not.toHaveBeenCalled();
     await user.click(
       within(finder).getByRole("button", {
-        name: "Confirm and write mapped tracks",
+        name: "Confirm and update tracks",
       }),
     );
     expect(applyMapping).toHaveBeenCalledWith({
@@ -1972,16 +2021,16 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openLibraryAlbum(user);
-    await chooseAlbumAction(user, "Find MusicBrainz matches");
+    await chooseAlbumAction(user, "Find album details");
     const finder = screen.getByRole("dialog", {
-      name: "Find MusicBrainz matches for Fixture Album",
+      name: "Find album details for Fixture Album",
     });
     await user.click(
       within(finder).getByRole("button", { name: "Search MusicBrainz" }),
     );
     await user.click(
       await within(finder).findByRole("button", {
-        name: "Draft supported tags from Fixture Album, 2027-04",
+        name: "Use album details from Fixture Album, 2027-04",
       }),
     );
 
@@ -2461,10 +2510,10 @@ describe("tag edit UI safety states", () => {
     await user.keyboard("{Escape}");
     expect(albumActions).toHaveFocus();
 
-    await chooseAlbumAction(user, "History & undo");
+    await chooseAlbumAction(user, "Change history & undo");
     dialog = screen.getByRole("dialog", { name: "Edit Fixture Album" });
     expect(
-      within(dialog).getByRole("button", { name: /^History & undo/u }),
+      within(dialog).getByRole("button", { name: /^Change history & undo/u }),
     ).toHaveAttribute("aria-current", "page");
     expect(
       within(dialog).getByLabelText("Metadata edit history"),
@@ -2506,14 +2555,14 @@ describe("tag edit UI safety states", () => {
       within(dialog).queryByRole("button", { name: /edit|review|confirm/u }),
     ).not.toBeInTheDocument();
 
-    const nativeLabel = within(dialog).getByText("Native tags");
+    const nativeLabel = within(dialog).getByText("Original file tag details");
     const native = nativeLabel.closest("details");
     if (!native) throw new Error("Native metadata disclosure missing");
     expect(native).not.toHaveAttribute("open");
     await user.click(nativeLabel);
     expect(native).toHaveAttribute("open");
     expect(
-      within(native).getByRole("region", { name: "Native track tags" }),
+      within(native).getByRole("region", { name: "Original file tags" }),
     ).toHaveTextContent("ID3v2:TALB");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -2818,13 +2867,13 @@ describe("tag edit UI safety states", () => {
       screen.getByRole("button", { name: "Edit metadata for Track" }),
     );
     const identificationSummary = screen
-      .getByText("Identify recording with AcoustID")
+      .getByText("Try identifying this recording")
       .closest("summary");
     if (!identificationSummary)
       throw new Error("AcoustID identification summary missing");
     await user.click(identificationSummary);
     await user.click(
-      screen.getByRole("button", { name: "Create local fingerprint" }),
+      screen.getByRole("button", { name: "Create fingerprint" }),
     );
     expect(previewLookup).toHaveBeenCalledWith({ fileId: trackId });
     expect(confirmLookup).not.toHaveBeenCalled();
@@ -2832,7 +2881,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Send fingerprint to AcoustID",
+        name: "Send and find matches",
       }),
     );
     expect(confirmLookup).toHaveBeenCalledWith({
@@ -2843,7 +2892,7 @@ describe("tag edit UI safety states", () => {
 
     await user.click(
       await screen.findByRole("button", {
-        name: "Use recording ID in tag draft",
+        name: "Use this match in the draft",
       }),
     );
     expect(
@@ -2974,9 +3023,7 @@ describe("tag edit UI safety states", () => {
     expect(confirmButton).toHaveFocus();
     await user.keyboard("{Enter}");
     const outcome = await screen.findByLabelText("Track metadata result");
-    expect(outcome).toHaveTextContent(
-      "Track metadata write re-read and verified",
-    );
+    expect(outcome).toHaveTextContent("Track metadata write complete");
     expect(outcome).toHaveFocus();
     expect(screen.getByLabelText("Track metadata editor")).toBeInTheDocument();
     expect(
@@ -3046,7 +3093,7 @@ describe("tag edit UI safety states", () => {
       screen.getByLabelText("Track metadata confirmation"),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
-      "0 verified; 1 need attention",
+      "0 confirmed; 1 couldn’t be confirmed",
     );
     expect(screen.getByLabelText("Track metadata result")).toHaveTextContent(
       "stale preview",
@@ -3516,9 +3563,11 @@ describe("tag edit UI safety states", () => {
       name: "Batch metadata result",
     });
     expect(batchResult).toHaveFocus();
-    expect(batchResult).toHaveTextContent("1 verified; 1 need attention");
     expect(batchResult).toHaveTextContent(
-      "A failed item is never reported as verified",
+      "1 confirmed; 1 couldn’t be confirmed",
+    );
+    expect(batchResult).toHaveTextContent(
+      "Review any file it couldn’t confirm before trying again",
     );
     await user.click(
       screen.getByRole("button", {
@@ -3527,7 +3576,7 @@ describe("tag edit UI safety states", () => {
     );
     await openAlbumHistory(user);
     await user.click(
-      screen.getByRole("button", { name: "Preview batch undo" }),
+      screen.getByRole("button", { name: "Review shared-field restore" }),
     );
     const undoConfirmation = await screen.findByLabelText(
       "Batch metadata undo confirmation",
@@ -3536,7 +3585,7 @@ describe("tag edit UI safety states", () => {
       "changed after this batch edit",
     );
     const confirmUndo = within(undoConfirmation).getByRole("button", {
-      name: "Confirm safe batch undo writes",
+      name: "Restore the available earlier values",
     });
     expect(confirmUndo).toBeEnabled();
     await user.click(confirmUndo);
@@ -3762,9 +3811,7 @@ describe("tag edit UI safety states", () => {
       name: "Track number sequence result",
     });
     expect(sequenceResult).toHaveFocus();
-    expect(sequenceResult).toHaveTextContent(
-      "Track-number sequence re-read and verified",
-    );
+    expect(sequenceResult).toHaveTextContent("Track-number sequence complete");
   });
 
   it("shows affected files and routes a keyboard action into sequencing without previewing", async () => {
@@ -4087,14 +4134,14 @@ describe("tag edit UI safety states", () => {
       await within(history).findByText("Changed title to “Renamed Album”"),
     ).toBeVisible();
     await user.click(
-      within(history).getByRole("button", { name: "Preview undo" }),
+      within(history).getByRole("button", { name: "Review title restore" }),
     );
     const preview = await screen.findByLabelText("Tag undo confirmation");
     expect(preview).toHaveTextContent("Renamed Album");
     expect(preview).toHaveTextContent("Fixture Album");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     ).toBeEnabled();
     expect(previewAlbumTitleUndo).toHaveBeenCalledWith({
@@ -4102,7 +4149,7 @@ describe("tag edit UI safety states", () => {
     });
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     );
     expect(applyAlbumTitleUndo).toHaveBeenCalledWith({
@@ -4111,7 +4158,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByLabelText("Album title undo result"),
-    ).toHaveTextContent("Album-title undo re-read and verified");
+    ).toHaveTextContent("Album-title undo complete");
   });
 
   it("previews and confirms field-scoped track metadata undo from history", async () => {
@@ -4186,7 +4233,7 @@ describe("tag edit UI safety states", () => {
     const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
-        name: "Preview track undo",
+        name: "Review field restore",
       }),
     );
     const preview = await screen.findByLabelText(
@@ -4198,7 +4245,7 @@ describe("tag edit UI safety states", () => {
     expect(preview).toHaveTextContent("2026");
     await user.click(
       within(preview).getByRole("button", {
-        name: "Confirm and undo track fields",
+        name: "Restore earlier track fields",
       }),
     );
     expect(previewTrackTagUndo).toHaveBeenCalledWith({
@@ -4210,7 +4257,7 @@ describe("tag edit UI safety states", () => {
     });
     expect(
       await screen.findByLabelText("Track metadata undo result"),
-    ).toHaveTextContent("Track metadata undo re-read and verified");
+    ).toHaveTextContent("Track metadata undo complete");
   });
 
   it("disables track undo confirmation when the preview reports a conflict", async () => {
@@ -4267,7 +4314,7 @@ describe("tag edit UI safety states", () => {
     const history = await openAlbumHistory(user);
     await user.click(
       await within(history).findByRole("button", {
-        name: "Preview track undo",
+        name: "Review field restore",
       }),
     );
     const preview = await screen.findByLabelText(
@@ -4278,7 +4325,7 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo track fields",
+        name: "Restore earlier track fields",
       }),
     ).toBeDisabled();
   });
@@ -4335,13 +4382,13 @@ describe("tag edit UI safety states", () => {
     await openLibraryAlbumTool(user, "Album title");
     await openAlbumHistory(user);
     await user.click(
-      await screen.findByRole("button", { name: "Preview undo" }),
+      await screen.findByRole("button", { name: "Review title restore" }),
     );
     const preview = await screen.findByLabelText("Tag undo confirmation");
     expect(preview).toHaveTextContent("will not overwrite it");
     expect(
       within(preview).getByRole("button", {
-        name: "Confirm and undo 1 file",
+        name: "Restore titles in 1 file",
       }),
     ).toBeDisabled();
   });
@@ -4383,7 +4430,10 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Activity");
     expect(
-      await screen.findByRole("heading", { level: 2, name: "Interrupted" }),
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Scan stopped unexpectedly",
+      }),
     ).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry scan" })).toBeEnabled();
   });
@@ -4418,8 +4468,12 @@ describe("tag edit UI safety states", () => {
     const review = await screen.findByRole("button", {
       name: "Review 1 scan problem",
     });
-    expect(screen.getByText("Parsed").nextSibling).toHaveTextContent("2");
-    expect(screen.getByText("Problems").nextSibling).toHaveTextContent("1");
+    expect(
+      screen.getByText("Added or refreshed").nextSibling,
+    ).toHaveTextContent("2");
+    expect(screen.getByText("Couldn’t read").nextSibling).toHaveTextContent(
+      "1",
+    );
     review.focus();
     await user.keyboard("{Enter}");
 
@@ -4474,7 +4528,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Settings");
 
     const roots = await screen.findByRole("region", {
-      name: "Watched Library folders",
+      name: "Library folders",
     });
     expect(within(roots).getByText("/fixture/never-scanned")).toBeVisible();
     expect(within(roots).getByText("Never scanned")).toBeVisible();
@@ -4547,6 +4601,11 @@ describe("tag edit UI safety states", () => {
     });
 
     expect(await screen.findByText("Scanned")).toBeVisible();
+    expect(
+      screen.getByText(
+        "Scan finished: 1 added or refreshed, 0 already up to date, 0 couldn’t be read.",
+      ),
+    ).toBeVisible();
     expect(screen.getByText(/Last completed/)).toHaveTextContent(
       new Date(scannedAt).toLocaleString(),
     );
@@ -5619,6 +5678,11 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
     expect(screen.getByText("5/10: Checked 5 of 10 albums.")).toBeVisible();
     await user.selectOptions(screen.getByLabelText("View"), "data-quality");
+    expect(
+      screen.getByText(
+        "Checking album quality. You can keep browsing while Outgroove works.",
+      ),
+    ).toBeVisible();
     const issueType = screen.getByLabelText("Issue type");
     expect(issueType).toBeVisible();
     expect(issueType).toHaveValue("all");
@@ -5637,6 +5701,11 @@ describe("tag edit UI safety states", () => {
     ).toBeVisible();
 
     await user.selectOptions(issueType, "missing-tags");
+    expect(
+      screen.getByText(
+        "Checking missing/placeholder tags. You can keep browsing while Outgroove works.",
+      ),
+    ).toBeVisible();
     await waitFor(() =>
       expect(queryLibrary).toHaveBeenLastCalledWith({
         query: "",
@@ -5827,7 +5896,7 @@ describe("tag edit UI safety states", () => {
     render(<App />);
 
     expect(
-      await screen.findByText("No data-quality findings on this page."),
+      await screen.findByText("No albums on this page need attention."),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Next page" }));
     expect(
@@ -5948,7 +6017,7 @@ describe("tag edit UI safety states", () => {
     await openPrimaryView(user, "Sync");
     expect(
       screen.getByRole("button", {
-        name: "Selection draft, 2 of 100 albums",
+        name: "Current selection, 2 of 100 albums",
       }),
     ).toHaveAttribute("aria-current", "page");
     expect(
@@ -5956,7 +6025,7 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("Second Album");
 
     const chooseTarget = screen.getByRole("button", {
-      name: "Choose DAP target",
+      name: "Choose player folder",
     });
     chooseTarget.focus();
     await user.keyboard("{Enter}");
@@ -5967,10 +6036,10 @@ describe("tag edit UI safety states", () => {
     expect(
       screen.getByRole("button", { name: "Preview & apply" }),
     ).toHaveAttribute("aria-current", "step");
-    expect(screen.getByText("Successful sync history")).toBeVisible();
-    await user.click(screen.getByText("Successful sync history"));
+    expect(screen.getByText("Completed syncs")).toBeVisible();
+    await user.click(screen.getByText("Completed syncs"));
     expect(
-      screen.getByText("No successful sync runs have been recorded yet."),
+      screen.getByText("No completed syncs are recorded yet."),
     ).toBeVisible();
     expect(applySync).not.toHaveBeenCalled();
 
@@ -5997,6 +6066,9 @@ describe("tag edit UI safety states", () => {
       targetVolumeConfirmed: false,
     });
     await waitFor(() => expect(listSyncHistory).toHaveBeenCalledTimes(2));
+    expect(
+      screen.getByText(/Outgroove saved its new record of synced files/u),
+    ).toHaveTextContent("after all other work finished");
     expect(listSyncHistory).toHaveBeenNthCalledWith(1, { profileId });
     expect(listSyncHistory).toHaveBeenNthCalledWith(2, { profileId });
 
@@ -6038,10 +6110,52 @@ describe("tag edit UI safety states", () => {
       },
     });
     expect(
-      await screen.findByText(/Sync cancelled safely after 1 completed copy/u),
-    ).toHaveTextContent("No new manifest was committed");
+      await screen.findByText(/Sync cancelled safely after 1 copy finished/u),
+    ).toHaveTextContent(
+      "restored 1 completed change and did not save a new record of synced files",
+    );
     expect(listSyncHistory).toHaveBeenCalledTimes(2);
     expect(retryConfirm).toBeEnabled();
+
+    applySync.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        outcome: "failed",
+        copied: 1,
+        replaced: 0,
+        removed: 0,
+        rolledBack: 1,
+        unchanged: 0,
+        playlistPath: "/fixture/dap/Outgroove.m3u8",
+        manifestPath: "/fixture/dap/.outgroove/manifest.json",
+        errors: ["EIO while restoring /fixture/dap/Artist/Album/01 Track.flac"],
+      },
+    });
+    retryConfirm.focus();
+    await user.keyboard("{Enter}");
+
+    const failedNotice = await screen.findByRole("status");
+    expect(failedNotice).toHaveTextContent(
+      "The sync stopped. Outgroove restored 1 completed change",
+    );
+    expect(failedNotice).toHaveTextContent(
+      "Review Sync recovery and the technical details",
+    );
+    expect(
+      within(failedNotice).getByText(
+        "EIO while restoring /fixture/dap/Artist/Album/01 Track.flac",
+      ),
+    ).not.toBeVisible();
+    const technicalDetails =
+      within(failedNotice).getByText("Technical details");
+    technicalDetails.focus();
+    expect(technicalDetails).toHaveFocus();
+    await user.click(technicalDetails);
+    expect(
+      within(failedNotice).getByText(
+        "EIO while restoring /fixture/dap/Artist/Album/01 Track.flac",
+      ),
+    ).toBeVisible();
   });
 
   it("shows restart-safe sync recovery actions and confirms them with the keyboard", async () => {
@@ -6129,7 +6243,7 @@ describe("tag edit UI safety states", () => {
 
     const recoveryAlert = screen.getByRole("alert");
     expect(recoveryAlert).toHaveTextContent(
-      "Database restore remains blocked until pending recovery is completed.",
+      "Restoring a backup stays unavailable until this sync is back in a safe state.",
     );
     const openRecovery = within(recoveryAlert).getByRole("button", {
       name: "Review recovery",
@@ -6153,14 +6267,14 @@ describe("tag edit UI safety states", () => {
     );
     expect(
       within(recoveryPreview).getByRole("heading", {
-        name: "Recovery plan for Road DAP",
+        name: "Review recovery for Road DAP",
       }),
     ).toHaveFocus();
     expect(recoveryPreview).toHaveTextContent(
       "/fixture/dap/Artist/Album/01 Track.flac",
     );
     const confirm = within(recoveryPreview).getByRole("button", {
-      name: "Confirm recovery for Road DAP",
+      name: "Apply recovery for Road DAP",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -6172,12 +6286,18 @@ describe("tag edit UI safety states", () => {
     const failure = await screen.findByLabelText(
       "Recovery result for Road DAP",
     );
-    expect(failure).toHaveTextContent(
-      "The recovery preview changed. Review it again.",
-    );
+    expect(failure).toHaveTextContent("No recovery changes were made");
+    expect(
+      within(failure).getByText(
+        "The recovery preview changed. Review it again.",
+      ),
+    ).not.toBeVisible();
+    expect(
+      within(failure).getByText("Recovery technical details"),
+    ).toBeVisible();
     expect(
       within(failure).getByRole("heading", {
-        name: "Recovery could not be applied",
+        name: "No recovery changes were made",
       }),
     ).toHaveFocus();
     expect(
@@ -6191,17 +6311,17 @@ describe("tag edit UI safety states", () => {
       "Recovery confirmation for Road DAP",
     );
     const retryConfirm = within(retryPreview).getByRole("button", {
-      name: "Confirm recovery for Road DAP",
+      name: "Apply recovery for Road DAP",
     });
     retryConfirm.focus();
     await user.keyboard("{Enter}");
     expect(applySyncRecovery).toHaveBeenCalledTimes(2);
     expect(
-      await screen.findByRole("heading", { name: "Recovery complete" }),
+      await screen.findByRole("heading", { name: "Your sync is safe again" }),
     ).toHaveFocus();
     expect(
       screen.getByLabelText("Recovery result for Road DAP"),
-    ).toHaveTextContent("1 reviewed change was restored or removed");
+    ).toHaveTextContent("Outgroove completed 1 reviewed change");
     await waitFor(() => expect(listSyncRecoveries).toHaveBeenCalledTimes(3));
   });
 
@@ -6315,14 +6435,14 @@ describe("tag edit UI safety states", () => {
     );
     expect(listSyncHistory).toHaveBeenCalledWith({ profileId });
     const historySummary = screen
-      .getByText("Successful sync history")
+      .getByText("Completed syncs")
       .closest("summary");
     if (!historySummary) throw new Error("Sync history disclosure missing");
     historySummary.focus();
     expect(historySummary).toHaveFocus();
     await user.click(historySummary);
     const history = await screen.findByRole("list", {
-      name: "Successful sync history for Road DAP",
+      name: "Completed sync history for Road DAP",
     });
     expect(history).toHaveTextContent("2 files");
     expect(history).toHaveTextContent("1 file");
@@ -6548,15 +6668,15 @@ describe("tag edit UI safety states", () => {
     await openSyncProfileManagement(user, "Road DAP");
 
     const change = await screen.findByRole("button", {
-      name: "Change DAP target for Road DAP",
+      name: "Change player folder for Road DAP",
     });
     change.focus();
     await user.keyboard("{Enter}");
     expect(chooseTarget).toHaveBeenCalledWith({ profileId });
-    const preview = await screen.findByLabelText("DAP target confirmation");
+    const preview = await screen.findByLabelText("Player folder confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Review target for Road DAP",
+        name: "Review the new destination for Road DAP",
       }),
     ).toHaveFocus();
     expect(within(preview).getByText("/fixture/old-dap")).toBeVisible();
@@ -6567,7 +6687,7 @@ describe("tag edit UI safety states", () => {
     expect(applyTarget).not.toHaveBeenCalled();
 
     const confirm = within(preview).getByRole("button", {
-      name: "Confirm DAP target change",
+      name: "Confirm player folder change",
     });
     confirm.focus();
     await user.keyboard("{Enter}");
@@ -6585,7 +6705,7 @@ describe("tag edit UI safety states", () => {
     confirm.focus();
     await user.keyboard("{Enter}");
     await waitFor(() => expect(applyTarget).toHaveBeenCalledTimes(2));
-    expect(screen.queryByLabelText("DAP target confirmation")).toBeNull();
+    expect(screen.queryByLabelText("Player folder confirmation")).toBeNull();
     expect(screen.getByLabelText("Active DAP profile")).toHaveTextContent(
       "/fixture/new-dap",
     );
@@ -6673,10 +6793,10 @@ describe("tag edit UI safety states", () => {
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent(
-      "No source audio or target file is read, changed, or deleted.",
+      "No audio or destination file is read, changed, or deleted.",
     );
     expect(preview).toHaveTextContent(
-      "Files left on these targets become unknown to Outgroove.",
+      "Outgroove will no longer recognize files left at these destinations.",
     );
     expect(applyRemoval).not.toHaveBeenCalled();
 
@@ -6892,20 +7012,20 @@ describe("tag edit UI safety states", () => {
     render(<App />);
     await openPrimaryView(user, "Settings");
     const databaseSection = screen.getByRole("button", {
-      name: "Database safety",
+      name: "Backups & support",
     });
     databaseSection.focus();
     await user.keyboard("{Enter}");
     expect(databaseSection).toHaveAttribute("aria-current", "page");
     await user.click(
-      await screen.findByRole("button", { name: "Restore from backup" }),
+      await screen.findByRole("button", {
+        name: "Choose an Outgroove backup",
+      }),
     );
-    const preview = await screen.findByLabelText(
-      "Database restore confirmation",
-    );
+    const preview = await screen.findByLabelText("Backup restore confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Replace the current Outgroove database?",
+        name: "Replace your current Outgroove data?",
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent("outgroove-backup.sqlite3");
@@ -6915,20 +7035,20 @@ describe("tag edit UI safety states", () => {
     ).toHaveTextContent("2");
     await user.click(screen.getByRole("button", { name: "Library folders" }));
     expect(
-      screen.queryByLabelText("Database restore confirmation"),
+      screen.queryByLabelText("Backup restore confirmation"),
     ).not.toBeInTheDocument();
     await openPrimaryView(user, "Activity");
     await openPrimaryView(user, "Settings");
     const pendingDatabaseSection = screen.getByRole("button", {
-      name: "Database safety, confirmation pending",
+      name: "Backups & support, confirmation pending",
     });
     pendingDatabaseSection.focus();
     await user.keyboard("{Enter}");
-    expect(
-      screen.getByLabelText("Database restore confirmation"),
-    ).toBeVisible();
+    expect(screen.getByLabelText("Backup restore confirmation")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Confirm restore and restart" }),
+      screen.getByRole("button", {
+        name: "Restore this backup and restart",
+      }),
     );
     expect(applyDatabaseRestore).toHaveBeenCalledWith({
       operationId: "86fb71a8-9faf-49f9-ad60-39e5bb28c02d",
@@ -6952,13 +7072,13 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
-    await user.click(screen.getByRole("button", { name: "Database safety" }));
+    await user.click(screen.getByRole("button", { name: "Backups & support" }));
     await user.click(
-      await screen.findByRole("button", { name: "Create database backup" }),
+      await screen.findByRole("button", { name: "Save Outgroove backup" }),
     );
     expect(await screen.findByText("Backup disk is full")).toBeVisible();
     expect(
-      screen.queryByText(/backup verified and saved/iu),
+      screen.queryByText(/backup saved and checked/iu),
     ).not.toBeInTheDocument();
   });
 
@@ -6975,18 +7095,18 @@ describe("tag edit UI safety states", () => {
     const user = userEvent.setup();
     render(<App />);
     await openPrimaryView(user, "Settings");
-    await user.click(screen.getByRole("button", { name: "Database safety" }));
+    await user.click(screen.getByRole("button", { name: "Backups & support" }));
     const exportButton = await screen.findByRole("button", {
-      name: "Export path-redacted report",
+      name: "Save support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");
     expect(exportDiagnosticReport).toHaveBeenCalledWith();
     expect(
-      await screen.findByText("Diagnostic report export cancelled."),
+      await screen.findByText("Support report not created."),
     ).toBeVisible();
     expect(
-      screen.queryByText(/diagnostic report verified and saved/iu),
+      screen.queryByText(/support report saved and checked/iu),
     ).not.toBeInTheDocument();
   });
 });

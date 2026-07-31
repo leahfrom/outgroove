@@ -55,7 +55,7 @@ export class ScanJobCoordinator {
     if (controller.signal.aborted) {
       this.save(jobId, {
         state: "cancelled",
-        detail: "Scan cancelled. The previous catalog remains usable.",
+        detail: "Scan cancelled. Your previous Library remains available.",
         error: null,
         finished: true,
       });
@@ -109,7 +109,7 @@ export class ScanJobCoordinator {
       if (wasCancelled)
         this.save(jobId, {
           state: "cancelled",
-          detail: "Scan cancelled. The previous catalog remains usable.",
+          detail: "Scan cancelled. Your previous Library remains available.",
           error: null,
           finished: true,
         });

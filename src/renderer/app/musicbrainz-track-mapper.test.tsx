@@ -133,24 +133,24 @@ describe("MusicBrainzTrackMapper", () => {
     render(<MusicBrainzTrackMapper {...defaultProps} onPreview={onPreview} />);
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Loading changed no Library metadata",
+      "This only loaded suggestions; your Library is unchanged",
     );
     expect(
-      screen.getByRole("button", { name: "Preview mapped tracks" }),
+      screen.getByRole("button", { name: "Review track changes" }),
     ).toBeDisabled();
-    expect(screen.getByText(/0 of 2 Library tracks mapped/u)).toBeVisible();
+    expect(screen.getByText(/0 of 2 Library tracks matched/u)).toBeVisible();
 
     const first = screen.getByRole("combobox", {
-      name: "MusicBrainz track for Local First",
+      name: "Release track for Local First",
     });
     await user.selectOptions(first, "11111111-1111-4111-8111-111111111111");
-    expect(screen.getByText(/Mapped; select fields/u)).toBeVisible();
+    expect(screen.getByText(/Matched; choose details/u)).toBeVisible();
     expect(onPreview).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("checkbox", { name: /Track title/u }));
-    expect(screen.getByText("1 effective tag changes")).toBeVisible();
+    expect(screen.getByText("1 change available")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Preview mapped tracks" }),
+      screen.getByRole("button", { name: "Review track changes" }),
     );
     expect(onPreview).toHaveBeenCalledWith([
       {
@@ -164,16 +164,16 @@ describe("MusicBrainzTrackMapper", () => {
   it("keeps advanced fields collapsed, prevents duplicate remote choices, and exposes omissions", async () => {
     const user = userEvent.setup();
     render(<MusicBrainzTrackMapper {...defaultProps} />);
-    const more = screen.getByText("More fields").closest("details");
+    const more = screen.getByText("Details and IDs").closest("details");
     expect(more).not.toHaveAttribute("open");
-    await user.click(screen.getByText("More fields"));
+    await user.click(screen.getByText("Details and IDs"));
     await user.click(screen.getByRole("checkbox", { name: /^ISRC/u }));
 
     const first = screen.getByRole("combobox", {
-      name: "MusicBrainz track for Local First",
+      name: "Release track for Local First",
     });
     const second = screen.getByRole("combobox", {
-      name: "MusicBrainz track for Local Second",
+      name: "Release track for Local Second",
     });
     await user.selectOptions(first, "11111111-1111-4111-8111-111111111111");
     expect(
@@ -182,6 +182,8 @@ describe("MusicBrainzTrackMapper", () => {
       }),
     ).toBeDisabled();
     await user.selectOptions(second, "33333333-3333-4333-8333-333333333333");
-    expect(screen.getByText(/recording has multiple values/u)).toBeVisible();
+    expect(
+      screen.getByText(/MusicBrainz lists more than one ISRC/u),
+    ).toBeVisible();
   });
 });

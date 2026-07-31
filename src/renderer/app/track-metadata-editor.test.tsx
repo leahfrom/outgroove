@@ -114,6 +114,13 @@ describe("TrackMetadataEditor", () => {
     const user = userEvent.setup();
     const { rerender } = render(editor(unchangedDraft));
 
+    const editorRegion = screen.getByLabelText("Track metadata editor");
+    expect(editorRegion).toHaveTextContent(
+      "Change the fields you want while keeping the current values beside them",
+    );
+    expect(editorRegion).toHaveTextContent("MusicBrainz IDs");
+    expect(editorRegion).not.toHaveTextContent("provider IDs");
+    expect(editorRegion).not.toHaveTextContent("exact restoration");
     const comparison = screen.getByLabelText("Basic track tag comparison");
     expect(within(comparison).getAllByText("Unchanged")).toHaveLength(7);
     const moreSummary = screen.getByText("More fields").closest("summary");
@@ -289,7 +296,9 @@ describe("TrackMetadataEditor", () => {
     expect(confirmation).toHaveTextContent(
       "The current tag no longer matches this draft.",
     );
-    expect(confirmation).toHaveTextContent("Confirmation is blocked.");
+    expect(confirmation).toHaveTextContent(
+      "These changes can’t be confirmed yet.",
+    );
   });
 
   it("focuses a recoverable request error inside the editor", () => {
@@ -308,6 +317,8 @@ describe("TrackMetadataEditor", () => {
     expect(error).toHaveTextContent(
       "The file changed after the preview was created.",
     );
-    expect(error).toHaveTextContent("No unverified change is reported");
+    expect(error).toHaveTextContent(
+      "Nothing is treated as complete until Outgroove verifies it",
+    );
   });
 });

@@ -114,7 +114,7 @@ export function diagnoseAlbum(album: CatalogAlbum): readonly AlbumDiagnostic[] {
       severity: "needs-attention",
       title: "Missing track titles",
       explanation:
-        "These files use Outgroove’s exact “Unknown title” scan fallback or contain an empty normalized title. Outgroove cannot infer the real titles.",
+        "These files have no track title. Outgroove shows “Unknown title” so they remain visible, but cannot infer the real titles.",
       affectedTrackIds: ids(missingTitles),
       workflow: "track-editor",
     });
@@ -132,7 +132,7 @@ export function diagnoseAlbum(album: CatalogAlbum): readonly AlbumDiagnostic[] {
       severity: "review",
       title: "Unknown album title",
       explanation:
-        "The scanner substituted its exact “Unknown album” fallback. This identifies a missing source tag, but not the correct album title.",
+        "These files have no album title. Outgroove shows “Unknown album” so they remain visible, but cannot infer the correct title.",
       affectedTrackIds: ids(unknownAlbums),
       workflow: "album-title",
     });
@@ -143,7 +143,7 @@ export function diagnoseAlbum(album: CatalogAlbum): readonly AlbumDiagnostic[] {
       severity: "review",
       title: "Unknown track artists",
       explanation:
-        "The scanner substituted its exact “Unknown artist” fallback. This identifies missing source tags, but not the correct artist.",
+        "These files have no track artist. Outgroove shows “Unknown artist” so they remain visible, but cannot infer the correct artist.",
       affectedTrackIds: ids(unknownArtists),
       workflow:
         unknownArtists.length > 1 ? "batch-track-artist" : "track-editor",
@@ -159,7 +159,7 @@ export function diagnoseAlbum(album: CatalogAlbum): readonly AlbumDiagnostic[] {
       severity: "needs-attention",
       title: "Missing track numbers",
       explanation:
-        "These tracks have no normalized track number. Review their intended order before proposing numbers.",
+        "These tracks have no track number. Review their intended order before proposing numbers.",
       affectedTrackIds: ids(missingNumbers),
       workflow: missingNumbers.length > 1 ? "sequence" : "track-editor",
     });

@@ -141,6 +141,25 @@ function renderView(
 }
 
 describe("Radar favorite artists", () => {
+  it("keeps earlier artist results while explaining a failed retry", async () => {
+    const user = userEvent.setup();
+    renderView({
+      artistSearchError: "MusicBrainz returned HTTP 503 after retries.",
+    });
+
+    const alert = screen.getByRole("alert", {
+      name: "Favorite artist request error",
+    });
+    expect(alert).toHaveTextContent("No favorites changed");
+    expect(screen.getByText(/Earlier artist results for/u)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /Add Fixture Artist to favorites/u }),
+    ).toBeVisible();
+    expect(screen.getByText(/HTTP 503/u)).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText(/HTTP 503/u)).toBeVisible();
+  });
+
   it("keeps automatic refresh opt-in, collapsed, and keyboard accessible", async () => {
     const onRadarBackgroundChange = vi.fn();
     renderView({
@@ -234,8 +253,13 @@ describe("Radar favorite artists", () => {
       ),
     ).toBeVisible();
     expect(
-      screen.getByText(/Audio, paths, tags, artwork, fingerprints/iu),
+      screen.getByText(
+        /Your audio, file locations, tags, artwork, fingerprints/iu,
+      ),
     ).toBeVisible();
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent("checked with MusicBrainz");
     expect(onAdd).not.toHaveBeenCalled();
 
     const candidates = screen.getByRole("list", {
@@ -253,6 +277,26 @@ describe("Radar favorite artists", () => {
     add.focus();
     await userEvent.setup().keyboard("{Enter}");
     expect(onAdd).toHaveBeenCalledWith("16ffe2a4-14e9-4d25-a4db-c3a6370afacc");
+  });
+
+  it("explains recent and older saved MusicBrainz results without cache jargon", () => {
+    const { unmount } = renderView({
+      artistSearchResult: { ...result, source: "cache" },
+    });
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent("using a recent result saved on this device");
+    unmount();
+
+    renderView({
+      artistSearchResult: { ...result, source: "stale-cache" },
+    });
+    expect(
+      screen.getByText(/Artist results for “Fixture Artist”/u),
+    ).toHaveTextContent(
+      "using an older saved result because MusicBrainz could not be reached",
+    );
+    expect(screen.queryByText(/cache/iu)).not.toBeInTheDocument();
   });
 
   it("keeps local filtering separate and presents a keyboard-dismissable removal confirmation", async () => {
@@ -281,6 +325,8 @@ describe("Radar favorite artists", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Remove Fixture Artist from favorites",
     });
+    expect(dialog).toHaveTextContent("saved online search results");
+    expect(dialog).not.toHaveTextContent("provider caches");
     const confirm = within(dialog).getByRole("button", {
       name: "Confirm remove favorite",
     });
@@ -346,18 +392,23 @@ describe("Radar favorite artists", () => {
     await user.keyboard("{Enter}");
     expect(onCancelRefreshAll).toHaveBeenCalledOnce();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Completed 2 of 2 favorites: 1 successful and 1 failed.",
+      "Checked 2 of 2 artists: 1 refreshed and 1 could not be refreshed.",
     );
     const failures = screen.getByRole("list", {
       name: "Favorites that failed to refresh",
     });
-    expect(failures).toHaveTextContent("Fixture ArtistMusicBrainz unavailable");
+    expect(failures).toHaveTextContent(
+      "Fixture ArtistNot refreshed. Saved releases for this artist remain unchanged.",
+    );
+    expect(screen.getByText("MusicBrainz unavailable")).not.toBeVisible();
+    await user.click(screen.getByText("Why this artist wasn’t refreshed"));
+    expect(screen.getByText("MusicBrainz unavailable")).toBeVisible();
     expect(
       screen.getByRole("button", {
         name: `Refresh releases for ${favorite.name}`,
       }),
     ).toBeDisabled();
-    const successful = screen.getByText("Successful favorites (1)");
+    const successful = screen.getByText("Refreshed artists (1)");
     successful.focus();
     await user.keyboard("{Enter}");
     expect(

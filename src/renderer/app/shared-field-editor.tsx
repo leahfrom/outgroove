@@ -370,13 +370,10 @@ function SharedFieldEditorComponent(
         title="Edit shared metadata"
         description={
           <>
-            {tracks.length} tracks selected. Select only fields you intend to
-            write. Mixed values remain explicit. One-value list fields replace
-            each complete current set and block where exact restoration is
-            unavailable. Totals never renumber tracks. More fields contains
-            catalog and release details plus release-level MusicBrainz IDs;
-            track-specific descriptions, BPM, comments, and identifiers stay in
-            the single-track editor.
+            {tracks.length} tracks selected. Choose only the fields you want to
+            change. When tracks have different current values, Outgroove shows
+            them instead of choosing one for you. More fields contains
+            additional credits, release details, and MusicBrainz IDs.
           </>
         }
       />
@@ -614,7 +611,7 @@ function SharedFieldEditorComponent(
         <WorkbenchRequestError
           label="Shared metadata request error"
           message={error}
-          recovery="Revise the shared-field draft or retry the current confirmation. The per-file preview remains available when it is still safe to retry."
+          recovery="Adjust the selected fields or try the current confirmation again. The file-by-file review stays available when it is still safe to retry."
         />
       )}
 
@@ -626,7 +623,7 @@ function SharedFieldEditorComponent(
           busy={busy}
           cancelLabel="Return to shared-field draft"
           confirmLabel="Confirm and write selected tracks"
-          description="Unchanged tracks will be skipped. Every proposed write is checked again immediately before Outgroove creates a snapshot and writes."
+          description="Unchanged tracks will be skipped. Before each write, Outgroove checks the file again and saves its current tags for recovery."
           label="Batch confirmation"
           title="Review every selected file"
           onCancel={onCancelPreview}

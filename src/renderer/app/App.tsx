@@ -579,6 +579,12 @@ export function App(): React.JSX.Element {
     },
     [],
   );
+  const setErrorNotice = useCallback(
+    (message: string, guidance: string, details: readonly string[]): void => {
+      setNoticeState({ message, tone: "error", guidance, details });
+    },
+    [],
+  );
   const [busy, setBusy] = useState(false);
   const [diagnosticDestination, setDiagnosticDestination] = useState<{
     target: "track" | "batch" | "sequence" | "album-title";
@@ -1078,14 +1084,18 @@ export function App(): React.JSX.Element {
       setScanJob(job);
       if (job.state === "completed" && job.result) {
         setNotice(
-          `Scan finished: ${job.result.parsed} parsed, ${job.result.unchanged} unchanged, ${job.result.errors} errors.`,
+          `Scan finished: ${job.result.parsed} added or refreshed, ${job.result.unchanged} already up to date, ${job.result.errors} couldn’t be read.`,
           job.result.errors === 0 ? "success" : "error",
         );
         void refreshLibraryRoots();
         void refreshCatalog();
       } else if (job.state === "cancelled") setNotice(job.detail);
       else if (job.state === "failed" || job.state === "interrupted")
-        setNotice(job.error ?? job.detail, "error");
+        setErrorNotice(
+          "The Library scan stopped before it finished.",
+          "Your existing Library is still available. Reconnect the folder if needed, then retry the scan.",
+          [job.error ?? job.detail],
+        );
     });
     void Promise.all([
       window.outgroove.listLibraryRoots(),
@@ -1108,11 +1118,15 @@ export function App(): React.JSX.Element {
           latest.value.state === "failed" ||
           latest.value.state === "interrupted"
         )
-          setNotice(latest.value.error ?? latest.value.detail, "error");
+          setErrorNotice(
+            "The previous Library scan stopped before it finished.",
+            "Your existing Library is still available. Reconnect the folder if needed, then retry the scan.",
+            [latest.value.error ?? latest.value.detail],
+          );
       }
     });
     return unsubscribe;
-  }, [refreshCatalog, refreshLibraryRoots]);
+  }, [refreshCatalog, refreshLibraryRoots, setErrorNotice]);
   useEffect(() => {
     void refreshCatalog();
   }, [refreshCatalog]);
@@ -1272,12 +1286,16 @@ export function App(): React.JSX.Element {
     if (started.ok) {
       setScanJob(started.value);
       setNotice(
-        "Scan started. You can cancel it without losing the previous catalog.",
+        "Scan started. You can cancel it without losing your previous Library view.",
       );
       return true;
     }
     setLibrarySetupError(started.error.message);
-    setNotice(started.error.message, "error");
+    setErrorNotice(
+      "The Library scan could not start.",
+      "Check that the folder is still connected and available, then try again.",
+      [started.error.message],
+    );
     return false;
   };
 
@@ -1286,7 +1304,11 @@ export function App(): React.JSX.Element {
     const selected = await window.outgroove.chooseLibraryFolder();
     if (!selected.ok) {
       setLibrarySetupError(selected.error.message);
-      setNotice(selected.error.message, "error");
+      setErrorNotice(
+        "Outgroove could not open the folder chooser.",
+        "Try choosing the Library folder again.",
+        [selected.error.message],
+      );
       return undefined;
     }
     if (!selected.value) {
@@ -1405,7 +1427,6 @@ export function App(): React.JSX.Element {
     if (!query) return;
     const requestId = ++artistSearchRequestId.current;
     setArtistSearchLoading(true);
-    setArtistSearchResult(undefined);
     setArtistSearchError(undefined);
     const result = await window.outgroove.searchMusicBrainzArtists({ query });
     if (requestId !== artistSearchRequestId.current) return;
@@ -1511,7 +1532,7 @@ export function App(): React.JSX.Element {
       }
       if (!result.value.cancelled) {
         setRadarRefreshAllCancelling(false);
-        setRadarError("No Refresh all operation is currently running.");
+        setNotice("No Refresh all operation is currently running.");
       }
     });
   };
@@ -1543,8 +1564,9 @@ export function App(): React.JSX.Element {
         }
         if (result.value.cancelled) {
           setRefreshingFavoriteId(undefined);
-          setRadarError(
-            "Radar refresh cancelled. The last successful view is unchanged.",
+          setRadarError(undefined);
+          setNotice(
+            `Cancelled the Radar refresh for ${favorite.name}. Saved releases are unchanged.`,
           );
         }
       });
@@ -1764,12 +1786,9 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.createDatabaseBackup();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Database backup cancelled.");
+      else if (!result.value) setNotice("Backup not created.");
       else
-        setNotice(
-          `Database backup verified and saved to ${result.value.path}`,
-          "success",
-        );
+        setNotice(`Backup saved and checked: ${result.value.path}`, "success");
     } finally {
       setBusy(false);
     }
@@ -1780,10 +1799,10 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.exportDiagnosticReport();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Diagnostic report export cancelled.");
+      else if (!result.value) setNotice("Support report not created.");
       else
         setNotice(
-          `Path-redacted diagnostic report verified and saved to ${result.value.path}`,
+          `Privacy-safe support report saved and checked: ${result.value.path}`,
           "success",
         );
     } finally {
@@ -1796,10 +1815,10 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.chooseDatabaseRestore();
       if (!result.ok) setNotice(result.error.message, "error");
-      else if (!result.value) setNotice("Database restore cancelled.");
+      else if (!result.value) setNotice("No backup selected.");
       else {
         setRestorePreview(result.value);
-        setNotice("Backup verified. Review its contents before restoring.");
+        setNotice("Backup checked. Review what it contains before restoring.");
       }
     } finally {
       setBusy(false);
@@ -1815,7 +1834,7 @@ export function App(): React.JSX.Element {
     });
     if (result.ok)
       setNotice(
-        `Restore verified. Outgroove is restarting. Rollback backup: ${result.value.rollbackBackupPath}`,
+        `Restore complete. Outgroove is restarting. A safety backup of your previous setup was saved to ${result.value.rollbackBackupPath}`,
         "success",
       );
     else {
@@ -1837,7 +1856,11 @@ export function App(): React.JSX.Element {
       setEditPreview(result.value);
     } else {
       setEditError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The album-title preview could not be created.",
+        "Review the proposed title and try again. No file was changed.",
+        [result.error.message],
+      );
     }
   };
 
@@ -1865,7 +1888,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The album-title change was not applied.",
+          "Review the current preview or create a fresh one before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1887,7 +1914,11 @@ export function App(): React.JSX.Element {
       setUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The album-title restore preview could not be created.",
+        "Reload the history or review the current file before trying again.",
+        [result.error.message],
+      );
     }
   };
 
@@ -1914,7 +1945,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The earlier album title was not restored.",
+          "Review the current file and create a fresh restore preview before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1933,7 +1968,11 @@ export function App(): React.JSX.Element {
       });
       if (!result.ok) {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "Artwork could not be selected.",
+          "Choose the artwork again. No audio file was changed.",
+          [result.error.message],
+        );
       } else if (result.value) {
         setArtworkEditPreview(result.value);
       }
@@ -1956,7 +1995,11 @@ export function App(): React.JSX.Element {
         setArtworkEditPreview(result.value);
       } else {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork-removal preview could not be created.",
+          "Review the album and try again. No audio file was changed.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -1994,7 +2037,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setArtworkEditError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork change was not applied.",
+          "Review the current preview or choose the artwork again before retrying.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2014,7 +2061,11 @@ export function App(): React.JSX.Element {
         setArtworkExportPreview(result.value);
       } else {
         setArtworkExportError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork export could not be prepared.",
+          "Review the album artwork and try again. Audio files remain unchanged.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2032,7 +2083,11 @@ export function App(): React.JSX.Element {
       });
       if (!result.ok) {
         setArtworkExportError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The artwork was not exported.",
+          "Choose a destination and try again. Audio files remain unchanged.",
+          [result.error.message],
+        );
       } else if (result.value === null) {
         setNotice("Artwork export cancelled.");
       } else {
@@ -2058,7 +2113,11 @@ export function App(): React.JSX.Element {
         setFolderArtworkPreview(result.value);
       } else {
         setFolderArtworkError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The folder-artwork preview could not be created.",
+          "Review the album folder and try again. No file was created.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2081,7 +2140,11 @@ export function App(): React.JSX.Element {
         await refreshCatalog();
       } else {
         setFolderArtworkError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The folder artwork was not created.",
+          "Review the current preview or create a fresh one before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2101,7 +2164,11 @@ export function App(): React.JSX.Element {
       setArtworkUndoPreview(result.value);
     } else {
       setHistoryError(result.error.message);
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "The artwork restore preview could not be created.",
+        "Reload the history or review the current files before trying again.",
+        [result.error.message],
+      );
     }
   };
 
@@ -2129,7 +2196,11 @@ export function App(): React.JSX.Element {
         if (selectedAlbum) await refreshEditHistory(selectedAlbum.id);
       } else {
         setHistoryError(result.error.message);
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The earlier artwork was not restored.",
+          "Review the current files and create a fresh restore preview before trying again.",
+          [result.error.message],
+        );
       }
     } finally {
       setBusy(false);
@@ -2222,7 +2293,7 @@ export function App(): React.JSX.Element {
       musicBrainzRecordingId: recordingId,
     }));
     setMetadataDraftSource(
-      "MusicBrainz recording ID drafted from an explicitly selected AcoustID candidate. Review the ordinary tag preview before writing.",
+      "Added the MusicBrainz recording ID from the AcoustID match you selected. Review it with the other changes before writing.",
     );
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
@@ -2848,7 +2919,10 @@ export function App(): React.JSX.Element {
           (candidate) => candidate.id === result.value?.id,
         );
         if (saved) setProfile(saved);
-        setNotice(`DAP target selected: ${result.value.targetPath}`, "success");
+        setNotice(
+          `Player folder selected: ${result.value.targetPath}`,
+          "success",
+        );
       }
     } else if (!result.ok) setNotice(result.error.message, "error");
   };
@@ -3122,7 +3196,7 @@ export function App(): React.JSX.Element {
         setSyncProfileNameDraft("");
         if (await refreshSyncProfiles())
           setNotice(
-            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, manifests, and current sync preview are unchanged.`,
+            `Renamed DAP profile “${saved.name}” to “${result.value.name}”. Its target, albums, saved records of synced files, and current sync preview are unchanged.`,
             "success",
           );
       } else setNotice(result.error.message, "error");
@@ -3147,11 +3221,11 @@ export function App(): React.JSX.Element {
         setSyncTargetPreview(result.value);
         setNotice(
           result.value.identityRefresh
-            ? `Review the persistent volume identity refresh for “${saved.name}”. No files have been changed.`
-            : `Review the DAP target change for “${saved.name}”. No files have been changed.`,
+            ? `Review the updated storage details for “${saved.name}”. No files have been changed.`
+            : `Review the player folder change for “${saved.name}”. No files have been changed.`,
         );
       } else if (!result.ok) setNotice(result.error.message, "error");
-      else setNotice("DAP target selection cancelled.");
+      else setNotice("Player folder selection cancelled.");
     } finally {
       setBusy(false);
     }
@@ -3180,8 +3254,8 @@ export function App(): React.JSX.Element {
         await refreshSyncProfiles();
         setNotice(
           syncTargetPreview.identityRefresh
-            ? `Refreshed the persistent volume identity for “${result.value.name}”. Existing sync history was preserved; create a fresh preview before applying.`
-            : `Changed “${result.value.name}” to ${result.value.targetPath}. Existing sync history was preserved; create a fresh preview before applying.`,
+            ? `Updated the saved storage details for “${result.value.name}”. Completed syncs were kept; create a fresh preview before applying.`
+            : `Changed “${result.value.name}” to ${result.value.targetPath}. Completed syncs were kept; create a fresh preview before applying.`,
           "success",
         );
       } else setNotice(result.error.message, "error");
@@ -3262,22 +3336,32 @@ export function App(): React.JSX.Element {
         targetVolumeConfirmed: syncTargetVolumeConfirmed,
       });
       if (result.ok) {
-        if (result.value.outcome === "completed")
-          setNotice(
-            `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Manifest written last.${result.value.errors.length > 0 ? ` Internal cleanup needs recovery: ${result.value.errors.join(" ")}` : ""}`,
-            result.value.errors.length === 0 ? "success" : "error",
-          );
-        else if (result.value.outcome === "cancelled")
-          setNotice(
-            result.value.errors.length === 0
-              ? `Sync cancelled safely after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}; ${result.value.rolledBack} rolled back. No new manifest was committed, and this preview can be retried.`
-              : `Sync cancelled after ${result.value.copied} completed ${result.value.copied === 1 ? "copy" : "copies"}, but rollback needs attention. ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy was" : "copies were"} restored. No new manifest was committed. ${result.value.errors.join(" ")}`,
-            result.value.errors.length === 0 ? "info" : "error",
-          );
-        else
-          setNotice(
-            `Sync stopped after rolling back ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "copy" : "copies"}. No new manifest was committed, and this preview can be retried. ${result.value.errors.join(" ")}`,
-            "error",
+        if (result.value.outcome === "completed") {
+          const summary = `Sync complete: ${result.value.copied} copied, ${result.value.replaced} replaced, ${result.value.removed} removed, and ${result.value.unchanged} skipped unchanged. Outgroove saved its new record of synced files after all other work finished.`;
+          if (result.value.errors.length === 0) setNotice(summary, "success");
+          else
+            setErrorNotice(
+              "The sync finished, but temporary Outgroove files still need attention.",
+              "Open Sync recovery to review the remaining temporary files.",
+              result.value.errors,
+            );
+        } else if (result.value.outcome === "cancelled") {
+          const summary = `Sync cancelled after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files.`;
+          if (result.value.errors.length === 0)
+            setNotice(
+              `Sync cancelled safely after ${result.value.copied} ${result.value.copied === 1 ? "copy" : "copies"} finished. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files. You can review and try this plan again.`,
+            );
+          else
+            setErrorNotice(
+              `${summary} Restoring the player still needs attention.`,
+              "Open Sync recovery before creating another plan for this profile.",
+              result.value.errors,
+            );
+        } else
+          setErrorNotice(
+            `The sync stopped. Outgroove restored ${result.value.rolledBack} completed ${result.value.rolledBack === 1 ? "change" : "changes"} and did not save a new record of synced files.`,
+            "Review Sync recovery and the technical details before creating a fresh preview.",
+            result.value.errors,
           );
         if (result.value.outcome === "completed") {
           setSyncCleanupEnabled(false);
@@ -3286,7 +3370,12 @@ export function App(): React.JSX.Element {
           await refreshSyncHistory(applyingPlan.profileId);
         }
         await refreshSyncRecoveries();
-      } else setNotice(result.error.message, "error");
+      } else
+        setErrorNotice(
+          "The sync could not be applied.",
+          "Check the player connection and create a fresh preview before trying again.",
+          [result.error.message],
+        );
     } finally {
       setProgress((current) => (current?.job === "sync" ? undefined : current));
       setSyncApplyingPlanId(undefined);
@@ -3301,17 +3390,21 @@ export function App(): React.JSX.Element {
       planId: syncApplyingPlanId,
     });
     if (!result.ok) {
-      setNotice(result.error.message, "error");
+      setErrorNotice(
+        "Outgroove could not request a safe cancellation.",
+        "The sync may still be running. Check Activity before trying again.",
+        [result.error.message],
+      );
       return;
     }
     if (result.value.accepted) {
       setSyncCancellationRequested(true);
       setNotice(
-        "Sync cancellation requested. Outgroove will finish or discard the current temporary copy, then restore files completed by this run.",
+        "Cancelling safely. Outgroove will finish or discard the file it is currently preparing, then restore changes already completed by this sync.",
       );
     } else if (result.value.state === "finalizing")
       setNotice(
-        "The sync is committing its playlist and manifest and can no longer be cancelled safely.",
+        "The sync is saving the playlist and its final record of synced files. This last step cannot be cancelled safely.",
       );
     else setNotice("The sync is no longer running.");
   };
@@ -3327,7 +3420,11 @@ export function App(): React.JSX.Element {
         targetVolumeConfirmed: syncRecoveryTargetVolumeConfirmed,
       });
       if (!result.ok) {
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "No recovery changes were made.",
+          "Review this interrupted sync again before trying recovery.",
+          [result.error.message],
+        );
         await refreshSyncRecoveries();
         setSyncRecoveryFeedback({
           runId: recovery.runId,
@@ -3344,27 +3441,26 @@ export function App(): React.JSX.Element {
         profileName: recovery.profileName,
         status: result.value.complete ? "complete" : "incomplete",
         recovered: result.value.recovered,
-        messages:
-          result.value.errors.length > 0
-            ? result.value.errors
-            : result.value.complete
-              ? ["You can generate a fresh sync plan for this profile."]
-              : [
-                  "Reconnect the target or resolve the reported files, then review recovery again.",
-                ],
+        messages: result.value.errors.length > 0 ? result.value.errors : [],
       });
       if (result.value.complete) {
         await refreshSyncHistory(recovery.profileId);
-        setNotice(
-          result.value.errors.length === 0
-            ? `Interrupted sync recovery complete: ${result.value.recovered} ${result.value.recovered === 1 ? "change" : "changes"} restored or removed. You can preview this profile again.`
-            : `Interrupted sync recovery complete with notes: ${result.value.errors.join(" ")}`,
-          result.value.errors.length === 0 ? "success" : "error",
-        );
+        if (result.value.errors.length === 0)
+          setNotice(
+            `The interrupted sync is now in a safe state: ${result.value.recovered} ${result.value.recovered === 1 ? "change was" : "changes were"} restored or removed. You can preview this profile again.`,
+            "success",
+          );
+        else
+          setErrorNotice(
+            "The interrupted sync is safe, but some cleanup notes remain.",
+            "Review the technical details before the next sync.",
+            result.value.errors,
+          );
       } else
-        setNotice(
-          `Sync recovery is incomplete. Reconnect the target or resolve the reported files, then review it again. ${result.value.errors.join(" ")}`,
-          "error",
+        setErrorNotice(
+          "Outgroove could not finish making this interrupted sync safe.",
+          "Reconnect the player or resolve the reported files, then review recovery again.",
+          result.value.errors,
         );
     } finally {
       setBusy(false);
@@ -3384,7 +3480,11 @@ export function App(): React.JSX.Element {
       });
       if (result.ok) setSyncRecoveryPreview(result.value);
       else {
-        setNotice(result.error.message, "error");
+        setErrorNotice(
+          "The recovery review could not be opened.",
+          "Reconnect the player if needed, then review the interrupted sync again.",
+          [result.error.message],
+        );
         setSyncRecoveryFeedback({
           runId: recovery.runId,
           profileName: recovery.profileName,
@@ -3488,8 +3588,9 @@ export function App(): React.JSX.Element {
     if (!selectedAlbum) return;
     albumIdentificationRequestId.current += 1;
     setAlbumIdentificationLoading(false);
-    setAlbumIdentificationError(
-      "Search cancelled. No Library metadata changed.",
+    setAlbumIdentificationError(undefined);
+    setNotice(
+      "Cancelled the MusicBrainz album search. Your Library is unchanged.",
     );
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
@@ -3503,7 +3604,9 @@ export function App(): React.JSX.Element {
     const requestId = ++albumIdentificationRequestId.current;
     setReleaseTracksReleaseId(candidate.releaseId);
     setReleaseTracksLoading(true);
-    setReleaseTracksResult(undefined);
+    setReleaseTracksResult((current) =>
+      current?.release.releaseId === candidate.releaseId ? current : undefined,
+    );
     setReleaseTracksError(undefined);
     setMusicBrainzMappingPreview(undefined);
     setMusicBrainzMappingResult(undefined);
@@ -3522,8 +3625,9 @@ export function App(): React.JSX.Element {
     if (!selectedAlbum) return;
     albumIdentificationRequestId.current += 1;
     setReleaseTracksLoading(false);
-    setReleaseTracksError(
-      "Tracklist request cancelled. No Library metadata changed.",
+    setReleaseTracksError(undefined);
+    setNotice(
+      "Cancelled the MusicBrainz track-list request. Your Library is unchanged.",
     );
     void window.outgroove.cancelMusicBrainzAlbumCandidates({
       albumId: selectedAlbum.id,
@@ -3537,7 +3641,9 @@ export function App(): React.JSX.Element {
     const requestId = ++coverArtRequestId.current;
     setCoverArtReleaseId(candidate.releaseId);
     setCoverArtLoading(true);
-    setCoverArtResult(undefined);
+    setCoverArtResult((current) =>
+      current?.sent.releaseId === candidate.releaseId ? current : undefined,
+    );
     setCoverArtError(undefined);
     setCoverArtPrepareError(undefined);
     const result = await window.outgroove.loadCoverArtArchiveArtwork({
@@ -3590,12 +3696,13 @@ export function App(): React.JSX.Element {
     coverArtRequestId.current += 1;
     setCoverArtLoading(false);
     setCoverArtPreparing(false);
-    if (preparing)
-      setCoverArtPrepareError(
-        "Artwork preparation cancelled. No Library artwork changed.",
-      );
-    else
-      setCoverArtError("Cover request cancelled. No Library artwork changed.");
+    if (preparing) setCoverArtPrepareError(undefined);
+    else setCoverArtError(undefined);
+    setNotice(
+      preparing
+        ? "Cancelled the full-size artwork request. Your Library is unchanged."
+        : "Cancelled the cover preview request. Your Library is unchanged.",
+    );
     void window.outgroove.cancelCoverArtArchiveArtwork({
       albumId: selectedAlbum.id,
     });
@@ -3661,13 +3768,13 @@ export function App(): React.JSX.Element {
     );
     if (candidateDraft.fields.length === 0) {
       setNotice(
-        "All safely supported MusicBrainz values are already current or unavailable. No draft was created.",
+        "All album details Outgroove can use already match or are unavailable. No draft was created.",
       );
       return;
     }
-    const source = `Drafted ${candidateDraft.fields.length} supported ${
+    const source = `Added ${candidateDraft.fields.length} ${
       candidateDraft.fields.length === 1 ? "field" : "fields"
-    } from MusicBrainz release ${candidate.releaseId}. Review every selected value; no preview or write has started.`;
+    } from the selected MusicBrainz release. Review every value before continuing; no file has changed.`;
     setMetadataDraftSource(source);
     setTrackEditPreview(undefined);
     setTrackEditResult(undefined);
@@ -4039,7 +4146,7 @@ export function App(): React.JSX.Element {
                     setPageOffset(0);
                     if (view === "data-quality")
                       setNotice(
-                        "Checking album data quality in a background worker…",
+                        "Checking album quality. You can keep browsing while Outgroove works.",
                       );
                   }}
                 >
@@ -4064,7 +4171,7 @@ export function App(): React.JSX.Element {
                         setQualityFilter(filter);
                         setPageOffset(0);
                         setNotice(
-                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()} in a background worker…`,
+                          `Checking ${diagnosticFilterLabels[filter].toLowerCase()}. You can keep browsing while Outgroove works.`,
                         );
                       }}
                     >
@@ -4167,11 +4274,13 @@ export function App(): React.JSX.Element {
                     aria-labelledby="library-scan-tools-title"
                   >
                     <div>
-                      <p className="eyebrow">Local collection</p>
-                      <h2 id="library-scan-tools-title">Folders & scanning</h2>
+                      <p className="eyebrow">Keep your Library current</p>
+                      <h2 id="library-scan-tools-title">
+                        Folders and scanning
+                      </h2>
                       <p>
-                        Add and scan a folder explicitly. Scanning remains local
-                        and read-only.
+                        Add a folder when you’re ready. Scanning stays on this
+                        device and never changes your music.
                       </p>
                     </div>
                     <div className="actions">
@@ -4195,7 +4304,7 @@ export function App(): React.JSX.Element {
                   >
                     <div className="section-heading">
                       <div>
-                        <p className="eyebrow">Local shortcuts</p>
+                        <p className="eyebrow">Get back here quickly</p>
                         <h2 id="saved-filters-title">Saved Library filters</h2>
                       </div>
                       <form
@@ -4229,8 +4338,8 @@ export function App(): React.JSX.Element {
                       </form>
                     </div>
                     <p>
-                      Saves the active search and view. Page position and exact
-                      album-detail routes remain temporary.
+                      Saves the current search and view. Your page position and
+                      open album are not included.
                     </p>
                     {albumIdFilter && (
                       <p>
@@ -4427,7 +4536,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No album artists match this search."
-                    : "The current catalog has no album artists."}
+                    : "No album artists appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4466,7 +4575,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No genres match this search."
-                    : "The current catalog has no genre entries."}
+                    : "No genres appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4494,8 +4603,8 @@ export function App(): React.JSX.Element {
                             setPageOffset(0);
                             setNotice(
                               genre.missing
-                                ? "Showing tracks with no genre tag from the local catalog."
-                                : `Showing tracks tagged ${genre.name} from the local catalog.`,
+                                ? "Showing Library tracks with no genre tag."
+                                : `Showing Library tracks tagged ${genre.name}.`,
                             );
                           }}
                         >
@@ -4516,7 +4625,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No formats match this search."
-                    : "The current catalog has no formats."}
+                    : "No audio formats appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4538,7 +4647,7 @@ export function App(): React.JSX.Element {
                             setQuery("");
                             setPageOffset(0);
                             setNotice(
-                              `Showing tracks in ${format.name} format from the local catalog.`,
+                              `Showing Library tracks in ${format.name} format.`,
                             );
                           }}
                         >
@@ -4557,7 +4666,7 @@ export function App(): React.JSX.Element {
                 <p>
                   {query
                     ? "No folders match this search."
-                    : "The current catalog has no folders."}
+                    : "No music folders appear in your Library."}
                 </p>
               ) : (
                 <ul>
@@ -4584,7 +4693,7 @@ export function App(): React.JSX.Element {
                             setQuery("");
                             setPageOffset(0);
                             setNotice(
-                              `Showing tracks in ${folder.path} from the local catalog.`,
+                              `Showing Library tracks in ${folder.path}.`,
                             );
                           }}
                         >
@@ -4611,7 +4720,7 @@ export function App(): React.JSX.Element {
                           : `No tracks use the ${trackGenreFilter.name} genre.`
                         : trackFormatFilter
                           ? `No tracks use ${trackFormatFilter} format.`
-                          : "The current catalog has no tracks."}
+                          : "No tracks appear in your Library."}
                 </p>
               ) : (
                 <div className="track-table-scroll">
@@ -4703,7 +4812,7 @@ export function App(): React.JSX.Element {
                       ? "The track may have been removed or rescanned. Show all albums to continue browsing."
                       : libraryView === "data-quality"
                         ? qualityFilter === "all"
-                          ? "The current catalog has no album data-quality findings."
+                          ? "No albums in your Library need this kind of review."
                           : `No albums have ${diagnosticFilterLabels[qualityFilter].toLowerCase()} findings.`
                         : "Select a folder containing disposable fixtures or files you explicitly intend Outgroove to scan. Scanning and browsing stay offline."}
               </p>
@@ -4805,9 +4914,8 @@ export function App(): React.JSX.Element {
                   >
                     <h3>Album data quality</h3>
                     <p>
-                      Findings come from the current local catalog. They select
-                      a review workflow but never infer, preview, or write a
-                      correction.
+                      These checks use only your current Library. They point out
+                      possible problems but never guess or apply a correction.
                     </p>
                     {albumDiagnostics.length === 0 ? (
                       <p>Status: No data-quality findings for this album.</p>
@@ -4924,11 +5032,11 @@ export function App(): React.JSX.Element {
         <main className="sync-view">
           <section className="sync-workflow-header">
             <div>
-              <p className="eyebrow">Folder-backed DAP sync</p>
-              <h2>Prepare, review, then copy</h2>
+              <p className="eyebrow">Copy music to your player</p>
+              <h2>Choose, preview, then sync</h2>
               <p>
-                Source audio is never modified. Every target plan remains
-                preview-only until you explicitly confirm it.
+                Your Library files are never changed. Outgroove shows every
+                change to your player before asking you to confirm.
               </p>
             </div>
             <SyncNavigation
@@ -4947,8 +5055,11 @@ export function App(): React.JSX.Element {
                   review
                 </strong>
                 <span>
-                  Database restore remains blocked until pending recovery is
-                  completed.
+                  Restoring a backup stays unavailable until{" "}
+                  {syncRecoveries.length === 1
+                    ? "this sync is"
+                    : "these syncs are"}{" "}
+                  back in a safe state.
                 </span>
               </div>
               <button
@@ -4979,7 +5090,7 @@ export function App(): React.JSX.Element {
               onCancelRename={cancelSyncProfileRename}
               onCancelTarget={() => {
                 setSyncTargetPreview(undefined);
-                setNotice("Discarded the DAP target change preview.");
+                setNotice("Discarded the player folder change preview.");
               }}
               onCancelRemoval={() => {
                 setSyncProfileRemovalPreview(undefined);
@@ -5151,7 +5262,7 @@ export function App(): React.JSX.Element {
             onClose={() => setLibraryAlbumEditingTool(undefined)}
           >
             <header className="album-editing-heading">
-              <p className="eyebrow">Album editing</p>
+              <p className="eyebrow">Make album changes</p>
               <h2>{selectedAlbum.title}</h2>
               <p>
                 Drafts and selections stay local until a fresh preview is

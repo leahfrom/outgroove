@@ -135,17 +135,32 @@ describe("SettingsView", () => {
       />,
     );
 
-    const preview = screen.getByLabelText("Database restore confirmation");
+    const preview = screen.getByLabelText("Backup restore confirmation");
     expect(
       within(preview).getByRole("heading", {
-        name: "Replace the current Outgroove database?",
+        name: "Replace your current Outgroove data?",
       }),
     ).toHaveFocus();
     expect(preview).toHaveTextContent(
-      "An automatic rollback backup is created and verified first",
+      "Outgroove saves and checks a safety backup of what you have now",
     );
+    expect(preview).toHaveTextContent("Library folders2");
+    const compatibilitySummary = within(preview).getByText(
+      "Backup compatibility details",
+    );
+    const compatibilityDetails = compatibilitySummary.closest("details");
+    if (!compatibilityDetails)
+      throw new Error("Backup compatibility details missing");
+    expect(compatibilityDetails).not.toHaveAttribute("open");
+    const compatibilityCopy = within(compatibilityDetails).getByText(
+      /Outgroove backup format 18/u,
+    );
+    expect(compatibilityCopy).not.toBeVisible();
+    await user.click(compatibilitySummary);
+    expect(compatibilityDetails).toHaveAttribute("open");
+    expect(compatibilityCopy).toBeVisible();
     const keepCurrent = within(preview).getByRole("button", {
-      name: "Keep current database",
+      name: "Keep current Outgroove data",
     });
     keepCurrent.focus();
     await user.keyboard("{Enter}");
@@ -169,10 +184,10 @@ describe("SettingsView", () => {
     );
 
     expect(screen.getByText(/paths, filenames, tags/iu)).toHaveTextContent(
-      "provider responses, stable identifiers, and error text are excluded",
+      "online results, identifying IDs, and error details",
     );
     const exportButton = screen.getByRole("button", {
-      name: "Export path-redacted report",
+      name: "Save support report",
     });
     exportButton.focus();
     await user.keyboard("{Enter}");

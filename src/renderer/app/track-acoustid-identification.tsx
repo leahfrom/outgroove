@@ -4,6 +4,7 @@ import type {
 } from "../../shared/contracts/api";
 import type { CatalogTrack } from "../../shared/domain/catalog";
 import { formatDuration } from "../../shared/domain/audio-technical";
+import { ProviderRequestError } from "./provider-request-error";
 
 function artistLabel(
   candidate: AcoustIdTrackLookupResultDto["candidates"][number],
@@ -38,43 +39,49 @@ export function TrackAcoustIdIdentification({
   return (
     <details className="track-identification" open={active}>
       <summary>
-        <span>Identify recording with AcoustID</span>
-        <small>
-          Optional local fingerprint · explicit network confirmation
-        </small>
+        <span>Try identifying this recording</span>
+        <small>Creates a fingerprint here before connecting</small>
       </summary>
       <div className="track-identification-body">
         <p>
-          Outgroove can analyze this file locally with Chromaprint. No audio,
-          path, artwork, or existing tags are uploaded. After the local preview,
-          you separately decide whether to send only the fingerprint and whole
-          duration to AcoustID.
+          Outgroove can create a fingerprint from this file on your device. Your
+          audio, file path, artwork, and tags are never uploaded. You decide
+          separately whether to send the fingerprint and track length to
+          AcoustID.
         </p>
         {!preview && !result && (
           <div className="actions">
             <button disabled={busy} onClick={onPreview} type="button">
-              {busy ? "Fingerprinting locally…" : "Create local fingerprint"}
+              {busy ? "Creating fingerprint…" : "Create fingerprint"}
             </button>
             {busy && (
               <button onClick={onCancel} type="button">
-                Cancel fingerprinting
+                Cancel
               </button>
             )}
           </div>
         )}
 
         {error && (
-          <div
-            aria-label="AcoustID identification error"
-            className="workflow-error"
-            role="alert"
-          >
-            <strong>Identification stopped</strong>
-            <p>{error}</p>
+          <>
+            <ProviderRequestError
+              details={[error]}
+              guidance={
+                preview
+                  ? "Your fingerprint is still ready and no metadata changed. Check your connection, then send it again when you’re ready."
+                  : "No metadata changed and nothing was sent. If the file changed, rescan it before creating a new fingerprint."
+              }
+              label="AcoustID identification error"
+              title={
+                preview
+                  ? "AcoustID couldn’t finish this lookup."
+                  : "Outgroove couldn’t create this fingerprint."
+              }
+            />
             <button onClick={onCancel} type="button">
               Clear
             </button>
-          </div>
+          </>
         )}
 
         {preview && (
@@ -82,29 +89,39 @@ export function TrackAcoustIdIdentification({
             aria-label="Confirm AcoustID fingerprint lookup"
             className="confirmation-stage"
           >
-            <h4>Review the exact outgoing data</h4>
+            <h4>Review what will be sent</h4>
             <dl className="track-identification-payload">
               <div>
-                <dt>Algorithm</dt>
-                <dd>{preview.sent.fingerprintAlgorithm}</dd>
-              </div>
-              <div>
-                <dt>Whole duration</dt>
+                <dt>Track length</dt>
                 <dd>{formatDuration(preview.sent.durationSeconds)}</dd>
               </div>
-              <div>
-                <dt>Fingerprint length</dt>
-                <dd>{preview.sent.fingerprintCharacters} characters</dd>
-              </div>
-              <div>
-                <dt>Fingerprint SHA-256</dt>
-                <dd className="identifier">{preview.sent.fingerprintSha256}</dd>
-              </div>
             </dl>
+            <details className="metadata-more-fields">
+              <summary>
+                <span>Fingerprint check details</span>
+                <small>Method, size, and fingerprint check</small>
+              </summary>
+              <dl className="track-identification-payload">
+                <div>
+                  <dt>Algorithm</dt>
+                  <dd>{preview.sent.fingerprintAlgorithm}</dd>
+                </div>
+                <div>
+                  <dt>Fingerprint length</dt>
+                  <dd>{preview.sent.fingerprintCharacters} characters</dd>
+                </div>
+                <div>
+                  <dt>Fingerprint check (SHA-256)</dt>
+                  <dd className="identifier">
+                    {preview.sent.fingerprintSha256}
+                  </dd>
+                </div>
+              </dl>
+            </details>
             <p>
-              The fingerprint itself remains inside main until you confirm.
-              AcoustID may return several possible recordings; no result is
-              selected or written automatically.
+              The fingerprint stays on this device until you confirm. AcoustID
+              may suggest several recordings; Outgroove will not choose or write
+              any result automatically.
             </p>
             <div className="actions">
               <button
@@ -113,10 +130,10 @@ export function TrackAcoustIdIdentification({
                 onClick={onConfirm}
                 type="button"
               >
-                {busy ? "Checking AcoustID…" : "Send fingerprint to AcoustID"}
+                {busy ? "Checking AcoustID…" : "Send and find matches"}
               </button>
               <button onClick={onCancel} type="button">
-                {busy ? "Cancel lookup" : "Discard fingerprint"}
+                {busy ? "Cancel search" : "Discard fingerprint"}
               </button>
             </div>
           </section>
@@ -132,10 +149,10 @@ export function TrackAcoustIdIdentification({
                 <h4>Possible recordings</h4>
                 <p>
                   {result.source === "network"
-                    ? "Fresh AcoustID response"
+                    ? "Results from AcoustID"
                     : result.source === "cache"
-                      ? "Cached AcoustID response"
-                      : "Stale cached response; AcoustID was unavailable"}
+                      ? "Saved results"
+                      : "Older saved results; AcoustID was unavailable"}
                 </p>
               </div>
               <button onClick={onCancel} type="button">
@@ -143,7 +160,7 @@ export function TrackAcoustIdIdentification({
               </button>
             </header>
             {result.candidates.length === 0 ? (
-              <p>No AcoustID candidates matched this fingerprint.</p>
+              <p>No recordings matched this fingerprint.</p>
             ) : (
               <ol>
                 {result.candidates.map((candidate) => (
@@ -159,21 +176,10 @@ export function TrackAcoustIdIdentification({
                           <p>{artistLabel(candidate)}</p>
                         </div>
                         <strong>
-                          {Math.round(candidate.score * 100)}% fingerprint
-                          similarity
+                          {Math.round(candidate.score * 100)}% fingerprint match
                         </strong>
                       </header>
                       <dl>
-                        <div>
-                          <dt>MusicBrainz recording ID</dt>
-                          <dd className="identifier">
-                            {candidate.recordingId ?? "Not provided"}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>AcoustID</dt>
-                          <dd className="identifier">{candidate.acoustId}</dd>
-                        </div>
                         <div>
                           <dt>Known duration</dt>
                           <dd>
@@ -195,6 +201,24 @@ export function TrackAcoustIdIdentification({
                             .join(" · ")}
                         </p>
                       )}
+                      <details className="metadata-more-fields">
+                        <summary>
+                          <span>MusicBrainz and AcoustID IDs</span>
+                          <small>AcoustID and MusicBrainz references</small>
+                        </summary>
+                        <dl>
+                          <div>
+                            <dt>MusicBrainz recording ID</dt>
+                            <dd className="identifier">
+                              {candidate.recordingId ?? "Not provided"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>AcoustID</dt>
+                            <dd className="identifier">{candidate.acoustId}</dd>
+                          </div>
+                        </dl>
+                      </details>
                       {candidate.recordingId && (
                         <button
                           disabled={
@@ -209,8 +233,8 @@ export function TrackAcoustIdIdentification({
                         >
                           {track.tags.musicBrainzRecordingId ===
                           candidate.recordingId
-                            ? "Recording ID already set"
-                            : "Use recording ID in tag draft"}
+                            ? "This match is already saved"
+                            : "Use this match in the draft"}
                         </button>
                       )}
                     </article>

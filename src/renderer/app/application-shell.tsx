@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { TechnicalDetails } from "./technical-details";
+
 export const appViews = [
   "library",
   "radar",
@@ -14,6 +16,8 @@ export type NoticeTone = "info" | "success" | "error";
 export interface AppNotice {
   readonly message: string;
   readonly tone: NoticeTone;
+  readonly guidance?: string;
+  readonly details?: readonly string[];
 }
 
 const viewCopy: Record<
@@ -22,23 +26,23 @@ const viewCopy: Record<
 > = {
   library: {
     label: "Library",
-    description: "Browse, search, and inspect your local collection.",
+    description: "Browse, search, and explore your music collection.",
   },
   radar: {
     label: "Radar",
-    description: "Save exact artist identities for release discovery.",
+    description: "Keep up with new releases from artists you follow.",
   },
   sync: {
     label: "Sync",
-    description: "Prepare and review folder-backed DAP copies.",
+    description: "Choose music, preview changes, and copy it to your player.",
   },
   activity: {
     label: "Activity",
-    description: "Follow long-running work, failures, and recovery.",
+    description: "See what Outgroove is doing and what needs your attention.",
   },
   settings: {
     label: "Settings",
-    description: "Manage Library folders, database safety, and diagnostics.",
+    description: "Manage music folders, backups, and support reports.",
   },
 };
 
@@ -62,7 +66,7 @@ export function ApplicationShell({
     <div className="application-shell">
       <aside className="primary-sidebar">
         <div className="brand">
-          <p className="eyebrow">Local-first music library</p>
+          <p className="eyebrow">Your music, on your terms</p>
           <p className="brand-name">Outgroove</p>
         </div>
         <nav aria-label="Primary navigation" className="primary-navigation">
@@ -81,7 +85,8 @@ export function ApplicationShell({
           ))}
         </nav>
         <p className="privacy-note">
-          Audio stays local. Every write and sync requires a review.
+          Your audio stays yours. You review every file change before it
+          happens.
         </p>
       </aside>
       <div className="application-surface">
@@ -105,7 +110,7 @@ export function ApplicationShell({
         )}
         <header className="view-header">
           <div>
-            <p className="eyebrow">Outgroove workspace</p>
+            <p className="eyebrow">Now viewing</p>
             <h1>{current.label}</h1>
             <p>{current.description}</p>
           </div>
@@ -117,16 +122,20 @@ export function ApplicationShell({
             className={`notice ${notice.tone}`}
             role="status"
           >
-            <p>
-              <strong className="notice-label">
-                {notice.tone === "error"
-                  ? "Needs attention"
-                  : notice.tone === "success"
-                    ? "Completed"
-                    : "Update"}
-              </strong>
-              <span>{notice.message}</span>
-            </p>
+            <div className="notice-content">
+              <p>
+                <strong className="notice-label">
+                  {notice.tone === "error"
+                    ? "Needs attention"
+                    : notice.tone === "success"
+                      ? "Completed"
+                      : "Update"}
+                </strong>
+                <span>{notice.message}</span>
+                {notice.guidance && <span>{notice.guidance}</span>}
+              </p>
+              {notice.details && <TechnicalDetails messages={notice.details} />}
+            </div>
             <button
               aria-label="Dismiss notification"
               onClick={onDismissNotice}

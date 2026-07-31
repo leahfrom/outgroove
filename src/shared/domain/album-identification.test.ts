@@ -65,7 +65,7 @@ describe("album candidate comparison", () => {
         "Album title matches",
         "Album artist matches",
         "Track count matches (2)",
-        "Release date agrees at known precision (2026-04)",
+        "Release date matches as far as the saved dates show (2026-04)",
         "Catalog number matches",
       ],
     });
@@ -84,8 +84,8 @@ describe("album candidate comparison", () => {
     expect(compared.conflicts).toEqual([
       "Album title differs",
       "Album artist differs",
-      "Track count differs (Library 2, MusicBrainz 12)",
-      "Release date differs (Library 2026-04, MusicBrainz 2025)",
+      "Track count differs (your Library: 2; MusicBrainz: 12)",
+      "Release date differs (your Library: 2026-04; MusicBrainz: 2025)",
     ]);
   });
 
@@ -137,10 +137,10 @@ describe("album candidate comparison", () => {
     );
     expect(draft.omissions).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("title editing is a separate"),
-        expect.stringContaining("not inferred"),
-        expect.stringContaining("multiple values"),
-        expect.stringContaining("multiple credited artists"),
+        expect.stringContaining("has its own editing step"),
+        expect.stringContaining("can contain several discs"),
+        expect.stringContaining("won’t choose one"),
+        expect.stringContaining("credits more than one artist"),
       ]),
     );
   });
@@ -170,7 +170,7 @@ describe("album candidate comparison", () => {
     expect(draft.fields).toEqual([]);
     expect(draft.omissions).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("multiple current values"),
+        expect.stringContaining("already has more than one"),
       ]),
     );
   });
@@ -262,7 +262,9 @@ describe("album candidate comparison", () => {
       musicBrainzRecordingId: "22222222-2222-4222-8222-222222222222",
       musicBrainzReleaseTrackId: "11111111-1111-4111-8111-111111111111",
     });
-    expect(draft.omissions.join(" ")).toContain("multiple values");
-    expect(draft.omissions.join(" ")).toContain("multiple credited artists");
+    expect(draft.omissions.join(" ")).toContain(
+      "MusicBrainz lists more than one ISRC",
+    );
+    expect(draft.omissions.join(" ")).toContain("credits more than one artist");
   });
 });

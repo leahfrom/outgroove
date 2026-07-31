@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { TechnicalDetails } from "./technical-details";
+
 interface WriteResultItem {
   readonly fileId: string;
   readonly path: string;
@@ -60,9 +62,9 @@ export function WorkbenchRequestError({
       role="alert"
       tabIndex={-1}
     >
-      <strong>The request could not be completed.</strong>
-      <span>{message}</span>
+      <strong>Outgroove couldn’t complete this step.</strong>
       <span>{recovery}</span>
+      <TechnicalDetails messages={[message]} />
     </div>
   );
 }
@@ -116,10 +118,10 @@ export function WorkbenchConfirmation({
       {children}
       {blocked && (
         <div className="workflow-error" role="alert">
-          <strong>Confirmation is blocked.</strong>
+          <strong>These changes can’t be confirmed yet.</strong>
           <span>
-            Review the per-file warnings, return to the draft, and create a
-            fresh preview before writing.
+            Check the warnings below. Then return to the draft and create a new
+            preview.
           </span>
         </div>
       )}
@@ -169,20 +171,27 @@ export function WorkbenchWriteResult({
       <p className="eyebrow">Step 3 · Result</p>
       <h4>
         {failed === 0
-          ? `${subject} re-read and verified`
-          : `${verified} verified; ${failed} need attention`}
+          ? `${subject} complete`
+          : `${verified} confirmed; ${failed} couldn’t be confirmed`}
       </h4>
       <p>
         {failed === 0
-          ? `Outgroove re-read all ${verified} written ${verified === 1 ? "file" : "files"} and verified the requested metadata.`
-          : "Verified files completed safely. A failed item is never reported as verified; review its error before creating a fresh preview."}
+          ? `Outgroove checked ${verified === 1 ? "the file" : `all ${verified} files`} after writing and confirmed the requested changes.`
+          : "Outgroove checked each file after writing. Review any file it couldn’t confirm before trying again."}
       </p>
       <ul className="workflow-result-list">
         {results.map((result) => (
           <li key={result.fileId}>
             <strong>{result.path}</strong>
-            <span>{result.verified ? "Verified" : "Needs attention"}</span>
-            {result.error && <span>{result.error}</span>}
+            <span>
+              {result.verified ? "Change confirmed" : "Check this file"}
+            </span>
+            {result.error && (
+              <TechnicalDetails
+                messages={[result.error]}
+                summary="Why Outgroove couldn’t confirm this file"
+              />
+            )}
           </li>
         ))}
       </ul>

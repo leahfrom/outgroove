@@ -1,4 +1,5 @@
 import type { LibraryRootDto, ScanJobDto } from "../../shared/contracts/api";
+import { TechnicalDetails } from "./technical-details";
 
 export function LibraryOnboarding({
   busy,
@@ -34,7 +35,7 @@ export function LibraryOnboarding({
       >
         <p className="eyebrow">Your local collection</p>
         <h2 id="library-onboarding-loading">Opening your Library…</h2>
-        <p>Checking your local catalog and watched folders.</p>
+        <p>Checking your saved Library and watched folders.</p>
       </main>
     );
 
@@ -55,9 +56,11 @@ export function LibraryOnboarding({
             You will review the folder before the first scan starts.
           </p>
           {setupError && (
-            <p className="workflow-error" role="alert">
-              {setupError}
-            </p>
+            <div className="workflow-error" role="alert">
+              <strong>The folder could not be selected.</strong>
+              <span>Try choosing your first Library folder again.</span>
+              <TechnicalDetails messages={[setupError]} />
+            </div>
           )}
           <button
             className="primary"
@@ -86,7 +89,8 @@ export function LibraryOnboarding({
           <li>
             <strong>You stay in control</strong>
             <span>
-              Metadata writes and DAP copies remain separate reviewed workflows.
+              Metadata writes and copies to a DAP (digital audio player) remain
+              separate reviewed workflows.
             </span>
           </li>
         </ul>
@@ -139,14 +143,24 @@ export function LibraryOnboarding({
           <strong>{selectedRoot.path}</strong>
         </p>
         {setupError && (
-          <p className="workflow-error" role="alert">
-            {setupError}
-          </p>
+          <div className="workflow-error" role="alert">
+            <strong>The scan could not start.</strong>
+            <span>
+              Check that the folder is still connected and available, then try
+              again.
+            </span>
+            <TechnicalDetails messages={[setupError]} />
+          </div>
         )}
         {selectedScan?.error && (
-          <p className="workflow-error" role="alert">
-            {selectedScan.error}
-          </p>
+          <div className="workflow-error" role="alert">
+            <strong>The scan stopped before it finished.</strong>
+            <span>
+              Your existing Library is still available. Reconnect the folder if
+              needed, then retry the scan.
+            </span>
+            <TechnicalDetails messages={[selectedScan.error]} />
+          </div>
         )}
         {scanActive ? (
           <>
@@ -166,9 +180,9 @@ export function LibraryOnboarding({
           </>
         ) : needsRetry ? (
           <p>
-            The previous catalog remains intact. Retrying uses the same
-            incremental, read-only scan and reports individual file problems
-            without stopping unrelated work.
+            Your previous Library remains intact. Retrying uses the same
+            read-only scan, refreshes only what changed, and reports individual
+            file problems without stopping unrelated work.
           </p>
         ) : completedWithoutMusic ? (
           <p>
@@ -214,12 +228,12 @@ export function LibraryOnboarding({
       <aside className="onboarding-safety-note" aria-label="Scan safety">
         <strong>What happens next</strong>
         <ol>
-          <li>Discover supported audio without following folder loops.</li>
-          <li>Read tags and technical properties in background workers.</li>
-          <li>Keep per-file problems local so other files can finish.</li>
-          <li>Open the resulting albums in Library for inspection.</li>
+          <li>Find supported music in this folder.</li>
+          <li>Read its tags and audio details without changing the files.</li>
+          <li>Skip problem files so the rest of the scan can finish.</li>
+          <li>Show the albums in your Library.</li>
         </ol>
-        <p>No metadata write or DAP sync starts from this scan.</p>
+        <p>This scan does not edit tags or start a sync.</p>
       </aside>
     </main>
   );

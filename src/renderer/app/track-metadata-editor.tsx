@@ -435,13 +435,10 @@ function TrackMetadataEditorComponent(
         description={
           <>
             Editing <strong>{track.tags.title}</strong>
-            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Core identity
-            and numbering stay visible; secondary credits, catalog details,
-            notes, and identifiers are under More fields. One-value fields
-            replace their complete current set and are blocked when exact
-            restoration is unavailable. Totals never alter their numbers.
-            Comment accepts one plain value. MusicBrainz IDs must be UUIDs, BPM
-            is a whole number from 1 to 999, and nothing is inferred.
+            {track.tags.artist ? ` by ${track.tags.artist}` : ""}. Change the
+            fields you want while keeping the current values beside them.
+            Credits, catalog details, notes, and MusicBrainz IDs are under More
+            fields.
           </>
         }
       />
@@ -638,7 +635,7 @@ function TrackMetadataEditorComponent(
         <WorkbenchRequestError
           label="Track metadata request error"
           message={error}
-          recovery="Revise the draft or retry the current confirmation. No unverified change is reported as complete."
+          recovery="Adjust the draft or try the current confirmation again. Nothing is treated as complete until Outgroove verifies it."
         />
       )}
 
@@ -648,7 +645,7 @@ function TrackMetadataEditorComponent(
           busy={busy}
           cancelLabel="Return to track draft"
           confirmLabel="Confirm and write track"
-          description="Outgroove will validate this proposal again, snapshot the current tags, safely replace the file, then re-read and verify every requested field."
+          description="Outgroove will check the file again, save its current tags for recovery, write the change safely, then reopen the file and verify every selected field."
           label="Track metadata confirmation"
           title="Review exact track changes"
           onCancel={onCancelPreview}
