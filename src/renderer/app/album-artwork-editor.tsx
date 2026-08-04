@@ -6,6 +6,7 @@ import type {
   AlbumFolderArtworkResultDto,
   TagEditResultDto,
 } from "../../shared/contracts/api";
+import type { CatalogTrack } from "../../shared/domain/catalog";
 import { TechnicalDetails } from "./technical-details";
 import {
   WorkbenchConfirmation,
@@ -55,6 +56,8 @@ export function AlbumArtworkEditor({
   preview,
   result,
   resultAction,
+  selectedFileIds,
+  tracks,
   onCancelPreview,
   onChoose,
   onConfirm,
@@ -64,6 +67,7 @@ export function AlbumArtworkEditor({
   onPrepareFolderArtwork,
   onPrepareExport,
   onPrepareRemoval,
+  onSelectionChange,
 }: {
   readonly busy: boolean;
   readonly error: string | undefined;
@@ -76,21 +80,36 @@ export function AlbumArtworkEditor({
   readonly preview: AlbumArtworkEditPreviewDto | undefined;
   readonly result: TagEditResultDto | undefined;
   readonly resultAction: "remove" | "replace" | undefined;
+  readonly selectedFileIds: readonly string[];
+  readonly tracks: readonly CatalogTrack[];
   readonly onCancelPreview: () => void;
-  readonly onChoose: () => void;
+  readonly onChoose: (fileIds: readonly string[]) => void;
   readonly onConfirm: () => void;
   readonly onExport: () => void;
   readonly onCancelFolderArtwork?: () => void;
   readonly onConfirmFolderArtwork?: () => void;
   readonly onPrepareFolderArtwork?: () => void;
   readonly onPrepareExport: () => void;
-  readonly onPrepareRemoval: () => void;
+  readonly onPrepareRemoval: (fileIds: readonly string[]) => void;
+  readonly onSelectionChange: (fileIds: readonly string[]) => void;
 }): React.JSX.Element {
+  const selectedIdSet = new Set(selectedFileIds);
   const writableFiles = preview?.files.filter((file) => file.willWrite) ?? [];
   const blockedFiles =
     preview?.files.filter((file) => file.warnings.length > 0) ?? [];
   const removing = preview?.action === "remove";
   const remoteSource = preview?.proposedArtworkSource;
+  const selectedTracks = tracks.filter((track) => selectedIdSet.has(track.id));
+  const selectionLocked = busy || preview !== undefined;
+
+  const toggleTrack = (fileId: string): void => {
+    const next = new Set(selectedFileIds);
+    if (next.has(fileId)) next.delete(fileId);
+    else next.add(fileId);
+    onSelectionChange(
+      tracks.filter((track) => next.has(track.id)).map((track) => track.id),
+    );
+  };
 
   return (
     <section
@@ -106,11 +125,70 @@ export function AlbumArtworkEditor({
             : "Choose one local JPEG or PNG. Outgroove embeds it only in supported MP3 and FLAC files; folder artwork and every non-front embedded picture remain untouched."
         }
       />
+      {!remoteSource && (
+        <fieldset
+          className="artwork-track-selection"
+          disabled={selectionLocked}
+        >
+          <legend>Tracks for local artwork changes</legend>
+          <p id="artwork-track-selection-description">
+            Choose which tracks receive a local replacement or front-cover
+            removal. The exact files are checked again in the next review.
+          </p>
+          <div className="workflow-actions artwork-selection-actions">
+            <button
+              disabled={
+                selectionLocked || selectedTracks.length === tracks.length
+              }
+              onClick={() => onSelectionChange(tracks.map((track) => track.id))}
+              type="button"
+            >
+              Select all
+            </button>
+            <button
+              disabled={selectionLocked || selectedTracks.length === 0}
+              onClick={() => onSelectionChange([])}
+              type="button"
+            >
+              Clear selection
+            </button>
+          </div>
+          <div
+            aria-describedby="artwork-track-selection-description"
+            className="artwork-track-options"
+          >
+            {tracks.map((track) => (
+              <label key={track.id}>
+                <input
+                  checked={selectedIdSet.has(track.id)}
+                  onChange={() => toggleTrack(track.id)}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>
+                    {track.tags.trackNumber
+                      ? `${track.tags.trackNumber}. ${track.tags.title}`
+                      : track.tags.title}
+                  </strong>
+                  <small>{track.format || "Unknown format"}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p aria-live="polite" className="workflow-note">
+            {selectedTracks.length === 0
+              ? "Choose at least one track before preparing a local artwork change."
+              : `${selectedTracks.length} of ${tracks.length} ${tracks.length === 1 ? "track" : "tracks"} selected.`}
+          </p>
+        </fieldset>
+      )}
       <div className="workflow-actions">
         <button
           className="primary"
-          disabled={busy}
-          onClick={onChoose}
+          disabled={
+            busy || selectedTracks.length === 0 || preview !== undefined
+          }
+          onClick={() => onChoose(selectedTracks.map((track) => track.id))}
           type="button"
         >
           Choose JPEG or PNG
@@ -397,8 +475,10 @@ export function AlbumArtworkEditor({
             <div className="workflow-actions">
               <button
                 className="artwork-removal-button"
-                disabled={busy}
-                onClick={onPrepareRemoval}
+                disabled={busy || selectedTracks.length === 0}
+                onClick={() =>
+                  onPrepareRemoval(selectedTracks.map((track) => track.id))
+                }
                 type="button"
               >
                 Preview front-cover removal

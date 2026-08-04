@@ -3244,6 +3244,62 @@ pre {
 .workflow-note {
   color: #526159;
 }
+.artwork-track-selection {
+  margin: 1.25rem 0 0;
+  padding: 1rem;
+  border: 1px solid #c5cec7;
+  border-radius: 10px;
+}
+.artwork-track-selection legend {
+  padding: 0 0.35rem;
+  font-weight: 750;
+}
+.artwork-track-selection > p {
+  margin: 0;
+  color: #526159;
+}
+.artwork-selection-actions {
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.artwork-track-options {
+  display: grid;
+  gap: 0.45rem;
+  max-height: 15rem;
+  overflow: auto;
+}
+.artwork-track-options label {
+  display: flex;
+  gap: 0.7rem;
+  align-items: start;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #d4dcd6;
+  border-radius: 8px;
+  background: #f8faf7;
+}
+.artwork-track-options label:has(input:checked) {
+  border-color: #71927c;
+  background: #eef8f1;
+}
+.artwork-track-options input {
+  flex: 0 0 auto;
+  margin-top: 0.2rem;
+}
+.artwork-track-options span {
+  display: grid;
+  min-width: 0;
+}
+.artwork-track-options strong,
+.artwork-track-options small {
+  overflow-wrap: anywhere;
+}
+.artwork-track-options small {
+  color: #526159;
+}
+.artwork-track-selection > .workflow-note {
+  margin-top: 0.75rem;
+}
 .artwork-proposal,
 .artwork-undo-preview {
   display: grid;

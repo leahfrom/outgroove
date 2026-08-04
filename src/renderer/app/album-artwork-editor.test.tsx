@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -8,7 +9,84 @@ import type {
   AlbumArtworkExportPreviewDto,
   AlbumFolderArtworkPreviewDto,
 } from "../../shared/contracts/api";
+import type { CatalogTrack } from "../../shared/domain/catalog";
 import { AlbumArtworkEditor } from "./album-artwork-editor";
+
+const tracks: readonly CatalogTrack[] = [
+  {
+    id: "3c46b116-1b71-4f86-98d9-78db47fa693e",
+    path: "/fixture/album/track.flac",
+    size: 1024,
+    modifiedMs: 1,
+    format: "FLAC",
+    durationSeconds: 180,
+    scanError: null,
+    tags: {
+      title: "First track",
+      album: "Fixture album",
+      artist: "Fixture artist",
+      albumArtist: "Fixture artist",
+      trackNumber: 1,
+      discNumber: 1,
+      year: "2026",
+    },
+    nativeTags: [],
+  },
+  {
+    id: "ee94f69b-c8cd-48bb-846a-91bb4301d23c",
+    path: "/fixture/album/read-only.m4a",
+    size: 2048,
+    modifiedMs: 1,
+    format: "M4A",
+    durationSeconds: 200,
+    scanError: null,
+    tags: {
+      title: "Second track",
+      album: "Fixture album",
+      artist: "Fixture artist",
+      albumArtist: "Fixture artist",
+      trackNumber: 2,
+      discNumber: 1,
+      year: "2026",
+    },
+    nativeTags: [],
+  },
+];
+const selectionProps = {
+  selectedFileIds: tracks.map((track) => track.id),
+  onSelectionChange: vi.fn(),
+};
+
+function ArtworkSelectionHarness({
+  onChoose,
+}: {
+  readonly onChoose: (fileIds: readonly string[]) => void;
+}): React.JSX.Element {
+  const [selectedFileIds, setSelectedFileIds] = useState(
+    tracks.map((track) => track.id),
+  );
+  return (
+    <AlbumArtworkEditor
+      busy={false}
+      tracks={tracks}
+      selectedFileIds={selectedFileIds}
+      error={undefined}
+      exportError={undefined}
+      exportPreview={undefined}
+      exportResult={undefined}
+      preview={undefined}
+      result={undefined}
+      resultAction={undefined}
+      onCancelPreview={vi.fn()}
+      onChoose={onChoose}
+      onConfirm={vi.fn()}
+      onExport={vi.fn()}
+      onPrepareExport={vi.fn()}
+      onPrepareRemoval={vi.fn()}
+      onSelectionChange={(fileIds) => setSelectedFileIds([...fileIds])}
+    />
+  );
+}
 
 const preview: AlbumArtworkEditPreviewDto = {
   operationId: "36e97945-004e-4771-bf22-b3891bb811c4",
@@ -93,7 +171,9 @@ describe("AlbumArtworkEditor", () => {
     const onConfirm = vi.fn();
     render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -113,8 +193,37 @@ describe("AlbumArtworkEditor", () => {
     const choose = screen.getByRole("button", { name: "Choose JPEG or PNG" });
     choose.focus();
     await user.keyboard("{Enter}");
-    expect(onChoose).toHaveBeenCalledOnce();
+    expect(onChoose).toHaveBeenCalledWith(tracks.map((track) => track.id));
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("selects exact tracks by keyboard before preparing a local change", async () => {
+    const user = userEvent.setup();
+    const onChoose = vi.fn();
+    render(<ArtworkSelectionHarness onChoose={onChoose} />);
+
+    const secondTrack = screen.getByRole("checkbox", {
+      name: /Second track/u,
+    });
+    secondTrack.focus();
+    await user.keyboard(" ");
+    expect(secondTrack).not.toBeChecked();
+    expect(screen.getByText("1 of 2 tracks selected.")).toBeVisible();
+
+    await user.click(
+      screen.getByRole("button", { name: "Choose JPEG or PNG" }),
+    );
+    expect(onChoose).toHaveBeenCalledWith([tracks[0]?.id]);
+
+    await user.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(
+      screen.getByText(
+        "Choose at least one track before preparing a local artwork change.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Choose JPEG or PNG" }),
+    ).toBeDisabled();
   });
 
   it("shows the proposed cover, exact file set, warnings, and confirmed write count", async () => {
@@ -122,7 +231,9 @@ describe("AlbumArtworkEditor", () => {
     const onConfirm = vi.fn();
     render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -143,6 +254,9 @@ describe("AlbumArtworkEditor", () => {
       screen.getByRole("img", { name: "Proposed album cover" }),
     ).toBeVisible();
     const confirmation = screen.getByLabelText("Artwork edit confirmation");
+    expect(
+      screen.getByRole("group", { name: "Tracks for local artwork changes" }),
+    ).toBeDisabled();
     expect(
       within(confirmation).getByText("/fixture/album/track.flac"),
     ).toBeVisible();
@@ -170,7 +284,9 @@ describe("AlbumArtworkEditor", () => {
     const onConfirm = vi.fn();
     render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -195,6 +311,11 @@ describe("AlbumArtworkEditor", () => {
     );
 
     const confirmation = screen.getByLabelText("Artwork edit confirmation");
+    expect(
+      screen.queryByRole("group", {
+        name: "Tracks for local artwork changes",
+      }),
+    ).not.toBeInTheDocument();
     expect(confirmation).toHaveTextContent(
       "Cover Art Archive original from exact MusicBrainz release",
     );
@@ -220,7 +341,9 @@ describe("AlbumArtworkEditor", () => {
     const onExport = vi.fn();
     const { rerender } = render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -257,7 +380,9 @@ describe("AlbumArtworkEditor", () => {
 
     rerender(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={exportPreview}
@@ -292,7 +417,9 @@ describe("AlbumArtworkEditor", () => {
     const onConfirm = vi.fn();
     const { rerender } = render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -320,7 +447,9 @@ describe("AlbumArtworkEditor", () => {
 
     rerender(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -365,7 +494,9 @@ describe("AlbumArtworkEditor", () => {
     const onCancelFolderArtwork = vi.fn();
     const { rerender } = render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -399,7 +530,9 @@ describe("AlbumArtworkEditor", () => {
 
     rerender(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}
@@ -441,7 +574,9 @@ describe("AlbumArtworkEditor", () => {
     const user = userEvent.setup();
     render(
       <AlbumArtworkEditor
+        {...selectionProps}
         busy={false}
+        tracks={tracks}
         error={undefined}
         exportError={undefined}
         exportPreview={undefined}

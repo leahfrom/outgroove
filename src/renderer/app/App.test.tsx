@@ -2119,13 +2119,32 @@ describe("tag edit UI safety states", () => {
     expect(
       within(dialog).getByRole("button", { name: /^Artwork/u }),
     ).toHaveAttribute("aria-current", "page");
+    const trackSelection = within(dialog).getByRole("checkbox", {
+      name: /Track/u,
+    });
+    await user.click(trackSelection);
+    expect(trackSelection).not.toBeChecked();
+    await user.click(
+      within(dialog).getByRole("button", { name: /^Album title/u }),
+    );
+    await user.click(within(dialog).getByRole("button", { name: /^Artwork/u }));
+    expect(
+      within(dialog).getByRole("checkbox", { name: /Track/u }),
+    ).not.toBeChecked();
+    expect(
+      within(dialog).getByRole("button", { name: "Choose JPEG or PNG" }),
+    ).toBeDisabled();
+    await user.click(within(dialog).getByRole("checkbox", { name: /Track/u }));
     const choose = within(dialog).getByRole("button", {
       name: "Choose JPEG or PNG",
     });
     choose.focus();
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(chooseArtwork).toHaveBeenCalledWith({ albumId: album.id }),
+      expect(chooseArtwork).toHaveBeenCalledWith({
+        albumId: album.id,
+        fileIds: album.tracks.map((track) => track.id),
+      }),
     );
     expect(
       await within(dialog).findByLabelText("Artwork edit confirmation"),
@@ -2213,7 +2232,10 @@ describe("tag edit UI safety states", () => {
     prepare.focus();
     await user.keyboard("{Enter}");
     await waitFor(() =>
-      expect(previewRemoval).toHaveBeenCalledWith({ albumId: album.id }),
+      expect(previewRemoval).toHaveBeenCalledWith({
+        albumId: album.id,
+        fileIds: album.tracks.map((track) => track.id),
+      }),
     );
     expect(applyArtwork).not.toHaveBeenCalled();
     expect(

@@ -4,6 +4,7 @@ import {
   acoustIdTrackConfirmRequestSchema,
   acoustIdTrackPreviewRequestSchema,
   addFavoriteArtistRequestSchema,
+  albumArtworkEditPreviewRequestSchema,
   albumArtworkRequestSchema,
   albumIdentificationRequestSchema,
   coverArtArchiveArtworkEditPreviewRequestSchema,
@@ -452,6 +453,32 @@ describe("validated IPC handlers", () => {
       { albumIds: [albumId], path: "/private/library/cover.png" },
     ])
       await expect(handler({}, request)).resolves.toMatchObject({
+        ok: false,
+        error: { code: "INVALID_REQUEST" },
+      });
+  });
+
+  it("accepts only bounded unique track identities for local artwork previews", async () => {
+    const useCase = vi.fn(() => ({ action: "replace" }));
+    const handler = createValidatedHandler(
+      albumArtworkEditPreviewRequestSchema,
+      useCase,
+    );
+    const albumId = "6fdf7677-0e73-4f9a-85fd-6612ef381bdf";
+    const fileId = "3c46b116-1b71-4f86-98d9-78db47fa693e";
+    const request = { albumId, fileIds: [fileId] };
+    await expect(handler({}, request)).resolves.toMatchObject({
+      ok: true,
+      value: { action: "replace" },
+    });
+    expect(useCase).toHaveBeenCalledWith(request);
+    for (const invalid of [
+      { albumId, fileIds: [] },
+      { albumId, fileIds: [fileId, fileId] },
+      { albumId, fileIds: ["not-an-id"] },
+      { albumId, fileIds: [fileId], path: "/private/library/track.flac" },
+    ])
+      await expect(handler({}, invalid)).resolves.toMatchObject({
         ok: false,
         error: { code: "INVALID_REQUEST" },
       });
