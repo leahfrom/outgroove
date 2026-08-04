@@ -81,6 +81,27 @@ describe("preload saved-filter allowlist", () => {
     expect(api).not.toHaveProperty("readFile");
   });
 
+  it("routes local artwork track selection without exposing a path or generic invoke", async () => {
+    electron.invoke.mockResolvedValue({ ok: true, value: null });
+    const request = {
+      albumId: "6fdf7677-0e73-4f9a-85fd-6612ef381bdf",
+      fileIds: ["3c46b116-1b71-4f86-98d9-78db47fa693e"],
+    };
+
+    await api.chooseAlbumArtworkEdit(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.chooseAlbumArtworkEdit,
+      request,
+    );
+    await api.previewAlbumArtworkRemoval(request);
+    expect(electron.invoke).toHaveBeenLastCalledWith(
+      channels.previewAlbumArtworkRemoval,
+      request,
+    );
+    expect(api).not.toHaveProperty("invoke");
+    expect(api).not.toHaveProperty("readFile");
+  });
+
   it("maps MusicBrainz lookup and cancellation to fixed album-ID-only channels", async () => {
     electron.invoke.mockResolvedValue({ ok: true, value: [] });
     const request = {

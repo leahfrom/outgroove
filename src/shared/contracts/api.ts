@@ -230,7 +230,16 @@ export const albumEditUndoPreviewRequestSchema = z
   .object({ operationId: z.uuid() })
   .strict();
 export const albumArtworkEditPreviewRequestSchema = z
-  .object({ albumId: z.uuid() })
+  .object({
+    albumId: z.uuid(),
+    fileIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(500)
+      .refine((fileIds) => new Set(fileIds).size === fileIds.length, {
+        message: "Choose each track only once.",
+      }),
+  })
   .strict();
 export const albumArtworkExportPreviewRequestSchema = z
   .object({ albumId: z.uuid() })

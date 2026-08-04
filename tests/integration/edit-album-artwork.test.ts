@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,7 +97,11 @@ it("previews, confirms, verifies, deduplicates snapshots, and restores album art
     files.map(({ path }) => audioPayloadHash(path)),
   );
 
-  const preview = await editor.preview(albumId, selectedPath);
+  const preview = await editor.preview(
+    albumId,
+    selectedPath,
+    files.map((file) => file.fileId),
+  );
   expect(preview).toMatchObject({
     action: "replace",
     mimeType: "image/png",
@@ -142,6 +146,73 @@ it("previews, confirms, verifies, deduplicates snapshots, and restores album art
     expect(picturesFingerprint((await loadTrack(file.path)).pictures)).toBe(
       beforePictures[index],
     );
+  database.close();
+});
+
+it("changes only explicitly selected album tracks and rejects foreign selection", async () => {
+  const { albumId, database, editor, files, selectedPath, writer } =
+    await createArtworkEditor();
+  const selected = files[0];
+  const unselected = files[1];
+  if (!selected || !unselected) throw new Error("Fixture files missing");
+  const selectedBefore = picturesFingerprint(
+    await writer.readPictures(selected.path),
+  );
+  const unselectedBefore = picturesFingerprint(
+    await writer.readPictures(unselected.path),
+  );
+  const payloads = await Promise.all(
+    files.map(({ path }) => audioPayloadHash(path)),
+  );
+
+  await expect(
+    editor.preview(albumId, selectedPath, [selected.fileId, randomUUID()]),
+  ).rejects.toThrow("Every selected track must belong to this album.");
+  await expect(
+    editor.preview(albumId, selectedPath, [selected.fileId, selected.fileId]),
+  ).rejects.toThrow("Choose each track only once.");
+
+  const preview = await editor.preview(albumId, selectedPath, [
+    selected.fileId,
+  ]);
+  expect(preview.files).toHaveLength(1);
+  expect(preview.files[0]).toMatchObject({
+    fileId: selected.fileId,
+    willWrite: true,
+  });
+  const result = await editor.apply(
+    preview.operationId,
+    preview.confirmationToken,
+    "album-artwork-edit",
+  );
+  expect(result.results).toMatchObject([
+    { fileId: selected.fileId, verified: true, error: null },
+  ]);
+  expect(
+    picturesFingerprint(await writer.readPictures(selected.path)),
+  ).not.toBe(selectedBefore);
+  expect(picturesFingerprint(await writer.readPictures(unselected.path))).toBe(
+    unselectedBefore,
+  );
+  for (const [index, file] of files.entries())
+    expect(await audioPayloadHash(file.path)).toBe(payloads[index]);
+
+  const undoPreview = await editor.previewUndo(preview.operationId);
+  expect(undoPreview.files).toHaveLength(1);
+  const undo = await editor.apply(
+    undoPreview.operationId,
+    undoPreview.confirmationToken,
+    "album-artwork-undo",
+  );
+  expect(undo.results).toMatchObject([
+    { fileId: selected.fileId, verified: true, error: null },
+  ]);
+  expect(picturesFingerprint(await writer.readPictures(selected.path))).toBe(
+    selectedBefore,
+  );
+  expect(picturesFingerprint(await writer.readPictures(unselected.path))).toBe(
+    unselectedBefore,
+  );
   database.close();
 });
 
@@ -262,7 +333,10 @@ it("removes only embedded front covers, preserves audio and other pictures, and 
     files.map(({ path }) => audioPayloadHash(path)),
   );
 
-  const preview = await editor.previewRemoval(albumId);
+  const preview = await editor.previewRemoval(
+    albumId,
+    files.map((file) => file.fileId),
+  );
   expect(preview).toMatchObject({ action: "remove" });
   expect(preview).not.toHaveProperty("proposedArtworkDataUrl");
   expect(
@@ -329,7 +403,10 @@ it("refuses one stale file without aborting the other confirmed artwork removal"
       },
     ]);
   }
-  const preview = await editor.previewRemoval(albumId);
+  const preview = await editor.previewRemoval(
+    albumId,
+    files.map((file) => file.fileId),
+  );
   const first = files[0];
   if (!first) throw new Error("Fixture file missing");
   const current = await writer.readPictures(first.path);

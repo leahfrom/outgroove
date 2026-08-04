@@ -179,12 +179,36 @@ export class EditAlbumArtwork {
     private readonly encoder: ArtworkThumbnailEncoder,
   ) {}
 
+  validateSelection(albumId: string, fileIds: readonly string[]): void {
+    this.selectedTracks(albumId, fileIds);
+  }
+
+  private selectedTracks(albumId: string, fileIds?: readonly string[]) {
+    const album = this.database.getAlbum(albumId);
+    if (!album) throw new Error("Album does not exist.");
+    const selectedIds = fileIds ? new Set(fileIds) : undefined;
+    if (selectedIds && selectedIds.size !== fileIds?.length)
+      throw new Error("Choose each track only once.");
+    const tracks = selectedIds
+      ? album.tracks.filter((track) => selectedIds.has(track.id))
+      : album.tracks;
+    if (selectedIds && tracks.length !== selectedIds.size)
+      throw new Error("Every selected track must belong to this album.");
+    if (tracks.length === 0) throw new Error("Choose at least one track.");
+    return tracks;
+  }
+
   async preview(
     albumId: string,
     selectedPath: string,
+    fileIds: readonly string[],
   ): Promise<AlbumArtworkEditPreviewDto> {
     const selected = await readSelectedArtwork(selectedPath);
-    return this.previewChange(albumId, { action: "replace", selected });
+    return this.previewChange(
+      albumId,
+      { action: "replace", selected },
+      fileIds,
+    );
   }
 
   async previewData(
@@ -198,16 +222,19 @@ export class EditAlbumArtwork {
     });
   }
 
-  async previewRemoval(albumId: string): Promise<AlbumArtworkEditPreviewDto> {
-    return this.previewChange(albumId, { action: "remove" });
+  async previewRemoval(
+    albumId: string,
+    fileIds: readonly string[],
+  ): Promise<AlbumArtworkEditPreviewDto> {
+    return this.previewChange(albumId, { action: "remove" }, fileIds);
   }
 
   private async previewChange(
     albumId: string,
     proposal: ArtworkProposal,
+    fileIds?: readonly string[],
   ): Promise<AlbumArtworkEditPreviewDto> {
-    const album = this.database.getAlbum(albumId);
-    if (!album) throw new Error("Album does not exist.");
+    const tracks = this.selectedTracks(albumId, fileIds);
     const dataUrl =
       proposal.action === "replace"
         ? this.encoder.encode(proposal.selected.picture.data)
@@ -215,7 +242,7 @@ export class EditAlbumArtwork {
     if (proposal.action === "replace" && !dataUrl)
       throw new Error("The selected artwork could not be decoded safely.");
     const files: PendingArtworkFile[] = [];
-    for (const track of album.tracks) {
+    for (const track of tracks) {
       const extension = extname(track.path).toLocaleLowerCase("en-US");
       if (!this.writer.writableExtensions.has(extension)) {
         files.push({

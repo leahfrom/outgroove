@@ -549,7 +549,8 @@ export function registerIpc(
     channels.chooseAlbumArtworkEdit,
     createValidatedHandler(
       albumArtworkEditPreviewRequestSchema,
-      async ({ albumId }) => {
+      async ({ albumId, fileIds }) => {
+        dependencies.artworkEditor.validateSelection(albumId, fileIds);
         const selected = await dialog.showOpenDialog(dependencies.window, {
           title: "Choose album artwork",
           properties: ["openFile"],
@@ -563,6 +564,7 @@ export function registerIpc(
           : dependencies.artworkEditor.preview(
               albumId,
               normalize(resolve(path)),
+              fileIds,
             );
       },
     ),
@@ -584,7 +586,8 @@ export function registerIpc(
     channels.previewAlbumArtworkRemoval,
     createValidatedHandler(
       albumArtworkEditPreviewRequestSchema,
-      ({ albumId }) => dependencies.artworkEditor.previewRemoval(albumId),
+      ({ albumId, fileIds }) =>
+        dependencies.artworkEditor.previewRemoval(albumId, fileIds),
     ),
   );
   ipcMain.handle(

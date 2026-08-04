@@ -399,6 +399,9 @@ export function App(): React.JSX.Element {
     "remove" | "replace"
   >();
   const [artworkEditError, setArtworkEditError] = useState<string>();
+  const [artworkTrackSelections, setArtworkTrackSelections] = useState<
+    ReadonlyMap<string, readonly string[]>
+  >(() => new Map());
   const [artworkExportPreview, setArtworkExportPreview] =
     useState<AlbumArtworkExportPreviewDto>();
   const [artworkExportResult, setArtworkExportResult] =
@@ -682,6 +685,13 @@ export function App(): React.JSX.Element {
         : undefined,
     [selectedAlbum],
   );
+  const artworkSelectedFileIds = useMemo(() => {
+    if (!selectedAlbum) return [];
+    const saved = artworkTrackSelections.get(selectedAlbum.id);
+    if (!saved) return selectedAlbum.tracks.map((track) => track.id);
+    const currentIds = new Set(selectedAlbum.tracks.map((track) => track.id));
+    return saved.filter((fileId) => currentIds.has(fileId));
+  }, [artworkTrackSelections, selectedAlbum]);
   const prepareAlbumCollectionReturn = useCallback((albumId: string): void => {
     albumReturnFocusId.current = albumId;
     albumCollectionScrollRestorePending.current = true;
@@ -1956,7 +1966,7 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const chooseArtwork = async (): Promise<void> => {
+  const chooseArtwork = async (fileIds: readonly string[]): Promise<void> => {
     if (!selectedAlbum) return;
     setBusy(true);
     setArtworkEditError(undefined);
@@ -1965,6 +1975,7 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.chooseAlbumArtworkEdit({
         albumId: selectedAlbum.id,
+        fileIds: [...fileIds],
       });
       if (!result.ok) {
         setArtworkEditError(result.error.message);
@@ -1981,7 +1992,9 @@ export function App(): React.JSX.Element {
     }
   };
 
-  const prepareArtworkRemoval = async (): Promise<void> => {
+  const prepareArtworkRemoval = async (
+    fileIds: readonly string[],
+  ): Promise<void> => {
     if (!selectedAlbum) return;
     setBusy(true);
     setArtworkEditError(undefined);
@@ -1990,6 +2003,7 @@ export function App(): React.JSX.Element {
     try {
       const result = await window.outgroove.previewAlbumArtworkRemoval({
         albumId: selectedAlbum.id,
+        fileIds: [...fileIds],
       });
       if (result.ok) {
         setArtworkEditPreview(result.value);
@@ -5302,11 +5316,13 @@ export function App(): React.JSX.Element {
                 preview={artworkEditPreview}
                 result={artworkEditResult}
                 resultAction={artworkEditResultAction}
+                selectedFileIds={artworkSelectedFileIds}
+                tracks={selectedAlbum.tracks}
                 onCancelPreview={() => {
                   setArtworkEditPreview(undefined);
                   setArtworkEditError(undefined);
                 }}
-                onChoose={() => void chooseArtwork()}
+                onChoose={(fileIds) => void chooseArtwork(fileIds)}
                 onConfirm={() => void applyArtwork()}
                 onExport={() => void exportArtwork()}
                 onCancelFolderArtwork={() => {
@@ -5316,7 +5332,16 @@ export function App(): React.JSX.Element {
                 onConfirmFolderArtwork={() => void applyFolderArtwork()}
                 onPrepareFolderArtwork={() => void prepareFolderArtwork()}
                 onPrepareExport={() => void prepareArtworkExport()}
-                onPrepareRemoval={() => void prepareArtworkRemoval()}
+                onPrepareRemoval={(fileIds) =>
+                  void prepareArtworkRemoval(fileIds)
+                }
+                onSelectionChange={(fileIds) =>
+                  setArtworkTrackSelections((current) => {
+                    const next = new Map(current);
+                    next.set(selectedAlbum.id, [...fileIds]);
+                    return next;
+                  })
+                }
               />
             )}
             {(libraryAlbumEditingTool === "title" ||
