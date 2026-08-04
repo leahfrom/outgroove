@@ -40,6 +40,32 @@ describe("Gitflow policy", () => {
     ).toBe(false);
   });
 
+  it("allows only well-formed Dependabot npm updates into develop", () => {
+    expect(
+      validatePullRequest({
+        base: "develop",
+        head: "dependabot/npm_and_yarn/ip-address-10.4.0",
+      }).valid,
+    ).toBe(true);
+
+    for (const head of [
+      "dependabot/github_actions/actions/checkout-7",
+      "dependabot/npm_and_yarn/",
+      "dependabot/npm_and_yarn/../main",
+      "dependabot/npm_and_yarn/group/nested",
+      "renovate/npm_and_yarn/ip-address-10.4.0",
+    ]) {
+      expect(validatePullRequest({ base: "develop", head }).valid).toBe(false);
+    }
+
+    expect(
+      validatePullRequest({
+        base: "main",
+        head: "dependabot/npm_and_yarn/ip-address-10.4.0",
+      }).valid,
+    ).toBe(false);
+  });
+
   it("validates stable versions and safe branch suffixes", () => {
     expect(isStableSemver("0.2.0")).toBe(true);
     expect(isStableSemver("01.2.0")).toBe(false);
