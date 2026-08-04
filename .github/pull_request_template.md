@@ -16,6 +16,7 @@
 ## Gitflow
 
 - [ ] `feature/*` targets `develop`
+- [ ] Automated npm dependency updates use `dependabot/npm_and_yarn/*` and target `develop`
 - [ ] Only `release/*` or `hotfix/*` targets `main`
 - [ ] Release/hotfix changes are merged back to `develop`
 - [ ] Release/hotfix platform evidence and assets follow `docs/release-runbook.md` (or not applicable)

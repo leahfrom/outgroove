@@ -10,6 +10,7 @@ export interface PolicyResult {
 
 const stableSemverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const branchSuffixPattern = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
+const dependabotNpmPrefix = "dependabot/npm_and_yarn/";
 
 export function isStableSemver(value: string): boolean {
   return stableSemverPattern.test(value);
@@ -37,6 +38,13 @@ export function validBranchSuffix(value: string): boolean {
   );
 }
 
+function isDependabotNpmBranch(value: string): boolean {
+  return (
+    value.startsWith(dependabotNpmPrefix) &&
+    validBranchSuffix(value.slice(dependabotNpmPrefix.length))
+  );
+}
+
 export function validatePullRequest({
   base,
   head,
@@ -53,12 +61,14 @@ export function validatePullRequest({
 
   if (base === "develop") {
     const valid =
-      head === "main" || /^(?:feature|release|hotfix)\//u.test(head);
+      head === "main" ||
+      /^(?:feature|release|hotfix)\//u.test(head) ||
+      isDependabotNpmBranch(head);
     return {
       valid,
       reason: valid
         ? "The branch follows the Gitflow integration path."
-        : "develop accepts feature/*, release/*, hotfix/*, or main back-merges.",
+        : "develop accepts feature/*, release/*, hotfix/*, Dependabot npm updates, or main back-merges.",
     };
   }
 
